@@ -1,24 +1,21 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Instagram Reel Thumbnail Generator</title>
+    <meta charset="UTF-8">
+    <title>Recolekt Downloader</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        input[type=text] { width: 60%; padding: 10px; margin: 10px 0; }
+        input[type=submit] { padding: 10px 20px; }
+    </style>
 </head>
 <body>
-  <h1>Instagram Reel Thumbnail Generator</h1>
-
-  <form method="post">
-    <input type="url" name="reel_url" placeholder="Paste Instagram Reel URL" size="60" required>
-    <button type="submit">Generate</button>
-  </form>
-
-  {% if error %}
-    <p style="color:darkred">{{ error }}</p>
-  {% endif %}
-
-  {% if thumbnail_url %}
-    <h2>Result</h2>
-    <img src="{{ thumbnail_url }}" alt="thumbnail" style="max-width:480px;">
-  {% endif %}
+    <h1>Recolekt Video Downloader</h1>
+    <form method="POST" action="/">
+        <input type="text" name="url" placeholder="Paste Instagram Reel or video URL here" required>
+        <br>
+        <input type="submit" value="Download">
+    </form>
+    <p>Or use GET request: <code>?url=VIDEO_URL</code></p>
 </body>
 </html>
