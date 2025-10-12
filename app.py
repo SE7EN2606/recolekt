@@ -2,7 +2,7 @@ import os
 import glob
 import logging
 import json
-from flask import Flask, request, render_template, jsonify, send_from_directory, abort
+from flask import Flask, request, render_template, jsonify
 import yt_dlp
 import ffmpeg
 from google.cloud import storage
@@ -61,8 +61,9 @@ def generate_thumbnail(video_path):
 def upload_to_gcs(local_path, object_name):
     blob = bucket.blob(object_name)
     blob.upload_from_filename(local_path)
-    blob.make_public()  # exposes publicly
-    return blob.public_url
+    # Do NOT call blob.make_public() or ACL methods
+    # Instead, generate a public URL assuming bucket is public
+    return f"https://storage.googleapis.com/{BUCKET_NAME}/{object_name}"
 
 # ----------------- ROUTES -----------------
 @app.route("/", methods=["GET"])
