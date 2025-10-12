@@ -5,31 +5,11 @@
   <title>Recolekt</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body {
-      font-family: Arial, Helvetica, sans-serif;
-      max-width: 780px;
-      margin: 40px auto;
-      padding: 0 16px;
-    }
-    input[type=text] {
-      width: 78%;
-      padding: 10px;
-      margin-right: 8px;
-    }
-    button {
-      padding: 10px 16px;
-    }
-    img {
-      max-width: 100%;
-      height: auto;
-      margin-top: 12px;
-    }
-    .info {
-      margin-top: 12px;
-      padding: 10px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-    }
+    body{font-family:Arial,Helvetica,sans-serif;max-width:780px;margin:40px auto;padding:0 16px}
+    input[type=text]{width:78%;padding:10px;margin-right:8px}
+    button{padding:10px 16px}
+    img{max-width:100%;height:auto;margin-top:12px}
+    .info{margin-top:12px;padding:10px;border:1px solid #ddd;border-radius:6px}
   </style>
 </head>
 <body>
@@ -50,41 +30,25 @@
       e.preventDefault();
       result.innerHTML = 'Working...';
       const url = document.getElementById('url').value.trim();
-      if (!url) { 
-        result.innerHTML = 'Provide a URL'; 
-        return; 
-      }
+      if (!url) { result.innerHTML = 'Provide a URL'; return; }
 
       try {
-        // Prepare form data
         const data = new FormData();
         data.append('url', url);
-
-        // POST to backend
         const resp = await fetch('/', { method: 'POST', body: data });
-
-        // Parse JSON safely
-        let json;
-        try {
-          json = await resp.json();
-        } catch (_) {
-          result.innerHTML = `<pre style="color:red">Invalid response from server</pre>`;
-          return;
-        }
+        const json = await resp.json();
 
         if (!resp.ok) {
-          result.innerHTML = `<pre style="color:red">${JSON.stringify(json, null, 2)}</pre>`;
+          result.innerHTML = `<pre style="color:red">${JSON.stringify(json,null,2)}</pre>`;
           return;
         }
 
-        // Build UI
         let html = `<div class="info"><strong>Title:</strong> ${json.title || '(no title)'}<br>`;
         html += `<strong>Duration:</strong> ${json.duration || 'n/a'}s<br>`;
         if (json.thumbnail) html += `<img src="${json.thumbnail}" alt="thumbnail">`;
-        if (json.download) html += `<p><a href="${json.download}">Download video</a></p>`;
+        if (json.download) html += `<p><a href="${json.download}" target="_blank">Download video</a></p>`;
         html += `</div>`;
         result.innerHTML = html;
-
       } catch (err) {
         result.innerHTML = `<pre style="color:red">${err.toString()}</pre>`;
       }
