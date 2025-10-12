@@ -3,3 +3,4 @@ yt-dlp
 ffmpeg-python
 gunicorn
 waitress
+google-cloud-storage
