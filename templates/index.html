@@ -1,24 +1,59 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Instagram Reel Thumbnail Generator</title>
+  <meta charset="utf-8" />
+  <title>Recolekt</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;max-width:780px;margin:40px auto;padding:0 16px}
+    input[type=text]{width:78%;padding:10px;margin-right:8px}
+    button{padding:10px 16px}
+    img{max-width:100%;height:auto;margin-top:12px}
+    .info{margin-top:12px;padding:10px;border:1px solid #ddd;border-radius:6px}
+  </style>
 </head>
 <body>
-  <h1>Instagram Reel Thumbnail Generator</h1>
+  <h1>Recolekt — Reel thumbnail & download</h1>
 
-<form method="POST" action="/">
-    <input type="text" name="url" placeholder="Enter video URL">
-    <button type="submit">Download Info</button>
-</form>
+  <form id="frm">
+    <input type="text" id="url" name="url" placeholder="Paste Instagram Reel URL" required />
+    <button type="submit">Fetch</button>
+  </form>
 
-  {% if error %}
-    <p style="color:darkred">{{ error }}</p>
-  {% endif %}
+  <div id="result"></div>
 
-  {% if thumbnail_url %}
-    <h2>Result</h2>
-    <img src="{{ thumbnail_url }}" alt="thumbnail" style="max-width:480px;">
-  {% endif %}
+  <script>
+    const form = document.getElementById('frm');
+    const result = document.getElementById('result');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      result.innerHTML = 'Working...';
+      const url = document.getElementById('url').value.trim();
+      if (!url) { result.innerHTML = 'Provide a URL'; return; }
+
+      try {
+        const data = new FormData();
+        data.append('url', url);
+        const resp = await fetch('/', { method: 'POST', body: data });
+        const json = await resp.json();
+
+        if (!resp.ok) {
+          result.innerHTML = `<pre style="color:red">${JSON.stringify(json,null,2)}</pre>`;
+          return;
+        }
+
+        // build UI
+        let html = `<div class="info"><strong>Title:</strong> ${json.title || '(no title)'}<br>`;
+        html += `<strong>Duration:</strong> ${json.duration || 'n/a'}s<br>`;
+        if (json.thumbnail) html += `<img src="${json.thumbnail}" alt="thumbnail">`;
+        if (json.download) html += `<p><a href="${json.download}">Download video</a></p>`;
+        html += `</div>`;
+        result.innerHTML = html;
+      } catch (err) {
+        result.innerHTML = `<pre style="color:red">${err.toString()}</pre>`;
+      }
+    });
+  </script>
 </body>
 </html>
