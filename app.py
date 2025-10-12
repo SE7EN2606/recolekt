@@ -22,11 +22,9 @@ def download_video(url):
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-    # find the saved file (video.*)
     matches = glob.glob(os.path.join(DOWNLOAD_DIR, "video.*"))
     if not matches:
         raise RuntimeError("Downloaded file not found")
-    # Prefer .mp4 if present
     for m in matches:
         if m.lower().endswith(".mp4"):
             return m, info
@@ -56,7 +54,7 @@ def index_post():
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
-    # cleanup previous outputs so responses are deterministic
+    # Cleanup previous outputs
     for f in glob.glob(os.path.join(DOWNLOAD_DIR, "video.*")) + glob.glob(os.path.join(DOWNLOAD_DIR, "thumbnail.*")):
         try:
             os.remove(f)
@@ -75,7 +73,6 @@ def index_post():
         logging.debug("Thumbnail created: %s", thumb)
     except Exception as e:
         logging.exception("Thumbnail failed")
-        # not fatal; continue and return video info but indicate no thumbnail
         return jsonify({
             "title": info.get("title"),
             "url": info.get("webpage_url"),
@@ -107,8 +104,7 @@ def serve_thumbnail():
         abort(404)
     return send_from_directory(DOWNLOAD_DIR, "thumbnail.jpg")
 
-# Only for local dev. When running under gunicorn, this block won't be executed.
+# Only for local dev. Gunicorn will handle production
 if __name__ == "__main__":
-    import os as _os
-    port = int(_os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
