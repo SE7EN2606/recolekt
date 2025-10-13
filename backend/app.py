@@ -11,20 +11,36 @@ from google.oauth2 import service_account
 
 # ---- CONFIG ----
 DOWNLOAD_DIR = "downloads"
-BUCKET_NAME = "recolekt-videos"  # change if different
+BUCKET_NAME = os.environ.get("GCP_BUCKET", "recolekt-videos")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
 CORS(app)
 
 # ---- GCS CREDS ----
+# Two supported methods:
+# 1) Set GOOGLE_APPLICATION_CREDENTIALS to a path (recommended for local)
+# 2) Set GOOGLE_APPLICATION_CREDENTIALS_JSON to the JSON string (Render env var). This will create an in-memory credentials object.
 cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-if not cred_path:
-    raise RuntimeError("Missing GOOGLE_APPLICATION_CREDENTIALS env variable")
+cred_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 
-credentials = service_account.Credentials.from_service_account_file(cred_path)
-gcs_client = storage.Client(credentials=credentials, project=credentials.project_id)
+if not cred_path and not cred_json:
+    raise RuntimeError("Missing Google credentials. Set GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_APPLICATION_CREDENTIALS_JSON env var")
+
+if cred_json:
+    try:
+        credentials_info = json.loads(cred_json)
+        credentials = service_account.Credentials.from_service_account_info(credentials_info)
+        gcs_client = storage.Client(credentials=credentials, project=credentials.project_id)
+    except Exception as e:
+        logging.exception("Invalid GOOGLE_APPLICATION_CREDENTIALS_JSON")
+        raise
+else:
+    # use file path
+    credentials = None
+    gcs_client = storage.Client()  # will pick credentials from path env var GOOGLE_APPLICATION_CREDENTIALS
+
 bucket = gcs_client.bucket(BUCKET_NAME)
 
 # ---- HELPERS ----
@@ -55,9 +71,10 @@ def generate_thumbnail(video_path):
     return thumbnail_path
 
 def upload_to_gcs(local_path, object_name):
+    if not local_path:
+        return None
     blob = bucket.blob(object_name)
     blob.upload_from_filename(local_path)
-    # avoid object ACL calls (uniform bucket-level access)
     return f"https://storage.googleapis.com/{BUCKET_NAME}/{object_name}"
 
 # ---- API ----
@@ -68,7 +85,7 @@ def fetch_video():
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
-    # cleanup
+    # cleanup old files
     for f in glob.glob(os.path.join(DOWNLOAD_DIR, "*")):
         try: os.remove(f)
         except: pass
