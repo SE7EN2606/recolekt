@@ -1,13 +1,14 @@
+const API = import.meta.env.VITE_API_URL || "http://localhost:5001";
+
 export async function fetchVideo(url) {
-  const response = await fetch("http://127.0.0.1:5001/api/fetch", {
+  const resp = await fetch(`${API}/api/fetch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url })
+    body: JSON.stringify({ url }),
   });
-
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.error || "Failed to fetch video");
+  if (!resp.ok) {
+    const txt = await resp.text();
+    throw new Error(txt || resp.statusText);
   }
-  return response.json();
+  return resp.json();
 }
