@@ -6,5 +6,8 @@ google-auth
 google-auth-oauthlib
 google-auth-httplib2
 flask-cors
-gunicorn
 requests
+fastapi
+uvicorn
+httpx
+gunicorn
