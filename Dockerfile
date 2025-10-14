@@ -1,10 +1,7 @@
-# Use lightweight Python image
+# Base image
 FROM python:3.11-slim
 
-# Prevent interactive apt steps
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install FFmpeg and minimal runtime dependencies
+# Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg libsm6 libxext6 && \
     rm -rf /var/lib/apt/lists/*
@@ -12,14 +9,14 @@ RUN apt-get update && \
 # Set working directory
 WORKDIR /app
 
-# Copy application files
+# Copy files
 COPY . /app
 
 # Install Python dependencies
-RUN pip install --no-cache-dir fastapi uvicorn gunicorn instaloader moviepy requests python-dotenv
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose Render default web port
+# Expose port 10000 (Render default)
 EXPOSE 10000
 
-# Start FastAPI app using Gunicorn with Uvicorn worker
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app:app", "--bind", "0.0.0.0:10000"]
+# Start FastAPI with Gunicorn & Uvicorn worker
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app:app", "--bind", "0.0.0.0:10000", "--workers", "1"]
