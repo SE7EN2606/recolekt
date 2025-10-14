@@ -87,7 +87,7 @@ def get_highest_res_image(candidates):
     # Find the highest resolution image by checking width and height
     highest_res = max(clean_candidates, key=lambda x: (x.get("width", 0), x.get("height", 0)))
 
-    # Remove resolution limitations like p240x240, if found
+    # Clean URL to remove resolution parameters like p240x240, p640x640, etc.
     clean_url = highest_res.get("url")
     if clean_url:
         clean_url = remove_resolution_parameters(clean_url)
@@ -97,8 +97,9 @@ def get_highest_res_image(candidates):
 def remove_resolution_parameters(url: str) -> str:
     """Remove resolution limitations from the image URL"""
     import re
-    # Remove specific resolution parameters like p240x240
-    return re.sub(r"(p\d{3,4}x\d{3,4}|stp=[^&]+)", "", url)
+    # Remove specific resolution parameters like p240x240, stp=dst-jpg_e15_p240x240_tt6
+    url = re.sub(r"(p\d{3,4}x\d{3,4}|stp=[^&]+)", "", url)
+    return url
 
 def extract_og(html: str) -> dict:
     """Fallback OG parser"""
