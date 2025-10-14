@@ -10,7 +10,7 @@ WORKDIR /app
 COPY . /app
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir fastapi uvicorn instaloader moviepy requests python-dotenv
 
 # Expose port
 EXPOSE 8000
