@@ -6,6 +6,8 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from tempfile import NamedTemporaryFile
 from bs4 import BeautifulSoup
+import re
+import json
 
 # ------------------------
 # Config
@@ -38,17 +40,31 @@ app.add_middleware(
 
 def extract_video_url_from_html(html: str) -> str | None:
     """Fallback: Extract the video URL directly from Instagram HTML."""
-    soup = BeautifulSoup(html, "html.parser")
-    # Look for the script tag that contains the video URL
-    for script in soup.find_all("script"):
-        if 'window._sharedData' in str(script):
-            shared_data = str(script)
-            start = shared_data.find('"video_url":"') + len('"video_url":"')
-            end = shared_data.find('",', start)
-            if start != -1 and end != -1:
-                video_url = shared_data[start:end]
-                return video_url
-    return None
+    # Regex to find the embedded JSON data containing the video URL
+    pattern = re.compile(r'window\._sharedData = ({.*?});</script>', re.DOTALL)
+    match = pattern.search(html)
+    
+    if not match:
+        return None
+    
+    # Extract JSON data from the matched string
+    shared_data = match.group(1)
+    
+    # Load the shared data into a Python dictionary
+    try:
+        data = json.loads(shared_data)
+        
+        # Extract the video URL (this is generally within the 'graphql' key)
+        video_url = None
+        if "graphql" in data:
+            # Traverse the JSON structure to find the video URL
+            video_data = data["graphql"].get("shortcode_media", {})
+            video_url = video_data.get("video_url")
+        
+        return video_url
+    
+    except json.JSONDecodeError:
+        return None
 
 def download_video(url: str) -> str:
     """Download video from the provided URL and save it to a temporary file."""
@@ -93,18 +109,9 @@ def fetch_instagram_thumbnail(req: FetchRequest):
     except Exception:
         raise HTTPException(status_code=502, detail="Could not fetch URL")
 
-    # Step 2: Try extracting the video URL using RapidAPI
-    video_url = None
-    if RAPIDAPI_KEY and RAPIDAPI_HOST:
-        # Attempt to use RapidAPI first (existing logic)
-        # (This part can stay as is, but you could also extract from HTML directly if needed)
-
-        video_url = extract_video_url_from_html(html)
+    # Step 2: Try extracting the video URL using RapidAPI (optional)
+    video_url = extract_video_url_from_html(html)
     
-    # If RapidAPI fails, attempt to extract directly from HTML
-    if not video_url:
-        video_url = extract_video_url_from_html(html)
-
     if not video_url:
         raise HTTPException(status_code=502, detail="Could not extract video URL.")
 
