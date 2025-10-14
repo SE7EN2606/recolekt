@@ -1,5 +1,5 @@
 export async function fetchThumbnail(url) {
-  const response = await fetch('https://your-render-backend-url/api/fetch', {
+  const response = await fetch('https://recolekt.onrender.com/api/fetch', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
