@@ -29,7 +29,7 @@ def fetch_instagram_thumbnail(request: FetchRequest):
     API_URL = "https://instagram-scraper-api2.p.rapidapi.com/media_info_v2"
     headers = {
         "x-rapidapi-key": "55842e9f58mshf59f6d5ec196bbbp1251a1jsn48b330063f49",
-        "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
+        "x-rapidapi-host": "iinstagram-api-fast-reliable-data-scraper.p.rapidapi.com",
     }
     query = {"url": url}
 
