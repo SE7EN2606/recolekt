@@ -77,12 +77,17 @@ def get_highest_res_image(candidates):
     """Extract the highest resolution image from available candidates"""
     if not candidates:
         return None
-    # Prioritize images that don't have the 'video' in the URL (i.e., not a video thumbnail)
-    for candidate in candidates:
-        if 'video' not in candidate.get('url', ''):
-            return candidate.get("url")
-    # If all candidates are video versions, return the highest resolution anyway
-    return max(candidates, key=lambda x: x.get("width", 0)).get("url")
+    
+    # Filter out video thumbnails (those containing 'video' in the URL)
+    clean_candidates = [candidate for candidate in candidates if 'video' not in candidate.get('url', '')]
+    
+    if not clean_candidates:
+        return None
+
+    # Find the highest resolution image by checking width (you can also check height if necessary)
+    highest_res = max(clean_candidates, key=lambda x: x.get("width", 0))
+
+    return highest_res.get("url")
 
 def extract_og(html: str) -> dict:
     """Fallback OG parser"""
