@@ -1,42 +1,45 @@
-import os
-import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import requests
+import os
 
 app = Flask(__name__)
 CORS(app)
 
-# Use your RapidAPI key (store securely in Render later)
-RAPID_API_KEY = os.environ.get("RAPID_API_KEY")
+# Instagram Graph API token from environment variable
+IG_TOKEN = os.getenv("IG_ACCESS_TOKEN")
 
-@app.route("/api/instagram", methods=["GET"])
-def get_instagram_post():
-    media_id = request.args.get("id")
-    if not media_id:
-        return jsonify({"error": "Missing ?id= parameter"}), 400
+@app.route("/api/fetch", methods=["POST"])
+def fetch_instagram():
+    data = request.get_json()
+    url = data.get("url")
+    print("DEBUG: received URL =", url)
+
+    if not url:
+        return jsonify({"error": "missing url"}), 400
 
     try:
-        url = f"https://instagram-api-fast-reliable-data-scraper.p.rapidapi.com/media?id={media_id}"
-        headers = {
-            "x-rapidapi-host": "instagram-api-fast-reliable-data-scraper.p.rapidapi.com",
-            "x-rapidapi-key": RAPID_API_KEY
-        }
-        r = requests.get(url, headers=headers, timeout=10)
+        oembed_url = "https://graph.facebook.com/v21.0/instagram_oembed"
+        params = {"url": url, "access_token": IG_TOKEN}
+        print("DEBUG: calling Graph API with", params)
 
-        if r.status_code != 200:
-            return jsonify({"error": "RapidAPI error", "detail": r.text}), r.status_code
+        r = requests.get(oembed_url, params=params, timeout=10)
+        print("DEBUG: Graph API raw response:", r.text)
 
-        data = r.json()
-        return jsonify(data)
+        # Always return raw response for debugging
+        return jsonify({
+            "status_code": r.status_code,
+            "raw": r.text
+        }), r.status_code
 
     except Exception as e:
+        print("DEBUG: Exception occurred:", e)
         return jsonify({"error": str(e)}), 500
 
-
-@app.route("/api/test", methods=["GET"])
-def test():
-    return jsonify({"status": "ok", "message": "API running"})
-
+@app.route("/")
+def index():
+    return jsonify({"message": "API is running"}), 200
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
