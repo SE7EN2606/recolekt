@@ -1,40 +1,41 @@
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-import httpx
-import os
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import requests
+import json
 
-app = FastAPI()
+app = Flask(__name__)
+CORS(app)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@app.route("/")
+def home():
+    return jsonify({"status": "ok", "message": "Recolekt API active"})
 
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "55842e9f58mshf59f6d5ec196bbbp1251a1jsn48b330063f49")
-RAPIDAPI_HOST = "instagram-api-fast-reliable-data-scraper.p.rapidapi.com"
-BASE_URL = f"https://{RAPIDAPI_HOST}"
+@app.route("/api/fetch", methods=["POST"])
+def fetch_instagram_data():
+    try:
+        data = request.get_json(force=True)
+        url = data.get("url")
+        if not url:
+            return jsonify({"status": 400, "error": "Missing URL"}), 400
 
-@app.post("/api/fetch")
-async def fetch_instagram_data(req: Request):
-    body = await req.json()
-    url = body.get("url")
-    print("Received URL:", url)
+        # External API (RapidAPI or other)
+        API_URL = "https://instagram-scraper-api2.p.rapidapi.com/media_info_v2"
+        headers = {
+            "x-rapidapi-key": "55842e9f58mshf59f6d5ec196bbbp1251a1jsn48b330063f49",
+            "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
+        }
+        query = {"url": url}
 
-    # Example: for testing use a fixed user_id to see if RapidAPI responds
-    params = {
-        "user_id": "25025320",           # example: Instagram official account
-        "include_feed_video": "true"
-    }
+        response = requests.get(API_URL, headers=headers, params=query, timeout=20)
+        if response.status_code != 200:
+            return jsonify({"status": response.status_code, "error": response.text}), response.status_code
 
-    headers = {
-        "x-rapidapi-host": RAPIDAPI_HOST,
-        "x-rapidapi-key": RAPIDAPI_KEY
-    }
+        parsed = response.json()
+        return jsonify({"status": 200, "data": json.dumps(parsed)})
 
-    async with httpx.AsyncClient() as client:
-        r = await client.get(f"{BASE_URL}/reels", headers=headers, params=params)
-        text = r.text
-        print("RapidAPI response:", text)
-        return {"status": r.status_code, "data": text}
+    except Exception as e:
+        return jsonify({"status": 500, "error": str(e)}), 500
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
