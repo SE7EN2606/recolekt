@@ -87,7 +87,18 @@ def get_highest_res_image(candidates):
     # Find the highest resolution image by checking width and height
     highest_res = max(clean_candidates, key=lambda x: (x.get("width", 0), x.get("height", 0)))
 
-    return highest_res.get("url")
+    # Remove resolution limitations like p240x240, if found
+    clean_url = highest_res.get("url")
+    if clean_url:
+        clean_url = remove_resolution_parameters(clean_url)
+
+    return clean_url
+
+def remove_resolution_parameters(url: str) -> str:
+    """Remove resolution limitations from the image URL"""
+    import re
+    # Remove specific resolution parameters like p240x240
+    return re.sub(r"(p\d{3,4}x\d{3,4}|stp=[^&]+)", "", url)
 
 def extract_og(html: str) -> dict:
     """Fallback OG parser"""
