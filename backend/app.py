@@ -1,18 +1,27 @@
+import os
+import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-import requests
-import os
-import re
-import urllib.parse
 
-# RapidAPI config from environment variables
-RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")  # e.g. "instagram-api-fast-reliable-data-scraper.p.rapidapi.com"
-RAPIDAPI_KEY  = os.getenv("RAPIDAPI_KEY")
+# ------------------------
+# Config
+# ------------------------
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
 
+# ------------------------
+# Request schema
+# ------------------------
+class FetchRequest(BaseModel):
+    url: str
+
+# ------------------------
+# FastAPI app
+# ------------------------
 app = FastAPI()
 
-# Allow all CORS (for frontend testing)
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,136 +29,111 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class FetchRequest(BaseModel):
-    url: str
+# ------------------------
+# Helper functions
+# ------------------------
 
-def first_non_empty(*vals):
-    for v in vals:
-        if v:
-            return v
+def extract_media_id_from_html(html: str) -> str | None:
+    """Fallback: extract media_id from OG or embedded JSON"""
+    import re
+    m = re.search(r'"media_id":"(\d+)"', html)
+    return m.group(1) if m else None
+
+def get_media_details(media_id: str) -> dict | None:
+    """Fetch Media Details via RapidAPI"""
+    urls_to_try = [
+        {"path": "/media-details", "qs": {"media_id": media_id}},
+        {"path": "/mediaDetails", "qs": {"media_id": media_id}},
+        {"path": "/media", "qs": {"id": media_id}},
+    ]
+    headers = {
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": RAPIDAPI_HOST,
+    }
+    for u in urls_to_try:
+        try:
+            url = f"https://{RAPIDAPI_HOST}{u['path']}"
+            resp = requests.get(url, headers=headers, params=u["qs"], timeout=20)
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+            # Extract clean thumbnail and video
+            thumb = (
+                data.get("thumbnail_url") or
+                data.get("cover_frame_url") or
+                get_highest_res_image(data.get("image_versions2", {}).get("candidates", []))
+            )
+            video = (
+                data.get("video_url") or
+                data.get("video_versions", [{}])[0].get("url")
+            )
+            if thumb or video:
+                return {"thumb": thumb, "video": video, "raw": data}
+        except Exception:
+            continue
     return None
 
-def extract_og(html: str):
-    get = lambda prop: (re.search(f'<meta[^>]+property=["\']{prop}["\'][^>]+content=["\']([^"\']+)["\']', html, re.I) or [None, None])[1]
+def get_highest_res_image(candidates):
+    """Extract the highest resolution image from available candidates"""
+    if not candidates:
+        return None
+    # Prioritize images that don't have the 'video' in the URL (i.e., not a video thumbnail)
+    for candidate in candidates:
+        if 'video' not in candidate.get('url', ''):
+            return candidate.get("url")
+    # If all candidates are video versions, return the highest resolution anyway
+    return max(candidates, key=lambda x: x.get("width", 0)).get("url")
+
+def extract_og(html: str) -> dict:
+    """Fallback OG parser"""
+    import re
+    def get(prop):
+        m = re.search(f'<meta[^>]+property=["\']{prop}["\'][^>]+content=["\']([^"\']+)["\']', html)
+        return m.group(1) if m else None
     return {
         "thumb": get("og:image") or get("og:image:secure_url"),
         "video": get("og:video") or get("og:video:url") or get("og:video:secure_url")
     }
 
-def get_highest_res_image(candidates):
-    if not candidates:
-        return None
-    
-    # Loop through candidates to find the cleanest image (non-video)
-    # We prioritize images that don't have the 'video' in the URL and are the highest resolution
-    for candidate in candidates:
-        # Check if it doesn't have "video" in the URL (i.e., not a video thumbnail)
-        if 'video' not in candidate.get('url', ''):
-            return candidate.get("url")
-    
-    # If all candidates are video versions, return the highest resolution anyway
-    return max(candidates, key=lambda x: x.get("width", 0)).get("url")
-
-def decode_url(url: str) -> str:
-    # Decode URL if it contains HTML encoded characters like &amp;
-    return urllib.parse.unquote(url)
-
-def try_rapid_media_details(media_id):
-    if not RAPIDAPI_HOST or not RAPIDAPI_KEY or not media_id:
-        return None
-    variants = [
-        {"method": "GET", "path": "/media-details", "qs": {"media_id": media_id}},
-        {"method": "GET", "path": "/mediaDetails",  "qs": {"media_id": media_id}},
-        {"method": "GET", "path": "/media",         "qs": {"id": media_id}},
-    ]
-    for v in variants:
-        try:
-            resp = requests.get(f"https://{RAPIDAPI_HOST}{v['path']}", headers={
-                "X-RapidAPI-Key": RAPIDAPI_KEY,
-                "X-RapidAPI-Host": RAPIDAPI_HOST
-            }, params=v["qs"], timeout=20)
-            if resp.status_code != 200:
-                continue
-            data = resp.json()
-            candidates = data.get("image_versions2", {}).get("candidates", [])
-            thumb = get_highest_res_image(candidates)
-            video = first_non_empty(
-                data.get("video_url"),
-                data.get("video_versions", [{}])[0].get("url")
-            )
-            if thumb or video:
-                return {"thumb": thumb, "video": video, "raw": data}
-        except:
-            continue
-    return None
-
-def try_rapid_resolve(share_url):
-    if not RAPIDAPI_HOST or not RAPIDAPI_KEY:
-        return None
-    variants = [
-        {"method": "GET",  "path": "/resolve-share-link", "qs": {"share_url": share_url}},
-        {"method": "GET",  "path": "/resolve-share-link", "qs": {"url": share_url}},
-        {"method": "GET",  "path": "/resolveShareLink",   "qs": {"url": share_url}},
-        {"method": "GET",  "path": "/resolveShareLink",   "qs": {"share_url": share_url}},
-        {"method": "GET",  "path": "/resolve",            "qs": {"link": share_url}},
-    ]
-    for v in variants:
-        try:
-            resp = requests.get(f"https://{RAPIDAPI_HOST}{v['path']}", headers={
-                "X-RapidAPI-Key": RAPIDAPI_KEY,
-                "X-RapidAPI-Host": RAPIDAPI_HOST
-            }, params=v["qs"], timeout=20)
-            if resp.status_code != 200:
-                continue
-            data = resp.json()
-            media_id = first_non_empty(data.get("media_id"), data.get("id"), data.get("pk"), data.get("data", {}).get("media_id"))
-            if media_id:
-                return {"mediaId": media_id, "raw": data}
-        except:
-            continue
-    return None
+# ------------------------
+# Routes
+# ------------------------
 
 @app.get("/")
 def home():
     return {"status": "ok", "message": "Recolekt API active"}
 
 @app.post("/api/fetch")
-def fetch(request: FetchRequest):
-    url = request.url
-    if not url or not url.startswith("https://www.instagram.com/reel/"):
+def fetch_instagram_thumbnail(req: FetchRequest):
+    url = req.url
+    if not url.startswith("https://www.instagram.com/reel/"):
         raise HTTPException(status_code=400, detail="Provide a valid Instagram reel URL.")
 
-    # Step 1: Try to resolve the share URL
-    resolved = try_rapid_resolve(url)
-    media_id = resolved.get("mediaId") if resolved else None
+    # Step 1: Fetch page HTML
+    try:
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        html = resp.text
+    except Exception:
+        raise HTTPException(status_code=502, detail="Could not fetch URL")
 
-    # Step 2: Get media details using the media_id
-    media = try_rapid_media_details(media_id) if media_id else None
+    # Step 2: Extract media_id if possible
+    media_id = extract_media_id_from_html(html)
 
-    # Step 3: If no media, try extracting from OG tags
-    if not media or not (media.get("thumb") or media.get("video")):
-        try:
-            html = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15).text
-            og = extract_og(html)
-            media = media or {}
-            media["thumb"] = media.get("thumb") or og.get("thumb")
-            media["video"] = media.get("video") or og.get("video")
-        except:
-            pass
+    # Step 3: Try Media Details via RapidAPI
+    result = get_media_details(media_id) if media_id else None
 
-    # Step 4: If no media found, return an error
-    if not media or not (media.get("thumb") or media.get("video")):
-        raise HTTPException(status_code=502, detail="Could not extract thumbnail or video.")
+    # Step 4: Fallback OG scraping
+    if not result:
+        og = extract_og(html)
+        result = {"thumb": og.get("thumb"), "video": og.get("video"), "raw": None}
 
-    # Decode the URLs before returning them
-    if media.get("thumb"):
-        media["thumb"] = decode_url(media["thumb"])
+    if not result.get("thumb") and not result.get("video"):
+        raise HTTPException(
+            status_code=502,
+            detail="Could not extract thumbnail or video. Check RapidAPI endpoint."
+        )
 
-    if media.get("video"):
-        media["video"] = decode_url(media["video"])
+    # Ensure we're using the highest resolution thumbnail
+    result["thumb"] = get_highest_res_image([{"url": result["thumb"]}])
 
-    return {
-        "mediaId": media_id,
-        "thumb": media.get("thumb"),
-        "video": media.get("video")
-    }
+    return {"mediaId": media_id, "thumb": result.get("thumb"), "video": result.get("video")}
