@@ -1,23 +1,11 @@
-import os
 import requests
+from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
 # ------------------------
 # Config
-# ------------------------
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
-RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
-
-# ------------------------
-# Request schema
-# ------------------------
-class FetchRequest(BaseModel):
-    url: str
-
-# ------------------------
-# FastAPI app
 # ------------------------
 app = FastAPI()
 
@@ -29,92 +17,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ------------------------
-# Helper functions
-# ------------------------
+class FetchRequest(BaseModel):
+    url: str
 
-def extract_media_id_from_html(html: str) -> str | None:
-    """Fallback: extract media_id from OG or embedded JSON"""
-    import re
-    m = re.search(r'"media_id":"(\d+)"', html)
-    return m.group(1) if m else None
-
-def get_media_details(media_id: str) -> dict | None:
-    """Fetch Media Details via RapidAPI"""
-    urls_to_try = [
-        {"path": "/media-details", "qs": {"media_id": media_id}},
-        {"path": "/mediaDetails", "qs": {"media_id": media_id}},
-        {"path": "/media", "qs": {"id": media_id}},
-    ]
+def extract_og_thumbnail(url: str) -> str:
+    """Extract the thumbnail image URL using OpenGraph (og:image) from Instagram"""
     headers = {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
-        "X-RapidAPI-Host": RAPIDAPI_HOST,
+        "User-Agent": "Mozilla/5.0"
     }
-    for u in urls_to_try:
-        try:
-            url = f"https://{RAPIDAPI_HOST}{u['path']}"
-            resp = requests.get(url, headers=headers, params=u["qs"], timeout=20)
-            if resp.status_code != 200:
-                continue
-            data = resp.json()
-            # Extract clean thumbnail and video
-            thumb = (
-                data.get("thumbnail_url") or
-                data.get("cover_frame_url") or
-                get_highest_res_image(data.get("image_versions2", {}).get("candidates", []))
-            )
-            video = (
-                data.get("video_url") or
-                data.get("video_versions", [{}])[0].get("url")
-            )
-            if thumb or video:
-                return {"thumb": thumb, "video": video, "raw": data}
-        except Exception:
-            continue
-    return None
-
-def get_highest_res_image(candidates):
-    """Extract the highest resolution image from available candidates"""
-    if not candidates:
-        return None
     
-    # Filter out video thumbnails (those containing 'video' in the URL)
-    clean_candidates = [candidate for candidate in candidates if 'video' not in candidate.get('url', '')]
+    # Fetch the Instagram page HTML
+    try:
+        response = requests.get(url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Look for OpenGraph image meta tag
+        og_image = soup.find("meta", property="og:image")
+        
+        if og_image:
+            return og_image["content"]
+        else:
+            raise HTTPException(status_code=502, detail="Could not find the thumbnail.")
     
-    if not clean_candidates:
-        return None
-
-    # Find the highest resolution image by checking width and height
-    highest_res = max(clean_candidates, key=lambda x: (x.get("width", 0), x.get("height", 0)))
-
-    # Clean URL to remove resolution parameters like p240x240, p640x640, etc.
-    clean_url = highest_res.get("url")
-    if clean_url:
-        clean_url = remove_resolution_parameters(clean_url)
-
-    return clean_url
-
-def remove_resolution_parameters(url: str) -> str:
-    """Remove resolution limitations from the image URL"""
-    import re
-    # Remove specific resolution parameters like p240x240, stp=dst-jpg_e15_p240x240_tt6
-    url = re.sub(r"(p\d{3,4}x\d{3,4}|stp=[^&]+)", "", url)
-    return url
-
-def extract_og(html: str) -> dict:
-    """Fallback OG parser"""
-    import re
-    def get(prop):
-        m = re.search(f'<meta[^>]+property=["\']{prop}["\'][^>]+content=["\']([^"\']+)["\']', html)
-        return m.group(1) if m else None
-    return {
-        "thumb": get("og:image") or get("og:image:secure_url"),
-        "video": get("og:video") or get("og:video:url") or get("og:video:secure_url")
-    }
-
-# ------------------------
-# Routes
-# ------------------------
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Error fetching the URL: {str(e)}")
 
 @app.get("/")
 def home():
@@ -125,32 +51,8 @@ def fetch_instagram_thumbnail(req: FetchRequest):
     url = req.url
     if not url.startswith("https://www.instagram.com/reel/"):
         raise HTTPException(status_code=400, detail="Provide a valid Instagram reel URL.")
-
-    # Step 1: Fetch page HTML
-    try:
-        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-        html = resp.text
-    except Exception:
-        raise HTTPException(status_code=502, detail="Could not fetch URL")
-
-    # Step 2: Extract media_id if possible
-    media_id = extract_media_id_from_html(html)
-
-    # Step 3: Try Media Details via RapidAPI
-    result = get_media_details(media_id) if media_id else None
-
-    # Step 4: Fallback OG scraping
-    if not result:
-        og = extract_og(html)
-        result = {"thumb": og.get("thumb"), "video": og.get("video"), "raw": None}
-
-    if not result.get("thumb") and not result.get("video"):
-        raise HTTPException(
-            status_code=502,
-            detail="Could not extract thumbnail or video. Check RapidAPI endpoint."
-        )
-
-    # Ensure we're using the highest resolution thumbnail
-    result["thumb"] = get_highest_res_image([{"url": result["thumb"]}])
-
-    return {"mediaId": media_id, "thumb": result.get("thumb"), "video": result.get("video")}
+    
+    # Step 1: Extract the thumbnail image using OpenGraph meta tag
+    thumb_url = extract_og_thumbnail(url)
+    
+    return {"thumb": thumb_url}
