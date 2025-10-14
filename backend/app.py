@@ -23,31 +23,35 @@ async def fetch_instagram_data(request: Request):
         "x-rapidapi-host": RAPIDAPI_HOST
     }
 
-    # Step 1: Resolve share link → get media_id
+    # Step 1: Resolve the shared link → get media ID
     r = requests.get(
-        f"https://{RAPIDAPI_HOST}/resolve_share_link",
+        f"https://{RAPIDAPI_HOST}/instagram/resolve",
         headers=headers,
-        params={"link": reel_url},
+        params={"url": reel_url},
         timeout=20
     )
 
-    print("RapidAPI resolve response:", r.text)
+    print("Resolve response:", r.text)
     if r.status_code != 200:
-        return JSONResponse({"error": "RapidAPI resolve_share_link failed", "detail": r.text}, status_code=502)
+        return JSONResponse({"error": "RapidAPI resolve failed", "detail": r.text}, status_code=502)
 
-    media_id = r.json().get("data", {}).get("media", {}).get("id")
+    res_json = r.json()
+    media_id = (
+        res_json.get("data", {}).get("id")
+        or res_json.get("data", {}).get("media", {}).get("id")
+    )
     if not media_id:
         return JSONResponse({"mediaId": None, "thumb": None, "video": None, "error": "Media ID not found"})
 
-    # Step 2: Fetch video details
+    # Step 2: Get media details
     r2 = requests.get(
-        f"https://{RAPIDAPI_HOST}/media_details",
+        f"https://{RAPIDAPI_HOST}/instagram/media-details",
         headers=headers,
         params={"media_id": media_id},
         timeout=20
     )
 
-    print("RapidAPI media_details response:", r2.text)
+    print("Media details response:", r2.text)
     if r2.status_code != 200:
         return JSONResponse({"error": "RapidAPI media_details failed", "detail": r2.text}, status_code=502)
 
@@ -74,7 +78,7 @@ async def fetch_instagram_data(request: Request):
         .run(capture_stdout=True, capture_stderr=True)
     )
 
-    # Convert image to base64 for return (optional)
+    # Convert image to base64
     with open(image_path, "rb") as img_file:
         thumb_b64 = base64.b64encode(img_file.read()).decode("utf-8")
 
