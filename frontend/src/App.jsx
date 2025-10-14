@@ -10,7 +10,7 @@ function App() {
     setError("");
 
     try {
-      const res = await fetch("https://YOUR-RENDER-URL.onrender.com/api/fetch", {
+      const res = await fetch("https://https://recolekt.onrender.com/api/fetch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url })
