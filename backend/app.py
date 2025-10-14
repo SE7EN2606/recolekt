@@ -3,14 +3,16 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import requests
-
 import os
+import re
 
+# RapidAPI config from environment variables
 RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")  # e.g. "instagram-api-fast-reliable-data-scraper.p.rapidapi.com"
 RAPIDAPI_KEY  = os.getenv("RAPIDAPI_KEY")
 
 app = FastAPI()
 
+# Allow all CORS (for frontend testing)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,7 +30,6 @@ def first_non_empty(*vals):
     return None
 
 def extract_og(html: str):
-    import re
     get = lambda prop: (re.search(f'<meta[^>]+property=["\']{prop}["\'][^>]+content=["\']([^"\']+)["\']', html, re.I) or [None, None])[1]
     return {
         "thumb": get("og:image") or get("og:image:secure_url"),
@@ -43,7 +44,6 @@ def get_highest_res_image(candidates):
 def try_rapid_media_details(media_id):
     if not RAPIDAPI_HOST or not RAPIDAPI_KEY or not media_id:
         return None
-
     variants = [
         {"method": "GET", "path": "/media-details", "qs": {"media_id": media_id}},
         {"method": "GET", "path": "/mediaDetails",  "qs": {"media_id": media_id}},
@@ -51,15 +51,13 @@ def try_rapid_media_details(media_id):
     ]
     for v in variants:
         try:
-            url = f"https://{RAPIDAPI_HOST}{v['path']}"
-            resp = requests.get(url, headers={
+            resp = requests.get(f"https://{RAPIDAPI_HOST}{v['path']}", headers={
                 "X-RapidAPI-Key": RAPIDAPI_KEY,
                 "X-RapidAPI-Host": RAPIDAPI_HOST
             }, params=v["qs"], timeout=20)
             if resp.status_code != 200:
                 continue
             data = resp.json()
-            # image_versions2.candidates is the high-res thumbnail list
             candidates = data.get("image_versions2", {}).get("candidates", [])
             thumb = get_highest_res_image(candidates)
             video = first_non_empty(
@@ -75,7 +73,6 @@ def try_rapid_media_details(media_id):
 def try_rapid_resolve(share_url):
     if not RAPIDAPI_HOST or not RAPIDAPI_KEY:
         return None
-
     variants = [
         {"method": "GET",  "path": "/resolve-share-link", "qs": {"share_url": share_url}},
         {"method": "GET",  "path": "/resolve-share-link", "qs": {"url": share_url}},
@@ -85,8 +82,7 @@ def try_rapid_resolve(share_url):
     ]
     for v in variants:
         try:
-            url = f"https://{RAPIDAPI_HOST}{v['path']}"
-            resp = requests.get(url, headers={
+            resp = requests.get(f"https://{RAPIDAPI_HOST}{v['path']}", headers={
                 "X-RapidAPI-Key": RAPIDAPI_KEY,
                 "X-RapidAPI-Host": RAPIDAPI_HOST
             }, params=v["qs"], timeout=20)
@@ -110,14 +106,11 @@ def fetch(request: FetchRequest):
     if not url or not url.startswith("https://www.instagram.com/reel/"):
         raise HTTPException(status_code=400, detail="Provide a valid Instagram reel URL.")
 
-    # 1) Resolve media_id
     resolved = try_rapid_resolve(url)
     media_id = resolved.get("mediaId") if resolved else None
 
-    # 2) Get Media Details (high-res)
     media = try_rapid_media_details(media_id) if media_id else None
 
-    # 3) Fallback: OG scraping
     if not media or not (media.get("thumb") or media.get("video")):
         try:
             html = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15).text
