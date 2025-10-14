@@ -1,20 +1,15 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+import os
 import requests
+import re
 
-# ----- Config -----
-RAPIDAPI_KEY = "55842e9f58mshf59f6d5ec196bbbp1251a1jsn48b330063f49"
-RAPIDAPI_HOST = "instagram-api-fast-reliable-data-scraper.p.rapidapi.com"
+RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 
-# ----- Request Body -----
-class ReelRequest(BaseModel):
-    url: str  # full https://www.instagram.com/reel/... link
-
-# ----- App -----
 app = FastAPI()
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,57 +17,90 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class FetchRequest(BaseModel):
+    url: str
+
+def first_non_empty(*vals):
+    for v in vals:
+        if v:
+            return v
+    return None
+
+def extract_og(html: str):
+    def get(prop):
+        m = re.search(rf'<meta[^>]+property=["\']{prop}["\'][^>]+content=["\']([^"\']+)["\']', html, re.I)
+        return m.group(1) if m else None
+    return {
+        "thumb": get("og:image") or get("og:image:secure_url"),
+        "video": get("og:video") or get("og:video:url") or get("og:video:secure_url")
+    }
+
+def try_rapid_resolve(url: str):
+    if not RAPIDAPI_HOST or not RAPIDAPI_KEY:
+        return None
+    candidates = [
+        {"method": "GET", "path": "/resolve-share-link", "qs": {"share_url": url}},
+        {"method": "GET", "path": "/resolve-share-link", "qs": {"url": url}},
+        {"method": "GET", "path": "/resolveShareLink", "qs": {"url": url}},
+        {"method": "GET", "path": "/resolveShareLink", "qs": {"share_url": url}},
+        {"method": "GET", "path": "/resolve", "qs": {"link": url}},
+    ]
+    for c in candidates:
+        try:
+            full_url = f"https://{RAPIDAPI_HOST}{c['path']}"
+            res = requests.get(full_url, headers={
+                "X-RapidAPI-Key": RAPIDAPI_KEY,
+                "X-RapidAPI-Host": RAPIDAPI_HOST,
+            }, params=c.get("qs"), timeout=15)
+            if res.status_code != 200:
+                continue
+            json_data = res.json()
+            media_id = json_data.get("media_id") or json_data.get("id") or json_data.get("pk") or json_data.get("data", {}).get("media_id")
+            thumb = first_non_empty(
+                json_data.get("thumbnail_url"),
+                json_data.get("cover_frame_url"),
+                json_data.get("image_versions2", {}).get("candidates", [{}])[0].get("url"),
+                json_data.get("data", {}).get("thumbnail_url")
+            )
+            video = first_non_empty(
+                json_data.get("video_url"),
+                json_data.get("video_versions", [{}])[0].get("url"),
+                json_data.get("data", {}).get("video_url")
+            )
+            if media_id or thumb or video:
+                return {"mediaId": media_id, "thumb": thumb, "video": video}
+        except:
+            continue
+    return None
+
 @app.get("/")
 def home():
     return {"status": "ok", "message": "Recolekt API active"}
 
 @app.post("/api/fetch")
-def fetch_reel_thumbnail(request: ReelRequest):
-    """
-    Fetch thumbnail from a public Instagram Reel URL
-    Flow:
-    1. Resolve Share Link → get media_id
-    2. Media Details → get thumbnail_url
-    """
-    url = request.url
-    if not url:
-        raise HTTPException(status_code=400, detail="Missing URL")
+def fetch_instagram_thumbnail(request: FetchRequest):
+    share_url = request.url
+    if not share_url.startswith("https://www.instagram.com/reel/"):
+        raise HTTPException(status_code=400, detail="Provide a valid Instagram reel URL.")
 
-    try:
-        # 1️⃣ Resolve Share Link
-        resolve_endpoint = f"https://{RAPIDAPI_HOST}/resolve_share_link"
-        headers = {
-            "X-Rapidapi-Key": RAPIDAPI_KEY,
-            "X-Rapidapi-Host": RAPIDAPI_HOST,
-        }
-        params = {"url": url}
+    resolved = try_rapid_resolve(share_url)
 
-        res = requests.get(resolve_endpoint, headers=headers, params=params, timeout=20)
-        if res.status_code != 200:
-            raise HTTPException(status_code=res.status_code, detail=res.text)
-        media_id = res.json().get("media_id")
-        if not media_id:
-            raise HTTPException(status_code=404, detail="Could not resolve media ID")
+    # Fallback: OG tags
+    if not resolved or not (resolved.get("thumb") or resolved.get("video")):
+        try:
+            res = requests.get(share_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            og = extract_og(res.text)
+            resolved = resolved or {}
+            resolved["thumb"] = resolved.get("thumb") or og.get("thumb")
+            resolved["video"] = resolved.get("video") or og.get("video")
+        except:
+            pass
 
-        # 2️⃣ Get Media Details
-        media_endpoint = f"https://{RAPIDAPI_HOST}/media/{media_id}"
-        media_res = requests.get(media_endpoint, headers=headers, timeout=20)
-        if media_res.status_code != 200:
-            raise HTTPException(status_code=media_res.status_code, detail=media_res.text)
+    if not resolved or not (resolved.get("thumb") or resolved.get("video")):
+        raise HTTPException(status_code=502, detail="Could not extract thumbnail or video.")
 
-        media_data = media_res.json()
-        # Try common paths for thumbnail
-        thumbnail_url = (
-            media_data.get("thumbnail_url")
-            or media_data.get("cover_frame_url")
-            or media_data.get("image_versions2", {})
-                   .get("candidates", [{}])[0]
-                   .get("url")
-        )
-        if not thumbnail_url:
-            raise HTTPException(status_code=404, detail="Thumbnail not found")
-
-        return {"status": 200, "thumbnail_url": thumbnail_url}
-
-    except requests.RequestException as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "mediaId": resolved.get("mediaId"),
+        "thumb": resolved.get("thumb"),
+        "video": resolved.get("video")
+    }
