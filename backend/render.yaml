@@ -1,9 +1,9 @@
 services:
   - type: web
-    name: recolekt-backend
-    env: python
+    name: recolekt-frontend
+    env: node
     build:
       env:
-        - FFmpeg: https://github.com/jonathanong/heroku-buildpack-ffmpeg
+        - NPM_CONFIG_PRODUCTION=false  # Ensure devDependencies are installed
     plan: free
-    startCommand: gunicorn -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 app:app
+    startCommand: npm run start  # or `vite preview` to run the build
