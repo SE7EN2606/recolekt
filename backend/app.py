@@ -4,11 +4,11 @@ import requests
 import os
 
 app = Flask(__name__)
-CORS(app)
+CORS(app)  # Allow all origins. Can restrict later.
 
-# RapidAPI credentials from environment variables
+# RapidAPI credentials from Render environment
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
-RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")  # usually provided by RapidAPI
+RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")  # Provided by RapidAPI
 
 @app.route("/api/fetch", methods=["POST"])
 def fetch_instagram():
@@ -20,24 +20,31 @@ def fetch_instagram():
         return jsonify({"error": "missing url"}), 400
 
     try:
-        endpoint = "https://instagram-scraper-api.p.rapidapi.com/instagram/reel"  # example endpoint
+        # Replace with your exact RapidAPI endpoint
+        endpoint = "https://instagram-scraper-api.p.rapidapi.com/instagram/reel"
         headers = {
             "X-RapidAPI-Key": RAPIDAPI_KEY,
             "X-RapidAPI-Host": RAPIDAPI_HOST
         }
         params = {"url": url}
-        print("DEBUG: calling RapidAPI with", params)
+        print("DEBUG: calling RapidAPI with params", params)
 
-        r = requests.get(endpoint, headers=headers, params=params, timeout=10)
-        print("DEBUG: RapidAPI raw response:", r.text)
+        response = requests.get(endpoint, headers=headers, params=params, timeout=15)
+        print("DEBUG: RapidAPI status code:", response.status_code)
+        print("DEBUG: RapidAPI response text:", response.text)
 
-        return jsonify({
-            "status_code": r.status_code,
-            "raw": r.json() if r.headers.get("Content-Type") == "application/json" else r.text
-        }), r.status_code
+        # Return raw response
+        content_type = response.headers.get("Content-Type", "")
+        if "application/json" in content_type:
+            return jsonify(response.json()), response.status_code
+        else:
+            return jsonify({"raw": response.text}), response.status_code
 
+    except requests.exceptions.RequestException as e:
+        print("DEBUG: Requests exception:", e)
+        return jsonify({"error": str(e)}), 500
     except Exception as e:
-        print("DEBUG: Exception occurred:", e)
+        print("DEBUG: Other exception:", e)
         return jsonify({"error": str(e)}), 500
 
 @app.route("/")
