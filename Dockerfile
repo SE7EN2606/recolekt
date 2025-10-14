@@ -19,4 +19,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 10000
 
 # Start FastAPI with Gunicorn
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app:app", "--bind", "0.0.0.0:10000", "--workers", "1"]
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app:app", "--bind", "0.0.0.0:8000"]
+
