@@ -1,56 +1,40 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import requests
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+import httpx
 import os
 
-app = Flask(__name__)
-CORS(app)  # Allow all origins. Can restrict later.
+app = FastAPI()
 
-# RapidAPI credentials from Render environment
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
-RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")  # Provided by RapidAPI
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.route("/api/fetch", methods=["POST"])
-def fetch_instagram():
-    data = request.get_json()
-    url = data.get("url")
-    print("DEBUG: received URL =", url)
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "55842e9f58mshf59f6d5ec196bbbp1251a1jsn48b330063f49")
+RAPIDAPI_HOST = "instagram-api-fast-reliable-data-scraper.p.rapidapi.com"
+BASE_URL = f"https://{RAPIDAPI_HOST}"
 
-    if not url:
-        return jsonify({"error": "missing url"}), 400
+@app.post("/api/fetch")
+async def fetch_instagram_data(req: Request):
+    body = await req.json()
+    url = body.get("url")
+    print("Received URL:", url)
 
-    try:
-        # Replace with your exact RapidAPI endpoint
-        endpoint = "https://instagram-scraper-api.p.rapidapi.com/instagram/reel"
-        headers = {
-            "X-RapidAPI-Key": RAPIDAPI_KEY,
-            "X-RapidAPI-Host": RAPIDAPI_HOST
-        }
-        params = {"url": url}
-        print("DEBUG: calling RapidAPI with params", params)
+    # Example: for testing use a fixed user_id to see if RapidAPI responds
+    params = {
+        "user_id": "25025320",           # example: Instagram official account
+        "include_feed_video": "true"
+    }
 
-        response = requests.get(endpoint, headers=headers, params=params, timeout=15)
-        print("DEBUG: RapidAPI status code:", response.status_code)
-        print("DEBUG: RapidAPI response text:", response.text)
+    headers = {
+        "x-rapidapi-host": RAPIDAPI_HOST,
+        "x-rapidapi-key": RAPIDAPI_KEY
+    }
 
-        # Return raw response
-        content_type = response.headers.get("Content-Type", "")
-        if "application/json" in content_type:
-            return jsonify(response.json()), response.status_code
-        else:
-            return jsonify({"raw": response.text}), response.status_code
-
-    except requests.exceptions.RequestException as e:
-        print("DEBUG: Requests exception:", e)
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        print("DEBUG: Other exception:", e)
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/")
-def index():
-    return jsonify({"message": "API is running"}), 200
-
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{BASE_URL}/reels", headers=headers, params=params)
+        text = r.text
+        print("RapidAPI response:", text)
+        return {"status": r.status_code, "data": text}
