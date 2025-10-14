@@ -11,7 +11,6 @@ function App() {
       setLoading(true);
       setError(null);
 
-      // Extract Instagram ID or URL part
       const match = url.match(/\/(?:reel|p)\/([^/?]+)/);
       const id = match ? match[1] : url;
 
@@ -29,7 +28,7 @@ function App() {
 
   return (
     <div className="p-6 max-w-lg mx-auto space-y-4">
-      <h1 className="text-2xl font-bold">Instagram Fetch Test</h1>
+      <h1 className="text-2xl font-bold text-center">Instagram Fetch Test</h1>
       <input
         className="border rounded w-full p-2"
         type="text"
@@ -40,15 +39,15 @@ function App() {
       <button
         onClick={fetchInstagramData}
         disabled={loading}
-        className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+        className="bg-blue-600 text-white px-4 py-2 rounded w-full disabled:opacity-50"
       >
-        {loading ? "Loading..." : "Fetch"}
+        {loading ? "Loading..." : "Fetch Instagram Data"}
       </button>
 
       {error && <p className="text-red-600">Error: {error}</p>}
 
       {data && (
-        <div className="space-y-2">
+        <div className="space-y-2 border-t pt-4">
           <p><strong>User:</strong> {data.user?.username}</p>
           <p><strong>Caption:</strong> {data.caption?.text}</p>
           <p><strong>Likes:</strong> {data.like_count}</p>
