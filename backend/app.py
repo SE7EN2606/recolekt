@@ -3,7 +3,6 @@ from pydantic import BaseModel
 import requests
 from fastapi.middleware.cors import CORSMiddleware
 
-# Request body schema
 class FetchRequest(BaseModel):
     url: str
 
