@@ -1,4 +1,4 @@
-# Base image
+# Use Python slim image
 FROM python:3.11-slim
 
 # Install system dependencies
@@ -9,14 +9,14 @@ RUN apt-get update && \
 # Set working directory
 WORKDIR /app
 
-# Copy files
-COPY . /app
+# Copy backend files
+COPY backend/ /app/
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose port 10000 (Render default)
+# Expose port for Render
 EXPOSE 10000
 
-# Start FastAPI with Gunicorn & Uvicorn worker
+# Start FastAPI with Gunicorn
 CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app:app", "--bind", "0.0.0.0:10000", "--workers", "1"]
