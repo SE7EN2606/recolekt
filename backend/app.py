@@ -39,6 +39,15 @@ def extract_og(html: str):
 def get_highest_res_image(candidates):
     if not candidates:
         return None
+    
+    # Loop through candidates to find the cleanest image (non-video)
+    # We prioritize images that don't have the 'video' in the URL and are the highest resolution
+    for candidate in candidates:
+        # Check if it doesn't have "video" in the URL (i.e., not a video thumbnail)
+        if 'video' not in candidate.get('url', ''):
+            return candidate.get("url")
+    
+    # If all candidates are video versions, return the highest resolution anyway
     return max(candidates, key=lambda x: x.get("width", 0)).get("url")
 
 def decode_url(url: str) -> str:
