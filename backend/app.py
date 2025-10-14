@@ -84,8 +84,8 @@ def get_highest_res_image(candidates):
     if not clean_candidates:
         return None
 
-    # Find the highest resolution image by checking width (you can also check height if necessary)
-    highest_res = max(clean_candidates, key=lambda x: x.get("width", 0))
+    # Find the highest resolution image by checking width and height
+    highest_res = max(clean_candidates, key=lambda x: (x.get("width", 0), x.get("height", 0)))
 
     return highest_res.get("url")
 
