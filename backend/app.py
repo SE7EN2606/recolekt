@@ -1,6 +1,5 @@
 import os
 import requests
-import subprocess
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,32 +38,27 @@ app.add_middleware(
 # ------------------------
 
 def extract_video_url_from_html(html: str) -> str | None:
-    """Fallback: Extract the video URL directly from Instagram HTML."""
-    # Regex to find the embedded JSON data containing the video URL
-    pattern = re.compile(r'window\._sharedData = ({.*?});</script>', re.DOTALL)
-    match = pattern.search(html)
-    
-    if not match:
-        return None
-    
-    # Extract JSON data from the matched string
-    shared_data = match.group(1)
-    
-    # Load the shared data into a Python dictionary
-    try:
-        data = json.loads(shared_data)
-        
-        # Extract the video URL (this is generally within the 'graphql' key)
-        video_url = None
-        if "graphql" in data:
-            # Traverse the JSON structure to find the video URL
-            video_data = data["graphql"].get("shortcode_media", {})
-            video_url = video_data.get("video_url")
-        
-        return video_url
-    
-    except json.JSONDecodeError:
-        return None
+    """Fallback: Extract video URL directly from Instagram HTML."""
+    # Parse the HTML with BeautifulSoup
+    soup = BeautifulSoup(html, 'html.parser')
+
+    # Try to extract the video URL directly from <meta> tags (og:video)
+    video_url = None
+    og_video_tag = soup.find('meta', property='og:video')
+    if og_video_tag:
+        video_url = og_video_tag.get('content')
+
+    # If no video URL found from og:video, try to extract the video URL from the inline script
+    if not video_url:
+        script_tag = soup.find('script', text=re.compile('window\._sharedData'))
+        if script_tag:
+            shared_data = script_tag.string
+            start_idx = shared_data.find('"video_url":"') + len('"video_url":"')
+            end_idx = shared_data.find('",', start_idx)
+            if start_idx != -1 and end_idx != -1:
+                video_url = shared_data[start_idx:end_idx]
+
+    return video_url
 
 def download_video(url: str) -> str:
     """Download video from the provided URL and save it to a temporary file."""
@@ -109,9 +103,9 @@ def fetch_instagram_thumbnail(req: FetchRequest):
     except Exception:
         raise HTTPException(status_code=502, detail="Could not fetch URL")
 
-    # Step 2: Try extracting the video URL using RapidAPI (optional)
+    # Step 2: Try extracting the video URL using fallback HTML extraction
     video_url = extract_video_url_from_html(html)
-    
+
     if not video_url:
         raise HTTPException(status_code=502, detail="Could not extract video URL.")
 
