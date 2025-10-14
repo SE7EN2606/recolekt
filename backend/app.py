@@ -110,11 +110,14 @@ def fetch(request: FetchRequest):
     if not url or not url.startswith("https://www.instagram.com/reel/"):
         raise HTTPException(status_code=400, detail="Provide a valid Instagram reel URL.")
 
+    # Step 1: Try to resolve the share URL
     resolved = try_rapid_resolve(url)
     media_id = resolved.get("mediaId") if resolved else None
 
+    # Step 2: Get media details using the media_id
     media = try_rapid_media_details(media_id) if media_id else None
 
+    # Step 3: If no media, try extracting from OG tags
     if not media or not (media.get("thumb") or media.get("video")):
         try:
             html = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15).text
@@ -125,10 +128,11 @@ def fetch(request: FetchRequest):
         except:
             pass
 
+    # Step 4: If no media found, return an error
     if not media or not (media.get("thumb") or media.get("video")):
         raise HTTPException(status_code=502, detail="Could not extract thumbnail or video.")
 
-    # Decode URL here
+    # Decode the URLs before returning them
     if media.get("thumb"):
         media["thumb"] = decode_url(media["thumb"])
 
