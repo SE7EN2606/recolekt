@@ -1,70 +1,77 @@
 import { useState } from "react";
 
-function App() {
+export default function App() {
   const [url, setUrl] = useState("");
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  async function fetchInstagramData() {
+  const handleFetch = async () => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
     try {
-      setLoading(true);
-      setError(null);
+      const response = await fetch("https://recolekt.onrender.com/api/fetch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
 
-      const match = url.match(/\/(?:reel|p)\/([^/?]+)/);
-      const id = match ? match[1] : url;
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
 
-      const res = await fetch(`https://recolekt.onrender.com/api/instagram?id=${id}`);
-      if (!res.ok) throw new Error("Backend error");
-      const json = await res.json();
-      setData(json);
+      if (!response.ok) {
+        throw new Error(JSON.stringify(data, null, 2));
+      }
+
+      setResult(data);
     } catch (err) {
       setError(err.message);
-      setData(null);
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   return (
-    <div className="p-6 max-w-lg mx-auto space-y-4">
-      <h1 className="text-2xl font-bold text-center">Instagram Fetch Test</h1>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-gray-100 p-8">
+      <h1 className="text-2xl font-bold mb-4">Instagram Fetch Debug</h1>
       <input
-        className="border rounded w-full p-2"
         type="text"
-        placeholder="Paste Instagram Reel or Post URL"
+        placeholder="Paste Instagram Reel URL"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
+        className="w-full max-w-xl p-2 text-black rounded mb-3"
       />
       <button
-        onClick={fetchInstagramData}
+        onClick={handleFetch}
         disabled={loading}
-        className="bg-blue-600 text-white px-4 py-2 rounded w-full disabled:opacity-50"
+        className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
       >
-        {loading ? "Loading..." : "Fetch Instagram Data"}
+        {loading ? "Fetching..." : "Fetch Instagram Data"}
       </button>
 
-      {error && <p className="text-red-600">Error: {error}</p>}
+      {error && (
+        <div className="mt-6 w-full max-w-2xl bg-red-900/40 border border-red-700 p-4 rounded">
+          <h2 className="font-semibold text-red-400 mb-2">Error</h2>
+          <pre className="text-sm whitespace-pre-wrap break-words">
+            {error}
+          </pre>
+        </div>
+      )}
 
-      {data && (
-        <div className="space-y-2 border-t pt-4">
-          <p><strong>User:</strong> {data.user?.username}</p>
-          <p><strong>Caption:</strong> {data.caption?.text}</p>
-          <p><strong>Likes:</strong> {data.like_count}</p>
-          {data.video_versions?.[0]?.url && (
-            <video src={data.video_versions[0].url} controls className="w-full rounded" />
-          )}
-          {data.image_versions2?.candidates?.[0]?.url && (
-            <img
-              src={data.image_versions2.candidates[0].url}
-              alt="Post"
-              className="w-full rounded"
-            />
-          )}
+      {result && (
+        <div className="mt-6 w-full max-w-2xl bg-green-900/30 border border-green-700 p-4 rounded">
+          <h2 className="font-semibold text-green-400 mb-2">Result</h2>
+          <pre className="text-sm whitespace-pre-wrap break-words">
+            {JSON.stringify(result, null, 2)}
+          </pre>
         </div>
       )}
     </div>
   );
 }
-
-export default App;
