@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: instagram-thumbnail-api
+    env: python
+    build:
+      env:
+        - FFmpeg: https://github.com/jonathanong/heroku-buildpack-ffmpeg
+    plan: free
+    dockerfilePath: Dockerfile  # Optional: use if you want a custom Dockerfi
