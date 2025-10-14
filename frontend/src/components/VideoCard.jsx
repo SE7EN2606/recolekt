@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { fetchThumbnail } from './api';  // Import your API call
+import { fetchThumbnail } from '../api';  // Corrected import path
 
 function VideoCard() {
   const [url, setUrl] = useState('');
