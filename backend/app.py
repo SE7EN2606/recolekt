@@ -1,10 +1,10 @@
-# app.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import os
 import re
+import urllib.parse
 
 # RapidAPI config from environment variables
 RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST")  # e.g. "instagram-api-fast-reliable-data-scraper.p.rapidapi.com"
@@ -40,6 +40,10 @@ def get_highest_res_image(candidates):
     if not candidates:
         return None
     return max(candidates, key=lambda x: x.get("width", 0)).get("url")
+
+def decode_url(url: str) -> str:
+    # Decode URL if it contains HTML encoded characters like &amp;
+    return urllib.parse.unquote(url)
 
 def try_rapid_media_details(media_id):
     if not RAPIDAPI_HOST or not RAPIDAPI_KEY or not media_id:
@@ -123,6 +127,13 @@ def fetch(request: FetchRequest):
 
     if not media or not (media.get("thumb") or media.get("video")):
         raise HTTPException(status_code=502, detail="Could not extract thumbnail or video.")
+
+    # Decode URL here
+    if media.get("thumb"):
+        media["thumb"] = decode_url(media["thumb"])
+
+    if media.get("video"):
+        media["video"] = decode_url(media["video"])
 
     return {
         "mediaId": media_id,
