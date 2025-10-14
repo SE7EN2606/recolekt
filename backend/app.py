@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-import requests, ffmpeg, os, tempfile
+import requests, ffmpeg, os, tempfile, base64
 
 app = FastAPI()
 
@@ -18,35 +18,52 @@ async def fetch_instagram_data(request: Request):
     if not reel_url:
         return JSONResponse({"error": "Missing URL"}, status_code=400)
 
+    headers = {
+        "x-rapidapi-key": RAPIDAPI_KEY,
+        "x-rapidapi-host": RAPIDAPI_HOST
+    }
+
     # Step 1: Resolve share link → get media_id
-    headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": RAPIDAPI_HOST}
     r = requests.get(
         f"https://{RAPIDAPI_HOST}/resolve_share_link",
         headers=headers,
-        params={"link": reel_url}
+        params={"link": reel_url},
+        timeout=20
     )
+
+    print("RapidAPI resolve response:", r.text)
+    if r.status_code != 200:
+        return JSONResponse({"error": "RapidAPI resolve_share_link failed", "detail": r.text}, status_code=502)
+
     media_id = r.json().get("data", {}).get("media", {}).get("id")
     if not media_id:
-        return JSONResponse({"mediaId": None, "thumb": None, "video": None})
+        return JSONResponse({"mediaId": None, "thumb": None, "video": None, "error": "Media ID not found"})
 
-    # Step 2: Fetch video URL from media details
+    # Step 2: Fetch video details
     r2 = requests.get(
         f"https://{RAPIDAPI_HOST}/media_details",
         headers=headers,
-        params={"media_id": media_id}
+        params={"media_id": media_id},
+        timeout=20
     )
+
+    print("RapidAPI media_details response:", r2.text)
+    if r2.status_code != 200:
+        return JSONResponse({"error": "RapidAPI media_details failed", "detail": r2.text}, status_code=502)
+
     media = r2.json().get("data", {})
     video_url = None
-    if "video_versions" in media:
+    if isinstance(media, dict) and "video_versions" in media:
         video_url = media["video_versions"][0]["url"]
 
     if not video_url:
-        return JSONResponse({"mediaId": media_id, "thumb": None, "video": None})
+        return JSONResponse({"mediaId": media_id, "thumb": None, "video": None, "error": "Video URL not found"})
 
-    # Step 3: Download and capture first frame
+    # Step 3: Download video and capture first frame
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as video_file:
-        video_data = requests.get(video_url)
-        video_file.write(video_data.content)
+        video_data = requests.get(video_url, stream=True)
+        for chunk in video_data.iter_content(chunk_size=8192):
+            video_file.write(chunk)
         video_file_path = video_file.name
 
     image_path = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False).name
@@ -57,6 +74,12 @@ async def fetch_instagram_data(request: Request):
         .run(capture_stdout=True, capture_stderr=True)
     )
 
-    # You can now upload the image or return it as base64
-    # For now just confirm it was created
-    return {"mediaId": media_id, "thumb": image_path, "video": video_url}
+    # Convert image to base64 for return (optional)
+    with open(image_path, "rb") as img_file:
+        thumb_b64 = base64.b64encode(img_file.read()).decode("utf-8")
+
+    return {
+        "mediaId": media_id,
+        "video": video_url,
+        "thumb_b64": thumb_b64
+    }
