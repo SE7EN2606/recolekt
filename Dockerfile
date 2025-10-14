@@ -1,23 +1,19 @@
-# Use Python slim image
 FROM python:3.11-slim
 
-# Install system dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg libsm6 libxext6 && \
-    rm -rf /var/lib/apt/lists/*
+# Install FFmpeg
+RUN apt-get update && apt-get install -y ffmpeg && apt-get clean
 
 # Set working directory
 WORKDIR /app
 
-# Copy backend files
-COPY backend/ /app/
+# Copy everything
+COPY . /app
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies
+RUN pip install --no-cache-dir fastapi uvicorn gunicorn requests ffmpeg-python python-dotenv moviepy
 
-# Expose port for Render
-EXPOSE 10000
+# Expose (Render overrides this)
+EXPOSE 8000
 
-# Start FastAPI with Gunicorn
-CMD exec gunicorn -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:${PORT:-8000}
-
+# Dynamic port binding for Render
+CMD exec gunicorn -k uvicorn.workers.UvicornWorker backend.app:app --bind 0.0.0.0:${PORT:-8000}
