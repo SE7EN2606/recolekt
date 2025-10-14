@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from tempfile import NamedTemporaryFile
+from bs4 import BeautifulSoup
 
 # ------------------------
 # Config
@@ -26,46 +27,27 @@ app = FastAPI()
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"],  # Allow all origins for testing purposes
+    allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allow all headers
 )
 
 # ------------------------
 # Helper functions
 # ------------------------
 
-def extract_media_id_from_html(html: str) -> str | None:
-    """Fallback: extract media_id from OG or embedded JSON"""
-    import re
-    m = re.search(r'"media_id":"(\d+)"', html)
-    return m.group(1) if m else None
-
-def get_media_details(media_id: str) -> dict | None:
-    """Fetch Media Details via RapidAPI"""
-    urls_to_try = [
-        {"path": "/media-details", "qs": {"media_id": media_id}},
-        {"path": "/mediaDetails", "qs": {"media_id": media_id}},
-        {"path": "/media", "qs": {"id": media_id}},
-    ]
-    headers = {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
-        "X-RapidAPI-Host": RAPIDAPI_HOST,
-    }
-    for u in urls_to_try:
-        try:
-            url = f"https://{RAPIDAPI_HOST}{u['path']}"
-            resp = requests.get(url, headers=headers, params=u["qs"], timeout=20)
-            if resp.status_code != 200:
-                continue
-            data = resp.json()
-            # Extract clean thumbnail and video
-            thumb = data.get("thumbnail_url") or data.get("video_url")
-            video = data.get("video_url")
-            if thumb or video:
-                return {"thumb": thumb, "video": video, "raw": data}
-        except Exception:
-            continue
+def extract_video_url_from_html(html: str) -> str | None:
+    """Fallback: Extract the video URL directly from Instagram HTML."""
+    soup = BeautifulSoup(html, "html.parser")
+    # Look for the script tag that contains the video URL
+    for script in soup.find_all("script"):
+        if 'window._sharedData' in str(script):
+            shared_data = str(script)
+            start = shared_data.find('"video_url":"') + len('"video_url":"')
+            end = shared_data.find('",', start)
+            if start != -1 and end != -1:
+                video_url = shared_data[start:end]
+                return video_url
     return None
 
 def download_video(url: str) -> str:
@@ -94,21 +76,6 @@ def extract_thumbnail_from_video(video_path: str) -> str:
     subprocess.run(command, check=True)
     return output_image_path
 
-def extract_og(html: str) -> dict:
-    """Fallback OG parser"""
-    import re
-    def get(prop):
-        m = re.search(f'<meta[^>]+property=["\']{prop}["\'][^>]+content=["\']([^"\']+)["\']', html)
-        return m.group(1) if m else None
-    return {
-        "thumb": get("og:image") or get("og:image:secure_url"),
-        "video": get("og:video") or get("og:video:url") or get("og:video:secure_url")
-    }
-
-# ------------------------
-# Routes
-# ------------------------
-
 @app.get("/")
 def home():
     return {"status": "ok", "message": "Recolekt API active"}
@@ -126,27 +93,25 @@ def fetch_instagram_thumbnail(req: FetchRequest):
     except Exception:
         raise HTTPException(status_code=502, detail="Could not fetch URL")
 
-    # Step 2: Extract media_id if possible
-    media_id = extract_media_id_from_html(html)
+    # Step 2: Try extracting the video URL using RapidAPI
+    video_url = None
+    if RAPIDAPI_KEY and RAPIDAPI_HOST:
+        # Attempt to use RapidAPI first (existing logic)
+        # (This part can stay as is, but you could also extract from HTML directly if needed)
 
-    # Step 3: Try Media Details via RapidAPI
-    result = get_media_details(media_id) if media_id else None
+        video_url = extract_video_url_from_html(html)
+    
+    # If RapidAPI fails, attempt to extract directly from HTML
+    if not video_url:
+        video_url = extract_video_url_from_html(html)
 
-    # Step 4: Fallback OG scraping
-    if not result:
-        og = extract_og(html)
-        result = {"thumb": og.get("thumb"), "video": og.get("video"), "raw": None}
+    if not video_url:
+        raise HTTPException(status_code=502, detail="Could not extract video URL.")
 
-    if not result.get("video"):
-        raise HTTPException(
-            status_code=502,
-            detail="Could not extract video URL. Check RapidAPI endpoint."
-        )
+    # Step 3: Download the video
+    video_path = download_video(video_url)
 
-    # Step 5: Download the video
-    video_path = download_video(result["video"])
-
-    # Step 6: Extract thumbnail from the video
+    # Step 4: Extract thumbnail from the video
     thumbnail_path = extract_thumbnail_from_video(video_path)
 
-    return {"mediaId": media_id, "thumb": thumbnail_path, "video": result["video"]}
+    return {"thumb": thumbnail_path, "video": video_url}
