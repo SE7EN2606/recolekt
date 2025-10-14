@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
-import json
 
 app = Flask(__name__)
 CORS(app)
@@ -11,14 +10,13 @@ def home():
     return jsonify({"status": "ok", "message": "Recolekt API active"})
 
 @app.route("/api/fetch", methods=["POST"])
-def fetch_instagram_data():
+def fetch_instagram_thumbnail():
     try:
         data = request.get_json(force=True)
         url = data.get("url")
         if not url:
             return jsonify({"status": 400, "error": "Missing URL"}), 400
 
-        # External API (RapidAPI or other)
         API_URL = "https://instagram-scraper-api2.p.rapidapi.com/media_info_v2"
         headers = {
             "x-rapidapi-key": "55842e9f58mshf59f6d5ec196bbbp1251a1jsn48b330063f49",
@@ -30,8 +28,18 @@ def fetch_instagram_data():
         if response.status_code != 200:
             return jsonify({"status": response.status_code, "error": response.text}), response.status_code
 
-        parsed = response.json()
-        return jsonify({"status": 200, "data": json.dumps(parsed)})
+        data = response.json()
+        thumbnail_url = (
+            data.get("data", {}).get("items", [{}])[0]
+            .get("image_versions2", {})
+            .get("candidates", [{}])[0]
+            .get("url")
+        )
+
+        if not thumbnail_url:
+            return jsonify({"status": 404, "error": "Thumbnail not found"}), 404
+
+        return jsonify({"status": 200, "thumbnail_url": thumbnail_url})
 
     except Exception as e:
         return jsonify({"status": 500, "error": str(e)}), 500
