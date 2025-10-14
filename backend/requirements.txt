@@ -1,8 +1,6 @@
 fastapi
 uvicorn
 requests
-python-multipart
-gunicorn
 python-dotenv
-FFmpeg
-beautifulsoup4
+FFmpeg-python
+moviepy
