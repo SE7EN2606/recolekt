@@ -1,13 +1,3 @@
-flask
-yt-dlp
-ffmpeg-python
-google-cloud-storage
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
-flask-cors
-requests
-fastapi
-uvicorn
-httpx
-gunicorn
+fastapi==0.119.0
+uvicorn==0.37.0
+requests==2.32.5
