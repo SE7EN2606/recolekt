@@ -1,32 +1,43 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 import requests
+from fastapi.middleware.cors import CORSMiddleware
 
-app = Flask(__name__)
-CORS(app)
+# Request body schema
+class FetchRequest(BaseModel):
+    url: str
 
-@app.route("/")
+app = FastAPI()
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
 def home():
-    return jsonify({"status": "ok", "message": "Recolekt API active"})
+    return {"status": "ok", "message": "Recolekt API active"}
 
-@app.route("/api/fetch", methods=["POST"])
-def fetch_instagram_thumbnail():
+@app.post("/api/fetch")
+def fetch_instagram_thumbnail(request: FetchRequest):
+    url = request.url
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing URL")
+
+    API_URL = "https://instagram-scraper-api2.p.rapidapi.com/media_info_v2"
+    headers = {
+        "x-rapidapi-key": "55842e9f58mshf59f6d5ec196bbbp1251a1jsn48b330063f49",
+        "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
+    }
+    query = {"url": url}
+
     try:
-        data = request.get_json(force=True)
-        url = data.get("url")
-        if not url:
-            return jsonify({"status": 400, "error": "Missing URL"}), 400
-
-        API_URL = "https://instagram-scraper-api2.p.rapidapi.com/media_info_v2"
-        headers = {
-            "x-rapidapi-key": "55842e9f58mshf59f6d5ec196bbbp1251a1jsn48b330063f49",
-            "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
-        }
-        query = {"url": url}
-
         response = requests.get(API_URL, headers=headers, params=query, timeout=20)
         if response.status_code != 200:
-            return jsonify({"status": response.status_code, "error": response.text}), response.status_code
+            raise HTTPException(status_code=response.status_code, detail=response.text)
 
         data = response.json()
         thumbnail_url = (
@@ -37,13 +48,9 @@ def fetch_instagram_thumbnail():
         )
 
         if not thumbnail_url:
-            return jsonify({"status": 404, "error": "Thumbnail not found"}), 404
+            raise HTTPException(status_code=404, detail="Thumbnail not found")
 
-        return jsonify({"status": 200, "thumbnail_url": thumbnail_url})
+        return {"status": 200, "thumbnail_url": thumbnail_url}
 
-    except Exception as e:
-        return jsonify({"status": 500, "error": str(e)}), 500
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=str(e))
