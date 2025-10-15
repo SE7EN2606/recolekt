@@ -4,15 +4,15 @@ services:
     name: instagram-thumbnail-api
     env: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
+    buildCommand: "pip install -r requirements.txt && bash install_ffmpeg.sh"
     startCommand: "python app.py"
     envVars:
       - key: PORT
         value: 8000
       - key: GCS_BUCKET
         value: recolekt-storage
-      - key: GOOGLE_APPLICATION_CREDENTIALS
-        value: /etc/google/service-account.json
+      - key: GOOGLE_APPLICATION_CREDENTIALS_JSON
+        sync: false
     autoDeploy: true
     
   # Frontend Service
