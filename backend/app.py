@@ -16,6 +16,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
+import shutil
 
 # ------------------------
 # Config - Render Environment Variables
@@ -49,8 +50,8 @@ class FetchRequest(BaseModel):
 app = FastAPI(title="Instagram Thumbnail Extractor API")
 
 # Configure CORS for your frontend
+# We'll update this after deployment
 allowed_origins = [
-    "https://your-frontend-url.onrender.com",  # Replace with your actual frontend URL
     "http://localhost:3000",  # For local development
     "https://localhost:3000"
 ]
@@ -64,8 +65,12 @@ app.add_middleware(
 )
 
 # ------------------------
-# Helper functions (all your existing functions)
+# Helper functions
 # ------------------------
+
+def check_ffmpeg():
+    """Check if FFmpeg is installed and available"""
+    return shutil.which("ffmpeg") is not None
 
 def extract_video_url_with_ytdlp(url: str) -> str | None:
     """Extract video URL using yt-dlp"""
@@ -100,6 +105,10 @@ def extract_video_url_with_ytdlp(url: str) -> str | None:
 
 def extract_frame_with_ffmpeg(video_url: str, output_path: str) -> tuple[bool, int, int]:
     """Extract first frame using FFmpeg at original resolution"""
+    
+    if not check_ffmpeg():
+        print("FFmpeg not found. Please install FFmpeg on the server.")
+        return False, 1080, 1920
     
     try:
         # First, get video information to determine original resolution
@@ -384,13 +393,15 @@ def health_check():
     """Health check endpoint"""
     
     # Check FFmpeg availability
-    try:
-        result = subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
-        ffmpeg_ok = result.returncode == 0
-        ffmpeg_version = result.stdout.decode().split('\n')[0] if ffmpeg_ok else "Not available"
-    except:
-        ffmpeg_ok = False
-        ffmpeg_version = "Not available"
+    ffmpeg_ok = check_ffmpeg()
+    ffmpeg_version = "Not available"
+    if ffmpeg_ok:
+        try:
+            result = subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
+            if result.returncode == 0:
+                ffmpeg_version = result.stdout.decode().split('\n')[0]
+        except:
+            pass
     
     # Check Google Cloud Storage connectivity
     try:
