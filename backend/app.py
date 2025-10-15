@@ -12,6 +12,7 @@ import time
 import json
 import shutil
 import base64
+import random
 
 # Try to import Google Cloud Storage, with fallback
 try:
@@ -92,72 +93,22 @@ def check_ffmpeg():
     """Check if FFmpeg is installed and available"""
     return shutil.which("ffmpeg") is not None
 
-def extract_video_url_with_ytdlp(url: str) -> str | None:
-    """Extract video URL using yt-dlp with multiple fallback methods"""
-    
-    try:
-        import yt_dlp
-        
-        # Method 1: Try with cookies if available
-        cookies_path = None
-        if os.path.exists("cookies.txt"):
-            cookies_path = "cookies.txt"
-        
-        # Method 2: Try with different user agents and headers
-        user_agents = [
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-            "instagram-agent/1.0"
-        ]
-        
-        for user_agent in user_agents:
-            try:
-                ydl_opts = {
-                    'quiet': True,
-                    'no_warnings': True,
-                    'extract_flat': False,
-                    'user_agent': user_agent,
-                    'http_headers': {
-                        'User-Agent': user_agent,
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.5',
-                        'Accept-Encoding': 'gzip, deflate',
-                        'Connection': 'keep-alive',
-                        'Upgrade-Insecure-Requests': '1',
-                    }
-                }
-                
-                if cookies_path:
-                    ydl_opts['cookiefile'] = cookies_path
-                
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    
-                    if 'url' in info:
-                        print(f"Found video URL with yt-dlp using {user_agent}: {info['url']}")
-                        return info['url']
-                    
-                    # Try to find the best format
-                    if 'formats' in info:
-                        for format in info['formats']:
-                            if format.get('vcodec') != 'none' and format.get('acodec') != 'none':
-                                print(f"Found video URL with yt-dlp using {user_agent}: {format['url']}")
-                                return format['url']
-            except Exception as e:
-                print(f"Error with yt-dlp using {user_agent}: {e}")
-                continue
-        
-        return None
-    except Exception as e:
-        print(f"Error with yt-dlp extraction: {e}")
-        return None
+def get_random_user_agent():
+    """Get a random user agent to avoid detection"""
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (iPad; CPU OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1"
+    ]
+    return random.choice(user_agents)
 
 def extract_video_url_with_selenium(url: str) -> str | None:
-    """Extract video URL using Selenium as a fallback"""
+    """Extract video URL using Selenium to bypass Instagram restrictions"""
     
     if not SELENIUM_AVAILABLE:
-        print("Selenium not available for fallback extraction")
+        print("Selenium not available. Skipping this method.")
         return None
     
     try:
@@ -168,7 +119,7 @@ def extract_video_url_with_selenium(url: str) -> str | None:
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1")
+        chrome_options.add_argument(f"--user-agent={get_random_user_agent()}")
         
         # Initialize the WebDriver
         service = Service(ChromeDriverManager().install())
@@ -207,6 +158,40 @@ def extract_video_url_with_selenium(url: str) -> str | None:
                         print(f"Found MP4 URL in script: {match}")
                         driver.quit()
                         return match
+                
+                # Try to extract JSON data from script
+                try:
+                    # Look for JSON objects in the script
+                    json_matches = re.findall(r'({[^{}]*"video_url"[^{}]*})', script.string)
+                    for match in json_matches:
+                        try:
+                            data = json.loads(match)
+                            if 'video_url' in data:
+                                video_url = data['video_url']
+                                print(f"Found video URL in script JSON: {video_url}")
+                                driver.quit()
+                                return video_url
+                        except:
+                            pass
+                    
+                    # Look for other patterns
+                    video_url_matches = re.findall(r'"video_url":"([^"]+)"', script.string)
+                    for match in video_url_matches:
+                        if match and '.mp4' in match:
+                            print(f"Found video_url pattern: {match}")
+                            driver.quit()
+                            return match
+                except:
+                    pass
+        
+        # Try to find any MP4 URLs in the page source
+        mp4_matches = re.findall(r'(https://[^"\s<>]+\.mp4[^"\s<>]*)', page_source)
+        if mp4_matches:
+            for match in mp4_matches:
+                if 'instagram' in match and 'video' in match:
+                    print(f"Found MP4 URL in page source: {match}")
+                    driver.quit()
+                    return match
         
         driver.quit()
         print("No video URL found with Selenium")
@@ -221,37 +206,27 @@ def extract_video_url_with_selenium(url: str) -> str | None:
         return None
 
 def extract_video_url_with_api(url: str) -> str | None:
-    """Extract video URL using a third-party API as a last resort"""
+    """Extract video URL using a third-party API as fallback"""
     
     try:
-        # Using a free API service as a fallback
-        api_url = "https://saveig.app/api/ajaxSearch"
+        # Using a third-party service as fallback
+        api_url = "https://instagram-downloader-download-instagram-videos-stories.p.rapidapi.com/index"
+        
+        querystring = {"url": url}
         
         headers = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
-            "Accept": "application/json, text/plain, */*",
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "Origin": "https://saveig.app",
-            "Referer": "https://saveig.app/"
+            "X-RapidAPI-Key": "YOUR_RAPIDAPI_KEY",  # Replace with your actual API key
+            "X-RapidAPI-Host": "instagram-downloader-download-instagram-videos-stories.p.rapidapi.com"
         }
         
-        data = {
-            "q": url,
-            "t": "media",
-            "lang": "en"
-        }
-        
-        response = requests.post(api_url, headers=headers, data=data, timeout=15)
+        response = requests.get(api_url, headers=headers, params=querystring, timeout=15)
         
         if response.status_code == 200:
-            result = response.json()
-            if result.get('status') == 'ok' and result.get('data'):
-                items = result['data'].get('items', [])
-                if items:
-                    video_url = items[0].get('video_url')
-                    if video_url:
-                        print(f"Found video URL with API: {video_url}")
-                        return video_url
+            data = response.json()
+            if 'media' in data and data['media']:
+                video_url = data['media']
+                print(f"Found video URL with API: {video_url}")
+                return video_url
         
         return None
     except Exception as e:
@@ -415,22 +390,47 @@ def process_instagram_reel(url: str) -> dict:
     # Step 1: Extract video URL using multiple methods
     video_url = None
     
-    # Method 1: yt-dlp extraction with multiple user agents
-    print("📡 Attempting video URL extraction with yt-dlp...")
-    video_url = extract_video_url_with_ytdlp(url)
+    # Method 1: Try Selenium first (most reliable)
+    print("📡 Attempting video URL extraction with Selenium...")
+    video_url = extract_video_url_with_selenium(url)
     
-    # Method 2: Selenium extraction if first fails
+    # Method 2: Try yt-dlp if Selenium fails
     if not video_url:
-        print("📡 Attempting video URL extraction with Selenium...")
-        video_url = extract_video_url_with_selenium(url)
+        print("📡 Attempting video URL extraction with yt-dlp...")
+        try:
+            import yt_dlp
+            
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': False,
+                'user_agent': get_random_user_agent(),
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                
+                if 'url' in info:
+                    print(f"Found video URL with yt-dlp: {info['url']}")
+                    video_url = info['url']
+                
+                # Try to find the best format
+                if 'formats' in info and not video_url:
+                    for format in info['formats']:
+                        if format.get('vcodec') != 'none' and format.get('acodec') != 'none':
+                            print(f"Found video URL with yt-dlp: {format['url']}")
+                            video_url = format['url']
+                            break
+        except Exception as e:
+            print(f"Error with yt-dlp extraction: {e}")
     
-    # Method 3: Third-party API if first two fail
+    # Method 3: Try API if all else fails
     if not video_url:
-        print("📡 Attempting video URL extraction with third-party API...")
+        print("📡 Attempting video URL extraction with API...")
         video_url = extract_video_url_with_api(url)
     
     if not video_url:
-        print("❌ All extraction methods failed")
+        print("❌ All video URL extraction methods failed")
         raise HTTPException(
             status_code=404, 
             detail="Could not extract video URL from Instagram. The post might be private, deleted, or Instagram is blocking our request."
@@ -448,7 +448,7 @@ def process_instagram_reel(url: str) -> dict:
         print("⬇️  Downloading video...")
         
         headers = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
+            "User-Agent": get_random_user_agent(),
             "Accept": "*/*",
             "Accept-Encoding": "identity",  # Disable compression for video
         }
@@ -587,6 +587,10 @@ def health_check():
     gcs_ok = GCS_AVAILABLE and storage_client is not None
     gcs_message = "Available" if gcs_ok else "Not available"
     
+    # Check Selenium availability
+    selenium_ok = SELENIUM_AVAILABLE
+    selenium_message = "Available" if selenium_ok else "Not available"
+    
     # Check yt-dlp availability
     try:
         import yt_dlp
@@ -606,6 +610,10 @@ def health_check():
         "gcs": {
             "available": gcs_ok,
             "message": gcs_message
+        },
+        "selenium": {
+            "available": selenium_ok,
+            "message": selenium_message
         },
         "ytdlp": {
             "available": ytdlp_ok,
