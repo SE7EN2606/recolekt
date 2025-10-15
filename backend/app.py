@@ -69,6 +69,7 @@ app = FastAPI(title="Instagram Thumbnail Extractor API")
 # Configure CORS for your frontend
 # We'll update this after deployment
 allowed_origins = [
+    "https://recolekt-frontend.onrender.com",  # Your actual frontend URL
     "http://localhost:3000",  # For local development
     "https://localhost:3000"
 ]
