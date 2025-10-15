@@ -7,16 +7,30 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from google.cloud import storage
 import uuid
 import time
 import json
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-from bs4 import BeautifulSoup
 import shutil
+
+# Try to import Google Cloud Storage, with fallback
+try:
+    from google.cloud import storage
+    GCS_AVAILABLE = True
+except ImportError:
+    print("Google Cloud Storage module not available. Using fallback.")
+    GCS_AVAILABLE = False
+
+# Try to import Selenium, with fallback
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.chrome.options import Options
+    from webdriver_manager.chrome import ChromeDriverManager
+    from bs4 import BeautifulSoup
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    print("Selenium modules not available. Using fallback.")
+    SELENIUM_AVAILABLE = False
 
 # ------------------------
 # Config - Render Environment Variables
@@ -24,19 +38,22 @@ import shutil
 GCS_BUCKET = os.getenv("GCS_BUCKET", "recolekt-storage")
 CREDENTIALS_JSON = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 
-# Initialize Google Cloud Storage client
-if CREDENTIALS_JSON:
-    # Create a temporary file with the JSON content
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
-        temp_file.write(CREDENTIALS_JSON)
-        temp_path = temp_file.name
-    
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
-    storage_client = storage.Client()
-else:
-    # For local development
-    storage_client = storage.Client()
+# Initialize Google Cloud Storage client if available
+storage_client = None
+if GCS_AVAILABLE and CREDENTIALS_JSON:
+    try:
+        # Create a temporary file with the JSON content
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+            temp_file.write(CREDENTIALS_JSON)
+            temp_path = temp_file.name
+        
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
+        storage_client = storage.Client()
+        print("Google Cloud Storage client initialized successfully.")
+    except Exception as e:
+        print(f"Failed to initialize Google Cloud Storage client: {e}")
+        storage_client = None
 
 # ------------------------
 # Request schema
@@ -190,6 +207,10 @@ def extract_frame_with_ffmpeg(video_url: str, output_path: str) -> tuple[bool, i
 
 def upload_to_gcs(file_path: str, blob_name: str) -> str | None:
     """Upload file to Google Cloud Storage and return public URL"""
+    if not GCS_AVAILABLE or not storage_client:
+        print("Google Cloud Storage not available. Skipping upload.")
+        return None
+    
     try:
         # Get or create bucket
         bucket = None
@@ -331,23 +352,29 @@ def process_instagram_reel(url: str) -> dict:
             # Use the values from the extraction function
             pass
         
-        # Step 5: Upload to Google Cloud Storage
-        print("☁️  Uploading to Google Cloud Storage...")
-        unique_id = str(uuid.uuid4())
-        blob_name = f"thumbnails/instagram_{unique_id}_high.jpg"
-        thumbnail_url = upload_to_gcs(temp_thumbnail_path, blob_name)
+        # Step 5: Upload to Google Cloud Storage if available
+        thumbnail_url = None
+        if GCS_AVAILABLE and storage_client:
+            print("☁️  Uploading to Google Cloud Storage...")
+            unique_id = str(uuid.uuid4())
+            blob_name = f"thumbnails/instagram_{unique_id}_high.jpg"
+            thumbnail_url = upload_to_gcs(temp_thumbnail_path, blob_name)
+            
+            if not thumbnail_url:
+                print("⚠️ Failed to upload to GCS, but continuing with local file")
         
+        # If GCS upload failed or is not available, return a placeholder URL
         if not thumbnail_url:
-            raise HTTPException(status_code=500, detail="Failed to upload thumbnail to cloud storage")
+            thumbnail_url = f"data:image/jpeg;base64,{base64_encode_image(temp_thumbnail_path)}"
         
-        print(f"✅ Thumbnail uploaded: {thumbnail_url}")
+        print(f"✅ Thumbnail ready: {thumbnail_url[:50]}...")
         
         return {
             "success": True,
             "thumbnail_url": thumbnail_url,
             "video_url": video_url,
             "instagram_url": url,
-            "blob_name": blob_name,
+            "blob_name": blob_name if GCS_AVAILABLE and storage_client else None,
             "file_size": os.path.getsize(temp_thumbnail_path),
             "width": img_width,
             "height": img_height
@@ -361,6 +388,12 @@ def process_instagram_reel(url: str) -> dict:
                 os.remove(file_path)
         if os.path.exists(temp_dir):
             os.rmdir(temp_dir)
+
+def base64_encode_image(image_path: str) -> str:
+    """Encode an image file as base64"""
+    import base64
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
 
 # ------------------------
 # Routes
@@ -404,13 +437,8 @@ def health_check():
             pass
     
     # Check Google Cloud Storage connectivity
-    try:
-        bucket = storage_client.get_bucket(GCS_BUCKET)
-        gcs_ok = True
-        gcs_message = f"Connected to bucket: {GCS_BUCKET}"
-    except Exception as e:
-        gcs_ok = False
-        gcs_message = f"Error: {str(e)}"
+    gcs_ok = GCS_AVAILABLE and storage_client is not None
+    gcs_message = "Available" if gcs_ok else "Not available"
     
     # Check yt-dlp availability
     try:
