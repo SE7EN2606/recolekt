@@ -12,7 +12,6 @@ import time
 import json
 import shutil
 import base64
-import random
 
 # Try to import Google Cloud Storage, with fallback
 try:
@@ -27,7 +26,6 @@ except ImportError:
 # ------------------------
 GCS_BUCKET = os.getenv("GCS_BUCKET", "recolekt-storage")
 CREDENTIALS_JSON = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-SCRAPE_DO_TOKEN = os.getenv("SCRAPE_DO_TOKEN", "f7cd06e1be024ebb870e62a39f660f1404b4b4319b5")
 
 # Initialize Google Cloud Storage client if available
 storage_client = None
@@ -82,118 +80,97 @@ def check_ffmpeg():
     """Check if FFmpeg is installed and available"""
     return shutil.which("ffmpeg") is not None
 
-def extract_video_url_with_scrape_do(url: str) -> str | None:
-    """Extract video URL using Scrape.do proxy service"""
+def extract_video_url_with_ytdlp(url: str) -> str | None:
+    """Extract video URL using yt-dlp with special options"""
     
     try:
-        # First, get the HTML content through Scrape.do
-        scrape_url = f"https://api.scrape.do/?url={url}&token={SCRAPE_DO_TOKEN}"
+        import yt_dlp
         
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        # Special options to bypass Instagram restrictions
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': False,
+            'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
+            'referer': 'https://www.instagram.com/',
+            'extractor_args': {
+                'youtube': {
+                    'player_client': 'android',
+                    'player_skip': ['configs', 'webpage', 'dash'],
+                }
+            }
         }
         
-        response = requests.get(scrape_url, headers=headers, timeout=15)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+            if 'url' in info:
+                print(f"Found video URL with yt-dlp: {info['url']}")
+                return info['url']
+            
+            # Try to find the best format
+            if 'formats' in info:
+                for format in info['formats']:
+                    if format.get('vcodec') != 'none' and format.get('acodec') != 'none':
+                        print(f"Found video URL with yt-dlp: {format['url']}")
+                        return format['url']
         
-        if response.status_code != 200:
-            print(f"Scrape.do request failed with status: {response.status_code}")
-            return None
+        return None
+    except Exception as e:
+        print(f"Error with yt-dlp extraction: {e}")
+        return None
+
+def extract_video_url_with_direct_api(url: str) -> str | None:
+    """Extract video URL using a direct API approach"""
+    
+    try:
+        # Extract the shortcode from the URL
+        shortcode = url.split('/reel/')[-1].split('/')[0].split('?')[0]
         
-        html_content = response.text
+        # Try different API endpoints
+        api_urls = [
+            f"https://www.instagram.com/reel/{shortcode}/?__a=1",
+            f"https://www.instagram.com/p/{shortcode}/?__a=1",
+        ]
         
-        # Parse the HTML to find video URLs
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html_content, 'html.parser')
+        headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
+            "Accept": "application/json",
+            "Referer": "https://www.instagram.com/",
+            "X-IG-App-ID": "936619743392459",  # Instagram's web app ID
+        }
         
-        # Look for video elements
-        video_elements = soup.find_all('video')
-        if video_elements:
-            for video in video_elements:
-                src = video.get('src')
-                if src and '.mp4' in src:
-                    print(f"Found video URL in video element: {src}")
-                    return src
-        
-        # Look for script tags containing video data
-        scripts = soup.find_all('script')
-        for script in scripts:
-            if script.string:
-                # Try to find video URLs in the script content
-                mp4_matches = re.findall(r'(https://[^"\s<>]+\.mp4[^"\s<>]*)', script.string)
-                for match in mp4_matches:
-                    if 'instagram' in match and 'video' in match:
-                        print(f"Found MP4 URL in script: {match}")
-                        return match
+        for api_url in api_urls:
+            try:
+                response = requests.get(api_url, headers=headers, timeout=15)
                 
-                # Try to extract JSON data from script
-                try:
-                    # Look for JSON objects in the script
-                    json_matches = re.findall(r'({[^{}]*"video_url"[^{}]*})', script.string)
-                    for match in json_matches:
-                        try:
-                            data = json.loads(match)
-                            if 'video_url' in data:
-                                video_url = data['video_url']
-                                print(f"Found video URL in script JSON: {video_url}")
-                                return video_url
-                        except:
-                            pass
-                    
-                    # Look for other patterns
-                    video_url_matches = re.findall(r'"video_url":"([^"]+)"', script.string)
-                    for match in video_url_matches:
-                        if match and '.mp4' in match:
-                            print(f"Found video_url pattern: {match}")
-                            return match
-                except:
-                    pass
+                if response.status_code == 200:
+                    try:
+                        data = response.json()
+                        
+                        # Try to extract video URL from the JSON response
+                        if 'graphql' in data and 'shortcode_media' in data['graphql']:
+                            media = data['graphql']['shortcode_media']
+                            if 'video_url' in media:
+                                return media['video_url']
+                        
+                        # Try other possible locations
+                        if 'items' in data and len(data['items']) > 0:
+                            item = data['items'][0]
+                            if 'video_versions' in item and len(item['video_versions']) > 0:
+                                return item['video_versions'][0]['url']
+                        
+                    except json.JSONDecodeError:
+                        pass
+            except:
+                continue
         
-        # Try to find any MP4 URLs in the HTML content
-        mp4_matches = re.findall(r'(https://[^"\s<>]+\.mp4[^"\s<>]*)', html_content)
-        if mp4_matches:
-            for match in mp4_matches:
-                if 'instagram' in match and 'video' in match:
-                    print(f"Found MP4 URL in HTML: {match}")
-                    return match
-        
-        print("No video URL found with Scrape.do")
         return None
-        
     except Exception as e:
-        print(f"Error with Scrape.do extraction: {e}")
+        print(f"Error with direct extraction: {e}")
         return None
 
-def download_video_with_scrape_do(video_url: str, output_path: str) -> bool:
-    """Download video using Scrape.do proxy to bypass Instagram restrictions"""
-    
-    try:
-        # Use Scrape.do to download the video
-        scrape_url = f"https://api.scrape.do/?url={video_url}&token={SCRAPE_DO_TOKEN}"
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        
-        response = requests.get(scrape_url, headers=headers, stream=True, timeout=30)
-        
-        if response.status_code != 200:
-            print(f"Scrape.do video download failed with status: {response.status_code}")
-            return False
-        
-        total_size = 0
-        with open(output_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-                total_size += len(chunk)
-        
-        print(f"✅ Video downloaded via Scrape.do: {total_size} bytes to {output_path}")
-        return True
-        
-    except Exception as e:
-        print(f"Error with Scrape.do video download: {e}")
-        return False
-
-def extract_frame_with_ffmpeg(video_path: str, output_path: str) -> tuple[bool, int, int]:
+def extract_frame_with_ffmpeg(video_url: str, output_path: str) -> tuple[bool, int, int]:
     """Extract first frame using FFmpeg at original resolution"""
     
     if not check_ffmpeg():
@@ -204,7 +181,7 @@ def extract_frame_with_ffmpeg(video_path: str, output_path: str) -> tuple[bool, 
         # First, get video information to determine original resolution
         info_cmd = [
             "ffmpeg",
-            "-i", video_path,
+            "-i", video_url,
             "-f", "null",
             "-"
         ]
@@ -245,7 +222,7 @@ def extract_frame_with_ffmpeg(video_path: str, output_path: str) -> tuple[bool, 
         # Extract frame with original aspect ratio
         cmd = [
             "ffmpeg",
-            "-i", video_path,
+            "-i", video_url,
             "-ss", "0.5",  # Skip first 0.5 seconds to avoid black frames
             "-vframes", "1",  # Extract only 1 frame
             "-f", "image2",
@@ -347,12 +324,20 @@ def process_instagram_reel(url: str) -> dict:
     
     print(f"\n🎬 Processing Instagram reel: {url}")
     
-    # Step 1: Extract video URL using Scrape.do
-    print("📡 Attempting video URL extraction with Scrape.do...")
-    video_url = extract_video_url_with_scrape_do(url)
+    # Step 1: Extract video URL using multiple methods
+    video_url = None
+    
+    # Method 1: Try yt-dlp with special options
+    print("📡 Attempting video URL extraction with yt-dlp...")
+    video_url = extract_video_url_with_ytdlp(url)
+    
+    # Method 2: Try direct API if yt-dlp fails
+    if not video_url:
+        print("📡 Attempting direct API extraction...")
+        video_url = extract_video_url_with_direct_api(url)
     
     if not video_url:
-        print("❌ Video URL extraction failed")
+        print("❌ All video URL extraction methods failed")
         raise HTTPException(
             status_code=404, 
             detail="Could not extract video URL from Instagram. The post might be private, deleted, or Instagram is blocking our request."
@@ -366,10 +351,25 @@ def process_instagram_reel(url: str) -> dict:
     temp_thumbnail_path = os.path.join(temp_dir, "thumbnail.jpg")
     
     try:
-        # Step 3: Download video using Scrape.do to bypass restrictions
-        print("⬇️  Downloading video via Scrape.do...")
-        if not download_video_with_scrape_do(video_url, temp_video_path):
-            raise HTTPException(status_code=500, detail="Failed to download video from Instagram")
+        # Step 3: Download video
+        print("⬇️  Downloading video...")
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",  # Disable compression for video
+        }
+        
+        video_resp = requests.get(video_url, stream=True, timeout=30, headers=headers)
+        video_resp.raise_for_status()
+        
+        total_size = 0
+        with open(temp_video_path, 'wb') as f:
+            for chunk in video_resp.iter_content(chunk_size=8192):
+                f.write(chunk)
+                total_size += len(chunk)
+        
+        print(f"✅ Video downloaded: {total_size} bytes to {temp_video_path}")
         
         # Step 4: Extract frame
         print("📸 Extracting frame with FFmpeg...")
@@ -494,9 +494,14 @@ def health_check():
     gcs_ok = GCS_AVAILABLE and storage_client is not None
     gcs_message = "Available" if gcs_ok else "Not available"
     
-    # Check Scrape.do token
-    scrape_do_ok = SCRAPE_DO_TOKEN is not None
-    scrape_do_message = "Available" if scrape_do_ok else "Not available"
+    # Check yt-dlp availability
+    try:
+        import yt_dlp
+        ytdlp_ok = True
+        ytdlp_version = yt_dlp.version.__version__
+    except:
+        ytdlp_ok = False
+        ytdlp_version = "Not available"
     
     return {
         "status": "ok",
@@ -509,9 +514,9 @@ def health_check():
             "available": gcs_ok,
             "message": gcs_message
         },
-        "scrape_do": {
-            "available": scrape_do_ok,
-            "message": scrape_do_message
+        "ytdlp": {
+            "available": ytdlp_ok,
+            "version": ytdlp_version
         }
     }
 
