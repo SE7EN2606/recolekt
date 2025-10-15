@@ -11,6 +11,7 @@ import uuid
 import time
 import json
 import shutil
+import base64
 
 # Try to import Google Cloud Storage, with fallback
 try:
@@ -69,7 +70,6 @@ app = FastAPI(title="Instagram Thumbnail Extractor API")
 # Configure CORS for your frontend
 # We'll update this after deployment
 allowed_origins = [
-    "https://recolekt-frontend.onrender.com",  # Your actual frontend URL
     "http://localhost:3000",  # For local development
     "https://localhost:3000"
 ]
@@ -392,7 +392,6 @@ def process_instagram_reel(url: str) -> dict:
 
 def base64_encode_image(image_path: str) -> str:
     """Encode an image file as base64"""
-    import base64
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
