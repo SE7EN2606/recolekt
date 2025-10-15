@@ -22,18 +22,6 @@ except ImportError:
     print("Google Cloud Storage module not available. Using fallback.")
     GCS_AVAILABLE = False
 
-# Try to import Selenium, with fallback
-try:
-    from selenium import webdriver
-    from selenium.webdriver.chrome.service import Service
-    from selenium.webdriver.chrome.options import Options
-    from webdriver_manager.chrome import ChromeDriverManager
-    from bs4 import BeautifulSoup
-    SELENIUM_AVAILABLE = True
-except ImportError:
-    print("Selenium modules not available. Using fallback.")
-    SELENIUM_AVAILABLE = False
-
 # ------------------------
 # Config - Render Environment Variables
 # ------------------------
@@ -114,6 +102,7 @@ def extract_video_url_with_scrape_do(url: str) -> str | None:
         html_content = response.text
         
         # Parse the HTML to find video URLs
+        from bs4 import BeautifulSoup
         soup = BeautifulSoup(html_content, 'html.parser')
         
         # Look for video elements
@@ -174,108 +163,37 @@ def extract_video_url_with_scrape_do(url: str) -> str | None:
         print(f"Error with Scrape.do extraction: {e}")
         return None
 
-def extract_video_url_with_selenium(url: str) -> str | None:
-    """Extract video URL using Selenium to bypass Instagram restrictions"""
-    
-    if not SELENIUM_AVAILABLE:
-        print("Selenium not available. Skipping this method.")
-        return None
+def download_video_with_scrape_do(video_url: str, output_path: str) -> bool:
+    """Download video using Scrape.do proxy to bypass Instagram restrictions"""
     
     try:
-        # Configure Chrome options
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        # Use Scrape.do to download the video
+        scrape_url = f"https://api.scrape.do/?url={video_url}&token={SCRAPE_DO_TOKEN}"
         
-        # Initialize the WebDriver
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
         
-        print(f"Loading Instagram URL with Selenium: {url}")
-        driver.get(url)
+        response = requests.get(scrape_url, headers=headers, stream=True, timeout=30)
         
-        # Wait for the page to load
-        time.sleep(5)
+        if response.status_code != 200:
+            print(f"Scrape.do video download failed with status: {response.status_code}")
+            return False
         
-        # Get the page source after JavaScript has executed
-        page_source = driver.page_source
+        total_size = 0
+        with open(output_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+                total_size += len(chunk)
         
-        # Parse with BeautifulSoup
-        soup = BeautifulSoup(page_source, 'html.parser')
-        
-        # Look for video elements
-        video_elements = soup.find_all('video')
-        if video_elements:
-            for video in video_elements:
-                src = video.get('src')
-                if src and '.mp4' in src:
-                    print(f"Found video URL in video element: {src}")
-                    driver.quit()
-                    return src
-        
-        # Look for script tags containing video data
-        scripts = soup.find_all('script')
-        for script in scripts:
-            if script.string:
-                # Try to find video URLs in the script content
-                mp4_matches = re.findall(r'(https://[^"\s<>]+\.mp4[^"\s<>]*)', script.string)
-                for match in mp4_matches:
-                    if 'instagram' in match and 'video' in match:
-                        print(f"Found MP4 URL in script: {match}")
-                        driver.quit()
-                        return match
-                
-                # Try to extract JSON data from script
-                try:
-                    # Look for JSON objects in the script
-                    json_matches = re.findall(r'({[^{}]*"video_url"[^{}]*})', script.string)
-                    for match in json_matches:
-                        try:
-                            data = json.loads(match)
-                            if 'video_url' in data:
-                                video_url = data['video_url']
-                                print(f"Found video URL in script JSON: {video_url}")
-                                driver.quit()
-                                return video_url
-                        except:
-                            pass
-                    
-                    # Look for other patterns
-                    video_url_matches = re.findall(r'"video_url":"([^"]+)"', script.string)
-                    for match in video_url_matches:
-                        if match and '.mp4' in match:
-                            print(f"Found video_url pattern: {match}")
-                            driver.quit()
-                            return match
-                except:
-                    pass
-        
-        # Try to find any MP4 URLs in the page source
-        mp4_matches = re.findall(r'(https://[^"\s<>]+\.mp4[^"\s<>]*)', page_source)
-        if mp4_matches:
-            for match in mp4_matches:
-                if 'instagram' in match and 'video' in match:
-                    print(f"Found MP4 URL in page source: {match}")
-                    driver.quit()
-                    return match
-        
-        driver.quit()
-        print("No video URL found with Selenium")
-        return None
+        print(f"✅ Video downloaded via Scrape.do: {total_size} bytes to {output_path}")
+        return True
         
     except Exception as e:
-        print(f"Error with Selenium extraction: {e}")
-        try:
-            driver.quit()
-        except:
-            pass
-        return None
+        print(f"Error with Scrape.do video download: {e}")
+        return False
 
-def extract_frame_with_ffmpeg(video_url: str, output_path: str) -> tuple[bool, int, int]:
+def extract_frame_with_ffmpeg(video_path: str, output_path: str) -> tuple[bool, int, int]:
     """Extract first frame using FFmpeg at original resolution"""
     
     if not check_ffmpeg():
@@ -286,7 +204,7 @@ def extract_frame_with_ffmpeg(video_url: str, output_path: str) -> tuple[bool, i
         # First, get video information to determine original resolution
         info_cmd = [
             "ffmpeg",
-            "-i", video_url,
+            "-i", video_path,
             "-f", "null",
             "-"
         ]
@@ -327,7 +245,7 @@ def extract_frame_with_ffmpeg(video_url: str, output_path: str) -> tuple[bool, i
         # Extract frame with original aspect ratio
         cmd = [
             "ffmpeg",
-            "-i", video_url,
+            "-i", video_path,
             "-ss", "0.5",  # Skip first 0.5 seconds to avoid black frames
             "-vframes", "1",  # Extract only 1 frame
             "-f", "image2",
@@ -429,20 +347,12 @@ def process_instagram_reel(url: str) -> dict:
     
     print(f"\n🎬 Processing Instagram reel: {url}")
     
-    # Step 1: Extract video URL using multiple methods
-    video_url = None
-    
-    # Method 1: Try Scrape.do first (most reliable)
+    # Step 1: Extract video URL using Scrape.do
     print("📡 Attempting video URL extraction with Scrape.do...")
     video_url = extract_video_url_with_scrape_do(url)
     
-    # Method 2: Try Selenium if Scrape.do fails
     if not video_url:
-        print("📡 Attempting video URL extraction with Selenium...")
-        video_url = extract_video_url_with_selenium(url)
-    
-    if not video_url:
-        print("❌ All video URL extraction methods failed")
+        print("❌ Video URL extraction failed")
         raise HTTPException(
             status_code=404, 
             detail="Could not extract video URL from Instagram. The post might be private, deleted, or Instagram is blocking our request."
@@ -456,25 +366,10 @@ def process_instagram_reel(url: str) -> dict:
     temp_thumbnail_path = os.path.join(temp_dir, "thumbnail.jpg")
     
     try:
-        # Step 3: Download video for better reliability
-        print("⬇️  Downloading video...")
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Accept": "*/*",
-            "Accept-Encoding": "identity",  # Disable compression for video
-        }
-        
-        video_resp = requests.get(video_url, stream=True, timeout=30, headers=headers)
-        video_resp.raise_for_status()
-        
-        total_size = 0
-        with open(temp_video_path, 'wb') as f:
-            for chunk in video_resp.iter_content(chunk_size=8192):
-                f.write(chunk)
-                total_size += len(chunk)
-        
-        print(f"✅ Video downloaded: {total_size} bytes to {temp_video_path}")
+        # Step 3: Download video using Scrape.do to bypass restrictions
+        print("⬇️  Downloading video via Scrape.do...")
+        if not download_video_with_scrape_do(video_url, temp_video_path):
+            raise HTTPException(status_code=500, detail="Failed to download video from Instagram")
         
         # Step 4: Extract frame
         print("📸 Extracting frame with FFmpeg...")
@@ -599,10 +494,6 @@ def health_check():
     gcs_ok = GCS_AVAILABLE and storage_client is not None
     gcs_message = "Available" if gcs_ok else "Not available"
     
-    # Check Selenium availability
-    selenium_ok = SELENIUM_AVAILABLE
-    selenium_message = "Available" if selenium_ok else "Not available"
-    
     # Check Scrape.do token
     scrape_do_ok = SCRAPE_DO_TOKEN is not None
     scrape_do_message = "Available" if scrape_do_ok else "Not available"
@@ -617,10 +508,6 @@ def health_check():
         "gcs": {
             "available": gcs_ok,
             "message": gcs_message
-        },
-        "selenium": {
-            "available": selenium_ok,
-            "message": selenium_message
         },
         "scrape_do": {
             "available": scrape_do_ok,
