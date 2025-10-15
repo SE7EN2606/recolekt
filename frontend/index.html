@@ -294,7 +294,7 @@
     </div>
 
     <script>
-        // Backend URL - will be replaced by Render environment variable
+        // Backend URL
         const BACKEND_URL = 'https://recolekt-backend.onrender.com';
         
         // Wait for DOM to be fully loaded
@@ -343,6 +343,7 @@
                     
                     const response = await fetch(`${BACKEND_URL}/api/extract-thumbnail`, {
                         method: 'POST',
+                        mode: 'cors',  // Explicitly set CORS mode
                         headers: {
                             'Content-Type': 'application/json',
                         },
