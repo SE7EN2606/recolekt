@@ -21,11 +21,17 @@ from bs4 import BeautifulSoup
 # Config - Render Environment Variables
 # ------------------------
 GCS_BUCKET = os.getenv("GCS_BUCKET", "recolekt-storage")
-CREDENTIALS_PATH = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "/etc/google/service-account.json")
+CREDENTIALS_JSON = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 
 # Initialize Google Cloud Storage client
-if os.path.exists(CREDENTIALS_PATH):
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = CREDENTIALS_PATH
+if CREDENTIALS_JSON:
+    # Create a temporary file with the JSON content
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+        temp_file.write(CREDENTIALS_JSON)
+        temp_path = temp_file.name
+    
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
     storage_client = storage.Client()
 else:
     # For local development
