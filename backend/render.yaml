@@ -1,9 +1,28 @@
 services:
+  # Backend Service
   - type: web
-    name: recolekt-backend
+    name: instagram-thumbnail-api
     env: python
-    build:
-      env:
-        - FFmpeg: https://github.com/jonathanong/heroku-buildpack-ffmpeg
     plan: free
-    startCommand: gunicorn -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 app:app
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python app.py"
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: GCS_BUCKET
+        value: recolekt-storage
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/google/service-account.json
+    autoDeploy: true
+    
+  # Frontend Service
+  - type: web
+    name: instagram-thumbnail-frontend
+    env: static
+    plan: free
+    buildCommand: "echo 'No build needed'"
+    staticPublishPath: ./frontend
+    envVars:
+      - key: REACT_APP_BACKEND_URL
+        sync: false
+    autoDeploy: true
