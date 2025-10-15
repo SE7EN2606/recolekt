@@ -26,7 +26,7 @@ except ImportError:
 # ------------------------
 GCS_BUCKET = os.getenv("GCS_BUCKET", "recolekt-storage")
 CREDENTIALS_JSON = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "YOUR_RAPIDAPI_KEY_HERE")  # We'll use this as a fallback
+INSTAGRAM_API_KEY = os.getenv("INSTAGRAM_API_KEY", "YOUR_INSTAGRAM_API_KEY_HERE")  # We'll use this as a fallback
 
 # Initialize Google Cloud Storage client if available
 storage_client = None
@@ -81,124 +81,98 @@ def check_ffmpeg():
     """Check if FFmpeg is installed and available"""
     return shutil.which("ffmpeg") is not None
 
-def extract_video_url_with_rapidapi(url: str) -> str | None:
-    """Extract video URL using RapidAPI as a fallback"""
-    
-    if not RAPIDAPI_KEY or RAPIDAPI_KEY == "YOUR_RAPIDAPI_KEY_HERE":
-        print("RapidAPI key not configured. Skipping this method.")
-        return None
+def extract_thumbnail_with_instagram_api(url: str) -> str | None:
+    """Extract thumbnail using a third-party Instagram API service"""
     
     try:
-        api_url = "https://instagram-downloader-download-instagram-videos-stories.p.rapidapi.com/index"
+        # Method 1: Use InstaSave API (free tier available)
+        api_url = "https://insta-save.com/api/instagram"
         
-        querystring = {"url": url}
-        
-        headers = {
-            "X-RapidAPI-Key": RAPIDAPI_KEY,
-            "X-RapidAPI-Host": "instagram-downloader-download-instagram-videos-stories.p.rapidapi.com"
+        payload = {
+            "url": url,
+            "action": "thumbnail"
         }
         
-        response = requests.get(api_url, headers=headers, params=querystring, timeout=15)
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
+        response = requests.post(api_url, json=payload, headers=headers, timeout=15)
         
         if response.status_code == 200:
             data = response.json()
-            if 'media' in data and data['media']:
-                print(f"Found video URL with RapidAPI: {data['media']}")
-                return data['media']
+            if 'thumbnail' in data and data['thumbnail']:
+                print(f"Found thumbnail with InstaSave API: {data['thumbnail']}")
+                return data['thumbnail']
         
         return None
     except Exception as e:
-        print(f"Error with RapidAPI extraction: {e}")
+        print(f"Error with InstaSave API: {e}")
         return None
 
-def extract_video_url_with_ytdlp(url: str) -> str | None:
-    """Extract video URL using yt-dlp with special options"""
+def extract_thumbnail_with_insta_api(url: str) -> str | None:
+    """Extract thumbnail using Insta API"""
     
-    try:
-        import yt_dlp
-        
-        # Special options to bypass Instagram restrictions
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-            'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
-            'referer': 'https://www.instagram.com/',
-            'extractor_args': {
-                'youtube': {
-                    'player_client': 'android',
-                    'player_skip': ['configs', 'webpage', 'dash'],
-                }
-            }
-        }
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            
-            if 'url' in info:
-                print(f"Found video URL with yt-dlp: {info['url']}")
-                return info['url']
-            
-            # Try to find the best format
-            if 'formats' in info:
-                for format in info['formats']:
-                    if format.get('vcodec') != 'none' and format.get('acodec') != 'none':
-                        print(f"Found video URL with yt-dlp: {format['url']}")
-                        return format['url']
-        
+    if not INSTAGRAM_API_KEY or INSTAGRAM_API_KEY == "YOUR_INSTAGRAM_API_KEY_HERE":
+        print("Insta API key not configured. Skipping this method.")
         return None
-    except Exception as e:
-        print(f"Error with yt-dlp extraction: {e}")
-        return None
-
-def extract_video_url_with_direct_api(url: str) -> str | None:
-    """Extract video URL using a direct API approach"""
     
     try:
         # Extract the shortcode from the URL
         shortcode = url.split('/reel/')[-1].split('/')[0].split('?')[0]
         
-        # Try different API endpoints
-        api_urls = [
-            f"https://www.instagram.com/reel/{shortcode}/?__a=1",
-            f"https://www.instagram.com/p/{shortcode}/?__a=1",
-        ]
+        api_url = f"https://graph.instagram.com/v13.0/ig_shortcode_media?shortcode={shortcode}&fields=thumbnail_url"
         
         headers = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
-            "Accept": "application/json",
-            "Referer": "https://www.instagram.com/",
-            "X-IG-App-ID": "936619743392459",  # Instagram's web app ID
+            "Authorization": f"Bearer {INSTAGRAM_API_KEY}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
         
-        for api_url in api_urls:
-            try:
-                response = requests.get(api_url, headers=headers, timeout=15)
-                
-                if response.status_code == 200:
-                    try:
-                        data = response.json()
-                        
-                        # Try to extract video URL from the JSON response
-                        if 'graphql' in data and 'shortcode_media' in data['graphql']:
-                            media = data['graphql']['shortcode_media']
-                            if 'video_url' in media:
-                                return media['video_url']
-                        
-                        # Try other possible locations
-                        if 'items' in data and len(data['items']) > 0:
-                            item = data['items'][0]
-                            if 'video_versions' in item and len(item['video_versions']) > 0:
-                                return item['video_versions'][0]['url']
-                        
-                    except json.JSONDecodeError:
-                        pass
-            except:
-                continue
+        response = requests.get(api_url, headers=headers, timeout=15)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if 'data' in data and len(data['data']) > 0:
+                media = data['data'][0]
+                if 'thumbnail_url' in media:
+                    print(f"Found thumbnail with Insta API: {media['thumbnail_url']}")
+                    return media['thumbnail_url']
         
         return None
     except Exception as e:
-        print(f"Error with direct extraction: {e}")
+        print(f"Error with Insta API: {e}")
+        return None
+
+def extract_thumbnail_with_pixelpo(url: str) -> str | None:
+    """Extract thumbnail using Pixelpo API"""
+    
+    try:
+        api_url = "https://api.pixelpo.com/api/instagram"
+        
+        payload = {
+            "url": url,
+            "size": "large"
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
+        response = requests.post(api_url, json=payload, headers=headers, timeout=15)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if 'response' in data and 'media' in data['response']:
+                for media in data['response']['media']:
+                    if media.get('type') == 'image':
+                        print(f"Found thumbnail with Pixelpo API: {media['url']}")
+                        return media['url']
+        
+        return None
+    except Exception as e:
+        print(f"Error with Pixelpo API: {e}")
         return None
 
 def extract_frame_with_ffmpeg(video_url: str, output_path: str) -> tuple[bool, int, int]:
@@ -355,128 +329,81 @@ def process_instagram_reel(url: str) -> dict:
     
     print(f"\n🎬 Processing Instagram reel: {url}")
     
-    # Step 1: Extract video URL using multiple methods
-    video_url = None
+    # Step 1: Extract thumbnail using multiple methods
+    thumbnail_url = None
     
-    # Method 1: Try RapidAPI first (most reliable for production)
-    print("📡 Attempting video URL extraction with RapidAPI...")
-    video_url = extract_video_url_with_rapidapi(url)
+    # Method 1: Try InstaSave API first
+    print("📡 Attempting thumbnail extraction with InstaSave API...")
+    thumbnail_url = extract_thumbnail_with_insta_save(url)
     
-    # Method 2: Try yt-dlp if RapidAPI fails
-    if not video_url:
-        print("📡 Attempting video URL extraction with yt-dlp...")
-        video_url = extract_video_url_with_ytdlp(url)
+    # Method 2: Try Insta API if InstaSave fails
+    if not thumbnail_url:
+        print("📡 Attempting thumbnail extraction with Insta API...")
+        thumbnail_url = extract_thumbnail_with_insta_api(url)
     
-    # Method 3: Try direct API if all else fails
-    if not video_url:
-        print("📡 Attempting direct API extraction...")
-        video_url = extract_video_url_with_direct_api(url)
+    # Method 3: Try Pixelpo API if others fail
+    if not thumbnail_url:
+        print("📡 Attempting thumbnail extraction with Pixelpo API...")
+        thumbnail_url = extract_thumbnail_with_pixelpo(url)
     
-    if not video_url:
-        print("❌ All video URL extraction methods failed")
+    if not thumbnail_url:
+        print("❌ All thumbnail extraction methods failed")
         raise HTTPException(
             status_code=404, 
-            detail="Could not extract video URL from Instagram. The post might be private, deleted, or Instagram is blocking our request."
+            detail="Could not extract thumbnail from Instagram. The post might be private, deleted, or Instagram is blocking our request."
         )
     
-    print(f"✅ Found video URL: {video_url[:100]}...")
+    print(f"✅ Found thumbnail: {thumbnail_url[:100]}...")
     
     # Step 2: Create temporary files
     temp_dir = tempfile.mkdtemp()
-    temp_video_path = os.path.join(temp_dir, "temp_video.mp4")
     temp_thumbnail_path = os.path.join(temp_dir, "thumbnail.jpg")
     
     try:
-        # Step 3: Download video
-        print("⬇️  Downloading video...")
+        # Step 3: Download thumbnail
+        print("⬇️  Downloading thumbnail...")
         
         headers = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
-            "Accept": "*/*",
-            "Accept-Encoding": "identity",  # Disable compression for video
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
         
-        video_resp = requests.get(video_url, stream=True, timeout=30, headers=headers)
-        video_resp.raise_for_status()
+        thumbnail_resp = requests.get(thumbnail_url, stream=True, timeout=30, headers=headers)
+        thumbnail_resp.raise_for_status()
         
         total_size = 0
-        with open(temp_video_path, 'wb') as f:
-            for chunk in video_resp.iter_content(chunk_size=8192):
+        with open(temp_thumbnail_path, 'wb') as f:
+            for chunk in thumbnail_resp.iter_content(chunk_size=8192):
                 f.write(chunk)
                 total_size += len(chunk)
         
-        print(f"✅ Video downloaded: {total_size} bytes to {temp_video_path}")
+        print(f"✅ Thumbnail downloaded: {total_size} bytes to {temp_thumbnail_path}")
         
-        # Step 4: Extract frame
-        print("📸 Extracting frame with FFmpeg...")
-        success, img_width, img_height = extract_frame_with_ffmpeg(temp_video_path, temp_thumbnail_path)
-        
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to extract video frame with FFmpeg")
-        
-        print(f"✅ Frame extracted to: {temp_thumbnail_path}")
-        
-        # Get image dimensions for response
-        try:
-            img_info_cmd = [
-                "ffprobe",
-                "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=width,height",
-                "-of", "csv=s=x:p=0",
-                temp_thumbnail_path
-            ]
-            
-            img_info_result = subprocess.run(
-                img_info_cmd,
-                capture_output=True,
-                text=True,
-                timeout=15
-            )
-            
-            if img_info_result.returncode == 0:
-                resolution_str = img_info_result.stdout.strip()
-                if 'x' in resolution_str:
-                    img_width, img_height = map(int, resolution_str.split('x'))
-                    print(f"Extracted image resolution: {img_width}x{img_height}")
-        except:
-            # Use the values from the extraction function
-            pass
-        
-        # Step 5: Upload to Google Cloud Storage if available
-        thumbnail_url = None
+        # Step 4: Upload to Google Cloud Storage if available
+        final_thumbnail_url = thumbnail_url
         if GCS_AVAILABLE and storage_client:
             print("☁️  Uploading to Google Cloud Storage...")
             unique_id = str(uuid.uuid4())
             blob_name = f"thumbnails/instagram_{unique_id}_high.jpg"
-            thumbnail_url = upload_to_gcs(temp_thumbnail_path, blob_name)
+            gcs_url = upload_to_gcs(temp_thumbnail_path, blob_name)
             
-            if not thumbnail_url:
-                print("⚠️ Failed to upload to GCS, but continuing with local file")
+            if gcs_url:
+                final_thumbnail_url = gcs_url
         
-        # If GCS upload failed or is not available, return a placeholder URL
-        if not thumbnail_url:
-            thumbnail_url = f"data:image/jpeg;base64,{base64_encode_image(temp_thumbnail_path)}"
-        
-        print(f"✅ Thumbnail ready: {thumbnail_url[:50]}...")
+        print(f"✅ Thumbnail ready: {final_thumbnail_url[:50]}...")
         
         return {
             "success": True,
-            "thumbnail_url": thumbnail_url,
-            "video_url": video_url,
+            "thumbnail_url": final_thumbnail_url,
             "instagram_url": url,
             "blob_name": blob_name if GCS_AVAILABLE and storage_client else None,
-            "file_size": os.path.getsize(temp_thumbnail_path),
-            "width": img_width,
-            "height": img_height
+            "file_size": os.path.getsize(temp_thumbnail_path)
         }
         
     finally:
         # Cleanup temporary files
         print("🧹 Cleaning up temporary files...")
-        for file_path in [temp_video_path, temp_thumbnail_path]:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+        if os.path.exists(temp_thumbnail_path):
+            os.remove(temp_thumbnail_path)
         if os.path.exists(temp_dir):
             os.rmdir(temp_dir)
 
@@ -530,18 +457,9 @@ def health_check():
     gcs_ok = GCS_AVAILABLE and storage_client is not None
     gcs_message = "Available" if gcs_ok else "Not available"
     
-    # Check RapidAPI key
-    rapidapi_ok = RAPIDAPI_KEY is not None and RAPIDAPI_KEY != "YOUR_RAPIDAPI_KEY_HERE"
-    rapidapi_message = "Available" if rapidapi_ok else "Not available"
-    
-    # Check yt-dlp availability
-    try:
-        import yt_dlp
-        ytdlp_ok = True
-        ytdlp_version = yt_dlp.version.__version__
-    except:
-        ytdlp_ok = False
-        ytdlp_version = "Not available"
+    # Check Insta API key
+    insta_api_ok = INSTAGRAM_API_KEY is not None and INSTAGRAM_API_KEY != "YOUR_INSTAGRAM_API_KEY_HERE"
+    insta_message = "Available" if insta_api_ok else "Not available"
     
     return {
         "status": "ok",
@@ -554,13 +472,9 @@ def health_check():
             "available": gcs_ok,
             "message": gcs_message
         },
-        "rapidapi": {
-            "available": rapidapi_ok,
-            "message": rapidapi_message
-        },
-        "ytdlp": {
-            "available": ytdlp_ok,
-            "version": ytdlp_version
+        "insta": {
+            "available": insta_api_ok,
+            "message": insta_message
         }
     }
 
