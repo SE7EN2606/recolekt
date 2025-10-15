@@ -68,17 +68,20 @@ class FetchRequest(BaseModel):
 app = FastAPI(title="Instagram Thumbnail Extractor API")
 
 # Configure CORS for your frontend
-# We'll update this after deployment
+# Allow all origins for now, then we'll narrow it down
 allowed_origins = [
+    "https://recolekt-frontend.onrender.com",  # Your frontend URL
     "http://localhost:3000",  # For local development
-    "https://localhost:3000"
+    "https://localhost:3000",
+    "https://recolekt-backend.onrender.com",  # Allow backend to call itself
+    "*"  # Allow all origins (temporary for debugging)
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
