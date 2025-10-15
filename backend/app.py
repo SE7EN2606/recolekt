@@ -26,6 +26,7 @@ except ImportError:
 # ------------------------
 GCS_BUCKET = os.getenv("GCS_BUCKET", "recolekt-storage")
 CREDENTIALS_JSON = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "YOUR_RAPIDAPI_KEY_HERE")  # We'll use this as a fallback
 
 # Initialize Google Cloud Storage client if available
 storage_client = None
@@ -79,6 +80,36 @@ app.add_middleware(
 def check_ffmpeg():
     """Check if FFmpeg is installed and available"""
     return shutil.which("ffmpeg") is not None
+
+def extract_video_url_with_rapidapi(url: str) -> str | None:
+    """Extract video URL using RapidAPI as a fallback"""
+    
+    if not RAPIDAPI_KEY or RAPIDAPI_KEY == "YOUR_RAPIDAPI_KEY_HERE":
+        print("RapidAPI key not configured. Skipping this method.")
+        return None
+    
+    try:
+        api_url = "https://instagram-downloader-download-instagram-videos-stories.p.rapidapi.com/index"
+        
+        querystring = {"url": url}
+        
+        headers = {
+            "X-RapidAPI-Key": RAPIDAPI_KEY,
+            "X-RapidAPI-Host": "instagram-downloader-download-instagram-videos-stories.p.rapidapi.com"
+        }
+        
+        response = requests.get(api_url, headers=headers, params=querystring, timeout=15)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if 'media' in data and data['media']:
+                print(f"Found video URL with RapidAPI: {data['media']}")
+                return data['media']
+        
+        return None
+    except Exception as e:
+        print(f"Error with RapidAPI extraction: {e}")
+        return None
 
 def extract_video_url_with_ytdlp(url: str) -> str | None:
     """Extract video URL using yt-dlp with special options"""
@@ -327,11 +358,16 @@ def process_instagram_reel(url: str) -> dict:
     # Step 1: Extract video URL using multiple methods
     video_url = None
     
-    # Method 1: Try yt-dlp with special options
-    print("📡 Attempting video URL extraction with yt-dlp...")
-    video_url = extract_video_url_with_ytdlp(url)
+    # Method 1: Try RapidAPI first (most reliable for production)
+    print("📡 Attempting video URL extraction with RapidAPI...")
+    video_url = extract_video_url_with_rapidapi(url)
     
-    # Method 2: Try direct API if yt-dlp fails
+    # Method 2: Try yt-dlp if RapidAPI fails
+    if not video_url:
+        print("📡 Attempting video URL extraction with yt-dlp...")
+        video_url = extract_video_url_with_ytdlp(url)
+    
+    # Method 3: Try direct API if all else fails
     if not video_url:
         print("📡 Attempting direct API extraction...")
         video_url = extract_video_url_with_direct_api(url)
@@ -494,6 +530,10 @@ def health_check():
     gcs_ok = GCS_AVAILABLE and storage_client is not None
     gcs_message = "Available" if gcs_ok else "Not available"
     
+    # Check RapidAPI key
+    rapidapi_ok = RAPIDAPI_KEY is not None and RAPIDAPI_KEY != "YOUR_RAPIDAPI_KEY_HERE"
+    rapidapi_message = "Available" if rapidapi_ok else "Not available"
+    
     # Check yt-dlp availability
     try:
         import yt_dlp
@@ -513,6 +553,10 @@ def health_check():
         "gcs": {
             "available": gcs_ok,
             "message": gcs_message
+        },
+        "rapidapi": {
+            "available": rapidapi_ok,
+            "message": rapidapi_message
         },
         "ytdlp": {
             "available": ytdlp_ok,
