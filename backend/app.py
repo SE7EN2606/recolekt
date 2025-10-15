@@ -68,7 +68,6 @@ class FetchRequest(BaseModel):
 app = FastAPI(title="Instagram Thumbnail Extractor API")
 
 # Configure CORS for your frontend
-# Allow all origins for now, then we'll narrow it down
 allowed_origins = [
     "https://recolekt-frontend.onrender.com",  # Your frontend URL
     "http://localhost:3000",  # For local development
@@ -94,34 +93,169 @@ def check_ffmpeg():
     return shutil.which("ffmpeg") is not None
 
 def extract_video_url_with_ytdlp(url: str) -> str | None:
-    """Extract video URL using yt-dlp"""
+    """Extract video URL using yt-dlp with multiple fallback methods"""
     
     try:
         import yt_dlp
         
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-        }
+        # Method 1: Try with cookies if available
+        cookies_path = None
+        if os.path.exists("cookies.txt"):
+            cookies_path = "cookies.txt"
         
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            
-            if 'url' in info:
-                print(f"Found video URL with yt-dlp: {info['url']}")
-                return info['url']
-            
-            # Try to find the best format
-            if 'formats' in info:
-                for format in info['formats']:
-                    if format.get('vcodec') != 'none' and format.get('acodec') != 'none':
-                        print(f"Found video URL with yt-dlp: {format['url']}")
-                        return format['url']
+        # Method 2: Try with different user agents and headers
+        user_agents = [
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            "instagram-agent/1.0"
+        ]
+        
+        for user_agent in user_agents:
+            try:
+                ydl_opts = {
+                    'quiet': True,
+                    'no_warnings': True,
+                    'extract_flat': False,
+                    'user_agent': user_agent,
+                    'http_headers': {
+                        'User-Agent': user_agent,
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.5',
+                        'Accept-Encoding': 'gzip, deflate',
+                        'Connection': 'keep-alive',
+                        'Upgrade-Insecure-Requests': '1',
+                    }
+                }
+                
+                if cookies_path:
+                    ydl_opts['cookiefile'] = cookies_path
+                
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    
+                    if 'url' in info:
+                        print(f"Found video URL with yt-dlp using {user_agent}: {info['url']}")
+                        return info['url']
+                    
+                    # Try to find the best format
+                    if 'formats' in info:
+                        for format in info['formats']:
+                            if format.get('vcodec') != 'none' and format.get('acodec') != 'none':
+                                print(f"Found video URL with yt-dlp using {user_agent}: {format['url']}")
+                                return format['url']
+            except Exception as e:
+                print(f"Error with yt-dlp using {user_agent}: {e}")
+                continue
         
         return None
     except Exception as e:
         print(f"Error with yt-dlp extraction: {e}")
+        return None
+
+def extract_video_url_with_selenium(url: str) -> str | None:
+    """Extract video URL using Selenium as a fallback"""
+    
+    if not SELENIUM_AVAILABLE:
+        print("Selenium not available for fallback extraction")
+        return None
+    
+    try:
+        # Configure Chrome options
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1")
+        
+        # Initialize the WebDriver
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        
+        print(f"Loading Instagram URL with Selenium: {url}")
+        driver.get(url)
+        
+        # Wait for the page to load
+        time.sleep(5)
+        
+        # Get the page source after JavaScript has executed
+        page_source = driver.page_source
+        
+        # Parse with BeautifulSoup
+        soup = BeautifulSoup(page_source, 'html.parser')
+        
+        # Look for video elements
+        video_elements = soup.find_all('video')
+        if video_elements:
+            for video in video_elements:
+                src = video.get('src')
+                if src and '.mp4' in src:
+                    print(f"Found video URL in video element: {src}")
+                    driver.quit()
+                    return src
+        
+        # Look for script tags containing video data
+        scripts = soup.find_all('script')
+        for script in scripts:
+            if script.string:
+                # Try to find video URLs in the script content
+                mp4_matches = re.findall(r'(https://[^"\s<>]+\.mp4[^"\s<>]*)', script.string)
+                for match in mp4_matches:
+                    if 'instagram' in match and 'video' in match:
+                        print(f"Found MP4 URL in script: {match}")
+                        driver.quit()
+                        return match
+        
+        driver.quit()
+        print("No video URL found with Selenium")
+        return None
+        
+    except Exception as e:
+        print(f"Error with Selenium extraction: {e}")
+        try:
+            driver.quit()
+        except:
+            pass
+        return None
+
+def extract_video_url_with_api(url: str) -> str | None:
+    """Extract video URL using a third-party API as a last resort"""
+    
+    try:
+        # Using a free API service as a fallback
+        api_url = "https://saveig.app/api/ajaxSearch"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "Origin": "https://saveig.app",
+            "Referer": "https://saveig.app/"
+        }
+        
+        data = {
+            "q": url,
+            "t": "media",
+            "lang": "en"
+        }
+        
+        response = requests.post(api_url, headers=headers, data=data, timeout=15)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('status') == 'ok' and result.get('data'):
+                items = result['data'].get('items', [])
+                if items:
+                    video_url = items[0].get('video_url')
+                    if video_url:
+                        print(f"Found video URL with API: {video_url}")
+                        return video_url
+        
+        return None
+    except Exception as e:
+        print(f"Error with API extraction: {e}")
         return None
 
 def extract_frame_with_ffmpeg(video_url: str, output_path: str) -> tuple[bool, int, int]:
@@ -278,15 +412,25 @@ def process_instagram_reel(url: str) -> dict:
     
     print(f"\n🎬 Processing Instagram reel: {url}")
     
-    # Step 1: Extract video URL
+    # Step 1: Extract video URL using multiple methods
     video_url = None
     
-    # Method 1: yt-dlp extraction
+    # Method 1: yt-dlp extraction with multiple user agents
     print("📡 Attempting video URL extraction with yt-dlp...")
     video_url = extract_video_url_with_ytdlp(url)
     
+    # Method 2: Selenium extraction if first fails
     if not video_url:
-        print("❌ Video URL extraction failed")
+        print("📡 Attempting video URL extraction with Selenium...")
+        video_url = extract_video_url_with_selenium(url)
+    
+    # Method 3: Third-party API if first two fail
+    if not video_url:
+        print("📡 Attempting video URL extraction with third-party API...")
+        video_url = extract_video_url_with_api(url)
+    
+    if not video_url:
+        print("❌ All extraction methods failed")
         raise HTTPException(
             status_code=404, 
             detail="Could not extract video URL from Instagram. The post might be private, deleted, or Instagram is blocking our request."
