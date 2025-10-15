@@ -1,13 +1,443 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recolekt - Instagram Thumbnail Extractor</title>
+    <style>
+        /* All your existing CSS styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(45deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .form-section {
+            padding: 40px;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 1rem;
+        }
+        
+        input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .submit-btn {
+            background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 18px 40px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border-radius: 50px;
+            cursor: pointer;
+            width: 100%;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+        
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #667eea;
+            padding: 30px;
+            display: none;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error {
+            color: #dc3545;
+            background: linear-gradient(45deg, #ffebee, #ffcdd2);
+            border: 2px solid #f5c6cb;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 40px;
+            display: none;
+            text-align: center;
+        }
+        
+        .result {
+            padding: 40px;
+            border-top: 1px solid #eee;
+            background: #f8f9fa;
+            display: none;
+        }
+        
+        .result h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+        
+        .thumbnail-container {
+            text-align: center;
+            margin-bottom: 25px;
+            position: relative;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .thumbnail {
+            max-width: 100%;
+            max-height: 600px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            display: block;
+            margin: 0 auto;
+        }
+        
+        .thumbnail-loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+        
+        .result-info {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .result-info strong {
+            color: #667eea;
+        }
+        
+        .download-btn {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            color: white;
+            text-decoration: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            display: inline-block;
+            font-weight: 600;
+            transition: transform 0.3s ease;
+            margin-right: 10px;
+        }
+        
+        .download-btn:hover {
+            transform: translateY(-2px);
+            text-decoration: none;
+        }
+        
+        .instagram-btn {
+            background: linear-gradient(45deg, #f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%);
+            color: white;
+            text-decoration: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            display: inline-block;
+            font-weight: 600;
+            transition: transform 0.3s ease;
+        }
+        
+        .instagram-btn:hover {
+            transform: translateY(-2px);
+            text-decoration: none;
+        }
+        
+        .button-container {
+            text-align: center;
+        }
+        
+        .debug-info {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 10px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 Recolekt</h1>
+            <p>Extract clean, high-resolution thumbnails from Instagram Reels</p>
+        </div>
+        
+        <div class="form-section">
+            <form id="extractForm">
+                <div class="form-group">
+                    <label for="url">Instagram Reel URL:</label>
+                    <input 
+                        type="url" 
+                        id="url" 
+                        placeholder="https://www.instagram.com/reel/DN_IrioALTK/?hl=en"
+                        required
+                    >
+                </div>
+                
+                <button type="submit" id="submitBtn" class="submit-btn">
+                    ✨ Extract High-Resolution Thumbnail
+                </button>
+            </form>
+        </div>
+        
+        <div id="loading" class="loading">
+            <div class="loading-spinner"></div>
+            <h3>Processing your request...</h3>
+            <p>This may take 10-30 seconds depending on the video size.</p>
+        </div>
+        
+        <div id="error" class="error"></div>
+        
+        <div id="result" class="result">
+            <h3>🎉 Thumbnail Extracted Successfully!</h3>
+            
+            <div class="thumbnail-container">
+                <div id="thumbnailLoading" class="thumbnail-loading" style="display: none;">Loading image...</div>
+                <img id="thumbnailImg" class="thumbnail" alt="Extracted thumbnail" style="display: none;">
+            </div>
+            
+            <div class="result-info">
+                <p><strong>Resolution:</strong> <span id="resolution"></span></p>
+                <p><strong>File Size:</strong> <span id="fileSize"></span></p>
+            </div>
+            
+            <div class="button-container">
+                <a id="downloadLink" class="download-btn" target="_blank">
+                    📥 Download High-Res Image
+                </a>
+                <a id="instagramLink" class="instagram-btn" target="_blank">
+                    📱 View on Instagram
+                </a>
+            </div>
+            
+            <div id="debugInfo" class="debug-info" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        // Backend URL - will be replaced by Render environment variable
+        const BACKEND_URL = 'https://your-backend-url.onrender.com';
+        
+        // Wait for DOM to be fully loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get all DOM elements
+            const extractForm = document.getElementById('extractForm');
+            const urlInput = document.getElementById('url');
+            const submitBtn = document.getElementById('submitBtn');
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const result = document.getElementById('result');
+            const thumbnailImg = document.getElementById('thumbnailImg');
+            const thumbnailLoading = document.getElementById('thumbnailLoading');
+            const downloadLink = document.getElementById('downloadLink');
+            const instagramLink = document.getElementById('instagramLink');
+            const fileSize = document.getElementById('fileSize');
+            const resolution = document.getElementById('resolution');
+            const debugInfo = document.getElementById('debugInfo');
+            
+            // Check if all elements exist
+            if (!extractForm || !urlInput || !submitBtn || !loading || !error || !result || !thumbnailImg || !thumbnailLoading || !downloadLink || !instagramLink || !fileSize || !resolution || !debugInfo) {
+                console.error('One or more DOM elements not found');
+                return;
+            }
+            
+            // Add form submit event listener
+            extractForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const url = urlInput.value.trim();
+                
+                // Validate Instagram URL
+                if (!url.includes('instagram.com/reel/')) {
+                    showError('Please enter a valid Instagram Reel URL');
+                    return;
+                }
+                
+                // Reset UI
+                loading.style.display = 'block';
+                error.style.display = 'none';
+                result.style.display = 'none';
+                submitBtn.disabled = true;
+                
+                try {
+                    console.log('Sending request to backend...');
+                    
+                    const response = await fetch(`${BACKEND_URL}/api/extract-thumbnail`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            url: url
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.detail || `Server responded with status: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log('Response:', data);
+                    
+                    // Show debug info
+                    debugInfo.innerHTML = `
+                        <strong>Debug Info:</strong><br>
+                        Thumbnail URL: ${data.thumbnail_url}<br>
+                        Instagram URL: ${data.instagram_url}<br>
+                        Success: ${data.success}<br>
+                        File Size: ${data.file_size} bytes<br>
+                        Width: ${data.width}px<br>
+                        Height: ${data.height}px
+                    `;
+                    debugInfo.style.display = 'block';
+                    
+                    if (data.success) {
+                        // Show loading state for image
+                        thumbnailLoading.style.display = 'block';
+                        thumbnailImg.style.display = 'none';
+                        
+                        // Set image source and handle load event
+                        thumbnailImg.onload = function() {
+                            thumbnailLoading.style.display = 'none';
+                            thumbnailImg.style.display = 'block';
+                        };
+                        
+                        thumbnailImg.onerror = function() {
+                            thumbnailLoading.textContent = 'Failed to load image';
+                            thumbnailLoading.style.display = 'block';
+                            thumbnailImg.style.display = 'none';
+                        };
+                        
+                        thumbnailImg.src = data.thumbnail_url;
+                        
+                        // Set download link
+                        downloadLink.href = data.thumbnail_url;
+                        downloadLink.download = `instagram_thumbnail_${Date.now()}.jpg`;
+                        
+                        // Set Instagram link
+                        instagramLink.href = data.instagram_url;
+                        
+                        // Format file size
+                        const sizeInBytes = data.file_size;
+                        let formattedSize;
+                        if (sizeInBytes < 1024) {
+                            formattedSize = sizeInBytes + ' B';
+                        } else if (sizeInBytes < 1024 * 1024) {
+                            formattedSize = (sizeInBytes / 1024).toFixed(2) + ' KB';
+                        } else {
+                            formattedSize = (sizeInBytes / (1024 * 1024)).toFixed(2) + ' MB';
+                        }
+                        fileSize.textContent = formattedSize;
+                        
+                        // Set resolution
+                        resolution.textContent = `${data.width}×${data.height} pixels`;
+                        
+                        // Show result section
+                        result.style.display = 'block';
+                    } else {
+                        throw new Error(data.detail || 'Unknown error occurred');
+                    }
+                    
+                } catch (err) {
+                    console.error('Error:', err);
+                    showError(`Error: ${err.message}`);
+                } finally {
+                    loading.style.display = 'none';
+                    submitBtn.disabled = false;
+                }
+            });
+            
+            // Function to show error message
+            function showError(message) {
+                if (error) {
+                    error.textContent = message;
+                    error.style.display = 'block';
+                } else {
+                    console.error('Error element not found:', message);
+                }
+            }
+        });
+    </script>
+</body>
 </html>
