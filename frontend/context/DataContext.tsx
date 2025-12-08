@@ -18,65 +18,99 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [videos, setVideos] = useState<Video[]>(MOCK_VIDEOS);
   const [folders, setFolders] = useState<Folder[]>(MOCK_FOLDERS);
 
-  // Calculate counts dynamically based on videos state if needed, 
-  // but for now we just manage the lists.
-
-  const addFolder = (name: string) => {
-    const newFolder: Folder = {
-      id: name.toLowerCase().replace(/\s+/g, '-'),
-      name: name,
-      itemCount: 0,
-      coverUrl: ''
-    };
-    setFolders(prev => [...prev, newFolder]);
+  // Fetch videos from backend
+  const fetchVideos = async () => {
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/saved_reels`);
+      const data = await response.json();
+      setVideos(data);
+    } catch (error) {
+      console.error('Failed to fetch videos:', error);
+    }
   };
 
-  const toggleFavorite = (videoId: string) => {
-    setVideos(prev => prev.map(video => {
-      if (video.id === videoId) {
-        const isNowFavorite = !video.isFavorite;
-        return {
-          ...video,
-          isFavorite: isNowFavorite,
-          favoritedAt: isNowFavorite ? new Date().toISOString() : undefined
-        };
-      }
-      return video;
-    }));
+  // Fetch folders from backend
+  const fetchFolders = async () => {
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/folders`);
+      const data = await response.json();
+      setFolders(data);
+    } catch (error) {
+      console.error('Failed to fetch folders:', error);
+    }
   };
 
-  const moveVideos = (videoIds: string[], targetFolderId: string) => {
-    setVideos(prev => prev.map(video => {
-      if (videoIds.includes(video.id)) {
-        return { ...video, folderId: targetFolderId };
-      }
-      return video;
-    }));
+  // Add a new folder
+  const addFolder = async (name: string) => {
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/folders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      const newFolder = await response.json();
+      setFolders(prev => [...prev, newFolder]);
+    } catch (error) {
+      console.error('Failed to add folder:', error);
+    }
   };
 
-  const deleteVideos = (videoIds: string[]) => {
-    setVideos(prev => prev.filter(video => !videoIds.includes(video.id)));
+  // Toggle favorite status
+  const toggleFavorite = async (videoId: string) => {
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/videos/${videoId}/favorite`, {
+        method: 'POST'
+      });
+      const updatedVideo = await response.json();
+      setVideos(prev => prev.map(video => (video.id === videoId ? updatedVideo : video)));
+    } catch (error) {
+      console.error('Failed to toggle favorite:', error);
+    }
   };
 
-  const addVideo = (url: string) => {
-    const newVideo: Video = {
-      id: Date.now().toString(),
-      title: 'New Saved Reel',
-      author: '@saved_user',
-      platform: url.includes('tiktok') ? 'tiktok' : url.includes('youtube') ? 'youtube' : 'instagram',
-      thumbnailUrl: 'https://picsum.photos/400/711?random=' + Date.now(),
-      duration: '0:30',
-      savedAt: new Date().toISOString().split('T')[0],
-      category: 'Uncategorized',
-      tags: [],
-      summary: 'Ready to organize',
-      bullets: [],
-      transcript: '',
-      originalUrl: url,
-      isFavorite: false,
-      folderId: 'all'
-    };
-    setVideos(prev => [newVideo, ...prev]);
+  // Move videos to a folder
+  const moveVideos = async (videoIds: string[], targetFolderId: string) => {
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/videos/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoIds, targetFolderId })
+      });
+      const movedVideos = await response.json();
+      setVideos(prev => prev.map(video => (videoIds.includes(video.id) ? { ...video, folderId: targetFolderId } : video)));
+    } catch (error) {
+      console.error('Failed to move videos:', error);
+    }
+  };
+
+  // Delete videos
+  const deleteVideos = async (videoIds: string[]) => {
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/videos/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoIds })
+      });
+      const deletedVideos = await response.json();
+      setVideos(prev => prev.filter(video => !videoIds.includes(video.id)));
+    } catch (error) {
+      console.error('Failed to delete videos:', error);
+    }
+  };
+
+  // Add a new video
+  const addVideo = async (url: string) => {
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/summarize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      const newVideo = await response.json();
+      setVideos(prev => [newVideo, ...prev]);
+    } catch (error) {
+      console.error('Failed to save video:', error);
+    }
   };
 
   return (
