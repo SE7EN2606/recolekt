@@ -1,0 +1,16 @@
+{
+  "services": [
+    {
+      "name": "backend",
+      "source": {
+        "path": "backend",
+        "dockerfilePath": "backend/Dockerfile"
+      },
+      "environment": {
+        "GOOGLE_CLIENT_ID": "${{ GOOGLE_CLIENT_ID }}",
+        "GOOGLE_CLIENT_SECRET": "${{ GOOGLE_CLIENT_SECRET }}",
+        "SECRET_KEY": "${{ SECRET_KEY }}"
+      }
+    }
+  ]
+}
