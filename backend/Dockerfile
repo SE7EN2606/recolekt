@@ -1,41 +1,31 @@
-# Utilise une image Python légère et récente
-FROM python:3.12-slim-bookworm
+# Utilise une image légère de Python
+FROM python:3.12-slim
 
-# Désactive le buffer et le bytecode pour réduire la taille
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
-
-# Installe les dépendances système nécessaires
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    ffmpeg \
+# Installe les dépendances système, y compris Rust
+RUN apt-get update && apt-get install -y \
+    build-essential \
     curl \
-    libpq5 \
+    ffmpeg \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && source $HOME/.cargo/env \
+    && rustup default stable \
     && rm -rf /var/lib/apt/lists/*
 
-# Crée le répertoire /app avant de créer l'utilisateur
-RUN mkdir /app
+# Ajoute Rust au PATH
+ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Crée un utilisateur non-root pour la sécurité
-RUN useradd --create-home --shell /bin/bash app
+# Définis le répertoire de travail
+WORKDIR /app/api-flask
 
-# Définit le répertoire de travail
-WORKDIR /app
-
-# Change les permissions du répertoire /app
-RUN chown app:app /app
-
-# Copie les fichiers nécessaires pour l'installation des dépendances
+# Copie les fichiers de configuration et les dépendances
 COPY api-flask/requirements.txt .
-USER root
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copie le reste de l'application en tant qu'utilisateur non-root
-USER app
-COPY api-flask/ ./api-flask/
+# Copie le reste de l'application
+COPY api-flask/ .
 
-# Expose le port utilisé par Gunicorn
+# Expose le port sur lequel ton application écoute
 EXPOSE 8080
 
-# Commande pour lancer l'application avec Gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "600", "api-flask.app:app"]
+# Commande pour démarrer l'application
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"]
