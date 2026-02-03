@@ -106,7 +106,7 @@ print("=" * 50)
 # -------------------------------------------------
 # 🌐 CORS - FIXED FOR DELETE REQUESTS
 # -------------------------------------------------
-CORS(app, resources={r"/*": {"origins": ["https://ton-domaine-netlify.netlify.app"]}})
+CORS(app, resources={r"/*": {"origins": ["https://recolekt-front.netlify.app/"]}})
 
 # ✅ CRITICAL: Global OPTIONS handler for all routes
 @app.before_request
