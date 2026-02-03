@@ -23,7 +23,7 @@ from google.cloud import vision  # google-cloud-vision
 # -------------------------------------------------
 
 # Path to project root .env
-ROOT_ENV = Path(__file__).resolve().parents[1] / ".env"
+ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
 
 print("DEBUG: ROOT_ENV path =", ROOT_ENV)
 print("DEBUG: ROOT_ENV exists? ", ROOT_ENV.exists())
