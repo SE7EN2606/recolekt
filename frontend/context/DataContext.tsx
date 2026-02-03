@@ -46,7 +46,7 @@ interface DataContextType {
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8080';
+const API_BASE = import.meta.env.VITE_API_BASE; // Utilise uniquement la variable d'environnement
 
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
