@@ -1,0 +1,27 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--no-cache'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/recolekt-storage/cloud-run-source-deploy/recolekt/flask-summarizer-app:$COMMIT_SHA'
+      - '.'
+      - '-f'
+      - 'Dockerfile'
+    dir: 'backend/api-flask'  # ✅ Specify directory here
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/recolekt-storage/cloud-run-source-deploy/recolekt/flask-summarizer-app:$COMMIT_SHA'
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'services'
+      - 'update'
+      - 'flask-summarizer-app'
+      - '--platform=managed'
+      - '--image=us-central1-docker.pkg.dev/recolekt-storage/cloud-run-source-deploy/recolekt/flask-summarizer-app:$COMMIT_SHA'
+      - '--region=us-central1'
+      - '--quiet'
