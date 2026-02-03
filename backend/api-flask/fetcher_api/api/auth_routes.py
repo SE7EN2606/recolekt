@@ -75,7 +75,7 @@ def google_callback():
         
         if not user_info:
             logger.error("No userinfo in Google OAuth response")
-            return redirect(f'{FRONTEND_BASE_URL}/#/auth?error=oauth_failed')  # ✅ Hash routing
+            return redirect(f'{FRONTEND_BASE_URL}/auth?error=oauth_failed')  # ✅ Clean URL
         
         google_id = user_info.get('sub')
         email = user_info.get('email')
@@ -117,11 +117,12 @@ def google_callback():
         
         logger.info(f"✅ Session set: user_id={user_id}, authenticated=True")
         
-        return redirect(f'{FRONTEND_BASE_URL}/#/gallery')  # ✅ FIXED: Added hash
+        return redirect(f'{FRONTEND_BASE_URL}/gallery')  # ✅ Clean URL (no hash!)
         
     except Exception as e:
         logger.error(f"Google OAuth error: {e}")
-        return redirect(f'{FRONTEND_BASE_URL}/#/auth?error=oauth_failed')  # ✅ Hash routing
+        return redirect(f'{FRONTEND_BASE_URL}/auth?error=oauth_failed')  # ✅ Clean URL
+
 
 @auth_bp.route("/logout", methods=["POST"])
 def logout():
