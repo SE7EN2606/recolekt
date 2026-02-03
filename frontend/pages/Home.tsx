@@ -10,7 +10,7 @@ export const Home: React.FC = () => {
   const [pendingUrl, setPendingUrl] = useState('');
   const navigate = useNavigate();
 
-  const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
+  const API_BASE = import.meta.env.VITE_API_BASE; // Utilise uniquement la variable d'environnement
 
   // Auto-dismiss error after 15 seconds with fade out
   useEffect(() => {
