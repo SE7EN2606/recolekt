@@ -106,23 +106,7 @@ print("=" * 50)
 # -------------------------------------------------
 # 🌐 CORS - FIXED FOR DELETE REQUESTS
 # -------------------------------------------------
-CORS(
-    app,
-    resources={r"/api/*": {
-        "origins": [
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-        ],
-        "supports_credentials": True,
-        "allow_headers": ["Content-Type", "Authorization", "Cache-Control", "Pragma"],
-        "expose_headers": ["Set-Cookie"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "max_age": 3600
-    }},
-    supports_credentials=True
-)
+CORS(app, resources={r"/*": {"origins": ["https://ton-domaine-netlify.netlify.app"]}})
 
 # ✅ CRITICAL: Global OPTIONS handler for all routes
 @app.before_request
