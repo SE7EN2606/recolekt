@@ -2,11 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, User, ArrowLeft, AlertCircle } from 'lucide-react';
 import { Button } from '../components/Button';
-import { useAuth } from '../context/AuthContext'; // ✅ Using correct Auth Context
+import { useAuth } from '../context/AuthContext';
 
-const API_BASE = import.meta.env.VITE_API_BASE;
+/*
+✅ FIXED SAFE BASE URL
+*/
+const API_BASE =
+  import.meta.env.VITE_API_BASE?.replace(/\/$/, '') ||
+  import.meta.env.VITE_API_URL?.replace(/\/$/, '') ||
+  'http://localhost:5001';
 
-// Custom Download Icon (from your SVG data)
+// Custom Download Icon
 const DownloadIcon = ({ color }: { color: string }) => (
   <svg 
     xmlns="http://www.w3.org/2000/svg" 
@@ -20,7 +26,7 @@ const DownloadIcon = ({ color }: { color: string }) => (
     strokeLinejoin="round"
   >
     <path d="M12 15V3"/>
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <path d="M21 15v4a2 0 0 1-2 2H5a2 0 0 1-2-2v-4"/>
     <path d="m7 10 5 5 5-5"/>
   </svg>
 );
@@ -31,18 +37,13 @@ export const Auth: React.FC = () => {
   const [loading, setLoading] = useState(false);
   
   const navigate = useNavigate();
-  // ✅ Use AuthContext to prevent loops
   const { user, signInWithGoogle } = useAuth();
 
   useEffect(() => {
-    // Check local storage. If this is empty, NO message will show.
     const pending = localStorage.getItem('pendingVideoUrl');
-    if (pending) {
-      setHasPendingVideo(true);
-    }
+    if (pending) setHasPendingVideo(true);
   }, []);
 
-  // ✅ Safe Redirect: Only happens when AuthContext confirms user exists
   useEffect(() => {
     if (user) {
       navigate('/gallery', { replace: true });
@@ -53,20 +54,20 @@ export const Auth: React.FC = () => {
     e.preventDefault();
     setLoading(true);
 
-    // ✅ Real API Login to prevent 401 loops
     try {
       const formData = new FormData(e.currentTarget);
       const email = formData.get('email');
       const password = formData.get('password');
-      
-      // Default to demo if empty (for testing)
+      const name = formData.get('name');
+
       const payload = {
         email: email || 'demo@demo.com',
-        password: password || 'demo'
+        password: password || 'demo',
+        name: name || ''
       };
 
       const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-      
+
       const response = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -75,7 +76,6 @@ export const Auth: React.FC = () => {
       });
 
       if (response.ok) {
-        // Force a small reload to ensure all contexts sync up perfectly
         window.location.reload();
       } else {
         alert("Authentication failed. Please try again.");
@@ -88,11 +88,8 @@ export const Auth: React.FC = () => {
   };
 
   return (
-    // FIX 1: Outer wrapper is w-full (Full Width) so background spans edge-to-edge
     <div className="min-h-screen w-full relative bg-white flex flex-col md:flex-row">
       
-      {/* LAYER 1: Full-Screen Backgrounds */}
-      {/* FIX 2: Changed to 'fixed' so it stays 50/50 even when scrolling */}
       <div className="fixed inset-0 flex pointer-events-none">
         <div className="hidden md:block w-1/2 h-full bg-[#0B0F19] relative">
            <div className="absolute top-0 left-0 w-full h-full bg-[url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop')] bg-cover bg-center opacity-20 mix-blend-overlay"></div>
@@ -101,8 +98,6 @@ export const Auth: React.FC = () => {
         <div className="w-full md:w-1/2 h-full bg-white"></div>
       </div>
 
-      {/* LAYER 2: Content Container (Max 1100px) */}
-      {/* FIX 3: max-w-[1100px] and min-h-screen applied HERE to center content and allow scroll */}
       <div className="relative z-10 w-full max-w-[1100px] mx-auto min-h-screen flex flex-col md:flex-row">
         
         {/* LEFT COLUMN */}
@@ -120,7 +115,9 @@ export const Auth: React.FC = () => {
           <div className="max-w-lg">
             <h1 className="text-5xl font-black tracking-tight mb-6 leading-tight">
               Stop losing your <br/>
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-secondary-500">digital inspiration.</span>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-secondary-500">
+                digital inspiration.
+              </span>
             </h1>
             <p className="text-gray-400 text-lg leading-relaxed font-medium">
               Join thousands of creators who use Recolekt to organize their visual chaos into a searchable library.
@@ -156,7 +153,6 @@ export const Auth: React.FC = () => {
 
             <div className="w-full max-w-sm">
                 
-                {/* CONDITIONAL NOTIFICATION */}
                 {hasPendingVideo && (
                   <div 
                     className="mb-4 p-3 rounded-xl flex items-center justify-center gap-2 animate-fade-in border transition-all duration-300"
@@ -166,11 +162,7 @@ export const Auth: React.FC = () => {
                       color: isLogin ? '#e11d48' : '#8b5cf6'
                     }}
                   >
-                    {isLogin ? (
-                      <AlertCircle size={18} className="flex-shrink-0" />
-                    ) : (
-                      <DownloadIcon color="#8b5cf6" />
-                    )}
+                    {isLogin ? <AlertCircle size={18}/> : <DownloadIcon color="#8b5cf6"/>}
                     <p className="text-xs font-bold whitespace-nowrap">
                       {isLogin 
                         ? "You must log in or create an account to save this clip." 
@@ -190,7 +182,7 @@ export const Auth: React.FC = () => {
                   </p>
                 </div>
 
-                {/* SOCIAL BUTTON - Connected to signInWithGoogle */}
+                {/* GOOGLE LOGIN */}
                 <div className="mb-4">
                   <button 
                     type="button" 
@@ -206,87 +198,50 @@ export const Auth: React.FC = () => {
                   </button>
                 </div>
 
-                {/* DIVIDER */}
-                <div className="relative mb-4">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-100"></div>
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-white px-4 text-gray-400 font-black tracking-widest">Or continue with email</span>
-                  </div>
-                </div>
-
-                {/* FORM - Added names for API handling */}
+                {/* FORM */}
                 <form onSubmit={handleSubmit} className="space-y-3">
+
                    {!isLogin && (
                      <div className="space-y-1 animate-fade-in-down">
-                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Full Name</label>
+                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">
+                         Full Name
+                       </label>
                        <div className="relative">
                          <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                         <input 
-                           type="text" 
-                           name="name"
-                           placeholder="John Doe"
-                           className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 transition-all font-medium text-gray-900 placeholder:text-gray-400 text-sm"
-                         />
+                         <input name="name" className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4"/>
                        </div>
                      </div>
                    )}
 
                    <div className="space-y-1">
-                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Email Address</label>
-                     <div className="relative">
-                       <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                       <input 
-                         type="email" 
-                         name="email"
-                         placeholder="name@example.com"
-                         className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 transition-all font-medium text-gray-900 placeholder:text-gray-400 text-sm"
-                       />
-                     </div>
+                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">
+                       Email Address
+                     </label>
+                     <input name="email" type="email" className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 px-4"/>
                    </div>
 
                    <div className="space-y-1">
-                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Password</label>
-                     <div className="relative">
-                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                       <input 
-                         type="password" 
-                         name="password"
-                         placeholder="••••••••"
-                         className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 transition-all font-medium text-gray-900 placeholder:text-gray-400 text-sm"
-                       />
-                     </div>
+                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">
+                       Password
+                     </label>
+                     <input name="password" type="password" className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 px-4"/>
                    </div>
 
-                   {isLogin && (
-                     <div className="flex justify-end">
-                       <button type="button" className="text-xs font-bold text-gray-500 hover:text-gray-900 transition-colors">Forgot password?</button>
-                     </div>
-                   )}
-
-                   <Button 
-                     type="submit" 
-                     fullWidth 
-                     className={`h-12 mt-4 text-sm font-black shadow-xl shadow-primary-600/20 rounded-xl ${loading ? 'opacity-80' : ''}`}
-                     disabled={loading}
-                   >
+                   <Button type="submit" fullWidth disabled={loading}>
                      {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
                    </Button>
+
                 </form>
 
                 <div className="mt-4 text-center">
-                  <p className="text-gray-500 text-sm font-medium">
-                    {isLogin ? "Don't have an account?" : "Already have an account?"}{' '}
-                    <button 
-                      onClick={() => setIsLogin(!isLogin)} 
-                      className="font-black hover:underline transition-colors"
-                      style={{ color: '#e11d48' }}
-                    >
-                      {isLogin ? 'Sign Up' : 'Sign In'}
-                    </button>
-                  </p>
+                  <button 
+                    onClick={() => setIsLogin(!isLogin)} 
+                    className="font-black text-red-500"
+                  >
+                    {isLogin ? 'Sign Up' : 'Sign In'}
+                  </button>
                 </div>
+
             </div>
         </div>
       </div>
