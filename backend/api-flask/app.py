@@ -82,6 +82,10 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_DOMAIN'] = None
 app.config['SESSION_COOKIE_PATH'] = '/'
 app.config['SESSION_REFRESH_EACH_REQUEST'] = False
+app.config.update(
+    SESSION_COOKIE_SAMESITE="None",
+    SESSION_COOKIE_SECURE=True
+)
 
 # Initialize Flask-Session
 Session(app)
@@ -106,7 +110,11 @@ print("=" * 50)
 # -------------------------------------------------
 # 🌐 CORS - FIXED FOR DELETE REQUESTS
 # -------------------------------------------------
-CORS(app, resources={r"/*": {"origins": ["https://recolekt-front.netlify.app/"]}})
+CORS(
+    app,
+    supports_credentials=True,
+    origins=["https://recolekt-front.netlify.app"]
+)
 
 # ✅ CRITICAL: Global OPTIONS handler for all routes
 @app.before_request
