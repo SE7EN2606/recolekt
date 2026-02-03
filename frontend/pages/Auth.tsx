@@ -4,7 +4,7 @@ import { Mail, Lock, User, ArrowLeft, AlertCircle } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth } from '../context/AuthContext'; // ✅ Using correct Auth Context
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
+const API_BASE = import.meta.env.VITE_API_BASE; // Utilise uniquement la variable d'environnement
 
 // Custom Download Icon (from your SVG data)
 const DownloadIcon = ({ color }: { color: string }) => (
