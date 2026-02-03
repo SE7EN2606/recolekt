@@ -72,16 +72,16 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 if not app:
     raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
 
-# Configure session
+# Configure session - ✅ FIXED: No duplicates
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SESSION_FILE_DIR'] = '/tmp/flask_session'
 app.config['SESSION_PERMANENT'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)  # ✅ FIXED: Was SESSION_PERMANENT_LIFETIME
 app.config['SESSION_COOKIE_NAME'] = 'recolekt_session'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SECURE'] = True  # ✅ Must be True for production
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # ✅ Required for OAuth cross-domain
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 app.config['SESSION_COOKIE_DOMAIN'] = None
 app.config['SESSION_COOKIE_PATH'] = '/'
 app.config['SESSION_REFRESH_EACH_REQUEST'] = True
@@ -119,7 +119,7 @@ CORS(
     app,
     origins=ALLOWED_ORIGINS,
     supports_credentials=True,
-    allow_headers="*",  # ✅ ALLOW ALL HEADERS (fixes cache-control, pragma, etc.)
+    allow_headers="*",
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     expose_headers=["Content-Type", "Authorization"],
     max_age=3600
