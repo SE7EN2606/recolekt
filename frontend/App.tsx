@@ -1,8 +1,7 @@
 import React from 'react';
-import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 
-import { AuthProvider } from './context/AuthContext';
-import { LanguageProvider } from './context/LanguageContext'; // ✅ ADD THIS
+import { LanguageProvider } from './context/LanguageProvider';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { Home } from './pages/Home';
@@ -14,7 +13,6 @@ import { BillingCancel } from './pages/BillingCancel';
 import { BillingPage } from './pages/BillingPage'; 
 import { Features } from './pages/Features';
 import { Auth } from './pages/Auth';
-
 import { AccountSettings } from './pages/AccountSettings'; 
 import { AppSettings } from './pages/AppSettings'; 
 
@@ -103,30 +101,28 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 function App() {
   return (
-    <AuthProvider>
-      <LanguageProvider> {/* ✅ WRAP ENTIRE APP WITH LANGUAGE PROVIDER */}
-        <Router>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/features" element={<Features />} />
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/gallery" element={<Gallery />} />
-              <Route path="/gallery/:folderId" element={<Gallery />} />
-              <Route path="/video/:id" element={<VideoDetail />} />
-              <Route path="/reel/:id" element={<VideoDetail />} />
-              <Route path="/settings/app" element={<AppSettings />} />
-              <Route path="/settings/account" element={<AccountSettings />} />
-              <Route path="/settings" element={<Navigate to="/settings/app" replace />} />
-              <Route path="/subscribe" element={<SubscribePage />} />
-              <Route path="/billing" element={<BillingPage />} />
-              <Route path="/billing/success" element={<BillingSuccess />} />
-              <Route path="/billing/cancel" element={<BillingCancel />} />
-            </Routes>
-          </Layout>
-        </Router>
-      </LanguageProvider>
-    </AuthProvider>
+    <LanguageProvider>
+      <Router>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/features" element={<Features />} />
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/gallery" element={<Gallery />} />
+            <Route path="/gallery/:folderId" element={<Gallery />} />
+            <Route path="/video/:id" element={<VideoDetail />} />
+            <Route path="/reel/:id" element={<VideoDetail />} />
+            <Route path="/settings/app" element={<AppSettings />} />
+            <Route path="/settings/account" element={<AccountSettings />} />
+            <Route path="/settings" element={<Navigate to="/settings/app" replace />} />
+            <Route path="/subscribe" element={<SubscribePage />} />
+            <Route path="/billing" element={<BillingPage />} />
+            <Route path="/billing/success" element={<BillingSuccess />} />
+            <Route path="/billing/cancel" element={<BillingCancel />} />
+          </Routes>
+        </Layout>
+      </Router>
+    </LanguageProvider>
   );
 }
 
