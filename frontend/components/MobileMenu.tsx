@@ -12,13 +12,10 @@ import {
   ChevronRight, 
   HelpCircle, 
   BookOpen, 
-  FolderPlus,
-  Chrome,
-  Github,
   Settings,
   User,
   LogOut,
-  SquarePen // ✅ Added SquarePen
+  SquarePen
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
@@ -39,14 +36,13 @@ interface MobileMenuProps {
 }
 
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
-  const { folders, addFolder, login: mockLoginData } = useData();
+  const { folders, addFolder } = useData();
   const { user, signOut } = useAuth();
   
   const [shouldRender, setShouldRender] = useState(false);
   const [animateOpen, setAnimateOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
-  const [mockLoading, setMockLoading] = useState(false);
   
   const navigate = useNavigate();
   const location = useLocation();
@@ -74,16 +70,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   const handleNav = (path: string) => {
     navigate(path);
     onClose();
-  };
-
-  const handleMockLogin = () => {
-    setMockLoading(true);
-    setTimeout(() => {
-      setMockLoading(false);
-      mockLoginData(); 
-      navigate('/gallery');
-      onClose();
-    }, 1500);
   };
 
   const systemIds = ['all', 'favorites', 'shared', 'archive'];
@@ -132,20 +118,47 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
               
               {!user && (
                 <div className="flex flex-col h-full space-y-8 px-2">
-                  {/* ... Logged Out View (Same as before) ... */}
+                  {/* Navigation Links */}
                   <div className="space-y-2">
-                    {[{ label: 'Home', path: '/' }, { label: 'Features', path: '/features' }, { label: 'Pricing', path: '/billing' }, { label: 'Guide', path: '/help?section=how-to' }, { label: 'Support', path: '/help?section=contact' }].map((link) => (
-                      <Link key={link.path} to={link.path} onClick={onClose} className={`block text-3xl font-black tracking-tight hover:text-primary-600 transition-colors py-2 ${location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'}`}>{link.label}</Link>
+                    {[
+                      { label: 'Home', path: '/' }, 
+                      { label: 'Features', path: '/features' }, 
+                      { label: 'Pricing', path: '/billing' }, 
+                      { label: 'Guide', path: '/help?section=how-to' }, 
+                      { label: 'Support', path: '/help?section=contact' }
+                    ].map((link) => (
+                      <Link 
+                        key={link.path} 
+                        to={link.path} 
+                        onClick={onClose} 
+                        className={`block text-3xl font-black tracking-tight hover:text-primary-600 transition-colors py-2 ${location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'}`}
+                      >
+                        {link.label}
+                      </Link>
                     ))}
                   </div>
+
+                  {/* ✅ FIXED: Removed Google/Apple buttons, kept only Sign In/Up linking to /auth */}
                   <div className="mt-auto pb-12">
-                    <div className="grid grid-cols-2 gap-3 mb-6">
-                      <button onClick={handleMockLogin} className="flex items-center justify-center gap-2 p-3 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 text-sm"><Chrome size={18} /> Google</button>
-                      <button onClick={handleMockLogin} className="flex items-center justify-center gap-2 p-3 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 text-sm"><Github size={18} /> Apple</button>
-                    </div>
                     <div className="space-y-4">
-                      <Button fullWidth onClick={handleMockLogin} disabled={mockLoading} className={`h-14 text-base font-bold shadow-xl shadow-primary-600/20 ${mockLoading ? 'opacity-80' : ''}`}>{mockLoading ? 'Connecting...' : 'Sign In'}</Button>
-                      <div className="text-center"><p className="text-gray-500 text-sm font-medium">Don't have an account? <button onClick={() => { onClose(); navigate('/auth'); }} className="text-primary-600 font-bold hover:underline">Sign Up</button></p></div>
+                      <Button 
+                        fullWidth 
+                        onClick={() => handleNav('/auth')}
+                        className="h-14 text-base font-bold shadow-xl shadow-primary-600/20"
+                      >
+                        Sign In
+                      </Button>
+                      <div className="text-center">
+                        <p className="text-gray-500 text-sm font-medium">
+                          Don't have an account?{' '}
+                          <button 
+                            onClick={() => handleNav('/auth')}
+                            className="text-primary-600 font-bold hover:underline"
+                          >
+                            Sign Up
+                          </button>
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -177,7 +190,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       <div className="flex items-center justify-between px-4 mb-3">
                         <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Collections</h3>
                         <div className="flex items-center gap-3">
-                           {/* ✅ 1) Icon is now purple and using SquarePen */}
                            <button 
                              onClick={() => setIsManageModalOpen(true)}
                              className="text-primary-600 hover:text-primary-700 transition-colors"
@@ -196,14 +208,22 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                            {customFolders.length > 0 && customFolders.map((folder) => (
                               <div key={folder.id} className="border-b border-gray-50 last:border-0">
                                 <button onClick={() => handleNav(`/gallery/${folder.id}`)} className="w-full flex items-center justify-between p-5 group transition-all active:bg-gray-50">
-                                  <div className="flex items-center gap-4"><Folder size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{folder.name}</span></div>
-                                  <div className="flex items-center gap-2"><span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md tracking-wider group-hover:bg-primary-50 group-hover:text-primary-600 transition-colors">{(folder as any).itemCount || 0}</span></div>
+                                  <div className="flex items-center gap-4">
+                                    <Folder size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                                    <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{folder.name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md tracking-wider group-hover:bg-primary-50 group-hover:text-primary-600 transition-colors">
+                                      {(folder as any).itemCount || 0}
+                                    </span>
+                                  </div>
                                 </button>
                                 {folder.subFolders && (
                                   <div className="bg-gray-50/50">
                                     {folder.subFolders.map(sub => (
                                       <button key={sub.id} onClick={() => handleNav(`/gallery/${sub.id}`)} className="w-full flex items-center gap-3 pl-14 pr-5 py-3 text-sm group transition-all active:bg-gray-100">
-                                        <FolderIcon size={18} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-600 font-medium group-hover:text-primary-600 transition-colors">{sub.name}</span>
+                                        <FolderIcon size={18} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                                        <span className="text-gray-600 font-medium group-hover:text-primary-600 transition-colors">{sub.name}</span>
                                       </button>
                                     ))}
                                   </div>
@@ -220,12 +240,20 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
                             <div className="border-b border-gray-50 last:border-0">
                              <button onClick={() => handleNav('/gallery/shared')} className="w-full flex items-center justify-between p-5 group transition-all active:bg-gray-50">
-                               <div className="flex items-center gap-4"><Share2 size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">Shared with Me</span></div><ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                               <div className="flex items-center gap-4">
+                                 <Share2 size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                                 <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">Shared with Me</span>
+                               </div>
+                               <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
                              </button>
                            </div>
                            <div className="border-t border-gray-50">
                              <button onClick={() => handleNav('/gallery/archive')} className="w-full flex items-center justify-between p-5 group transition-all active:bg-gray-50">
-                               <div className="flex items-center gap-4"><Archive size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">Archive</span></div><ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                               <div className="flex items-center gap-4">
+                                 <Archive size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                                 <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">Archive</span>
+                               </div>
+                               <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
                              </button>
                            </div>
                       </div>
@@ -236,10 +264,14 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">Resources</h3>
                       <div className="bg-white rounded-[28px] border border-gray-100 overflow-hidden shadow-sm">
                         <button onClick={() => handleNav('/help?section=how-to')} className="w-full flex items-center gap-4 p-5 border-b border-gray-50 group transition-all active:bg-gray-50">
-                          <BookOpen size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">Guide</span><ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                          <BookOpen size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                          <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">Guide</span>
+                          <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
                         </button>
                         <button onClick={() => handleNav('/help?section=contact')} className="w-full flex items-center gap-4 p-5 group transition-all active:bg-gray-50">
-                          <HelpCircle size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">Support</span><ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                          <HelpCircle size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                          <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">Support</span>
+                          <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
                         </button>
                       </div>
                     </section>
@@ -249,13 +281,18 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">Account</h3>
                       <div className="bg-white rounded-[28px] border border-gray-100 overflow-hidden shadow-sm">
                         <button onClick={() => handleNav('/settings/app')} className="w-full flex items-center gap-4 p-5 border-b border-gray-50 group transition-all active:bg-gray-50">
-                          <Settings size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">App Settings</span><ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                          <Settings size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                          <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">App Settings</span>
+                          <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
                         </button>
                         <button onClick={() => handleNav('/settings/account')} className="w-full flex items-center gap-4 p-5 border-b border-gray-50 group transition-all active:bg-gray-50">
-                          <User size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">My Account</span><ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                          <User size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                          <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">My Account</span>
+                          <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
                         </button>
                         <button onClick={() => { signOut(); onClose(); }} className="w-full flex items-center gap-4 p-5 group transition-all active:bg-red-50">
-                          <LogOut size={22} className="text-red-400 group-hover:text-red-600 transition-colors" /><span className="text-gray-900 font-bold flex-1 text-left group-hover:text-red-600 transition-colors">Sign Out</span>
+                          <LogOut size={22} className="text-red-400 group-hover:text-red-600 transition-colors" />
+                          <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-red-600 transition-colors">Sign Out</span>
                         </button>
                       </div>
                     </section>
@@ -274,7 +311,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
         </div>
       </div>
 
-      {/* ✅ 3) Updated Input Modal with Parent Options */}
       <InputModal 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
