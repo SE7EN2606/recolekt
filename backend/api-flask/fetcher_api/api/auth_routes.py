@@ -203,3 +203,4 @@ def auth_status():
         "verified": is_verified,
         "user_id": user_id
     })
+
