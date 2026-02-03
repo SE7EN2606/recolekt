@@ -17,45 +17,53 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_BASE = import.meta.env.VITE_API_BASE; // Utilise uniquement la variable d'environnement
+/*
+✅ Single source of truth
+Falls back to Railway production automatically
+*/
+const API_BASE =
+  import.meta.env.VITE_API_BASE?.replace(/\/$/, '') ||
+  import.meta.env.VITE_API_URL?.replace(/\/$/, '') ||
+  'http://localhost:5001';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Small timeout to ensure browser cookies are ready/accessible on mount
     const timer = setTimeout(() => {
       checkAuthStatus();
     }, 100);
-    
+
     return () => clearTimeout(timer);
   }, []);
 
   const checkAuthStatus = async () => {
     try {
       const response = await fetch(`${API_BASE}/api/auth/me`, {
-        credentials: 'include' // ✅ CRITICAL: Sends session cookie to backend
+        credentials: 'include'
       });
 
-      // ✅ CRITICAL: Check for 401 BEFORE reading JSON to avoid parse errors
       if (response.status === 401) {
         setUser(null);
         setLoading(false);
         return;
       }
 
-      // ✅ NOW read JSON
+      if (!response.ok) {
+        throw new Error(`Auth failed: ${response.status}`);
+      }
+
       const data = await response.json();
 
-      if (response.ok && data.authenticated && data.user) {
-        console.log('✅ User authenticated:', data.user.email);
+      if (data?.authenticated && data?.user) {
         setUser(data.user);
       } else {
         setUser(null);
       }
+
     } catch (error) {
-      console.error('Error checking auth status:', error);
+      console.error('Auth check error:', error);
       setUser(null);
     } finally {
       setLoading(false);
@@ -63,7 +71,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInWithGoogle = () => {
-    // Redirects browser to backend Google OAuth route
     window.location.href = `${API_BASE}/api/auth/google`;
   };
 
@@ -73,21 +80,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         method: 'POST',
         credentials: 'include'
       });
+
       setUser(null);
+
     } catch (error) {
-      console.error('Error signing out:', error);
+      console.error('Logout error:', error);
       throw error;
     }
   };
 
   return (
-    <AuthContext.Provider 
-      value={{ 
-        user, 
-        loading, 
-        signInWithGoogle, 
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        signInWithGoogle,
         signOut,
-        isAuthenticated: !!user 
+        isAuthenticated: !!user
       }}
     >
       {children}
@@ -97,8 +106,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
+
   if (!context) {
     throw new Error('useAuth must be used within AuthProvider');
   }
+
   return context;
 };
