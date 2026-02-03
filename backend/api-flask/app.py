@@ -66,6 +66,9 @@ from fetcher_api import create_app
 from fetcher_api.api import register_blueprints
 
 app = create_app()
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
 if not app:
     raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
 
@@ -77,11 +80,9 @@ app.config['SESSION_PERMANENT'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 app.config['SESSION_COOKIE_NAME'] = 'recolekt_session'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SECURE'] = False
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_DOMAIN'] = None
 app.config['SESSION_COOKIE_PATH'] = '/'
-app.config['SESSION_REFRESH_EACH_REQUEST'] = False
+app.config['SESSION_REFRESH_EACH_REQUEST'] = True
 app.config.update(
     SESSION_COOKIE_SAMESITE="None",
     SESSION_COOKIE_SECURE=True
@@ -115,18 +116,6 @@ CORS(
     supports_credentials=True,
     origins=["https://recolekt-front.netlify.app"]
 )
-
-# ✅ CRITICAL: Global OPTIONS handler for all routes
-@app.before_request
-def handle_preflight():
-    if request.method == "OPTIONS":
-        response = jsonify({"status": "ok"})
-        response.headers.add("Access-Control-Allow-Origin", request.headers.get("Origin", "*"))
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, Pragma")
-        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        response.headers.add("Access-Control-Allow-Credentials", "true")
-        response.headers.add("Access-Control-Max-Age", "3600")
-        return response, 200
 
 # -------------------------------------------------
 # 🧾 Logging
