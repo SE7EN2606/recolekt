@@ -118,7 +118,7 @@ def google_callback():
         logger.info(f"✅ Session set: user_id={user_id}, authenticated=True")
         
         # ✅ FIXED: FRONTEND_BASE_URL already stripped of trailing slashes
-        return redirect(f'{FRONTEND_BASE_URL}/gallery')
+        return redirect(f'{FRONTEND_BASE_URL}/#/gallery')
         
     except Exception as e:
         logger.error(f"Google OAuth error: {e}")
