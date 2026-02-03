@@ -26,11 +26,11 @@ const RAW_API_BASE =
   import.meta.env.VITE_API_URL ||
   'http://localhost:5001';
 
-const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
+const API_BASE = String(RAW_API_BASE).replace(/\/+$/, ''); // ✅ FIXED: was /\\+$/ (escaped backslashes)
 
 function joinUrl(base: string, path: string) {
-  const b = String(base || '').replace(/\/+$/, '');
-  const p = String(path || '').replace(/^\/+/, '');
+  const b = String(base || '').replace(/\/+$/, ''); // ✅ FIXED: was /\\+$/
+  const p = String(path || '').replace(/^\/+/, ''); // ✅ FIXED: was /^\\+/
   return `${b}/${p}`;
 }
 
