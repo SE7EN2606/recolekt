@@ -1,6 +1,6 @@
 FROM python:3.12-slim-bookworm
 
-# Installe les dépendances
+# Installe les dépendances système
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
@@ -18,8 +18,7 @@ RUN useradd --create-home --shell /bin/bash app
 
 WORKDIR /app
 
-# Copie les fichiers nécessaires
-COPY .env /app/.env
+# Copie uniquement les fichiers strictement nécessaires
 COPY api-flask/requirements.txt /app/api-flask/requirements.txt
 
 # Installe les dépendances Python
@@ -35,5 +34,5 @@ USER app
 
 EXPOSE 8080
 
-# Commande adaptée pour Railway
+# Commande de démarrage
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--threads", "4", "--timeout", "120", "--chdir", "/app/api-flask", "app:app"]
