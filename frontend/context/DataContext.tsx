@@ -9,13 +9,11 @@ import React, {
 import { Video, Folder } from '../types';
 import { useAuth } from './AuthContext';
 
-
 interface User {
   id: string;
   name: string;
   email: string;
 }
-
 
 export type AddVideoResult = {
   clientTempId: string;
@@ -26,12 +24,11 @@ export type AddVideoResult = {
   previewUrl?: string | null;
 };
 
-
 interface DataContextType {
   videos: Video[];
   folders: Folder[];
   isLoading: boolean;
-  
+
   addFolder: (name: string, parentId?: string | null) => void;
   updateFolder: (id: string, name: string) => void;
   deleteFolder: (id: string) => void;
@@ -42,12 +39,23 @@ interface DataContextType {
   refreshVideos: () => Promise<void>;
 }
 
-
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
+/*
+✅ FIXED SAFE BASE URL (same approach everywhere)
+*/
+const RAW_API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  import.meta.env.VITE_API_URL ||
+  'http://localhost:5001';
 
-const API_BASE = import.meta.env.VITE_API_BASE; // Utilise uniquement la variable d'environnement
+const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
 
+function joinUrl(base: string, path: string) {
+  const b = String(base || '').replace(/\/+$/, '');
+  const p = String(path || '').replace(/^\/+/, '');
+  return `${b}/${p}`;
+}
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
@@ -58,20 +66,22 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return saved ? JSON.parse(saved) : [];
   });
 
-
   useEffect(() => {
     localStorage.setItem('custom_folders', JSON.stringify(folders));
   }, [folders]);
-
 
   // ✅ CENTRAL FETCH LOGIC
   const fetchVideos = async () => {
     if (!user) return;
     setIsLoading(true);
 
-
     try {
-      const response = await fetch(`${API_BASE}/api/saved_reels?page=1&per_page=100&t=${Date.now()}`, {
+      const url = joinUrl(
+        API_BASE,
+        `/api/saved_reels?page=1&per_page=100&t=${Date.now()}`
+      );
+
+      const response = await fetch(url, {
         credentials: 'include',
         cache: 'no-store',
         headers: {
@@ -79,24 +89,20 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           'Pragma': 'no-cache'
         }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
-        
+
         const loadedVideos = (data.reels || []).map((r: any) => {
-          
           const summary = r.summary || {};
-          
-          // ✅ FIXED: Only trust backend status, don't override!
+
           const isDone = r.status === 'done' || r.status === 'completed';
-          
+
           let finalCategory = summary.category || 'General';
           if (!isDone) {
             finalCategory = 'Processing';
           }
 
-
-          // ✅ FIXED: Extract English for display, but keep full summary object
           let displayTitle = 'Processing...';
           if (isDone) {
             if (typeof summary.title === 'object' && summary.title?.english) {
@@ -110,8 +116,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }
           }
 
-
-          const mappedVideo = {
+          const mappedVideo: any = {
             id: r.id,
             title: displayTitle,
             author: r.author_name || 'Instagram User',
@@ -129,45 +134,45 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             content_type: r.content_type,
             recipe: r.recipe,
             workout: r.workout,
-            status: r.status, // ✅ Pass through backend status
+            status: r.status,
             __raw: r
           };
-          
-          return mappedVideo;
+
+          return mappedVideo as Video;
         });
-        
-setVideos(prevVideos => {
-  const loadedByUrl = new Map(loadedVideos.map(v => [v.originalUrl, v]));
-  const loadedById = new Map(loadedVideos.map(v => [v.id, v]));
-  
-  const loadedByShortcode = new Map();
-  loadedVideos.forEach(v => {
-    const shortcode = v.id.split('--')[0].split('_')[0];
-    if (!loadedByShortcode.has(shortcode)) {
-      loadedByShortcode.set(shortcode, v);
-    }
-  });
-  
-  const seenIds = new Set<string>();
-  const optimisticOnly = prevVideos.filter(v => {
-    if (seenIds.has(v.id)) return false;
-    seenIds.add(v.id);
-    
-    if (v.category !== 'Processing') return false;
-    
-    const shortcode = v.id.split('--')[0].split('_')[0];
-    
-    if (loadedById.has(v.id)) return false;
-    if (v.originalUrl && loadedByUrl.has(v.originalUrl)) return false;
-    if (loadedByShortcode.has(shortcode)) return false;
-    
-    return true;
-  });
-  
-  const finalVideos = [...loadedVideos, ...optimisticOnly];
-  const uniqueById = new Map(finalVideos.map(v => [v.id, v]));
-  
-  return Array.from(uniqueById.values());
+
+        setVideos(prevVideos => {
+          const loadedByUrl = new Map(loadedVideos.map(v => [v.originalUrl, v]));
+          const loadedById = new Map(loadedVideos.map(v => [v.id, v]));
+
+          const loadedByShortcode = new Map<string, Video>();
+          loadedVideos.forEach(v => {
+            const shortcode = v.id.split('--')[0].split('_')[0];
+            if (!loadedByShortcode.has(shortcode)) {
+              loadedByShortcode.set(shortcode, v);
+            }
+          });
+
+          const seenIds = new Set<string>();
+          const optimisticOnly = prevVideos.filter(v => {
+            if (seenIds.has(v.id)) return false;
+            seenIds.add(v.id);
+
+            if (v.category !== 'Processing') return false;
+
+            const shortcode = v.id.split('--')[0].split('_')[0];
+
+            if (loadedById.has(v.id)) return false;
+            if (v.originalUrl && loadedByUrl.has(v.originalUrl)) return false;
+            if (loadedByShortcode.has(shortcode)) return false;
+
+            return true;
+          });
+
+          const finalVideos = [...loadedVideos, ...optimisticOnly];
+          const uniqueById = new Map(finalVideos.map(v => [v.id, v]));
+
+          return Array.from(uniqueById.values());
         });
       }
     } catch (error) {
@@ -177,33 +182,32 @@ setVideos(prevVideos => {
     }
   };
 
-
   // ✅ Initial fetch when user logs in
   useEffect(() => {
     if (user) fetchVideos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
-
 
   // ✅ AUTO-REFRESH: Poll every 10 seconds if processing videos exist
   useEffect(() => {
     if (!user) return;
-    
+
     const interval = setInterval(() => {
       const hasProcessing = videos.some(v => v.category === 'Processing');
       if (hasProcessing) {
         fetchVideos();
       }
     }, 10000);
-    
-    return () => clearInterval(interval);
-  }, [user, videos]);
 
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, videos]);
 
   // ✅ Add Video with Duplicate Prevention
   const addVideo = async (url: string): Promise<AddVideoResult> => {
     try {
       const cleanUrl = url.trim().split('?')[0];
-      
+
       const existingVideo = videos.find(v => v.originalUrl === cleanUrl);
       if (existingVideo) {
         console.warn('⚠️ Video already exists:', cleanUrl);
@@ -216,32 +220,27 @@ setVideos(prevVideos => {
           previewUrl: existingVideo.thumbnailUrl
         };
       }
-      
+
       const formData = new FormData();
       formData.append('url', cleanUrl);
 
-
-      const response = await fetch(`${API_BASE}/api/summarize`, {
+      const response = await fetch(joinUrl(API_BASE, '/api/summarize'), {
         method: 'POST',
         body: formData,
         credentials: 'include',
       });
 
-
       if (response.status === 409) throw new Error('This video has already been saved.');
-      
-      let result;
-      try { result = await response.json(); } catch {}
 
+      let result: any;
+      try { result = await response.json(); } catch {}
 
       if (!response.ok) {
         throw new Error(result?.error || 'Failed to import video.');
       }
 
-
       const createdAt = new Date().toISOString();
       const videoId = result?.reel_id || `temp_${cleanUrl.split('/').pop()}_${Date.now()}`;
-
 
       const newVideo: Video = {
         id: videoId,
@@ -261,14 +260,12 @@ setVideos(prevVideos => {
         status: 'processing',
       };
 
-
       setVideos(prev => {
         const filtered = prev.filter(v => v.originalUrl !== cleanUrl);
         return [newVideo, ...filtered];
       });
-      
-      setTimeout(fetchVideos, 5000);
 
+      setTimeout(fetchVideos, 5000);
 
       return {
         clientTempId: `temp_${Date.now()}`,
@@ -284,41 +281,52 @@ setVideos(prevVideos => {
     }
   };
 
-
   // ✅ Delete Videos
   const deleteVideos = async (videoIds: string[]): Promise<void> => {
+    if (!videoIds.length) return;
+
+    const before = videos;
+
     try {
       console.log('🗑️ Deleting videos:', videoIds);
-      
+
+      // Optimistic UI
       setVideos(prev => prev.filter(v => !videoIds.includes(v.id)));
-      
+
       const deletePromises = videoIds.map(async (videoId) => {
+        const encodedId = encodeURIComponent(videoId);
+        const url = joinUrl(API_BASE, `/api/reel/${encodedId}`);
+
         try {
-          const response = await fetch(`${API_BASE}/api/reel/${videoId}`, {
+          const response = await fetch(url, {
             method: 'DELETE',
-            credentials: 'include'
+            credentials: 'include',
           });
-          
+
           if (!response.ok) {
-            console.error(`❌ Failed to delete ${videoId} from backend:`, response.status);
-          } else {
-            console.log(`✅ Deleted ${videoId} from backend`);
+            const text = await response.text().catch(() => '');
+            console.error(`❌ Failed to delete ${videoId} from backend:`, response.status, text);
+            throw new Error(`Delete failed for ${videoId}: ${response.status}`);
           }
+
+          console.log(`✅ Deleted ${videoId} from backend`);
         } catch (error) {
           console.error(`❌ Error deleting ${videoId}:`, error);
+          throw error;
         }
       });
-      
+
       await Promise.all(deletePromises);
-      
+
       console.log('✅ All videos deleted');
-      
     } catch (error) {
-      console.error('❌ Failed to delete videos:', error);
+      console.error('❌ Failed to delete videos (restoring):', error);
+
+      // Restore, then refetch to be sure
+      setVideos(before);
       await fetchVideos();
     }
   };
-
 
   // Folder Actions
   const addFolder = (name: string, parentId: string | null = null) => {
@@ -337,7 +345,6 @@ setVideos(prevVideos => {
     }
   };
 
-
   const updateFolder = (id: string, name: string) => {
     const updateRecursive = (list: Folder[]): Folder[] => {
       return list.map(f => {
@@ -349,7 +356,6 @@ setVideos(prevVideos => {
     setFolders(prev => updateRecursive(prev));
   };
 
-
   const deleteFolder = (id: string) => {
     const deleteRecursive = (list: Folder[]): Folder[] => {
       return list
@@ -359,28 +365,30 @@ setVideos(prevVideos => {
     setFolders(prev => deleteRecursive(prev));
   };
 
-
   const toggleFavorite = (videoId: string) => {
     setVideos(prev => prev.map(v => v.id === videoId ? { ...v, isFavorite: !v.isFavorite } : v));
   };
-
 
   const moveVideos = (videoIds: string[], targetFolderId: string) => {
     setVideos(prev => prev.map(v => (videoIds.includes(v.id) ? { ...v, folderId: targetFolderId } : v)));
   };
 
-
   const value = useMemo(() => ({
-    videos, folders, isLoading,
-    addFolder, updateFolder, deleteFolder,
-    toggleFavorite, moveVideos, deleteVideos,
-    addVideo, refreshVideos: fetchVideos
-  }), [videos, folders, isLoading, user]);
-
+    videos,
+    folders,
+    isLoading,
+    addFolder,
+    updateFolder,
+    deleteFolder,
+    toggleFavorite,
+    moveVideos,
+    deleteVideos,
+    addVideo,
+    refreshVideos: fetchVideos
+  }), [videos, folders, isLoading]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 };
-
 
 export const useData = () => {
   const context = useContext(DataContext);
