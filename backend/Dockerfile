@@ -1,7 +1,7 @@
 # Utilise une image légère de Python
 FROM python:3.12-slim
 
-# Installe les dépendances système, y compris Rust
+# Installe les dépendances système, y compris Rust et ffmpeg
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
@@ -15,17 +15,17 @@ RUN apt-get update && apt-get install -y \
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Définis le répertoire de travail
-WORKDIR /app/api-flask
+WORKDIR /app
 
 # Copie les fichiers de configuration et les dépendances
 COPY api-flask/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copie le reste de l'application
-COPY api-flask/ .
+COPY api-flask/ api-flask/
 
 # Expose le port sur lequel ton application écoute
 EXPOSE 8080
 
 # Commande pour démarrer l'application
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--chdir", "/app/api-flask", "app:app"]
