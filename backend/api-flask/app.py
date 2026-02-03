@@ -109,7 +109,7 @@ print(f"SECRET_KEY: {flask_secret[:25]}..." if len(flask_secret) > 25 else f"SEC
 print("=" * 50)
 
 # -------------------------------------------------
-# 🌐 CORS - FIXED FOR DELETE REQUESTS
+# 🌐 CORS - FIXED: Added Cache-Control header
 # -------------------------------------------------
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
@@ -121,7 +121,12 @@ CORS(
     app,
     origins=ALLOWED_ORIGINS,
     supports_credentials=True,
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    allow_headers=[
+        "Content-Type", 
+        "Authorization", 
+        "X-Requested-With",
+        "Cache-Control"  # ✅ ADDED THIS - Fixes CORS preflight error
+    ],
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     expose_headers=["Content-Type", "Authorization"],
     max_age=3600
