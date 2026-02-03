@@ -77,7 +77,7 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-in-pr
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SESSION_FILE_DIR'] = '/tmp/flask_session'
 app.config['SESSION_PERMANENT'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+app.config['SESSION_PERMANENT_LIFETIME'] = timedelta(days=7)
 app.config['SESSION_COOKIE_NAME'] = 'recolekt_session'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_DOMAIN'] = None
@@ -109,7 +109,7 @@ print(f"SECRET_KEY: {flask_secret[:25]}..." if len(flask_secret) > 25 else f"SEC
 print("=" * 50)
 
 # -------------------------------------------------
-# 🌐 CORS - FIXED: Added Cache-Control header
+# 🌐 CORS - FIXED: Allow all headers (*)
 # -------------------------------------------------
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
@@ -121,12 +121,7 @@ CORS(
     app,
     origins=ALLOWED_ORIGINS,
     supports_credentials=True,
-    allow_headers=[
-        "Content-Type", 
-        "Authorization", 
-        "X-Requested-With",
-        "Cache-Control"  # ✅ ADDED THIS - Fixes CORS preflight error
-    ],
+    allow_headers="*",  # ✅ ALLOW ALL HEADERS (fixes cache-control, pragma, etc.)
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     expose_headers=["Content-Type", "Authorization"],
     max_age=3600
