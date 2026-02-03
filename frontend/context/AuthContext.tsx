@@ -19,12 +19,20 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 /*
 ✅ Single source of truth
-Falls back to Railway production automatically
+- Remove ALL trailing slashes so env like "https://api.com///" is still safe.
 */
-const API_BASE =
-  import.meta.env.VITE_API_BASE?.replace(/\/$/, '') ||
-  import.meta.env.VITE_API_URL?.replace(/\/$/, '') ||
+const RAW_API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  import.meta.env.VITE_API_URL ||
   'http://localhost:5001';
+
+const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
+
+function joinUrl(base: string, path: string) {
+  const b = String(base || '').replace(/\/+$/, '');
+  const p = String(path || '').replace(/^\/+/, '');
+  return `${b}/${p}`;
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -36,11 +44,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, 100);
 
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkAuthStatus = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/auth/me`, {
+      const response = await fetch(joinUrl(API_BASE, '/api/auth/me'), {
         credentials: 'include'
       });
 
@@ -61,7 +70,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         setUser(null);
       }
-
     } catch (error) {
       console.error('Auth check error:', error);
       setUser(null);
@@ -71,18 +79,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInWithGoogle = () => {
-    window.location.href = `${API_BASE}/api/auth/google`;
+    // Browser redirect to backend start route
+    window.location.href = joinUrl(API_BASE, '/api/auth/google');
   };
 
   const signOut = async () => {
     try {
-      await fetch(`${API_BASE}/api/auth/logout`, {
+      await fetch(joinUrl(API_BASE, '/api/auth/logout'), {
         method: 'POST',
         credentials: 'include'
       });
 
       setUser(null);
-
     } catch (error) {
       console.error('Logout error:', error);
       throw error;
