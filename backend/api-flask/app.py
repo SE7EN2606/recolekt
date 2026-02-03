@@ -111,10 +111,20 @@ print("=" * 50)
 # -------------------------------------------------
 # 🌐 CORS - FIXED FOR DELETE REQUESTS
 # -------------------------------------------------
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://recolekt-front.netlify.app"
+]
+
 CORS(
     app,
+    origins=ALLOWED_ORIGINS,
     supports_credentials=True,
-    origins=["https://recolekt-front.netlify.app"]
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    expose_headers=["Content-Type", "Authorization"],
+    max_age=3600
 )
 
 # -------------------------------------------------
