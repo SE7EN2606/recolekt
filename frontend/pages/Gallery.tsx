@@ -14,7 +14,21 @@ const CalendarArrowDown = ({ size = 20 }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 18 4 4 4-4"/><path d="M16 2v4"/><path d="M18 14v8"/><path d="M21 11.354V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2-2v14a2 2 0 0 0 2 2h7.343"/><path d="M3 10h18"/><path d="M8 2v4"/></svg>
 );
 
-const API_BASE = import.meta.env.VITE_API_BASE; // Utilise uniquement la variable d'environnement
+/*
+✅ FIXED SAFE BASE URL - same as AuthContext/DataContext
+*/
+const RAW_API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  import.meta.env.VITE_API_URL ||
+  'http://localhost:5001';
+
+const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
+
+function joinUrl(base: string, path: string) {
+  const b = String(base || '').replace(/\/+$/, '');
+  const p = String(path || '').replace(/^\/+/, '');
+  return `${b}/${p}`;
+}
 
 export const Gallery: React.FC = () => {
   const { folderId } = useParams<{ folderId?: string }>();
@@ -24,7 +38,7 @@ export const Gallery: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
   
   // ✅ USE DATACONTEXT - NO LOCAL FETCH
-  const { videos, folders, isLoading: dataLoading, refreshVideos } = useData();
+  const { videos, folders, isLoading: dataLoading, refreshVideos, deleteVideos } = useData();
 
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -105,34 +119,44 @@ export const Gallery: React.FC = () => {
   const handleMoveSubmit = async () => {
     if (!targetFolderId) return;
     try {
-      for (const id of Array.from(selectedIds)) {
-        await fetch(`${API_BASE}/api/update_reel/${id}`, {
+      const idsArray = Array.from(selectedIds);
+      
+      for (const id of idsArray) {
+        const encodedId = encodeURIComponent(id);
+        const url = joinUrl(API_BASE, `/api/update_reel/${encodedId}`);
+        
+        await fetch(url, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ folder_id: targetFolderId }),
           credentials: 'include'
         });
       }
+      
       await refreshVideos();
       setSelectedIds(new Set());
       setSelectionMode(false);
       setIsMoveModalOpen(false);
-    } catch (err) { alert('Failed to move videos'); }
+    } catch (err) {
+      console.error('Failed to move videos:', err);
+      alert('Failed to move videos');
+    }
   };
 
   const handleDelete = async () => {
     if (selectedIds.size === 0 || !confirm(`Delete ${selectedIds.size} video(s)?`)) return;
+    
+    const idsArray = Array.from(selectedIds);
+    
     try {
-      for (const id of Array.from(selectedIds)) {
-        await fetch(`${API_BASE}/api/delete_reel/${id}`, { 
-          method: 'DELETE', 
-          credentials: 'include' 
-        });
-      }
-      await refreshVideos();
+      // ✅ Use DataContext deleteVideos (handles encoding + state)
+      await deleteVideos(idsArray);
       setSelectedIds(new Set());
       setSelectionMode(false);
-    } catch (err) { alert('Failed to delete videos'); }
+    } catch (err) {
+      console.error('Failed to delete videos:', err);
+      alert('Failed to delete videos');
+    }
   };
 
   const getProcessingMessage = (video: any) => video.title || "Processing…";
@@ -304,7 +328,18 @@ export const Gallery: React.FC = () => {
                 {video.category === 'Processing' ? (
                   <div className="relative aspect-[9/16] rounded-2xl bg-gray-200 overflow-hidden processing-card cursor-default">
                     {video.thumbnailUrl ? (
-                      <img src={video.thumbnailUrl} alt="Processing" loading="lazy" crossOrigin="anonymous" className="absolute inset-0 w-full h-full object-cover blur-sm opacity-80" />
+                      <img 
+                        src={video.thumbnailUrl} 
+                        alt="Processing" 
+                        loading="lazy" 
+                        crossOrigin="anonymous" 
+                        className="absolute inset-0 w-full h-full object-cover blur-sm opacity-80"
+                        onError={(e) => {
+                          const img = e.currentTarget;
+                          img.onerror = null;
+                          img.style.display = 'none';
+                        }}
+                      />
                     ) : (
                       <div className="placeholder-skeleton" />
                     )}
@@ -368,7 +403,7 @@ export const Gallery: React.FC = () => {
                       </div>
                       {targetFolderId === f.id && <CheckCircle2 size={20} className="text-primary-600" />}
                     </button>
-                    {f.subFolders?.map(sub => (
+                    {f.subFolders?.map((sub: any) => (
                       <button key={sub.id} onClick={() => setTargetFolderId(sub.id)} className={`w-full flex items-center gap-3 p-3 pl-8 rounded-xl transition-all ${targetFolderId === sub.id ? 'bg-primary-50 text-primary-700 ring-2 ring-primary-500 ring-inset' : 'hover:bg-gray-50 text-gray-700'}`}>
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${targetFolderId === sub.id ? 'bg-white' : 'bg-gray-100'}`}>
                           <span className="text-sm">{sub.emoji}</span>
