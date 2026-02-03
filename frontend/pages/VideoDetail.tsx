@@ -20,7 +20,7 @@ import {
   scaleQuantity
 } from '../utils/conversionUtils';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
+const API_BASE = import.meta.env.VITE_API_BASE; // Utilise uniquement la variable d'environnement
 
 const stripLeadingEmoji = (s: string) => {
   const text = (s || '').trim();
