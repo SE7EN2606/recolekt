@@ -1,4 +1,3 @@
-cat > Dockerfile << 'EOF'
 # Build stage
 FROM node:18-alpine as build
 
@@ -15,10 +14,16 @@ FROM nginx:alpine
 
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Create nginx config that uses PORT env variable
-COPY nginx.conf /etc/nginx/templates/default.conf.template
+# Create nginx config
+RUN echo 'server { \
+    listen 8080; \
+    location / { \
+        root /usr/share/nginx/html; \
+        try_files $uri $uri/ /index.html; \
+    } \
+}' > /etc/nginx/conf.d/default.conf
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "envsubst '$$PORT' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
-EOF
+CMD ["nginx", "-g", "daemon off;"]
+

@@ -1,0 +1,374 @@
+/** @import must precede all other statements */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =========================================================
+   TAILWIND ROOT VARIABLES
+   ========================================================= */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }
+}
+
+/* =========================================================
+   BASE ELEMENTS
+   ========================================================= */
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  :where(
+      p,
+      span,
+      li,
+      h1,
+      h2,
+      h3,
+      h4,
+      h5,
+      h6,
+      a,
+      button,
+      label,
+      td,
+      th
+    ) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  pre,
+  code {
+    white-space: pre;
+    overflow-x: auto;
+  }
+}
+
+/* =========================================================
+   SHIMMER ANIMATION
+   ========================================================= */
+
+@keyframes shimmerGlow {
+  0% {
+    background-position: 200% 0;
+    opacity: 1;
+  }
+  50% {
+    background-position: -200% 0;
+    opacity: 0.75;
+  }
+  100% {
+    background-position: 200% 0;
+    opacity: 1;
+  }
+}
+
+/* =========================================================
+   PLACEHOLDER SKELETON
+   ========================================================= */
+
+.placeholder-skeleton {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+
+  background: linear-gradient(
+    120deg,
+    rgba(255, 255, 255, 0.10) 0%,
+    rgba(255, 255, 255, 0.20) 20%,
+    rgba(255, 255, 255, 0.10) 40%,
+    rgba(255, 255, 255, 0.05) 60%,
+    rgba(255, 255, 255, 0.10) 80%
+  );
+
+  background-size: 200% 100%;
+  animation: shimmerGlow 4s ease-in-out infinite;
+}
+
+.preview-skeleton-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  pointer-events: none;
+
+  background: linear-gradient(
+    120deg,
+    rgba(255, 255, 255, 0.10) 0%,
+    rgba(255, 255, 255, 0.20) 20%,
+    rgba(255, 255, 255, 0.10) 40%,
+    rgba(255, 255, 255, 0.05) 60%,
+    rgba(255, 255, 255, 0.10) 80%
+  );
+
+  background-size: 200% 100%;
+  animation: shimmerGlow 4s ease-in-out infinite;
+}
+
+/* =========================================================
+   PROCESSING OVERLAY
+   ========================================================= */
+
+.processing-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  backdrop-filter: blur(2px);
+  background: rgba(255, 255, 255, 0.10);
+
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+.processing-overlay .spinner {
+  width: 36px;
+  height: 36px;
+  border: 4px solid rgba(124, 58, 237, 0.25);
+  border-top-color: #7c3aed;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+  margin-bottom: 10px;
+}
+
+.processing-overlay span {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =========================================================
+   FAVORITE HEART
+   ========================================================= */
+
+.favorite-heart {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  cursor: pointer;
+}
+
+.favorite-heart svg {
+  width: 24px;
+  height: 24px;
+  stroke-width: 2;
+  stroke: #FF2C00;
+  fill: transparent;
+  opacity: 0.5;
+  transition: all 0.25s ease;
+}
+
+.favorite-heart:hover svg {
+  opacity: 0.9;
+}
+
+.favorite-heart svg.favorited {
+  stroke: #FF2C00 !important;
+  fill: #e63946 !important;
+  opacity: 1 !important;
+}
+
+@keyframes heartBeatOnce {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.28); }
+  100% { transform: scale(1); }
+}
+
+.heart-animate {
+  animation: heartBeatOnce 0.35s ease-out;
+}
+
+/* =========================================================
+   SELECTION RADIO
+   ========================================================= */
+
+.modern-radio {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.radio-circle {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #1a73e8;
+  background-color: rgba(255, 255, 255, 0.1);
+  transition: all 0.25s ease;
+}
+
+.radio-circle:hover {
+  background-color: rgba(66, 133, 244, 0.15);
+  box-shadow: 0 0 0 6px rgba(66, 133, 244, 0.25);
+  transform: scale(1.05);
+}
+
+.radio-active {
+  background-color: #1a73e8;
+  border: 1px solid #1a73e8;
+  box-shadow: 0 0 2px 2px rgba(66, 133, 244, 0.35);
+}
+
+.radio-active::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  background: #fff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.selected-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: rgba(0, 153, 255, 0.25);
+}
+
+/* =========================================================
+   RESPONSIVE MOBILE
+   ========================================================= */
+@media (max-width: 500px) {
+  .mobile-paste-btn .paste-text {
+    display: none !important;
+  }
+
+  .mobile-paste-btn .paste-icon {
+    display: inline-block !important;
+    width: 20px !important;
+    height: 20px !important;
+    object-fit: contain !important;
+  }
+}
+
+@media (max-width: 500px) {
+  .mobile-input-row {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    gap: 6px !important;
+    overflow: hidden !important;
+  }
+
+  .mobile-input-row input {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+  }
+
+  .mobile-input-row button {
+    flex-shrink: 0 !important;
+    height: 40px !important;
+    padding: 0 10px !important;
+  }
+}
+
+/* =========================================================
+   HEADER SHADOW
+   ========================================================= */
+
+.header-default {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow:
+    0 6px 12px rgba(0, 0, 0, 0.10),
+    0 18px 36px rgba(0, 0, 0, 0.12);
+}
+
+.header-elevated {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.05),
+    0 6px 12px rgba(0, 0, 0, 0.06);
+}

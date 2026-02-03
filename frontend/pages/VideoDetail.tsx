@@ -1,288 +1,557 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, ChevronDown, Play, Heart, FolderInput } from 'lucide-react';
-import { MOCK_VIDEOS } from '../data/mockData';
-import { Button } from '../components/Button';
-import { MobileBottomNav } from '../components/MobileBottomNav';
+import { useData } from '../context/DataContext';
+import { ReportModal } from '../components/ReportModal';
+import { VideoDetailDesktop } from '../components/VideoDetailDesktop';
+import { VideoDetailMobile } from '../components/VideoDetailMobile';
+import { normalizeReel } from '../services/normalizeReel';
+import {
+  getBullets,
+  getTitle,
+  getTopic,
+  getCategory,
+  getHashtags,
+  pickFirstString
+} from '../utils/videoUtils';
+import {
+  parseQuantity,
+  convertToMetric,
+  convertToImperial,
+  scaleQuantity
+} from '../utils/conversionUtils';
 
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
 
-// iOS Share Icon (Arrow Up from Box)
-const IOSShareIcon = ({ size = 24 }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2v13"/>
-    <path d="m16 6-4-4-4 4"/>
-    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
-  </svg>
-);
+const stripLeadingEmoji = (s: string) => {
+  const text = (s || '').trim();
+  return text.replace(/^[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+\s*/u, '').trim();
+};
 
+const safeStr = (v: any): string => {
+  if (typeof v === 'string') return v;
+  if (v == null) return '';
+  return String(v);
+};
 
-// Instagram External Link Icon
-const InstagramExternalIcon = ({ size = 16 }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M15 3h6v6"/>
-    <path d="M10 14 21 3"/>
-    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-  </svg>
-);
+const normalizeSummaryTextObj = (obj: any) => {
+  if (!obj || typeof obj !== 'object') return obj;
 
+  const enCandidate = obj.english ?? obj.EN ?? obj.en ?? null;
+  const ogCandidate = obj.original ?? obj.OG ?? obj.og ?? null;
+
+  if (obj.english || obj.original) {
+    return {
+      ...obj,
+      english: obj.english ?? enCandidate,
+      original: obj.original ?? ogCandidate,
+    };
+  }
+
+  if (enCandidate || ogCandidate) {
+    return {
+      ...obj,
+      english: enCandidate,
+      original: ogCandidate,
+    };
+  }
+
+  return obj;
+};
+
+const extractTranscriptText = (maybe: any): string => {
+  if (!maybe) return '';
+  if (typeof maybe === 'string') return maybe;
+
+  if (typeof maybe === 'object') {
+    if (typeof maybe.transcript === 'string') return maybe.transcript;
+    if (typeof maybe.text === 'string') return maybe.text;
+    if (typeof maybe.content === 'string') return maybe.content;
+  }
+
+  return '';
+};
+
+const extractSummaryString = (maybe: any, showOriginal: boolean): string => {
+  if (typeof maybe === 'string') return maybe;
+
+  const obj = normalizeSummaryTextObj(maybe);
+  const chosen = showOriginal ? (obj?.original ?? null) : (obj?.english ?? null);
+
+  if (chosen && typeof chosen === 'object') {
+    if (typeof chosen.summary === 'string') return chosen.summary;
+    if (typeof chosen.text === 'string') return chosen.text;
+    if (typeof chosen.description === 'string') return chosen.description;
+  }
+
+  const fallback = obj?.english ?? obj?.original ?? null;
+  if (fallback && typeof fallback === 'object') {
+    if (typeof fallback.summary === 'string') return fallback.summary;
+    if (typeof fallback.text === 'string') return fallback.text;
+  }
+
+  if (obj && typeof obj === 'object') {
+    if (typeof obj.summary === 'string') return obj.summary;
+  }
+
+  return '';
+};
+
+// Extract trailing emoji from a string (best-effort)
+const splitTrailingEmoji = (text: string): { body: string; emoji: string } => {
+  const s = (text || '').trim();
+  if (!s) return { body: '', emoji: '' };
+
+  const m = s.match(/^(.*?)(?:\s+)?([\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+)\s*$/u);
+  if (!m) return { body: s, emoji: '' };
+
+  return { body: (m[1] || '').trim(), emoji: (m[2] || '').trim() };
+};
 
 export const VideoDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const video = MOCK_VIDEOS.find(v => v.id === id);
-  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const { deleteVideos, videos } = useData();
 
+  const [video, setVideo] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [captionOpen, setCaptionOpen] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const [servingScale, setServingScale] = useState(1);
+  const [useMetric, setUseMetric] = useState(true);
+
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [tempTitle, setTempTitle] = useState('');
+  const [tempCategory, setTempCategory] = useState('');
+  const [tempTopic, setTempTopic] = useState('');
+  const [tempDescription, setTempDescription] = useState('');
+  const [tempBullets, setTempBullets] = useState<Array<{ headline: string; text: string; emoji?: string }>>([]);
+  const [tempHashtags, setTempHashtags] = useState<string[]>([]);
+
+  const [fetchedTranscript, setFetchedTranscript] = useState<string>('');
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+
+  const notFoundPollRef = useRef(0);
+  const transcriptFetchedRef = useRef<Set<string>>(new Set());
+
+  const fetchJsonNoStore = useCallback(async (url: string) => {
+    const u = url.includes('?') ? `${url}&_=${Date.now()}` : `${url}?_=${Date.now()}`;
+    const res = await fetch(u, {
+      method: 'GET',
+      cache: 'no-store',
+      credentials: 'include',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+      },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }, []);
+
+  const fetchVideo = useCallback(async () => {
+    if (!id) return;
+
+    const foundInContext = videos.find(v => v.id === id || v.process_id === id);
+    if (foundInContext) {
+      setVideo(foundInContext);
+      setLoading(false);
+    }
+
+    try {
+      const data = await fetchJsonNoStore(`${API_BASE}/api/saved_reels`);
+      const reels = Array.isArray(data?.reels) ? data.reels : [];
+      const found = reels.find((r: any) => r?.id === id || r?.process_id === id);
+
+      if (!found) {
+        notFoundPollRef.current += 1;
+        setLoading(true);
+        if (notFoundPollRef.current > 20) {
+          setLoading(false);
+          setVideo(null);
+        }
+        return;
+      }
+
+      notFoundPollRef.current = 0;
+
+      let normalized: any = found;
+      try {
+        normalized = normalizeReel(found);
+      } catch {
+        normalized = found;
+      }
+
+      const merged = { ...normalized, __raw: found };
+      setVideo(merged);
+      setLoading(false);
+
+      const apiTranscript =
+        extractTranscriptText(found?.transcription) ||
+        extractTranscriptText(normalized?.transcription) ||
+        '';
+
+      if (apiTranscript.trim() && !fetchedTranscript.trim()) {
+        setFetchedTranscript(apiTranscript);
+      }
+
+      const transcriptUrl =
+        found?.gcs_urls?.transcription ||
+        merged?.gcs_urls?.transcription ||
+        found?.gcstranscriptionurl ||
+        (found?.gcs_paths?.transcription
+          ? `https://storage.googleapis.com/recolekt-analysis/${found.gcs_paths.transcription}`
+          : null);
+
+      if (transcriptUrl && !transcriptFetchedRef.current.has(transcriptUrl)) {
+        transcriptFetchedRef.current.add(transcriptUrl);
+        try {
+          const transcriptRes = await fetch(transcriptUrl, {
+            method: 'GET',
+            cache: 'no-store',
+            headers: { Accept: 'application/json' },
+          });
+
+          if (transcriptRes.ok) {
+            const transcriptData = await transcriptRes.json();
+            const text =
+              transcriptData?.transcript ||
+              transcriptData?.text ||
+              transcriptData?.content ||
+              transcriptData?.data?.transcript ||
+              '';
+
+            if (String(text).trim()) setFetchedTranscript(String(text));
+          } else {
+            console.warn('⚠️ Transcript fetch not ok:', transcriptRes.status);
+          }
+        } catch (err) {
+          console.error('❌ Transcript fetch error:', err);
+        }
+      }
+    } catch (e: any) {
+      if (String(e?.message || '').includes('HTTP 401')) {
+        navigate('/auth');
+        return;
+      }
+      setLoading(false);
+    }
+  }, [API_BASE, fetchJsonNoStore, id, navigate, videos, fetchedTranscript]);
+
+  useEffect(() => {
+    fetchVideo();
+  }, [fetchVideo]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!video) {
+        fetchVideo();
+        return;
+      }
+      if (video?.status && video.status !== 'done') {
+        fetchVideo();
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [video, fetchVideo]);
+
+  const handleDelete = async () => {
+    if (!video || !video.process_id) {
+      alert('Cannot delete: video data not found');
+      setConfirmDelete(false);
+      return;
+    }
+
+    try {
+      await deleteVideos([video.process_id]);
+      setConfirmDelete(false);
+      navigate('/gallery/all', { replace: true });
+    } catch (err) {
+      alert('Error deleting reel. Please try again.');
+      setConfirmDelete(false);
+    }
+  };
+
+  const handleShare = async () => {
+    const title = getTitle(video || {});
+    const shareData = {
+      title,
+      text: `Check out this reel: ${title}`,
+      url: window.location.href,
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        return;
+      }
+      await navigator.clipboard.writeText(window.location.href);
+      alert('Link copied to clipboard!');
+    } catch (err) {
+      console.error('Share failed:', err);
+    }
+  };
+
+  const viewModel = useMemo(() => {
+    const v = video || {};
+    const raw = v.__raw || {};
+
+    const summaryObj = v?.summary ?? raw?.summary ?? {};
+
+    const summaryTextObjRaw =
+      v?.summary_text ??
+      raw?.summary_text ??
+      ((summaryObj && typeof summaryObj === 'object') ? (summaryObj as any).summary : null);
+
+    const summary_text = normalizeSummaryTextObj(summaryTextObjRaw);
+
+    const titleFromSummaryTextEn = safeStr(summary_text?.english?.title);
+    const titleFromSummaryTextOg = safeStr(summary_text?.original?.title);
+
+    const stableTitle =
+      v?.display_title ||
+      raw?.display_title ||
+      titleFromSummaryTextEn ||
+      titleFromSummaryTextOg ||
+      safeStr((summaryObj as any)?.english?.title) ||
+      safeStr((summaryObj as any)?.original?.title) ||
+      getTitle(v) ||
+      getTitle(raw) ||
+      'Saved Reel';
+
+    const author = pickFirstString(v?.author_name, raw?.author_name, 'Unknown');
+    const category = getCategory(v) || getCategory(raw);
+    const topic = getTopic(v) || getTopic(raw);
+
+    const captionLike = safeStr(v?.caption) || safeStr(raw?.caption) || '';
+
+    const description =
+      extractSummaryString(summary_text, false) ||
+      safeStr((summaryObj as any)?.english?.summary) ||
+      extractSummaryString((summaryObj as any)?.summary, false) ||
+      captionLike.split('\n')[0] ||
+      '';
+
+    const bulletsRaw =
+      (v?.headlines_plain && Array.isArray(v.headlines_plain) && v.headlines_plain.length)
+        ? v.headlines_plain
+        : (raw?.headlines_plain && Array.isArray(raw.headlines_plain) && raw.headlines_plain.length)
+          ? raw.headlines_plain
+          : (getBullets(v).length ? getBullets(v) : getBullets(raw));
+
+    const bullets = (Array.isArray(bulletsRaw) ? bulletsRaw : []).map((b: any) => {
+      if (typeof b === 'string') return stripLeadingEmoji(b);
+      if (b && typeof b === 'object') {
+        const headline = stripLeadingEmoji(String(b.headline ?? b.text ?? ''));
+        const text = stripLeadingEmoji(String(b.text ?? ''));
+        return { ...b, headline, text };
+      }
+      return b;
+    });
+
+    const hashtags = getHashtags(v).length ? getHashtags(v) : getHashtags(raw);
+
+    const createdAt = v?.created_at ?? raw?.created_at;
+    const savedAt = createdAt
+      ? new Date(createdAt).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })
+      : '';
+
+    const isRecipe =
+      (v?.content_type ?? raw?.content_type) === 'recipe' &&
+      (v?.recipe ?? raw?.recipe);
+
+    let recipe = v?.recipe ?? raw?.recipe ?? null;
+    if (recipe && typeof recipe === 'string') {
+      try {
+        recipe = JSON.parse(recipe);
+      } catch (e) {
+        console.error('❌ Failed to parse recipe JSON:', e);
+        recipe = null;
+      }
+    }
+
+    const transcriptText =
+      fetchedTranscript.trim() ||
+      extractTranscriptText(v?.transcription) ||
+      extractTranscriptText(raw?.transcription) ||
+      safeStr(v?.transcript) ||
+      safeStr(raw?.transcript) ||
+      '';
+
+    const transcription = { transcript: transcriptText };
+
+    const duration = v?.duration ?? raw?.duration ?? '';
+    const sourceUrl = v?.source_url ?? raw?.source_url ?? '';
+    const preview =
+      v?.gcs_urls?.preview_thumbnail ??
+      raw?.gcs_urls?.preview_thumbnail ??
+      v?.gcs_urls?.thumbnail ??
+      '';
+
+    return {
+      title: stableTitle,
+      author,
+      category,
+      topic,
+      description,
+      bullets,
+      hashtags,
+      savedAt,
+      isRecipe,
+      recipe,
+      caption: captionLike,
+      transcription,
+      duration,
+      sourceUrl,
+      preview,
+      summary: summaryObj,
+      summary_text,
+    };
+  }, [video, fetchedTranscript]);
+
+  const handleModifyToggle = () => {
+    if (!isEditMode) {
+      setTempTitle(viewModel.title);
+      setTempCategory(viewModel.category);
+      setTempTopic(viewModel.topic);
+      setTempDescription(viewModel.description);
+      setTempBullets([...viewModel.bullets]);
+      setTempHashtags([...viewModel.hashtags]);
+      setIsEditMode(true);
+    } else {
+      setIsEditMode(false);
+    }
+  };
+
+  const renderIngredient = (ing: any, index: number) => {
+    // Support:
+    // - string: "200 g flour 🌾" (no leading 🔸, emoji extracted if present)
+    // - object: { item|name, quantity, unit, emoji }
+    let item = '';
+    let qtyRaw = '';
+    let emoji = '';
+
+    if (typeof ing === 'string') {
+      const parts = splitTrailingEmoji(ing);
+      item = parts.body;
+      emoji = parts.emoji; // may be ""
+    } else {
+      item = String(ing?.item ?? ing?.name ?? '');
+      qtyRaw = String(ing?.quantity ?? '');
+      emoji = String(ing?.emoji ?? '');
+      // if item still has trailing emoji, split it
+      const parts = splitTrailingEmoji(item);
+      item = parts.body;
+      if (!emoji) emoji = parts.emoji;
+    }
+
+    const { val, unit } = parseQuantity(qtyRaw);
+
+    return (
+      <li key={index} className="flex flex-wrap items-baseline gap-2 py-1">
+        {emoji ? <span className="text-lg leading-none select-none">{emoji}</span> : null}
+
+        {(val || unit) && (
+          <div className="flex items-baseline gap-1">
+            {val && <span className="font-bold text-purple-600 text-base">{val}</span>}
+            {unit && <span className="font-bold text-gray-900 text-base">{unit}</span>}
+          </div>
+        )}
+
+        <span className="font-normal text-gray-900 text-base flex-1">{item}</span>
+      </li>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="p-10 text-center">
+        <div className="inline-block w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="mt-4 text-gray-500">Loading...</p>
+      </div>
+    );
+  }
 
   if (!video) {
     return <div className="p-10 text-center">Video not found</div>;
   }
 
+  const sharedProps = {
+    viewModel,
+    isEditMode,
+    tempTitle,
+    tempCategory,
+    tempTopic,
+    tempDescription,
+    tempBullets,
+    tempHashtags,
+    servingScale,
+    useMetric,
+    captionOpen,
+    transcriptOpen,
+    onNavigateBack: () => navigate(-1),
+    onShare: handleShare,
+    onModifyToggle: handleModifyToggle,
+    onCancelEdit: () => setIsEditMode(false),
+    setTempTitle,
+    setTempCategory,
+    setTempTopic,
+    setTempDescription,
+    setTempBullets,
+    setTempHashtags,
+    setServingScale,
+    setUseMetric,
+    setCaptionOpen,
+    setTranscriptOpen,
+    onReportClick: () => setIsReportModalOpen(true),
+    onDeleteClick: () => setConfirmDelete(true),
+    renderIngredient,
+    parseQuantity,
+    scaleQuantity,
+    convertToMetric,
+    convertToImperial,
+  };
 
   return (
     <div className="animate-fade-in pb-2 md:pb-12">
-      
-      {/* Desktop Breadcrumb */}
-      <div className="hidden md:flex items-center gap-2 mb-6 text-sm text-gray-500">
-        <button onClick={() => navigate(-1)} className="hover:text-gray-900 flex items-center gap-2 transition-colors font-medium group">
-           <div className="p-1.5 bg-white border border-gray-200 rounded-lg group-hover:bg-gray-50 transition-colors">
-             <ArrowLeft size={16} />
-           </div>
-           Back to gallery
-        </button>
-      </div>
+      <VideoDetailDesktop {...sharedProps} />
+      <VideoDetailMobile {...sharedProps} />
 
-
-      {/* Desktop Layout (2 Columns) */}
-      <div className="hidden md:grid md:grid-cols-[1.5fr_1fr] gap-12 items-start">
-        
-        {/* Left Column */}
-        <div className="min-w-0">
-          {/* Poster - Aspect 9:8 */}
-          <div className="relative w-full aspect-[9/8] bg-black rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-6 group">
-            <img 
-              src={video.thumbnailUrl} 
-              alt={video.title} 
-              className="w-full h-full object-cover opacity-90"
-            />
-             <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/20 transition-colors cursor-pointer">
-                <div className="w-20 h-20 bg-white/30 backdrop-blur-md rounded-full flex items-center justify-center text-white shadow-2xl hover:scale-110 transition-transform duration-300 border border-white/40">
-                   <Play size={32} fill="currentColor" className="ml-1" />
-                </div>
-            </div>
-          </div>
-
-
-          <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 leading-tight mb-3">
-            {video.title}
-          </h1>
-
-
-          <div className="flex items-center gap-3 text-gray-500 text-sm font-medium mb-8 pb-6 border-b border-gray-100">
-             <span className="text-gray-900 font-bold">{video.author}</span>
-             <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
-             <span>{video.savedAt}</span>
-             <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
-             <span>{video.duration}</span>
-          </div>
-
-
-          {/* Summary */}
-          <div className="bg-primary-50/40 rounded-2xl p-6 mb-6">
-             <h3 className="text-primary-700 font-bold mb-3 text-sm uppercase tracking-wide">AI Summary</h3>
-             <p className="text-gray-700 leading-relaxed mb-4 font-medium">
-               {video.summary}
-             </p>
-             <ul className="space-y-3">
-               {video.bullets.map((bullet, idx) => (
-                 <li key={idx} className="flex items-start gap-3 text-gray-600 text-sm">
-                    <div className="w-1.5 h-1.5 rounded-full bg-primary-400 mt-2 flex-shrink-0"></div>
-                    <span className="leading-relaxed">{bullet}</span>
-                 </li>
-               ))}
-             </ul>
-          </div>
-
-
-          {/* Transcript */}
-           <div className="border border-gray-200 rounded-2xl overflow-hidden mb-8">
-              <button 
-                onClick={() => setTranscriptOpen(!transcriptOpen)}
-                className="w-full flex items-center justify-between p-5 bg-white hover:bg-gray-50 transition-colors text-left"
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-[90%] max-w-sm p-6 text-center">
+            <h2 className="text-lg font-bold text-gray-900 mb-3">Delete this reel?</h2>
+            <p className="text-sm text-gray-600 mb-6">This action cannot be undone.</p>
+            <div className="flex justify-center gap-3">
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="px-5 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
               >
-                <span className="font-semibold text-gray-900">Transcript</span>
-                <div className="flex items-center gap-2 text-gray-500 text-sm font-medium">
-                   {transcriptOpen ? 'Hide' : 'Show'}
-                   <ChevronDown size={18} className={`transition-transform duration-300 ${transcriptOpen ? 'rotate-180' : ''}`} />
-                </div>
+                Cancel
               </button>
-              
-              {transcriptOpen && (
-                <div className="p-6 pt-0 bg-white">
-                   <p className="text-gray-600 leading-relaxed text-sm whitespace-pre-wrap">
-                     {video.transcript}
-                   </p>
-                </div>
-              )}
-           </div>
-           
-           {/* Desktop Actions */}
-           <div className="flex gap-3">
-              <Button variant="outline" className="gap-2"><Heart size={18} /> Like</Button>
-              <Button variant="outline" className="gap-2"><IOSShareIcon size={16} /> Share</Button>
-              <Button variant="outline" className="gap-2"><FolderInput size={18} /> Move</Button>
-           </div>
-
-
+              <button
+                onClick={handleDelete}
+                className="px-5 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
+      )}
 
-
-        {/* Right Column */}
-        <div className="space-y-8 pt-2">
-           
-           {/* Top Align Button */}
-           <div className="flex justify-end">
-              <Button variant="outline" size="sm" className="px-5">Manage</Button>
-           </div>
-
-
-           <div className="space-y-6">
-              <div>
-                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Category</h4>
-                <div className="text-lg font-bold text-gray-900">{video.category}</div>
-                {video.subCategory && <div className="text-gray-500 font-medium">{video.subCategory}</div>}
-              </div>
-
-
-              <div>
-                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Tags</h4>
-                <div className="flex flex-wrap gap-2">
-                  {video.tags.map(tag => (
-                     <span key={tag} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium">
-                        {tag}
-                     </span>
-                  ))}
-                </div>
-              </div>
-
-
-              <div>
-                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Original Link</h4>
-                 <a href={video.originalUrl} target="_blank" rel="noreferrer" className="block">
-                    <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-white font-medium shadow-md bg-gradient-to-r from-[#F58529] via-[#DD2A7B] to-[#8134AF] hover:opacity-90 transition">
-                       <InstagramExternalIcon size={16} />
-                       View on Instagram
-                    </button>
-                 </a>
-              </div>
-           </div>
-
-
-        </div>
-      </div>
-
-
-      {/* Mobile Layout */}
-      <div className="md:hidden -mx-4 sm:mx-0">
-         {/* Full width poster */}
-         <div className="relative w-full aspect-[9/8] bg-black">
-            <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover opacity-90" />
-            
-            {/* Overlay Icons */}
-            <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start bg-gradient-to-b from-black/60 to-transparent">
-               <button onClick={() => navigate(-1)} className="p-2 bg-black/20 backdrop-blur-md rounded-full text-white">
-                  <ArrowLeft size={24} />
-               </button>
-               <button className="p-2 bg-black/20 backdrop-blur-md rounded-full text-white">
-                  <IOSShareIcon size={20} />
-               </button>
-            </div>
-            
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-               <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center text-white">
-                  <Play size={32} fill="currentColor" className="ml-1" />
-               </div>
-            </div>
-         </div>
-
-
-         <div className="px-5 pt-6 pb-6">
-            <h1 className="text-2xl font-bold text-gray-900 leading-tight mb-2">
-               {video.title}
-            </h1>
-            
-            <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
-               <span className="font-semibold text-gray-900">{video.author}</span>
-               <span>•</span>
-               <span>{video.savedAt}</span>
-            </div>
-
-
-            <div className="flex flex-wrap gap-2 mb-8">
-               <span className="px-3 py-1 bg-primary-50 text-primary-700 rounded-lg text-xs font-bold uppercase tracking-wide">
-                  {video.category}
-               </span>
-               {video.tags.slice(0,3).map(tag => (
-                  <span key={tag} className="px-2 py-1 text-gray-500 text-xs font-medium">
-                     {tag}
-                  </span>
-               ))}
-            </div>
-
-
-            <div className="bg-gray-50 rounded-xl p-5 mb-6">
-               <p className="text-gray-900 font-medium leading-relaxed mb-4">
-                  {video.summary}
-               </p>
-               <ul className="space-y-2">
-                  {video.bullets.map((bullet, idx) => (
-                    <li key={idx} className="flex items-start gap-2 text-gray-600 text-sm">
-                       <span className="mt-1.5 w-1 h-1 bg-gray-400 rounded-full flex-shrink-0"></span>
-                       <span className="leading-relaxed">{bullet}</span>
-                    </li>
-                  ))}
-               </ul>
-            </div>
-
-
-            <div className="border-t border-gray-100 pt-4 mb-6">
-               <button 
-                 onClick={() => setTranscriptOpen(!transcriptOpen)}
-                 className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-3"
-               >
-                  Transcript
-                  <ChevronDown size={16} className={`transition-transform ${transcriptOpen ? 'rotate-180' : ''}`} />
-               </button>
-               {transcriptOpen && (
-                  <p className="text-gray-600 text-sm leading-relaxed">
-                     {video.transcript}
-                  </p>
-               )}
-            </div>
-
-
-            {/* Action Buttons Above Bottom Nav */}
-            <div className="flex gap-3 mb-6">
-               <a 
-                 href={video.originalUrl} 
-                 target="_blank" 
-                 rel="noreferrer"
-                 className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-[#F58529] via-[#DD2A7B] to-[#8134AF] text-white rounded-xl text-sm font-bold shadow-md"
-               >
-                  <InstagramExternalIcon size={16} className="text-white" />
-                  Open on Instagram
-               </a>
-
-
-               <button className="px-4 py-3 text-red-600 bg-red-50 rounded-xl">
-                  <Trash2 size={20} />
-               </button>
-            </div>
-         </div>
-      </div>
-
-
-      {/* Mobile Bottom Navigation (Always visible) */}
-      <MobileBottomNav onAddClick={() => {}} />
+      <ReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        initialUrl={window.location.href}
+      />
     </div>
   );
 };

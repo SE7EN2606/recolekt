@@ -1,129 +1,389 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+  ReactNode,
+} from 'react';
 import { Video, Folder } from '../types';
-import { MOCK_VIDEOS, MOCK_FOLDERS } from '../data/mockData';
+import { useAuth } from './AuthContext';
+
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+
+export type AddVideoResult = {
+  clientTempId: string;
+  processId: string;
+  status: string;
+  sourceUrl: string;
+  createdAt: string;
+  previewUrl?: string | null;
+};
+
 
 interface DataContextType {
   videos: Video[];
   folders: Folder[];
-  addFolder: (name: string) => void;
+  isLoading: boolean;
+  
+  addFolder: (name: string, parentId?: string | null) => void;
+  updateFolder: (id: string, name: string) => void;
+  deleteFolder: (id: string) => void;
   toggleFavorite: (videoId: string) => void;
   moveVideos: (videoIds: string[], targetFolderId: string) => void;
-  deleteVideos: (videoIds: string[]) => void;
-  addVideo: (url: string) => void;
+  deleteVideos: (videoIds: string[]) => Promise<void>;
+  addVideo: (url: string) => Promise<AddVideoResult>;
+  refreshVideos: () => Promise<void>;
 }
+
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
+
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8080';
+
+
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [videos, setVideos] = useState<Video[]>(MOCK_VIDEOS);
-  const [folders, setFolders] = useState<Folder[]>(MOCK_FOLDERS);
+  const { user } = useAuth();
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [folders, setFolders] = useState<Folder[]>(() => {
+    const saved = localStorage.getItem('custom_folders');
+    return saved ? JSON.parse(saved) : [];
+  });
 
-  // Fetch videos from backend
+
+  useEffect(() => {
+    localStorage.setItem('custom_folders', JSON.stringify(folders));
+  }, [folders]);
+
+
+  // ✅ CENTRAL FETCH LOGIC
   const fetchVideos = async () => {
-    try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/saved_reels`);
-      const data = await response.json();
-      setVideos(data);
-    } catch (error) {
-      console.error('Failed to fetch videos:', error);
-    }
-  };
+    if (!user) return;
+    setIsLoading(true);
 
-  // Fetch folders from backend
-  const fetchFolders = async () => {
-    try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/folders`);
-      const data = await response.json();
-      setFolders(data);
-    } catch (error) {
-      console.error('Failed to fetch folders:', error);
-    }
-  };
 
-  // Add a new folder
-  const addFolder = async (name: string) => {
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/folders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
+      const response = await fetch(`${API_BASE}/api/saved_reels?page=1&per_page=100&t=${Date.now()}`, {
+        credentials: 'include',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
       });
-      const newFolder = await response.json();
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        const loadedVideos = (data.reels || []).map((r: any) => {
+          
+          const summary = r.summary || {};
+          
+          // ✅ FIXED: Only trust backend status, don't override!
+          const isDone = r.status === 'done' || r.status === 'completed';
+          
+          let finalCategory = summary.category || 'General';
+          if (!isDone) {
+            finalCategory = 'Processing';
+          }
+
+
+          // ✅ FIXED: Extract English for display, but keep full summary object
+          let displayTitle = 'Processing...';
+          if (isDone) {
+            if (typeof summary.title === 'object' && summary.title?.english) {
+              displayTitle = summary.title.english;
+            } else if (typeof summary.title === 'string' && summary.title !== 'Processing...') {
+              displayTitle = summary.title;
+            } else if (r.caption) {
+              displayTitle = r.caption.slice(0, 50) || 'Untitled';
+            } else {
+              displayTitle = 'Untitled';
+            }
+          }
+
+
+          const mappedVideo = {
+            id: r.id,
+            title: displayTitle,
+            author: r.author_name || 'Instagram User',
+            platform: 'instagram',
+            thumbnailUrl: r.gcs_urls?.preview_thumbnail || '',
+            duration: r.duration || '',
+            savedAt: r.created_at,
+            category: finalCategory,
+            tags: summary.hashtags || [],
+            summary: summary,
+            transcript: r.transcription?.transcript || '',
+            originalUrl: r.source_url,
+            isFavorite: r.is_favorite,
+            folderId: r.folder_id || 'default',
+            content_type: r.content_type,
+            recipe: r.recipe,
+            workout: r.workout,
+            status: r.status, // ✅ Pass through backend status
+            __raw: r
+          };
+          
+          return mappedVideo;
+        });
+        
+setVideos(prevVideos => {
+  const loadedByUrl = new Map(loadedVideos.map(v => [v.originalUrl, v]));
+  const loadedById = new Map(loadedVideos.map(v => [v.id, v]));
+  
+  const loadedByShortcode = new Map();
+  loadedVideos.forEach(v => {
+    const shortcode = v.id.split('--')[0].split('_')[0];
+    if (!loadedByShortcode.has(shortcode)) {
+      loadedByShortcode.set(shortcode, v);
+    }
+  });
+  
+  const seenIds = new Set<string>();
+  const optimisticOnly = prevVideos.filter(v => {
+    if (seenIds.has(v.id)) return false;
+    seenIds.add(v.id);
+    
+    if (v.category !== 'Processing') return false;
+    
+    const shortcode = v.id.split('--')[0].split('_')[0];
+    
+    if (loadedById.has(v.id)) return false;
+    if (v.originalUrl && loadedByUrl.has(v.originalUrl)) return false;
+    if (loadedByShortcode.has(shortcode)) return false;
+    
+    return true;
+  });
+  
+  const finalVideos = [...loadedVideos, ...optimisticOnly];
+  const uniqueById = new Map(finalVideos.map(v => [v.id, v]));
+  
+  return Array.from(uniqueById.values());
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load gallery:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+  // ✅ Initial fetch when user logs in
+  useEffect(() => {
+    if (user) fetchVideos();
+  }, [user]);
+
+
+  // ✅ AUTO-REFRESH: Poll every 10 seconds if processing videos exist
+  useEffect(() => {
+    if (!user) return;
+    
+    const interval = setInterval(() => {
+      const hasProcessing = videos.some(v => v.category === 'Processing');
+      if (hasProcessing) {
+        fetchVideos();
+      }
+    }, 10000);
+    
+    return () => clearInterval(interval);
+  }, [user, videos]);
+
+
+  // ✅ Add Video with Duplicate Prevention
+  const addVideo = async (url: string): Promise<AddVideoResult> => {
+    try {
+      const cleanUrl = url.trim().split('?')[0];
+      
+      const existingVideo = videos.find(v => v.originalUrl === cleanUrl);
+      if (existingVideo) {
+        console.warn('⚠️ Video already exists:', cleanUrl);
+        return {
+          clientTempId: existingVideo.id,
+          processId: existingVideo.id,
+          status: existingVideo.category === 'Processing' ? 'processing' : 'done',
+          sourceUrl: cleanUrl,
+          createdAt: existingVideo.savedAt,
+          previewUrl: existingVideo.thumbnailUrl
+        };
+      }
+      
+      const formData = new FormData();
+      formData.append('url', cleanUrl);
+
+
+      const response = await fetch(`${API_BASE}/api/summarize`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+
+
+      if (response.status === 409) throw new Error('This video has already been saved.');
+      
+      let result;
+      try { result = await response.json(); } catch {}
+
+
+      if (!response.ok) {
+        throw new Error(result?.error || 'Failed to import video.');
+      }
+
+
+      const createdAt = new Date().toISOString();
+      const videoId = result?.reel_id || `temp_${cleanUrl.split('/').pop()}_${Date.now()}`;
+
+
+      const newVideo: Video = {
+        id: videoId,
+        title: 'Processing...',
+        author: result?.author_name || 'Instagram User',
+        platform: 'instagram',
+        thumbnailUrl: result?.preview_url ?? '',
+        duration: '',
+        savedAt: createdAt,
+        category: 'Processing',
+        tags: [],
+        summary: {},
+        transcript: '',
+        originalUrl: cleanUrl,
+        isFavorite: false,
+        folderId: 'default',
+        status: 'processing',
+      };
+
+
+      setVideos(prev => {
+        const filtered = prev.filter(v => v.originalUrl !== cleanUrl);
+        return [newVideo, ...filtered];
+      });
+      
+      setTimeout(fetchVideos, 5000);
+
+
+      return {
+        clientTempId: `temp_${Date.now()}`,
+        processId: videoId,
+        status: 'processing',
+        sourceUrl: cleanUrl,
+        createdAt,
+        previewUrl: result?.preview_url
+      };
+    } catch (err: any) {
+      console.error('Failed to call /summarize', err);
+      throw err;
+    }
+  };
+
+
+  // ✅ Delete Videos
+  const deleteVideos = async (videoIds: string[]): Promise<void> => {
+    try {
+      console.log('🗑️ Deleting videos:', videoIds);
+      
+      setVideos(prev => prev.filter(v => !videoIds.includes(v.id)));
+      
+      const deletePromises = videoIds.map(async (videoId) => {
+        try {
+          const response = await fetch(`${API_BASE}/api/reel/${videoId}`, {
+            method: 'DELETE',
+            credentials: 'include'
+          });
+          
+          if (!response.ok) {
+            console.error(`❌ Failed to delete ${videoId} from backend:`, response.status);
+          } else {
+            console.log(`✅ Deleted ${videoId} from backend`);
+          }
+        } catch (error) {
+          console.error(`❌ Error deleting ${videoId}:`, error);
+        }
+      });
+      
+      await Promise.all(deletePromises);
+      
+      console.log('✅ All videos deleted');
+      
+    } catch (error) {
+      console.error('❌ Failed to delete videos:', error);
+      await fetchVideos();
+    }
+  };
+
+
+  // Folder Actions
+  const addFolder = (name: string, parentId: string | null = null) => {
+    const newFolder: Folder = { id: Date.now().toString(), name, subFolders: [] };
+    if (parentId) {
+      const addToParent = (list: Folder[]): Folder[] => {
+        return list.map(f => {
+          if (f.id === parentId) return { ...f, subFolders: [...(f.subFolders || []), newFolder] };
+          if (f.subFolders) return { ...f, subFolders: addToParent(f.subFolders) };
+          return f;
+        });
+      };
+      setFolders(prev => addToParent(prev));
+    } else {
       setFolders(prev => [...prev, newFolder]);
-    } catch (error) {
-      console.error('Failed to add folder:', error);
     }
   };
 
-  // Toggle favorite status
-  const toggleFavorite = async (videoId: string) => {
-    try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/videos/${videoId}/favorite`, {
-        method: 'POST'
+
+  const updateFolder = (id: string, name: string) => {
+    const updateRecursive = (list: Folder[]): Folder[] => {
+      return list.map(f => {
+        if (f.id === id) return { ...f, name };
+        if (f.subFolders) return { ...f, subFolders: updateRecursive(f.subFolders) };
+        return f;
       });
-      const updatedVideo = await response.json();
-      setVideos(prev => prev.map(video => (video.id === videoId ? updatedVideo : video)));
-    } catch (error) {
-      console.error('Failed to toggle favorite:', error);
-    }
+    };
+    setFolders(prev => updateRecursive(prev));
   };
 
-  // Move videos to a folder
-  const moveVideos = async (videoIds: string[], targetFolderId: string) => {
-    try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/videos/move`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoIds, targetFolderId })
-      });
-      const movedVideos = await response.json();
-      setVideos(prev => prev.map(video => (videoIds.includes(video.id) ? { ...video, folderId: targetFolderId } : video)));
-    } catch (error) {
-      console.error('Failed to move videos:', error);
-    }
+
+  const deleteFolder = (id: string) => {
+    const deleteRecursive = (list: Folder[]): Folder[] => {
+      return list
+        .filter(f => f.id !== id)
+        .map(f => ({ ...f, subFolders: f.subFolders ? deleteRecursive(f.subFolders) : [] }));
+    };
+    setFolders(prev => deleteRecursive(prev));
   };
 
-  // Delete videos
-  const deleteVideos = async (videoIds: string[]) => {
-    try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/videos/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoIds })
-      });
-      const deletedVideos = await response.json();
-      setVideos(prev => prev.filter(video => !videoIds.includes(video.id)));
-    } catch (error) {
-      console.error('Failed to delete videos:', error);
-    }
+
+  const toggleFavorite = (videoId: string) => {
+    setVideos(prev => prev.map(v => v.id === videoId ? { ...v, isFavorite: !v.isFavorite } : v));
   };
 
-  // Add a new video
-  const addVideo = async (url: string) => {
-    try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/summarize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url })
-      });
-      const newVideo = await response.json();
-      setVideos(prev => [newVideo, ...prev]);
-    } catch (error) {
-      console.error('Failed to save video:', error);
-    }
+
+  const moveVideos = (videoIds: string[], targetFolderId: string) => {
+    setVideos(prev => prev.map(v => (videoIds.includes(v.id) ? { ...v, folderId: targetFolderId } : v)));
   };
 
-  return (
-    <DataContext.Provider value={{ videos, folders, addFolder, toggleFavorite, moveVideos, deleteVideos, addVideo }}>
-      {children}
-    </DataContext.Provider>
-  );
+
+  const value = useMemo(() => ({
+    videos, folders, isLoading,
+    addFolder, updateFolder, deleteFolder,
+    toggleFavorite, moveVideos, deleteVideos,
+    addVideo, refreshVideos: fetchVideos
+  }), [videos, folders, isLoading, user]);
+
+
+  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 };
+
 
 export const useData = () => {
   const context = useContext(DataContext);
-  if (context === undefined) {
-    throw new Error('useData must be used within a DataProvider');
-  }
+  if (context === undefined) throw new Error('useData must be used within a DataProvider');
   return context;
 };

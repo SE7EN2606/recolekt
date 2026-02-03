@@ -1,95 +1,194 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart } from 'lucide-react';
-import { Video } from '../types';
-import { useData } from '../context/DataContext';
-import { ConfirmModal } from './ConfirmModal';
+import { Heart, Globe, Loader2, CheckCircle2 } from 'lucide-react';
 
 interface VideoCardProps {
-  video: Video;
+  video: any;
   selected?: boolean;
   onToggleSelect?: () => void;
   selectionMode?: boolean;
 }
 
 export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleSelect, selectionMode }) => {
-  const { toggleFavorite } = useData();
   const navigate = useNavigate();
-  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(video.is_favorite || video.isFavorite || false);
+  const [showOriginal, setShowOriginal] = useState(false);
+
+  const isProcessing = video.status !== 'done';
+
+  // --- 1. TITLE & LANGUAGE LOGIC ---
+  
+  const defaultTitle = video.title || "Untitled Video";
+  
+  const recipe = video.recipe;
+  const summary = video.summary || {};
+  const summaryText = video.summary_text || null; // ✅ NEW: check summary_text first
+  const summaryTitleObj = summary.title;
+
+  // ✅ Check translation sources in order: summary_text > recipe > summary.title
+  const hasSummaryTextTranslation = summaryText && summaryText.english && summaryText.original;
+  const hasRecipeTranslation = recipe && recipe.english && recipe.original;
+  const hasSummaryTranslation = typeof summaryTitleObj === 'object' && summaryTitleObj.english && summaryTitleObj.original;
+  
+  const hasTranslation = hasSummaryTextTranslation || hasRecipeTranslation || hasSummaryTranslation;
+
+  // ✅ Determine Original Title (priority: summary_text > recipe > summary.title)
+  let originalTitle = defaultTitle;
+  
+  if (hasSummaryTextTranslation && summaryText.original.title) {
+    originalTitle = summaryText.original.title;
+  } else if (hasRecipeTranslation && recipe.original.title) {
+    originalTitle = recipe.original.title;
+  } else if (hasSummaryTranslation && summaryTitleObj.original) {
+    originalTitle = summaryTitleObj.original;
+  }
+
+  // ✅ Determine English Title (for when toggle is OFF)
+  let englishTitle = defaultTitle;
+  
+  if (hasSummaryTextTranslation && summaryText.english.title) {
+    englishTitle = summaryText.english.title;
+  } else if (hasRecipeTranslation && recipe.english.title) {
+    englishTitle = recipe.english.title;
+  } else if (hasSummaryTranslation && summaryTitleObj.english) {
+    englishTitle = summaryTitleObj.english;
+  }
+
+  // Determine Language Code
+  let languageCode = 'OG';
+  if (recipe && recipe.language_code && recipe.language_code.toLowerCase() !== 'en') {
+    languageCode = recipe.language_code.toUpperCase();
+  }
+
+  // ✅ Final Display Title based on Toggle
+  const displayTitle = showOriginal ? originalTitle : englishTitle;
+
+  // --- EVENT HANDLERS ---
 
   const handleHeartClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (isProcessing) return;
     
-    if (video.isFavorite) {
-      setShowRemoveConfirm(true);
-    } else {
-      toggleFavorite(video.id);
-    }
+    setIsFavorite(!isFavorite);
   };
 
-  const confirmRemoveFavorite = () => {
-    toggleFavorite(video.id);
-    setShowRemoveConfirm(false);
+  const handleLanguageToggle = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isProcessing) return;
+    
+    setShowOriginal(!showOriginal);
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
+    if (isProcessing) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    
     if (selectionMode) {
       e.preventDefault();
       e.stopPropagation();
       onToggleSelect?.();
     } else {
-      navigate(`/video/${video.id}`);
+      navigate(`/video/${video.id || video.process_id}`);
     }
   };
 
+  // --- DISPLAY HELPERS ---
+
+  const thumbnailUrl = video.thumbnailUrl || video.preview_thumbnail || '';
+  const author = video.author || video.author_name || 'Unknown';
+  const duration = video.duration;
+  
+  const detectPlatform = () => {
+    const url = (video.source_url || '').toLowerCase();
+    if (url.includes('instagram.com')) return 'instagram';
+    if (url.includes('facebook.com') || url.includes('fb.com')) return 'facebook';
+    if (url.includes('tiktok.com')) return 'tiktok';
+    if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
+    return 'instagram';
+  };
+
+  const platform = detectPlatform();
+  const profileUrl = `https://www.instagram.com/${author.replace('@', '')}/`;
+
   return (
-    <>
+    <div 
+      className="group relative flex flex-col gap-3 transition-transform duration-300"
+    >
       <div 
         onClick={handleCardClick}
-        className={`group relative flex flex-col gap-3 transition-transform duration-300 ${selected ? 'scale-[1]' : ''} cursor-pointer`}
+        className={`relative rounded-2xl overflow-hidden aspect-[9/16] bg-gray-100 shadow-sm transition-shadow duration-300 ${
+          isProcessing ? 'cursor-not-allowed' : 'cursor-pointer'
+        } ${selected ? 'ring-4 ring-primary-500 ring-offset-2' : 'hover:shadow-lg'}`}
+        style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}
       >
-        {/* Minimal Style Block for Keyframes Only */}
-        <style>{`
-          @keyframes heartBeatOnce {
-            0% { transform: scale(1); }
-            45% { transform: scale(1.28); }
-            100% { transform: scale(1); }
-          }
-          .heart-animate {
-            animation: heartBeatOnce 0.35s ease-out;
-          }
-        `}</style>
-
-        {/* Thumbnail Container */}
-        <div 
-          className="relative rounded-2xl overflow-hidden aspect-[9/16] bg-gray-100 shadow-sm group-hover:shadow-xl group-hover:shadow-primary-900/10 transition-all duration-300 transform-gpu"
-          style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}
-        >
+        {thumbnailUrl ? (
           <img 
-            src={video.thumbnailUrl} 
-            alt={video.title}
-            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+            src={thumbnailUrl} 
+            alt={displayTitle}
+            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
             loading="lazy"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
           />
-          
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
-
-          {selected && (
-            <>
-              <div className="absolute inset-0 bg-primary-600/50 z-10 pointer-events-none backdrop-blur-[2px]" />
-              <div className="absolute inset-0 border-[3px] border-primary-500 rounded-2xl z-20 pointer-events-none" />
-            </>
-          )}
-
-          <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-medium text-white z-20">
-            {video.duration}
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gray-200">
+            <span className="text-gray-400 text-sm">No preview</span>
           </div>
+        )}
+        
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
 
+        {isProcessing && (
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-40 flex items-center justify-center pointer-events-none">
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 className="w-10 h-10 text-white animate-spin" />
+              <span className="text-white text-sm font-medium">Processing...</span>
+            </div>
+          </div>
+        )}
+
+        {selectionMode && (
+          <div className="absolute top-3 right-3 z-20 pointer-events-none">
+            {selected ? (
+              <div className="bg-primary-600 text-white rounded-full p-1 shadow-md">
+                <CheckCircle2 size={20} />
+              </div>
+            ) : (
+              <div className="w-7 h-7 rounded-full border-2 border-white/60 bg-black/20 backdrop-blur-sm" />
+            )}
+          </div>
+        )}
+
+        {hasTranslation && !isProcessing && !selectionMode && (
+          <button
+            onClick={handleLanguageToggle}
+            className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg flex items-center gap-1.5 text-white hover:bg-black/80 transition-colors z-30 group/lang"
+            title={showOriginal ? `Showing ${languageCode}` : `Showing English`}
+          >
+            <Globe size={12} className="text-gray-200" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              {showOriginal ? languageCode : 'EN'}
+            </span>
+          </button>
+        )}
+
+        {duration && duration !== '0:00' && (
+          <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-medium text-white z-20">
+            {duration}
+          </div>
+        )}
+
+        {!selectionMode && (
           <div className="absolute top-3 right-3 z-20">
-            <div className="w-8 h-8 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white shadow-sm">
-              {video.platform === 'instagram' && (
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" className="w-6 h-6">
+            <div className="w-7 h-7 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white shadow-sm">
+              {platform === 'instagram' && (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" className="w-5 h-5">
                   <defs>
                     <linearGradient id="instagram-gradient" x1="0%" y1="100%" x2="100%" y2="0%">
                       <stop offset="0%" stopColor="#FED373"/>
@@ -104,91 +203,73 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
                   <circle cx="17.5" cy="6.5" r="1.5" fill="white"/>
                 </svg>
               )}
-              {video.platform === 'youtube' && (
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" className="w-6 h-6">
-                  <path d="M21.582 7.186c-.252-1.028-1.002-1.84-2.003-2.093C18.094 4.5 12 4.5 12 4.5s-6.094 0-7.579.593c-1.001.253-1.751 1.065-2.003 2.093C1.846 8.73 1.846 12 1.846 12s0 3.27.572 4.814c.252 1.028 1.002 1.84 2.003 2.093C5.906 19.5 12 19.5 12 19.5s6.094 0 7.579-.593c1.001-.253 1.751-1.065 2.003-2.093C22.154 15.27 22.154 12 22.154 12s0-3.27-.572-4.814z" fill="#FF0000"/>
-                  <path d="M9.846 15.231V8.769L15.385 12l-5.539 3.231z" fill="white"/>
-                </svg>
-              )}
-              {video.platform === 'tiktok' && (
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="#000000" fillRule="evenodd" className="w-6 h-6" style={{ display: 'block' }}>
-                  <path d="M800 112.962C800 50.575 749.425 0 687.038 0H112.962C50.575 0 0 50.575 0 112.962v574.076C0 749.426 50.575 800 112.962 800h574.076C749.425 800 800 749.426 800 687.038zM662.759 348.916c-51.615.577-99.71-15.027-141.938-43.927v202.874c0 90.166-61.72 167.62-148.996 187.848-119.068 27.165-219.864-58.954-232.577-161.835-13.294-102.884 52.322-193.051 152.892-213.281 19.651-4.045 49.209-4.045 64.458-.577v108.661c-4.692-1.153-9.086-2.31-13.709-2.888-39.304-6.937-77.371 12.715-92.977 48.55-15.605 35.838-5.16 77.451 26.629 101.73 26.586 20.806 56.085 23.694 86.14 9.822 30.057-13.291 46.21-37.567 49.676-70.512.578-4.622.546-9.826.546-15.028V110.206c0-10.981.086-10.502 11.068-10.502h86.12c6.36 0 8.673.915 9.25 8.433 4.621 67.047 55.526 124.147 120.838 132.818 6.937 1.155 14.369 1.613 22.58 2.19z" transform="translate(112 112)"/>
-                </svg>
-              )}
-              {video.platform === 'facebook' && (
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" className="w-6 h-6">
-                  <circle cx="12" cy="12" r="10" fill="#1877F3"/>
-                  <path d="M13.25 17.5V12.5h1.75l.25-2H13.25V9.5c0-.576.152-.967.938-.967H15.5V6.875A18.924 18.924 0 0 0 13.562 6.75c-1.595 0-2.562.97-2.562 2.75v1.5H9v2h2v5h2.25z" fill="#FFF"/>
-                </svg>
-              )}
             </div>
           </div>
+        )}
 
-          <div className="absolute inset-0 p-4 flex flex-col justify-start z-30">
-            {/* TOP LEFT: Action Button (Heart or Radio) */}
-            <div className="flex justify-start">
+        {!selectionMode && (
+          <div className="absolute inset-0 p-4 flex flex-col justify-start z-30 pointer-events-none">
+            <div className="flex justify-start pointer-events-auto">
               <button 
-                onClick={selectionMode ? (e) => { e.stopPropagation(); onToggleSelect?.(); } : handleHeartClick}
+                onClick={handleHeartClick}
+                disabled={isProcessing}
                 className={`
                   absolute top-3 left-3 flex-shrink-0 z-30
-                  w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200
-                  ${selectionMode 
-                    ? 'bg-transparent'
+                  w-7 h-7 rounded-full flex items-center justify-center transition-all duration-200
+                  ${isProcessing 
+                    ? 'bg-transparent opacity-30 cursor-not-allowed'
                     : 'bg-white/20 backdrop-blur-md hover:bg-white/60 hover:scale-100 shadow-sm'
                   }
                 `}
               >
-                {selectionMode ? (
-                  <div 
-                    className={`
-                      w-6 h-6 min-w-[18px] min-h-[18px] aspect-square rounded-full border-2 transition-all duration-200 relative flex-shrink-0 box-border
-                      ${selected 
-                        ? 'bg-primary-600 border-primary-600 ring-4 ring-primary-600/25' 
-                        : 'border-white bg-white/30 backdrop-blur-sm hover:bg-primary-600/15 hover:border-primary-600 hover:shadow-[0_0_0_6px_rgba(124,58,237,0.25)] hover:scale-105'
-                      }
-                    `}
-                  >
-                    {selected && (
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-white rounded-full" />
-                    )}
-                  </div>
-                ) : (
-                  <Heart 
-                    size={20} 
-                    className={`
-                      transition-all duration-250 ease-out flex-shrink-0
-                      ${video.isFavorite ? 'heart-animate opacity-100' : 'opacity-60 hover:opacity-90'}
-                    `}
+                <Heart 
+                    size={18}
                     color="#FF2C00"
-                    fill={video.isFavorite ? "#e63946" : "transparent"} 
+                    fill={isFavorite ? "#e63946" : "transparent"} 
                     strokeWidth={2}
-                  />
-                )}
+                    style={{
+                      transition: 'all 250ms ease-out',
+                      opacity: isFavorite ? 1 : 0.6
+                    }}
+                />
               </button>
             </div>
           </div>
-        </div>
-
-        <div className="px-">
-          <h3 className="font-semibold text-gray-900 leading-tight line-clamp-2 group-hover:text-primary-600 transition-colors">
-            {video.title}
-          </h3>
-          <div className="flex items-center gap-2 mt-1.5">
-            <div className="w-5 h-5 rounded-full bg-gray-200 flex-shrink-0" />
-            <span className="text-xs font-medium text-gray-500 truncate">{video.author}</span>
-          </div>
-        </div>
+        )}
       </div>
 
-      <ConfirmModal 
-        isOpen={showRemoveConfirm}
-        onClose={() => setShowRemoveConfirm(false)}
-        onConfirm={confirmRemoveFavorite}
-        title="Remove Favorite"
-        message="Are you sure you want to remove this video from your favorites?"
-        confirmLabel="Remove"
-        variant="danger"
-      />
-    </>
+      <div className="px-1">
+        <h3 
+          onClick={handleCardClick}
+          className={`font-semibold text-gray-900 leading-tight line-clamp-2 transition-colors ${
+            isProcessing ? 'cursor-not-allowed opacity-50' : 'hover:text-primary-600 cursor-pointer'
+          }`}
+          title={displayTitle}
+        >
+          {displayTitle}
+        </h3>
+        
+        <a
+          href={profileUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 mt-1.5 w-fit group/author"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (isProcessing) e.preventDefault();
+          }}
+        >
+          <svg className="w-3 h-3 text-pink-500 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+          </svg>
+          
+          <span className={`text-xs font-medium text-gray-500 truncate group-hover/author:text-gray-900 transition-colors ${
+            isProcessing ? 'opacity-50' : ''
+          }`}>
+            {author}
+          </span>
+        </a>
+      </div>
+    </div>
   );
 };

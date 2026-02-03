@@ -1,5 +1,3 @@
-import React from 'react';
-
 export interface Video {
   id: string;
   title: string;
@@ -7,31 +5,39 @@ export interface Video {
   platform: 'instagram' | 'youtube' | 'tiktok';
   thumbnailUrl: string;
   duration: string;
-  savedAt: string; // Using string for display, but we might treat as date
+  savedAt: string;
   category: string;
-  subCategory?: string;
   tags: string[];
-  summary: string;
-  bullets: string[];
-  transcript: string;
+  
+  // ✅ UPDATED: Summary is now an object containing details
+  summary: {
+    title?: string | { english: string; original: string }; // ✅ ADDED: Support dual-language
+    category?: string;
+    topic?: string;
+    summary?: string; // The actual text summary
+    bullets?: { headline: string; text: string; emoji?: string }[];
+    hashtags?: string[];
+    emojis?: string[];
+  } | string; // Allow string fallback for legacy
+
+  transcript?: string;
   originalUrl: string;
-  views?: string;
-  // New persistence fields
   isFavorite: boolean;
   folderId: string;
-  favoritedAt?: string; // ISO string for sorting
+  
+  // New AI fields
+  content_type?: string;
+  recipe?: any;
+  workout?: any;
+  
+  // ✅ ADDED: Backend status
+  status?: string;
+  __raw?: any;
 }
 
 export interface Folder {
   id: string;
   name: string;
-  itemCount: number;
-  coverUrl?: string;
   subFolders?: Folder[];
-}
-
-export interface NavigationItem {
-  label: string;
-  path: string;
-  icon: React.ElementType;
+  parentId?: string | null;
 }

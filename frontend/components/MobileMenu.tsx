@@ -1,9 +1,37 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { X, ChevronRight, Search, Folder, Plus } from 'lucide-react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { 
+  X, 
+  Search, 
+  Folder, 
+  Plus, 
+  LayoutGrid, 
+  Heart, 
+  Archive, 
+  Share2, 
+  ChevronRight, 
+  HelpCircle, 
+  BookOpen, 
+  FolderPlus,
+  Chrome,
+  Github,
+  Settings,
+  User,
+  LogOut,
+  SquarePen // ✅ Added SquarePen
+} from 'lucide-react';
 import { useData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
 import { Button } from './Button';
 import { InputModal } from './InputModal';
+import { ManageCollectionsModal } from './ManageCollectionsModal';
+
+// Custom Icon: Folder Open (Sub Folder)
+const FolderIcon = ({ size = 22, className = "" }: {size?: number, className?: string}) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
+  </svg>
+);
 
 interface MobileMenuProps {
   isOpen: boolean;
@@ -11,135 +39,254 @@ interface MobileMenuProps {
 }
 
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
-  const { folders, addFolder } = useData();
-  const [isVisible, setIsVisible] = useState(false);
+  const { folders, addFolder, login: mockLoginData } = useData();
+  const { user, signOut } = useAuth();
+  
+  const [shouldRender, setShouldRender] = useState(false);
+  const [animateOpen, setAnimateOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+  const [mockLoading, setMockLoading] = useState(false);
+  
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (isOpen) {
-      setIsVisible(true);
+      setShouldRender(true);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setAnimateOpen(true));
+      });
       document.body.style.overflow = 'hidden';
-      document.documentElement.style.overflow = 'hidden';
     } else {
-      const timer = setTimeout(() => setIsVisible(false), 400);
+      setAnimateOpen(false);
+      const timer = setTimeout(() => setShouldRender(false), 500);
       document.body.style.overflow = '';
-      document.documentElement.style.overflow = '';
       return () => clearTimeout(timer);
     }
-    return () => {
-      document.body.style.overflow = '';
-      document.documentElement.style.overflow = '';
-    };
   }, [isOpen]);
 
-  const handleNewCollection = (name: string) => {
-    addFolder(name);
+  const handleNewCollection = (name: string, parentId?: string) => {
+    addFolder(name, parentId);
     setIsModalOpen(false);
   };
 
-  if (!isVisible) return null;
+  const handleNav = (path: string) => {
+    navigate(path);
+    onClose();
+  };
+
+  const handleMockLogin = () => {
+    setMockLoading(true);
+    setTimeout(() => {
+      setMockLoading(false);
+      mockLoginData(); 
+      navigate('/gallery');
+      onClose();
+    }, 1500);
+  };
+
+  const systemIds = ['all', 'favorites', 'shared', 'archive'];
+  const customFolders = (folders || []).filter(f => !systemIds.includes(f.id));
+  const parentOptions = customFolders.map(f => ({ id: f.id, name: f.name }));
+
+  if (!shouldRender) return null;
 
   return (
     <>
       <div 
         className={`
-          fixed inset-0 z-[100] bg-[#f8fafc]
-          transition-all duration-[400ms] ease-[cubic-bezier(0.32,0.72,0,1)]
-          ${isOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}
+          fixed top-0 left-0 w-full z-[100] bg-[#f8fafc] overflow-hidden
+          transition-[height] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
+          ${animateOpen ? 'h-[100dvh]' : 'h-0'}
         `}
       >
-        <div className="flex flex-col h-full max-w-[1100px] mx-auto px-4">
+        <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4 md:px-6 lg:px-8">
           
           {/* Header */}
-          <div className="h-[85px] flex items-center justify-between flex-shrink-0 border-b border-gray-100">
-             <Link 
-               to="/" 
-               onClick={onClose}
-               className="flex items-center gap-2 text-gray-900 hover:text-primary-600 transition-colors"
-             >
-               <img 
-                 alt="recolekt_icon" 
-                 className="h-8 md:h-9 transition-transform duration-100" 
-                 src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/recolekt_icon.svg" 
-                 style={{ transform: 'scale(1)' }}
-               />
-               <span className="text-lg font-bold">Home</span>
-             </Link>
+          <div className="h-[85px] md:h-[90px] flex items-center justify-between flex-shrink-0 border-b border-gray-100 gap-4">
+             {user && (
+               <div className="relative flex-1">
+                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                 <input 
+                   type="text" 
+                   placeholder="Search..." 
+                   className="w-full bg-white border border-gray-200 rounded-xl py-3 pl-10 pr-4 text-sm font-medium focus:ring-4 focus:ring-primary-600/10 focus:border-primary-600 outline-none transition-all shadow-sm"
+                 />
+               </div>
+             )}
+             
+             {!user && <div className="flex-1"></div>}
+
              <button 
                onClick={onClose}
-               className="p-2 -mr-2 text-gray-500 bg-gray-100 rounded-full transition-colors hover:bg-gray-200"
+               className="p-2 -mr-2 text-gray-600 bg-transparent hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
              >
-               <X size={20} />
+               <X size={24} />
              </button>
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto py-6">
-            
-            {/* Search in Menu */}
-            <div className="relative mb-4">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input 
-                type="text" 
-                placeholder="Search..." 
-                className="w-full bg-white border border-gray-200 rounded-xl py-3 pl-10 pr-4 text-base focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 outline-none"
-              />
-            </div>
+          <div className="flex-1 overflow-y-auto py-8">
+            <div className={`transition-opacity duration-500 delay-100 ${animateOpen ? 'opacity-100' : 'opacity-0'} flex flex-col min-h-full`}>
+              
+              {!user && (
+                <div className="flex flex-col h-full space-y-8 px-2">
+                  {/* ... Logged Out View (Same as before) ... */}
+                  <div className="space-y-2">
+                    {[{ label: 'Home', path: '/' }, { label: 'Features', path: '/features' }, { label: 'Pricing', path: '/billing' }, { label: 'Guide', path: '/help?section=how-to' }, { label: 'Support', path: '/help?section=contact' }].map((link) => (
+                      <Link key={link.path} to={link.path} onClick={onClose} className={`block text-3xl font-black tracking-tight hover:text-primary-600 transition-colors py-2 ${location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'}`}>{link.label}</Link>
+                    ))}
+                  </div>
+                  <div className="mt-auto pb-12">
+                    <div className="grid grid-cols-2 gap-3 mb-6">
+                      <button onClick={handleMockLogin} className="flex items-center justify-center gap-2 p-3 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 text-sm"><Chrome size={18} /> Google</button>
+                      <button onClick={handleMockLogin} className="flex items-center justify-center gap-2 p-3 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 text-sm"><Github size={18} /> Apple</button>
+                    </div>
+                    <div className="space-y-4">
+                      <Button fullWidth onClick={handleMockLogin} disabled={mockLoading} className={`h-14 text-base font-bold shadow-xl shadow-primary-600/20 ${mockLoading ? 'opacity-80' : ''}`}>{mockLoading ? 'Connecting...' : 'Sign In'}</Button>
+                      <div className="text-center"><p className="text-gray-500 text-sm font-medium">Don't have an account? <button onClick={() => { onClose(); navigate('/auth'); }} className="text-primary-600 font-bold hover:underline">Sign Up</button></p></div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-            {/* New Collection Button */}
-            <div className="mb-8">
-              <Button 
-                fullWidth 
-                variant="primary" 
-                onClick={() => setIsModalOpen(true)}
-                className="shadow-lg shadow-primary-600/20 gap-2 py-3"
-              >
-                <Plus size={18} />
-                <span>New Collection</span>
-              </Button>
-            </div>
+              {user && (
+                <div className="flex-1">
+                  <div className="space-y-8">
+                    
+                    {/* Library */}
+                    <section>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">Library</h3>
+                      <div className="bg-white rounded-[28px] border border-gray-100 overflow-hidden shadow-sm">
+                        <button onClick={() => handleNav('/gallery')} className="w-full flex items-center gap-4 p-5 border-b border-gray-50 group transition-all active:bg-gray-50">
+                          <LayoutGrid size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                          <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">All my videos</span>
+                          <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                        </button>
+                        <button onClick={() => handleNav('/gallery/favorites')} className="w-full flex items-center gap-4 p-5 group transition-all active:bg-gray-50">
+                          <Heart size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                          <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">Favorites</span>
+                          <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                        </button>
+                      </div>
+                    </section>
 
-            <nav className="space-y-1">
-               <div className="py-6">
-                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 px-4">Collections</h3>
-                 <div className="space-y-1">
-                   {folders.map(folder => (
-                      <Link 
-                        key={folder.id}
-                        to={`/gallery/${folder.id === 'all' ? '' : folder.id}`}
-                        onClick={onClose}
-                        className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-white transition-colors group"
-                      >
+                    {/* Collections */}
+                    <section>
+                      <div className="flex items-center justify-between px-4 mb-3">
+                        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Collections</h3>
                         <div className="flex items-center gap-3">
-                          <Folder size={20} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
-                          <span className="text-gray-700 font-medium">{folder.name}</span>
-                        </div>
-                        <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-md">{folder.itemCount}</span>
-                      </Link>
-                   ))}
-                 </div>
-               </div>
-            </nav>
+                           {/* ✅ 1) Icon is now purple and using SquarePen */}
+                           <button 
+                             onClick={() => setIsManageModalOpen(true)}
+                             className="text-primary-600 hover:text-primary-700 transition-colors"
+                             title="Manage Collections"
+                           >
+                             <SquarePen size={18} />
+                           </button>
 
-            <div className="mt-auto px-4 pb-8">
-              <Link 
-                to="/"
-                onClick={onClose}
-                className="block w-full py-4 bg-gray-100 text-gray-900 text-center font-bold rounded-xl active:scale-95 transition-transform"
-              >
-                Sign In
-              </Link>
+                           <button onClick={() => setIsModalOpen(true)} className="text-primary-600 active:scale-95 transition-transform">
+                             <Plus size={20} strokeWidth={3} />
+                           </button>
+                        </div>
+                      </div>
+                      
+                      <div className="bg-white rounded-[28px] border border-gray-100 overflow-hidden shadow-sm">
+                           {customFolders.length > 0 && customFolders.map((folder) => (
+                              <div key={folder.id} className="border-b border-gray-50 last:border-0">
+                                <button onClick={() => handleNav(`/gallery/${folder.id}`)} className="w-full flex items-center justify-between p-5 group transition-all active:bg-gray-50">
+                                  <div className="flex items-center gap-4"><Folder size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{folder.name}</span></div>
+                                  <div className="flex items-center gap-2"><span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md tracking-wider group-hover:bg-primary-50 group-hover:text-primary-600 transition-colors">{(folder as any).itemCount || 0}</span></div>
+                                </button>
+                                {folder.subFolders && (
+                                  <div className="bg-gray-50/50">
+                                    {folder.subFolders.map(sub => (
+                                      <button key={sub.id} onClick={() => handleNav(`/gallery/${sub.id}`)} className="w-full flex items-center gap-3 pl-14 pr-5 py-3 text-sm group transition-all active:bg-gray-100">
+                                        <FolderIcon size={18} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-600 font-medium group-hover:text-primary-600 transition-colors">{sub.name}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                           ))}
+
+                           {customFolders.length === 0 && (
+                             <div className="text-center p-8 border-b border-gray-50">
+                               <p className="text-gray-400 text-sm font-medium">No collections yet.</p>
+                               <button onClick={() => setIsModalOpen(true)} className="text-primary-600 font-bold text-sm mt-2">Create one</button>
+                             </div>
+                           )}
+
+                            <div className="border-b border-gray-50 last:border-0">
+                             <button onClick={() => handleNav('/gallery/shared')} className="w-full flex items-center justify-between p-5 group transition-all active:bg-gray-50">
+                               <div className="flex items-center gap-4"><Share2 size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">Shared with Me</span></div><ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                             </button>
+                           </div>
+                           <div className="border-t border-gray-50">
+                             <button onClick={() => handleNav('/gallery/archive')} className="w-full flex items-center justify-between p-5 group transition-all active:bg-gray-50">
+                               <div className="flex items-center gap-4"><Archive size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">Archive</span></div><ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                             </button>
+                           </div>
+                      </div>
+                    </section>
+                    
+                    {/* Resources */}
+                    <section>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">Resources</h3>
+                      <div className="bg-white rounded-[28px] border border-gray-100 overflow-hidden shadow-sm">
+                        <button onClick={() => handleNav('/help?section=how-to')} className="w-full flex items-center gap-4 p-5 border-b border-gray-50 group transition-all active:bg-gray-50">
+                          <BookOpen size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">Guide</span><ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                        </button>
+                        <button onClick={() => handleNav('/help?section=contact')} className="w-full flex items-center gap-4 p-5 group transition-all active:bg-gray-50">
+                          <HelpCircle size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">Support</span><ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                        </button>
+                      </div>
+                    </section>
+
+                    {/* Account */}
+                    <section>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">Account</h3>
+                      <div className="bg-white rounded-[28px] border border-gray-100 overflow-hidden shadow-sm">
+                        <button onClick={() => handleNav('/settings/app')} className="w-full flex items-center gap-4 p-5 border-b border-gray-50 group transition-all active:bg-gray-50">
+                          <Settings size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">App Settings</span><ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                        </button>
+                        <button onClick={() => handleNav('/settings/account')} className="w-full flex items-center gap-4 p-5 border-b border-gray-50 group transition-all active:bg-gray-50">
+                          <User size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">My Account</span><ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                        </button>
+                        <button onClick={() => { signOut(); onClose(); }} className="w-full flex items-center gap-4 p-5 group transition-all active:bg-red-50">
+                          <LogOut size={22} className="text-red-400 group-hover:text-red-600 transition-colors" /><span className="text-gray-900 font-bold flex-1 text-left group-hover:text-red-600 transition-colors">Sign Out</span>
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              )}
+
+              {/* Logo at Bottom */}
+              <div className="py-8 mt-auto flex justify-center">
+                 <img alt="recolekt_logo" className="h-10" src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/frontend/assets/recolekt_logo_black.svg" />
+              </div>
+
+              <div className="h-20 md:h-0"></div>
             </div>
           </div>
         </div>
       </div>
 
+      {/* ✅ 3) Updated Input Modal with Parent Options */}
       <InputModal 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSubmit={handleNewCollection}
-        title="Create New Collection"
-        placeholder="Collection name"
+        title="New Collection"
+        placeholder="Name your collection..."
+        parentOptions={parentOptions}
+      />
+
+      <ManageCollectionsModal 
+        isOpen={isManageModalOpen}
+        onClose={() => setIsManageModalOpen(false)}
       />
     </>
   );

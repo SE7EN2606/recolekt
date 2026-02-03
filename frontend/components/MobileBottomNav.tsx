@@ -4,18 +4,22 @@ import { LayoutGrid, User, Plus } from 'lucide-react';
 import { ProfileMenu } from './ProfileMenu';
 
 
+
 interface MobileBottomNavProps {
   onAddClick: () => void;
 }
+
 
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
 
+
   return (
     <>
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30 px-6 pb-6 pt-2">
+      {/* Hide MobileBottomNav when ProfileMenu is open */}
+      <div className={`md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30 px-6 pb-6 pt-2 transition-transform duration-300 ${isProfileOpen ? 'translate-y-full' : 'translate-y-0'}`}>
         <div className="flex items-end justify-between">
           
           {/* Left: Collections */}
@@ -26,6 +30,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
             <LayoutGrid size={24} />
             <span className="text-[10px] font-medium">Collections</span>
           </NavLink>
+
 
 
           {/* Center: Add Button (Floating overlap) */}
@@ -39,6 +44,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
           </div>
 
 
+
           {/* Right: Profile */}
           <button 
             className={`flex flex-col items-center gap-1 min-w-[64px] transition-colors ${isProfileOpen ? 'text-primary-600' : 'text-gray-400 hover:text-gray-600'}`}
@@ -49,8 +55,10 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
           </button>
 
 
+
         </div>
       </div>
+
 
 
       <ProfileMenu isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />

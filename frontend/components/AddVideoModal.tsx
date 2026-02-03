@@ -1,0 +1,117 @@
+import React, { useState } from 'react';
+import { useData } from '../context/DataContext';
+
+// Paste Icon SVG
+const PasteIcon = ({ className = "" }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 32 32" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M24.89,6.61H22.31V4.47A2.47,2.47,0,0,0,19.84,2H6.78A2.47,2.47,0,0,0,4.31,4.47V22.92a2.47,2.47,0,0,0,2.47,2.47H9.69V27.2a2.8,2.8,0,0,0,2.8,2.8h12.4a2.8,2.8,0,0,0,2.8-2.8V9.41A2.8,2.8,0,0,0,24.89,6.61ZM6.78,23.52a.61.61,0,0,1-.61-.6V4.47a.61.61,0,0,1,.61-.6H19.84a.61.61,0,0,1,.61.6V6.61h-8a2.8,2.8,0,0,0-2.8,2.8V23.52Zm19,3.68a.94.94,0,0,1-.94.93H12.49a.94.94,0,0,1-.94-.93V9.41a.94.94,0,0,1,.94-.93h12.4a.94.94,0,0,1,.94.93Z"></path>
+    <path d="M23.49,13.53h-9.6a.94.94,0,1,0,0,1.87h9.6a.94.94,0,1,0,0-1.87Z"></path>
+    <path d="M23.49,17.37h-9.6a.94.94,0,1,0,0,1.87h9.6a.94.94,0,1,0,0-1.87Z"></path>
+    <path d="M23.49,21.22h-9.6a.93.93,0,1,0,0,1.86h9.6a.93.93,0,1,0,0-1.86Z"></path>
+  </svg>
+);
+
+interface AddVideoModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose }) => {
+  const [url, setUrl] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const { addVideo } = useData();
+
+  if (!isOpen) return null;
+
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setUrl(text);
+    } catch (err) {
+      console.error('Failed to read clipboard:', err);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // ✅ Prevent duplicate submissions
+    if (isLoading) {
+      console.warn('⚠️ Already submitting, ignoring duplicate call');
+      return;
+    }
+    
+    if (!url.trim()) return;
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      await addVideo(url.trim());
+      setUrl('');
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to import video');
+      console.error('Error adding video:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Save a New Video</h2>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="relative">
+            <input
+              type="text"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="Insert Instagram link here"
+              className="w-full h-[50px] pl-4 pr-16 text-sm bg-white border border-gray-200 rounded-xl focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none text-gray-900 placeholder-gray-500 shadow-sm"
+              autoFocus
+              disabled={isLoading}
+            />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2">
+              <button
+                type="button"
+                onClick={handlePaste}
+                disabled={isLoading}
+                className="flex items-center justify-center w-[36px] h-[36px] bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all border border-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Paste from clipboard"
+              >
+                <PasteIcon className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-sm text-red-600">{error}</p>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isLoading}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!url.trim() || isLoading}
+              className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-semibold"
+            >
+              {isLoading ? 'Processing...' : 'Save'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};

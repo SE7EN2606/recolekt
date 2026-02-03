@@ -1,0 +1,406 @@
+import React from 'react';
+import {
+  ArrowLeft,
+  ChevronDown,
+  ExternalLink,
+  Pencil,
+  CircleAlert,
+  Trash2,
+  Layers,
+  Tags,
+} from 'lucide-react';
+import { RecipeMeta, Ingredients, Steps } from './RecipeComponents';
+import { MobileBottomNav } from './MobileBottomNav';
+import { EditableTitle, EditableBullets, EditableHashtags } from './VideoDetailComponents';
+import { parseQuantity, convertToMetric, scaleQuantity } from '../utils/videoUtils';
+import { LinkifiedText } from './LinkifiedText';
+import { IOSShareIcon, HashtagIcon } from './VideoIcons';
+import { AISummaryCard } from './AISummaryCard';
+
+
+interface VideoDetailMobileProps {
+  viewModel: any;
+  isEditMode: boolean;
+  tempTitle: string;
+  tempCategory: string;
+  tempTopic: string;
+  tempDescription: string;
+  tempBullets: Array<{ headline: string; text: string; emoji?: string }>;
+  tempHashtags: string[];
+  servingScale: number;
+  useMetric: boolean;
+  captionOpen: boolean;
+  transcriptOpen: boolean;
+  onNavigateBack: () => void;
+  onShare: () => void;
+  onModifyToggle: () => void;
+  onCancelEdit: () => void;
+  setTempTitle: (value: string) => void;
+  setTempCategory: (value: string) => void;
+  setTempTopic: (value: string) => void;
+  setTempDescription: (value: string) => void;
+  setTempBullets: (value: Array<{ headline: string; text: string; emoji?: string }>) => void;
+  setTempHashtags: (value: string[]) => void;
+  setServingScale: (value: number) => void;
+  setUseMetric: (value: boolean) => void;
+  setCaptionOpen: (value: boolean) => void;
+  setTranscriptOpen: (value: boolean) => void;
+  onReportClick: () => void;
+  onDeleteClick: () => void;
+}
+
+
+export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
+  viewModel,
+  isEditMode,
+  tempTitle,
+  tempCategory,
+  tempTopic,
+  tempDescription,
+  tempBullets,
+  tempHashtags,
+  servingScale,
+  useMetric,
+  captionOpen,
+  transcriptOpen,
+  onNavigateBack,
+  onShare,
+  onModifyToggle,
+  onCancelEdit,
+  setTempTitle,
+  setTempCategory,
+  setTempTopic,
+  setTempDescription,
+  setTempBullets,
+  setTempHashtags,
+  setServingScale,
+  setUseMetric,
+  setCaptionOpen,
+  setTranscriptOpen,
+  onReportClick,
+  onDeleteClick,
+}) => {
+  return (
+    <div className="md:hidden -mx-4 sm:mx-0">
+      <div className="relative w-full aspect-[9/8] bg-black" style={{ marginTop: '1rem' }}>
+        <img src={viewModel.preview} alt={viewModel.title} className="w-full h-full object-cover opacity-90" />
+
+
+        {/* Top overlay buttons: icon-only zoom, circle fixed size */}
+        <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start bg-gradient-to-b from-black/60 to-transparent">
+          <button
+            onClick={onNavigateBack}
+            className="group w-9 h-9 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-2xl hover:bg-white/40 transition-colors"
+          >
+            <span className="inline-flex transform transition-transform duration-200 ease-out">
+              <ArrowLeft size={18} />
+            </span>
+          </button>
+
+
+          <button
+            onClick={onShare}
+            className="group w-9 h-9 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-2xl hover:bg-white/40 transition-colors"
+          >
+            <span className="inline-flex transform transition-transform duration-200 ease-out">
+              <IOSShareIcon size={18} />
+            </span>
+          </button>
+        </div>
+
+
+        {viewModel.duration && viewModel.duration !== '0:00' && (
+          <div className="absolute bottom-3 right-3 bg-black/80 text-white text-xs px-2 py-1 rounded">
+            {viewModel.duration}
+          </div>
+        )}
+      </div>
+
+
+      <div className="px-4 pt-5 pb-6">
+        <div className="mb-3">
+          <EditableTitle
+            title={viewModel.title}
+            isEditMode={isEditMode}
+            value={tempTitle}
+            onChange={setTempTitle}
+            mobile
+          />
+        </div>
+
+
+        <div className="flex items-center justify-between mb-4">
+          <a
+            href={`https://www.instagram.com/${String(viewModel.author || '').replace('@', '')}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center hover:opacity-80"
+            style={{ gap: '0.375rem' }}
+          >
+            <img
+              src="/instagram_logo.png"
+              alt="Instagram"
+              className="w-5 h-5 rounded-full"
+              style={{ marginRight: '-0.125rem' }}
+            />
+            <span className="text-sm font-semibold text-gray-900">
+              {String(viewModel.author || '').replace('@', '')}
+            </span>
+          </a>
+          {viewModel.savedAt && <span className="text-xs text-gray-500">{viewModel.savedAt}</span>}
+        </div>
+
+
+        {/* Edit mode: Cancel/Save buttons at top */}
+        {isEditMode && (
+          <div className="mb-4 flex gap-2">
+            <button
+              onClick={onCancelEdit}
+              className="flex-1 flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-medium bg-gray-200 text-gray-700 hover:bg-gray-300 transition"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onModifyToggle}
+              className="flex-1 flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-medium bg-primary-600 text-white hover:bg-primary-700 shadow-lg shadow-primary-600/20 transition"
+            >
+              Save Changes
+            </button>
+          </div>
+        )}
+
+
+        {/* Yellow block with Category, Topic, Hashtags & Edit button */}
+        <div className="mb-5 bg-amber-50 border border-amber-200 rounded-xl overflow-hidden p-4">
+          {isEditMode ? (
+            /* Edit mode: Category & Topic inputs */
+            <div className="pb-3 mb-3 border-b border-amber-200/70">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Layers size={16} className="text-primary-600 flex-shrink-0" />
+                  <input
+                    type="text"
+                    value={tempCategory}
+                    onChange={(e) => setTempCategory(e.target.value)}
+                    className="min-w-0 flex-1 px-2.5 py-1 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    placeholder="Category"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 min-w-0">
+                  <Tags size={16} className="text-gray-600 flex-shrink-0" />
+                  <input
+                    type="text"
+                    value={tempTopic}
+                    onChange={(e) => setTempTopic(e.target.value)}
+                    className="min-w-0 flex-1 px-2.5 py-1 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    placeholder="Topic"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* View mode: Category & Topic with Edit button */
+            <div className="pb-3 mb-3 border-b border-amber-200/70 relative flex items-center">
+              <div className="flex flex-col gap-2 pr-10 flex-1">
+                <div className="flex items-center gap-2">
+                  <Layers size={14} className="flex-shrink-0" style={{ color: '#8b5cf6' }} />
+                  <span className="text-xs font-bold uppercase tracking-wide truncate" style={{ color: '#8b5cf6' }}>
+                    {viewModel.category}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Tags size={14} className="flex-shrink-0" style={{ color: '#f43f5e' }} />
+                  <span className="text-xs font-bold uppercase tracking-wide truncate" style={{ color: '#f43f5e' }}>
+                    {viewModel.topic}
+                  </span>
+                </div>
+              </div>
+
+              {/* Edit button - icon only, centered vertically */}
+              <button
+                onClick={onModifyToggle}
+                className="flex items-center justify-center w-7 h-7 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition"
+                title="Edit Details"
+              >
+                <Pencil size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Hashtags - icon on left, hashtags on same line to the right */}
+          {((viewModel.hashtags || []) as string[]).length > 0 && (
+            <div className="flex items-center gap-1">
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width="16" 
+                height="16" 
+                viewBox="0 0 512 512"
+                fill="#b45309"
+                className="flex-shrink-0"
+              >
+                <path fillRule="nonzero" d="M300.02 161.657l.047-.187c3.542-14.981 23.176-18.148 31.458-5.532a17.27 17.27 0 012.463 13.038c-2.328 10.088-4.271 20.55-6.386 30.72h12.177c22.801 0 22.804 34.849 0 34.849h-19.383l-8.664 43.645h30.453c22.935 0 22.926 34.846 0 34.846h-37.597l-7.847 37.682c-5.447 21.855-38.479 14.339-33.876-7.694 2.271-9.85 4.177-20.06 6.245-29.988h-45.112c-2.556 12.304-4.897 25.01-7.741 37.203-5.282 22.331-38.129 14.224-33.971-7.243l6.239-29.991-16.242.003c-22.9.135-22.956-34.818 0-34.818h23.404l8.614-43.645h-34.49c-22.521 0-23.232-34.849 0-34.849h41.693l7.731-37.144c.051-.403.138-.797.26-1.176 5.329-21.289 38.485-14.721 33.877 7.672l-6.39 30.648h45.113c2.635-12.65 5.447-25.37 7.925-38.039zM256 0c70.688 0 134.689 28.658 181.016 74.984C483.342 121.311 512 185.312 512 256c0 70.688-28.658 134.689-74.984 181.016C390.689 483.342 326.688 512 256 512c-70.688 0-134.689-28.658-181.016-74.984C28.658 390.689 0 326.688 0 256c0-70.688 28.658-134.689 74.984-181.016C121.311 28.658 185.312 0 256 0zm159.946 96.054C375.017 55.125 318.465 29.806 256 29.806S136.983 55.125 96.054 96.054 29.806 193.535 29.806 256s25.319 119.017 66.248 159.946S193.535 482.194 256 482.194s119.017-25.319 159.946-66.248S482.194 318.465 482.194 256s-25.319-119.017-66.248-159.946zM276.256 278.19l8.661-43.645h-45.115l-8.664 43.645h45.118z"/>
+              </svg>
+              
+              <div className="flex-1 min-w-0">
+                <style>{`
+                  .hashtag-links a {
+                    background-color: #fef3c7 !important;
+                    color: #b45309 !important;
+                  }
+                  .hashtag-links a:hover {
+                    background-color: #fde68a !important;
+                  }
+                `}</style>
+                <div className="hashtag-links">
+                  <EditableHashtags
+                    hashtags={viewModel.hashtags || []}
+                    isEditMode={isEditMode}
+                    value={tempHashtags}
+                    onChange={setTempHashtags}
+                    mobile
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+
+        {/* ✅ New combined summary + bullets card */}
+        <AISummaryCard
+          isEditMode={isEditMode}
+          value={tempDescription}
+          onChange={setTempDescription}
+          summaryText={viewModel.description}
+          bullets={isEditMode ? [] : (viewModel.bullets || [])}
+        />
+
+
+        {/* ✅ Keep bullets editable only in edit mode (prevents duplicate bullets display) */}
+        {isEditMode && (
+          <div className="mb-5">
+            <EditableBullets
+              bullets={viewModel.bullets || []}
+              isEditMode={isEditMode}
+              value={tempBullets}
+              onChange={setTempBullets}
+              mobile
+            />
+          </div>
+        )}
+
+
+        {viewModel.isRecipe && viewModel.recipe && (
+          <div className="space-y-3 mb-5">
+            <RecipeMeta
+              recipe={viewModel.recipe}
+              servingScale={servingScale}
+              setServingScale={setServingScale}
+              mobile
+            />
+            <Ingredients
+              recipe={viewModel.recipe}
+              servingScale={servingScale}
+              useMetric={useMetric}
+              setUseMetric={setUseMetric}
+              scaleQuantity={scaleQuantity}
+              convertToMetric={convertToMetric}
+              parseQuantity={parseQuantity}
+              mobile
+            />
+            <Steps recipe={viewModel.recipe} mobile />
+
+
+            {viewModel.recipe.tips?.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <h3 className="text-xs font-bold text-amber-900 mb-1.5">💡 Tips</h3>
+                <ul className="space-y-1">
+                  {viewModel.recipe.tips.map((tip: string, idx: number) => (
+                    <li key={idx} className="text-xs text-amber-900 leading-relaxed">
+                      • {tip}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+
+        {viewModel.caption && (
+          <div className="mb-4 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+            <button
+              onClick={() => setCaptionOpen(!captionOpen)}
+              className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 text-sm font-bold text-gray-900"
+            >
+              Original Caption
+              <ChevronDown size={16} className={`transition-transform ${captionOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {captionOpen && (
+              <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-700 whitespace-pre-line leading-relaxed">
+                <LinkifiedText text={viewModel.caption} />
+              </div>
+            )}
+          </div>
+        )}
+
+
+        {viewModel.transcription && (
+          <div className="mb-6 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+            <button
+              onClick={() => setTranscriptOpen(!transcriptOpen)}
+              className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 text-sm font-bold text-gray-900"
+            >
+              Transcript
+              <ChevronDown size={16} className={`transition-transform ${transcriptOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {transcriptOpen && (
+              <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                {viewModel.transcription.transcript}
+              </div>
+            )}
+          </div>
+        )}
+
+
+        {/* Report Issue & Delete buttons - side by side, same size */}
+        {!isEditMode && (
+          <div className="mb-3 grid grid-cols-2 gap-3">
+            <button
+              onClick={onReportClick}
+              className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-gray-100 text-gray-700 border border-gray-200 rounded-xl font-medium text-xs"
+            >
+              <CircleAlert size={16} />
+              Report Issue
+            </button>
+
+            <button
+              onClick={onDeleteClick}
+              className="flex items-center justify-center gap-1.5 px-3 py-2.5 text-red-600 bg-red-50 border border-red-200 rounded-xl font-medium text-xs"
+            >
+              <Trash2 size={16} />
+              Delete
+            </button>
+          </div>
+        )}
+
+        {/* Instagram button - full width at bottom with reduced top margin */}
+        {!isEditMode && viewModel.sourceUrl && (
+          <a
+            href={viewModel.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-[#F58529] via-[#DD2A7B] to-[#8134AF] text-white rounded-xl text-sm font-bold shadow-md"
+          >
+            <ExternalLink size={16} className="text-white" />
+            Open on Instagram
+          </a>
+        )}
+      </div>
+
+
+      <MobileBottomNav onAddClick={() => {}} />
+    </div>
+  );
+};

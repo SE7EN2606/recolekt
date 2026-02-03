@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, ChevronDown } from 'lucide-react';
 import { Button } from './Button';
 
 interface InputModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (value: string) => void;
+  onSubmit: (value: string, parentId?: string) => void; // ✅ Updated signature
   title: string;
   placeholder?: string;
   confirmLabel?: string;
+  parentOptions?: { id: string; name: string }[]; // ✅ New Prop
 }
 
 export const InputModal: React.FC<InputModalProps> = ({
@@ -17,17 +18,21 @@ export const InputModal: React.FC<InputModalProps> = ({
   onSubmit,
   title,
   placeholder = "Enter text...",
-  confirmLabel = "Create"
+  confirmLabel = "Create",
+  parentOptions = [] // Default to empty array
 }) => {
   const [value, setValue] = useState('');
+  const [parentId, setParentId] = useState('');
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setIsVisible(true);
       setValue('');
-      // Prevent body scroll
+      setParentId(''); // Reset parent selection
       document.body.style.overflow = 'hidden';
+      // Focus input after animation
+      setTimeout(() => document.getElementById('modal-input')?.focus(), 100);
     } else {
       const timer = setTimeout(() => setIsVisible(false), 300);
       document.body.style.overflow = 'unset';
@@ -38,7 +43,7 @@ export const InputModal: React.FC<InputModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (value.trim()) {
-      onSubmit(value);
+      onSubmit(value, parentId || undefined);
       onClose();
     }
   };
@@ -68,14 +73,45 @@ export const InputModal: React.FC<InputModalProps> = ({
           </div>
 
           <form onSubmit={handleSubmit}>
-            <input
-              autoFocus
-              type="text"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder={placeholder}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-gray-900 placeholder-gray-400 mb-6"
-            />
+            <div className="space-y-4 mb-6">
+              
+              {/* ✅ Location Selector (Only show if options exist) */}
+              {parentOptions.length > 0 && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                    Location
+                  </label>
+                  <div className="relative">
+                    <select 
+                      value={parentId}
+                      onChange={(e) => setParentId(e.target.value)}
+                      className="w-full appearance-none px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-gray-900 font-medium cursor-pointer"
+                    >
+                      <option value="">New Main Collection</option>
+                      {parentOptions.map(option => (
+                        <option key={option.id} value={option.id}>Inside "{option.name}"</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                </div>
+              )}
+
+              {/* ✅ Name Input */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                  Name
+                </label>
+                <input
+                  id="modal-input"
+                  type="text"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder={placeholder}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-gray-900 placeholder-gray-400"
+                />
+              </div>
+            </div>
 
             <div className="flex justify-end gap-3">
               <Button type="button" variant="ghost" onClick={onClose}>

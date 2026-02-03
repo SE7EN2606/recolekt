@@ -65,22 +65,23 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             </button>
           </div>
 
-          <h3 className="text-lg font-bold text-gray-900 mb-2">{title}</h3>
+          <h3 className="text-lg font-bold text-gray-900 mb-2 uppercase tracking-tight">{title}</h3>
           <p className="text-gray-500 text-sm leading-relaxed mb-6">
             {message}
           </p>
 
           <div className="flex justify-end gap-3">
-            <Button variant="ghost" onClick={onClose} size="sm">
+            <Button variant="ghost" onClick={onClose} size="sm" className="font-bold">
               {cancelLabel}
             </Button>
             <Button 
-              variant={variant} 
+              variant={variant === 'danger' ? 'danger' : 'primary'} // Ensure correct variant mapping
               onClick={() => {
                 onConfirm();
                 onClose();
               }}
               size="sm"
+              className="font-black px-6"
             >
               {confirmLabel}
             </Button>
