@@ -26,7 +26,8 @@ google = oauth.register(
     client_kwargs={'scope': 'openid email profile'}
 )
 
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
+# ✅ FIXED: Strip trailing slashes to prevent double slashes
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").rstrip("/")
 
 # ---------------------------------------------------------
 # HELPER FUNCTIONS (exported for use in other routes)
@@ -50,7 +51,7 @@ def is_user_verified():
     if not is_user_authenticated():
         return False
     user_id = session.get('user_id')
-    row = fetch_one("SELECT verified FROM users WHERE user_id = %s;", (user_id,))  # ✅ FIXED: user_id not id
+    row = fetch_one("SELECT verified FROM users WHERE user_id = %s;", (user_id,))
     return (row or {}).get('verified', False)
 
 # ---------------------------------------------------------
@@ -116,6 +117,7 @@ def google_callback():
         
         logger.info(f"✅ Session set: user_id={user_id}, authenticated=True")
         
+        # ✅ FIXED: FRONTEND_BASE_URL already stripped of trailing slashes
         return redirect(f'{FRONTEND_BASE_URL}/gallery')
         
     except Exception as e:
@@ -146,7 +148,7 @@ def get_current_user():
     # Fetch user from database
     try:
         user = fetch_one(
-            "SELECT user_id, email, name, picture FROM users WHERE user_id = %s",  # ✅ FIXED: user_id not id
+            "SELECT user_id, email, name, picture FROM users WHERE user_id = %s",
             (user_id,)
         )
         
@@ -161,7 +163,7 @@ def get_current_user():
         return jsonify({
             'authenticated': True,
             'user': {
-                'id': user_dict['user_id'],  # ✅ FIXED: user_id not id
+                'id': user_dict['user_id'],
                 'email': user_dict.get('email'),
                 'name': user_dict.get('name'),
                 'picture': user_dict.get('picture')
