@@ -1,15 +1,10 @@
-[build]
-  command = "npm run build:client"
-  functions = "netlify/functions"
-  publish = "dist/spa"
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Type = "application/javascript"
+    X-Content-Type-Options = "nosniff"
 
-
-[functions]
-  external_node_modules = ["express"]
-  node_bundler = "esbuild"
-  
-[[redirects]]
-  force = true
-  from = "/api/*"
-  status = 200
-  to = "/.netlify/functions/api/:splat"
+[[headers]]
+  for = "/assets/*.js"
+  [headers.values]
+    Content-Type = "application/javascript; charset=utf-8"
