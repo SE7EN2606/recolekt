@@ -4,10 +4,17 @@ FROM python:3.12-slim
 # Définis le répertoire de travail
 WORKDIR /app
 
-# Installe les dépendances système
+# Installe les dépendances système, y compris Rust
 RUN apt-get update && apt-get install -y \
     build-essential \
+    curl \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && source $HOME/.cargo/env \
+    && rustup default stable \
     && rm -rf /var/lib/apt/lists/*
+
+# Ajoute Rust au PATH
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Copie les fichiers de configuration et les dépendances
 COPY requirements.txt .
