@@ -62,27 +62,39 @@ def is_user_verified():
 def google_login():
     """Initiate Google OAuth flow"""
     redirect_uri = url_for('auth.google_callback', _external=True)
-    logger.info(f"Google OAuth redirect_uri: {redirect_uri}")
+    logger.info(f"🔐 Google OAuth redirect_uri: {redirect_uri}")
+    logger.info(f"🔐 User-Agent: {request.headers.get('User-Agent')}")
     return google.authorize_redirect(redirect_uri)
 
 
 @auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
     """Handle Google OAuth callback"""
+    logger.info("=" * 60)
+    logger.info("🔍 OAUTH CALLBACK TRIGGERED")
+    logger.info(f"🔍 Request URL: {request.url}")
+    logger.info(f"🔍 Request referrer: {request.referrer}")
+    logger.info(f"🔍 User-Agent: {request.headers.get('User-Agent')}")
+    logger.info(f"🔍 Request args: {dict(request.args)}")
+    logger.info(f"🔍 Session before token: {dict(session)}")
+    logger.info("=" * 60)
+    
     try:
         token = google.authorize_access_token()
+        logger.info(f"✅ Token received: {bool(token)}")
+        
         user_info = token.get('userinfo')
         
         if not user_info:
-            logger.error("No userinfo in Google OAuth response")
-            return redirect(f'{FRONTEND_BASE_URL}/auth?error=oauth_failed')  # ✅ Clean URL
+            logger.error("❌ No userinfo in Google OAuth response")
+            return redirect(f'{FRONTEND_BASE_URL}/auth?error=oauth_failed')
         
         google_id = user_info.get('sub')
         email = user_info.get('email')
         name = user_info.get('name')
         picture = user_info.get('picture')
         
-        logger.info(f"Google OAuth successful for: {email}")
+        logger.info(f"✅ Google OAuth successful for: {email}")
         
         # Check if user exists
         existing_user = fetch_one(
@@ -92,6 +104,7 @@ def google_callback():
         
         if existing_user:
             user_id = existing_user['user_id']
+            logger.info(f"👤 Existing user found: {user_id}")
             # Update Google ID if not set
             execute(
                 "UPDATE users SET google_id = %s, picture = %s WHERE user_id = %s;",
@@ -100,6 +113,7 @@ def google_callback():
         else:
             # Create new user
             user_id = get_unique_id(email)
+            logger.info(f"✨ Creating new user: {user_id}")
             execute(
                 """
                 INSERT INTO users (user_id, email, name, google_id, picture, verified, created_at)
@@ -111,18 +125,20 @@ def google_callback():
             )
         
         # Set session
+        session.clear()  # ✅ Clear old session first
         session['user_id'] = user_id
         session['authenticated'] = True
         session.permanent = True
         
         logger.info(f"✅ Session set: user_id={user_id}, authenticated=True")
+        logger.info(f"🔍 Session after: {dict(session)}")
+        logger.info(f"🔗 Redirecting to: {FRONTEND_BASE_URL}/gallery")
         
-        return redirect(f'{FRONTEND_BASE_URL}/gallery')  # ✅ Clean URL (no hash!)
+        return redirect(f'{FRONTEND_BASE_URL}/gallery')
         
     except Exception as e:
-        logger.error(f"Google OAuth error: {e}")
-        return redirect(f'{FRONTEND_BASE_URL}/auth?error=oauth_failed')  # ✅ Clean URL
-
+        logger.error(f"❌ Google OAuth error: {e}", exc_info=True)
+        return redirect(f'{FRONTEND_BASE_URL}/auth?error=oauth_failed')
 
 @auth_bp.route("/logout", methods=["POST"])
 def logout():
