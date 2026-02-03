@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 
-import { LanguageProvider } from './context/LanguageProvider';
+import { LanguageProvider } from './context/LanguageContext'; // ✅ FIXED: was LanguageProvider
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { Home } from './pages/Home';
