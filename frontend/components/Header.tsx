@@ -6,8 +6,8 @@ import { MobileMenu } from './MobileMenu'; // ✅ Named import matches export co
 import { InputModal } from './InputModal';
 import { MobileBottomNav } from './MobileBottomNav';
 import { useAuth } from '../context/AuthContext';
-import LogoBlack from '../assets/recolekt_logo_black.svg';
-import LogoIcon from '../assets/recolekt_icon.svg';
+import LogoBlack from '../assets/recolekt_logo_black.png';
+import LogoIcon from '../assets/recolekt_icon.png';
 
 export const Header: React.FC = () => {
   const [scrollY, setScrollY] = useState(0);
