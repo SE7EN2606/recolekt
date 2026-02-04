@@ -76,7 +76,6 @@ def _strip_emoji_from_text(text: str) -> str:
 
 
 def _extract_ingredients_lines(caption: str) -> List[str]:
-    """Robust for EN/FR/KO captions"""
     lines = [ln.strip() for ln in (caption or "").splitlines()]
     if not lines:
         return []
@@ -110,7 +109,6 @@ def _extract_ingredients_lines(caption: str) -> List[str]:
 
 
 def _parse_qty_unit_name(line: str) -> Optional[Dict[str, str]]:
-    """Parse ingredient line into quantity, unit, name"""
     raw = (line or "").strip()
     if not raw:
         return None
@@ -162,7 +160,6 @@ def _parse_qty_unit_name(line: str) -> Optional[Dict[str, str]]:
 
 
 def _build_ingredients_from_caption(caption: str) -> List[Dict[str, str]]:
-    """Extract ingredients from caption with proper emoji mapping"""
     lines = _extract_ingredients_lines(caption)
     out: List[Dict[str, str]] = []
 
@@ -188,7 +185,6 @@ def _build_ingredients_from_caption(caption: str) -> List[Dict[str, str]]:
 
 
 def _normalize_ingredients_list(ings: Any) -> List[Dict[str, str]]:
-    """Normalize ingredient list with proper emoji mapping and unit preservation"""
     if not isinstance(ings, list):
         return []
 
@@ -215,12 +211,10 @@ def _normalize_ingredients_list(ings: Any) -> List[Dict[str, str]]:
             unit = _safe_str(ing.get("unit") or "")
             emoji_from_model = _safe_str(ing.get("emoji") or "")
 
-            # Strip emojis from all fields
             item_clean = _strip_emoji_from_text(item)
             qty_clean = _strip_emoji_from_text(qty)
             unit_clean = _strip_emoji_from_text(unit)
 
-            # Use emoji mapper
             emoji = emoji_from_model or infer_ingredient_emoji(item_clean)
 
             out.append({
@@ -254,7 +248,6 @@ def _ingredients_look_empty(ings: List[Dict[str, str]]) -> bool:
 
 
 def _clean_headline(text: str) -> str:
-    """Remove bullet points and clean headline text"""
     text = (text or "").strip()
     text = re.sub(r"^[•·●○◦▪▫]\s*", "", text)
     text = re.sub(r"\s+", " ", text)
@@ -295,16 +288,14 @@ class RecipeExtractor:
         if not title_en or title_en.lower() == "untitled":
             title_en = _clean_title(caption_first_line) or "Saved Recipe"
 
-        # NEW: Analytical summary (250-400 chars)
         summary_en = _safe_str(result.get("summary", "")).strip()
         if not summary_en or len(summary_en) < 50:
-            summary_en = f"A {title_en.lower()} recipe featuring simple ingredients and straightforward preparation methods."
+            summary_en = f"{title_en} featuring simple ingredients and straightforward preparation."
         
-        # Ensure 250-400 character range
         if len(summary_en) > 400:
             summary_en = summary_en[:397] + "..."
         elif len(summary_en) < 250:
-            summary_en = summary_en + " This recipe combines traditional techniques with accessible ingredients for home cooks."
+            summary_en = summary_en + " Traditional technique with accessible ingredients for home cooks."
 
         if _is_english(lang):
             title_og = title_en
@@ -407,8 +398,8 @@ class RecipeExtractor:
             "workout": None,
         }
 
-def _build_recipe_prompt(self, transcript: str, caption: str, lang: str) -> str:
-    return f"""Analyze this recipe content and extract structured data. Output ONLY valid JSON.
+    def _build_recipe_prompt(self, transcript: str, caption: str, lang: str) -> str:
+        return f"""Analyze this recipe content and extract structured data. Output ONLY valid JSON.
 
 ORIGINAL_LANGUAGE: {lang}
 
