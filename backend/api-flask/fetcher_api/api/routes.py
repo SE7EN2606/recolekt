@@ -6,8 +6,8 @@ import logging
 import threading
 import re
 import stripe
-from datetime import timezone
-from datetime import datetime, timedelta
+import jwt  # ✅ ADD THIS
+from datetime import timezone, datetime, timedelta
 from flask import Blueprint, request, jsonify, session
 from werkzeug.utils import secure_filename
 from google.cloud import storage
@@ -36,11 +36,57 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_PRO_MONTHLY = os.getenv("STRIPE_PRICE_PRO_MONTHLY", "")
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
+JWT_SECRET = os.getenv('SECRET_KEY', 'your-secret-key')  # ✅ ADD THIS
 
 TEMP_DIR_BASE = os.path.join(tempfile.gettempdir(), "recolekt_processing")
 os.makedirs(TEMP_DIR_BASE, exist_ok=True)
 
 
+# ✅ JWT HELPER FUNCTIONS (REPLACE OLD SESSION-BASED AUTH)
+def decode_jwt_token(token: str):
+    """Decode and validate JWT token"""
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+    except jwt.ExpiredSignatureError:
+        logger.warning("JWT token expired")
+        return None
+    except jwt.InvalidTokenError as e:
+        logger.warning(f"Invalid JWT token: {e}")
+        return None
+
+
+def get_user_id_from_request():
+    """
+    Get user_id from Authorization header (JWT token)
+    Falls back to session for backwards compatibility
+    """
+    # ✅ First try JWT from Authorization header
+    auth_header = request.headers.get('Authorization', '')
+    
+    if auth_header.startswith('Bearer '):
+        token = auth_header.replace('Bearer ', '').strip()
+        
+        if token:
+            payload = decode_jwt_token(token)
+            
+            if payload:
+                user_id = payload.get('user_id')
+                logger.debug(f"✅ JWT authenticated user_id: {user_id}")
+                return user_id
+            else:
+                logger.debug("Invalid or expired JWT token")
+    
+    # ✅ Fallback to session (for backwards compatibility)
+    user_id = session.get("user_id")
+    if user_id:
+        logger.debug(f"✅ Session authenticated user_id: {user_id}")
+        return user_id
+    
+    logger.warning("❌ No valid authentication found (tried JWT + session)")
+    raise ValueError("User not authenticated")
+
+
+# Rest of helper functions remain the same...
 def _json_loads_maybe(v, default=None):
     """
     If v is a JSON string, parse it.
@@ -96,7 +142,6 @@ def _coerce_title_to_str(current_title):
         return str(current_title).strip()
     except Exception:
         return ""
-
 
 def _extract_english_preview_and_title(summary_text, current_title=None):
     """
