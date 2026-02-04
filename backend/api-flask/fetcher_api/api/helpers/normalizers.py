@@ -1,25 +1,22 @@
 # fetcher_api/api/helpers/normalizers.py
 
-"""Data normalization helpers"""
+"""
+Data normalization helpers for video URLs and metadata
+"""
+import re
 import json
-import subprocess
 import logging
-import os
+import subprocess
+from typing import Optional
+from urllib.parse import urlparse, parse_qs
 
-logger = logging.getLogger("api")
+logger = logging.getLogger("normalizers")
 
 
-# -------------------------
-# Shared JSON helpers
-# -------------------------
+# ==================== JSON / TYPE HELPERS ====================
+
 def json_loads_maybe(v, default=None):
-    """
-    If v is a JSON string -> json.loads(v).
-    If v is already dict/list -> return as-is.
-    Else -> default.
-    """
-    if default is None:
-        default = {}
+    """If v is a JSON string, parse it. If v is already dict/list, return it. Otherwise return default."""
     if v is None:
         return default
     if isinstance(v, (dict, list)):
@@ -35,21 +32,8 @@ def json_loads_maybe(v, default=None):
     return default
 
 
-def ensure_dict(v):
-    return v if isinstance(v, dict) else {}
-
-
-def ensure_list(v):
-    return v if isinstance(v, list) else []
-
-
 def json_stringify(v):
-    """
-    Ensure we store JSON as a string for Postgres JSON/JSONB columns when needed.
-    - None -> None
-    - str -> str (assumed already JSON text)
-    - dict/list -> json.dumps(...)
-    """
+    """Safely convert value to JSON string"""
     if v is None:
         return None
     if isinstance(v, str):
@@ -57,124 +41,249 @@ def json_stringify(v):
     try:
         return json.dumps(v, ensure_ascii=False)
     except Exception:
-        # last resort: stringify
-        return json.dumps(str(v), ensure_ascii=False)
+        return str(v)
 
 
-def get_video_duration(video_path):
-    """Extract video duration using ffprobe with improved error handling"""
+def ensure_dict(v):
+    """Return v if it's a dict, otherwise return empty dict"""
+    return v if isinstance(v, dict) else {}
+
+
+def ensure_list(v):
+    """Return v if it's a list, otherwise return empty list"""
+    return v if isinstance(v, list) else []
+
+
+def safe_str(v):
+    """Safely convert to string"""
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    return str(v)
+
+
+def safe_int(v, default=0):
+    """Safely convert to int"""
+    if v is None:
+        return default
+    if isinstance(v, int):
+        return v
+    if isinstance(v, (float, str)):
+        try:
+            return int(float(v))
+        except (ValueError, TypeError):
+            return default
+    return default
+
+
+# ==================== URL NORMALIZATION ====================
+
+def normalize_video_url(url: str) -> str:
+    """Normalize video URL to standard format"""
+    if not url:
+        return url
+    
+    url = url.strip()
+    
+    # YouTube regular video
+    if "youtube.com" in url or "youtu.be" in url:
+        video_id = extract_youtube_id(url)
+        if video_id:
+            if "/shorts/" in url:
+                return f"https://www.youtube.com/shorts/{video_id}"
+            return f"https://www.youtube.com/watch?v={video_id}"
+    
+    # TikTok
+    if "tiktok.com" in url:
+        match = re.search(r"/video/(\d+)", url)
+        if match:
+            video_id = match.group(1)
+            username_match = re.search(r"@([\w.]+)", url)
+            if username_match:
+                username = username_match.group(1)
+                return f"https://www.tiktok.com/@{username}/video/{video_id}"
+    
+    # Instagram
+    if "instagram.com" in url:
+        match = re.search(r"/reel/([A-Za-z0-9_-]+)", url)
+        if match:
+            reel_id = match.group(1)
+            return f"https://www.instagram.com/reel/{reel_id}/"
+    
+    return url
+
+
+def extract_youtube_id(url: str) -> Optional[str]:
+    """Extract YouTube video ID from various URL formats"""
+    if not url:
+        return None
+    
+    if "youtu.be/" in url:
+        match = re.search(r"youtu\.be/([A-Za-z0-9_-]{11})", url)
+        if match:
+            return match.group(1)
+    
+    if "youtube.com/watch" in url:
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        video_id = query.get("v", [None])[0]
+        if video_id:
+            return video_id
+    
+    if "youtube.com/shorts/" in url:
+        match = re.search(r"/shorts/([A-Za-z0-9_-]{11})", url)
+        if match:
+            return match.group(1)
+    
+    if "youtube.com/embed/" in url:
+        match = re.search(r"/embed/([A-Za-z0-9_-]{11})", url)
+        if match:
+            return match.group(1)
+    
+    return None
+
+
+def detect_platform(url: str) -> str:
+    """Detect platform from URL"""
+    if not url:
+        return "unknown"
+    
+    url_lower = url.lower()
+    
+    if "youtube.com" in url_lower or "youtu.be" in url_lower:
+        return "youtube"
+    
+    if "tiktok.com" in url_lower:
+        return "tiktok"
+    
+    if "instagram.com" in url_lower:
+        return "instagram"
+    
+    if "vimeo.com" in url_lower:
+        return "vimeo"
+    
+    return "other"
+
+
+# ==================== DURATION HELPERS ====================
+
+def normalize_duration(duration: any) -> Optional[int]:
+    """Normalize duration to integer seconds"""
+    if duration is None:
+        return None
+    
+    if isinstance(duration, int):
+        return duration
+    
+    if isinstance(duration, float):
+        return int(duration)
+    
+    if isinstance(duration, str):
+        if duration.startswith("PT"):
+            return parse_iso8601_duration(duration)
+        
+        if ":" in duration:
+            return parse_time_duration(duration)
+        
+        try:
+            return int(float(duration))
+        except (ValueError, TypeError):
+            return None
+    
+    return None
+
+
+def parse_iso8601_duration(duration: str) -> Optional[int]:
+    """Parse ISO 8601 duration (PT1M30S) to seconds"""
     try:
-        # ✅ Check if file exists first
-        if not os.path.exists(video_path):
-            logger.error(f"❌ Video file not found: {video_path}")
-            return None, 0
-
-        # ✅ Check if file is not empty
-        if os.path.getsize(video_path) == 0:
-            logger.error(f"❌ Video file is empty: {video_path}")
-            return None, 0
-
-        cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'json', video_path]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-
-        if result.returncode != 0:
-            logger.error(f"❌ ffprobe failed with code {result.returncode}: {result.stderr}")
-            return None, 0
-
-        if not result.stdout.strip():
-            logger.error(f"❌ ffprobe returned empty output for: {video_path}")
-            return None, 0
-
-        data = json.loads(result.stdout)
-
-        # ✅ Check if duration exists in response
-        if 'format' not in data or 'duration' not in data['format']:
-            logger.error(f"❌ No duration in ffprobe output: {data}")
-            return None, 0
-
-        duration_seconds = float(data['format']['duration'])
-
-        # ✅ Sanity check duration
-        if duration_seconds <= 0:
-            logger.error(f"❌ Invalid duration: {duration_seconds}")
-            return None, 0
-
-        minutes = int(duration_seconds // 60)
-        seconds = int(duration_seconds % 60)
-        duration_str = f"{minutes}:{seconds:02d}"
-
-        logger.info(f"✅ Extracted duration: {duration_str} from {video_path}")
-        return duration_str, duration_seconds
-
-    except FileNotFoundError:
-        logger.error("❌ ffprobe not installed! Install with: apt-get install ffmpeg")
-        return None, 0
-    except subprocess.TimeoutExpired:
-        logger.error(f"❌ ffprobe timeout for {video_path}")
-        return None, 0
-    except json.JSONDecodeError as e:
-        logger.error(f"❌ Failed to parse ffprobe JSON output: {e}")
-        return None, 0
-    except Exception as e:
-        logger.error(f"❌ Failed to get duration from {video_path}: {e}", exc_info=True)
-        return None, 0
+        seconds = 0
+        
+        hours_match = re.search(r"(\d+)H", duration)
+        if hours_match:
+            seconds += int(hours_match.group(1)) * 3600
+        
+        minutes_match = re.search(r"(\d+)M", duration)
+        if minutes_match:
+            seconds += int(minutes_match.group(1)) * 60
+        
+        seconds_match = re.search(r"(\d+)S", duration)
+        if seconds_match:
+            seconds += int(seconds_match.group(1))
+        
+        return seconds if seconds > 0 else None
+    
+    except Exception:
+        return None
 
 
-def normalize_summary(raw, caption: str = "", author_name: str = "", shortcode: str = "", content_text: str = "") -> dict:
-    """
-    Normalize AI summary response AND apply global category/topic refinement.
-    """
-    if not isinstance(raw, dict):
-        raw = {}
-
-    # Accept both schemas: (bullets) or (headlines)
-    bullets = raw.get("bullets")
-    if bullets is None:
-        bullets = raw.get("headlines")
-    if bullets is None:
-        bullets = []
-
-    category = raw.get("category") or "General"
-    topic = raw.get("topic") or "General"
-
-    title = raw.get("title") or raw.get("topic") or (caption[:80] if caption else "")
-
-    if not title:
-        if author_name:
-            title = f"Reel from @{author_name}"
-        elif shortcode:
-            title = f"Instagram reel {shortcode}"
-        else:
-            title = "Saved Reel"
-
-    hashtags = raw.get("hashtags") or ["general"]
-    emojis = raw.get("emojis") or ["✨"]
-
-    # Global refinement (safe: if import fails, keep AI values)
+def parse_time_duration(duration: str) -> Optional[int]:
+    """Parse time duration (1:30 or 1:30:45) to seconds"""
     try:
-        from fetcher_api.services.classification import refine_category_topic, DEFAULT_REEL_CATEGORIES
+        parts = duration.split(":")
+        
+        if len(parts) == 2:
+            minutes, seconds = map(int, parts)
+            return minutes * 60 + seconds
+        
+        if len(parts) == 3:
+            hours, minutes, seconds = map(int, parts)
+            return hours * 3600 + minutes * 60 + seconds
+        
+        return None
+    
+    except Exception:
+        return None
 
-        combined = (content_text or "").strip()
-        if not combined:
-            combined = f"{raw.get('summary','')}\\n\\n{caption}".strip()
 
-        refined_cat, refined_topic = refine_category_topic(
-            content=combined,
-            ai_category=category,
-            ai_topic=topic,
-            candidate_categories=DEFAULT_REEL_CATEGORIES,
+def get_video_duration(video_path: str) -> Optional[int]:
+    """
+    Get video duration in seconds using ffprobe.
+    Returns None if ffprobe fails or video_path is invalid.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                video_path
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10
         )
-        category = refined_cat
-        topic = refined_topic
-    except Exception as e:
-        logger.warning(f"Category/topic refinement skipped: {e}")
+        
+        if result.returncode == 0 and result.stdout.strip():
+            duration = float(result.stdout.strip())
+            return int(duration)
+        
+        return None
+    
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, ValueError) as e:
+        logger.warning(f"Failed to get video duration for {video_path}: {e}")
+        return None
+    except FileNotFoundError:
+        logger.warning("ffprobe not found. Install ffmpeg to get video duration.")
+        return None
 
-    return {
-        "category": category,
-        "title": title,
-        "topic": topic,
-        "summary": raw.get("summary") or "",
-        "bullets": bullets,
-        "hashtags": hashtags,
-        "emojis": emojis,
-    }
+
+# ==================== FILE NAME SANITIZATION ====================
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitize filename by removing invalid characters"""
+    if not filename:
+        return "untitled"
+    
+    # Remove invalid characters
+    filename = re.sub(r'[<>:"/\\|?*]', "", filename)
+    
+    # Replace spaces with underscores
+    filename = filename.replace(" ", "_")
+    
+    # Limit length
+    if len(filename) > 200:
+        filename = filename[:200]
+    
+    return filename or "untitled"

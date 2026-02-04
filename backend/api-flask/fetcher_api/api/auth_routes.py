@@ -1,3 +1,5 @@
+# fetcher_api/api/routes/admin.py
+
 """
 Authentication routes and helpers for Google OAuth
 """

@@ -43,18 +43,18 @@ export const Gallery: React.FC = () => {
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [targetFolderId, setTargetFolderId] = useState<string>('');
   const [showSkeleton, setShowSkeleton] = useState(true);
+  const [hasTriggeredInitialFetch, setHasTriggeredInitialFetch] = useState(false);
 
   console.log('🎯 Gallery rendering - authLoading:', authLoading, 'user:', !!user, 'videos:', videos.length);
 
-  // ✅ REMOVED: The premature redirect that caused the loop
-  // Now we handle auth check properly below
-
+  // ✅ FIX: Removed refreshVideos from deps to prevent infinite loop
   useEffect(() => {
-    if (user && videos.length === 0 && !dataLoading) {
+    if (user && videos.length === 0 && !dataLoading && !hasTriggeredInitialFetch) {
       console.log('🔄 Triggering refreshVideos because videos array is empty');
+      setHasTriggeredInitialFetch(true);
       refreshVideos();
     }
-  }, [user, videos.length, dataLoading, refreshVideos]);
+  }, [user, dataLoading, hasTriggeredInitialFetch]); // ✅ Removed videos.length and refreshVideos
 
   useEffect(() => {
     const newTempId = searchParams.get('new');
@@ -62,7 +62,7 @@ export const Gallery: React.FC = () => {
       refreshVideos();
       window.history.replaceState(null, '', window.location.pathname);
     }
-  }, [searchParams, refreshVideos]);
+  }, [searchParams]); // ✅ Removed refreshVideos from deps
 
   useEffect(() => {
     document.body.style.overflow = isMoveModalOpen ? 'hidden' : 'unset';
@@ -396,31 +396,44 @@ export const Gallery: React.FC = () => {
                   </div>
                   {targetFolderId === 'default' && <CheckCircle2 size={20} className="text-primary-600" />}
                 </button>
-                {folders.map(f => (
-                  <React.Fragment key={f.id}>
-                    <button onClick={() => setTargetFolderId(f.id)} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${targetFolderId === f.id ? 'bg-primary-50 text-primary-700 ring-2 ring-primary-500 ring-inset' : 'hover:bg-gray-50 text-gray-700'}`}>
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${targetFolderId === f.id ? 'bg-white' : 'bg-gray-100'}`}>
-                        <span className="text-lg">{f.emoji}</span>
-                      </div>
-                      <div className="flex-1 text-left">
-                        <p className="font-semibold">{f.name}</p>
-                        <p className="text-xs opacity-70">{f.videoCount || 0} videos</p>
-                      </div>
-                      {targetFolderId === f.id && <CheckCircle2 size={20} className="text-primary-600" />}
-                    </button>
-                    {f.subFolders?.map((sub: any) => (
-                      <button key={sub.id} onClick={() => setTargetFolderId(sub.id)} className={`w-full flex items-center gap-3 p-3 pl-8 rounded-xl transition-all ${targetFolderId === sub.id ? 'bg-primary-50 text-primary-700 ring-2 ring-primary-500 ring-inset' : 'hover:bg-gray-50 text-gray-700'}`}>
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${targetFolderId === sub.id ? 'bg-white' : 'bg-gray-100'}`}>
-                          <span className="text-sm">{sub.emoji}</span>
+                {folders.map((f: any) => {
+                  const folderId = String(f?.id || '');
+                  const folderName = String(f?.name || 'Untitled');
+                  const folderEmoji = String(f?.emoji || '📁');
+                  const folderVideoCount = Number(f?.videoCount || 0);
+                  
+                  return (
+                    <React.Fragment key={folderId}>
+                      <button onClick={() => setTargetFolderId(folderId)} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${targetFolderId === folderId ? 'bg-primary-50 text-primary-700 ring-2 ring-primary-500 ring-inset' : 'hover:bg-gray-50 text-gray-700'}`}>
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${targetFolderId === folderId ? 'bg-white' : 'bg-gray-100'}`}>
+                          <span className="text-lg">{folderEmoji}</span>
                         </div>
                         <div className="flex-1 text-left">
-                          <p className="font-semibold text-sm">{sub.name}</p>
+                          <p className="font-semibold">{folderName}</p>
+                          <p className="text-xs opacity-70">{folderVideoCount} videos</p>
                         </div>
-                        {targetFolderId === sub.id && <CheckCircle2 size={18} className="text-primary-600" />}
+                        {targetFolderId === folderId && <CheckCircle2 size={20} className="text-primary-600" />}
                       </button>
-                    ))}
-                  </React.Fragment>
-                ))}
+                      {Array.isArray(f?.subFolders) && f.subFolders.map((sub: any) => {
+                        const subId = String(sub?.id || '');
+                        const subName = String(sub?.name || 'Untitled');
+                        const subEmoji = String(sub?.emoji || '📁');
+                        
+                        return (
+                          <button key={subId} onClick={() => setTargetFolderId(subId)} className={`w-full flex items-center gap-3 p-3 pl-8 rounded-xl transition-all ${targetFolderId === subId ? 'bg-primary-50 text-primary-700 ring-2 ring-primary-500 ring-inset' : 'hover:bg-gray-50 text-gray-700'}`}>
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${targetFolderId === subId ? 'bg-white' : 'bg-gray-100'}`}>
+                              <span className="text-sm">{subEmoji}</span>
+                            </div>
+                            <div className="flex-1 text-left">
+                              <p className="font-semibold text-sm">{subName}</p>
+                            </div>
+                            {targetFolderId === subId && <CheckCircle2 size={18} className="text-primary-600" />}
+                          </button>
+                        );
+                      })}
+                    </React.Fragment>
+                  );
+                })}
               </div>
             </div>
             <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">

@@ -1,3 +1,6 @@
+# api-flask/app.py
+
+
 # ============================================
 # LOAD ENVIRONMENT VARIABLES FIRST
 # ============================================
@@ -106,12 +109,32 @@ app.config['SESSION_REFRESH_EACH_REQUEST'] = False
 # Initialize Flask-Session
 Session(app)
 
-# Register blueprints
+# -------------------------------------------------
+# 🔐 Initialize OAuth BEFORE registering blueprints
+# -------------------------------------------------
+from authlib.integrations.flask_client import OAuth
+
+oauth = OAuth(app)
+oauth.register(
+    name='google',
+    client_id=os.getenv('GOOGLE_CLIENT_ID'),
+    client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'}
+)
+
+# Store oauth in app config so routes can access it
+app.config['oauth'] = oauth
+logger.info("✅ OAuth initialized with Google provider")
+
+# Register all blueprints AFTER OAuth initialization
+from fetcher_api.api import register_blueprints
 register_blueprints(app)
 
 # -------------------------------------------------
 # 🔍 Environment Variables Check
 # -------------------------------------------------
+
 print("=" * 50)
 print("🔍 Environment Variables Check:")
 google_client_id = os.getenv('GOOGLE_CLIENT_ID', 'NOT SET')

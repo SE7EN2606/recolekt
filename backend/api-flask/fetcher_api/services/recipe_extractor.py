@@ -15,12 +15,17 @@ from fetcher_api.services.emoji_mapper import infer_ingredient_emoji
 
 logger = logging.getLogger(__name__)
 
-RECIPE_EXTRACTOR_VERSION = "recipe-v14-single-call-factual-summary"
+RECIPE_EXTRACTOR_VERSION = "recipe-v15-batched-translation-fix"
 
 
 def _is_english(lang: str) -> bool:
     l = (lang or "").strip().lower()
     return l in {"en", "eng", "english"}
+
+
+def _is_french(lang: str) -> bool:
+    l = (lang or "").strip().lower()
+    return l in {"fr", "fre", "french", "français", "francais"}
 
 
 def _safe_list(v) -> List:
@@ -265,13 +270,16 @@ class RecipeExtractor:
             raise ValueError("MISTRAL_API_KEY not found in environment")
         self.client = Mistral(api_key=api_key)
         self.model = "mistral-large-latest"
+        self.api_call_count = 0
 
     def extract(self, transcript: str, caption: str, lang: str, classification: Dict) -> Dict:
+        self.api_call_count = 0
+        
         transcript = transcript or ""
         caption = caption or ""
         lang = lang or "en"
 
-        # ✅ SINGLE API CALL - Get everything at once
+        # CALL 1: Get recipe in English
         prompt = self._build_recipe_prompt(transcript, caption, lang)
         result = self._call_ai(prompt)
 
@@ -282,7 +290,7 @@ class RecipeExtractor:
         hashtags = _safe_list(result.get("hashtags", []))
         hashtags = [str(t).lstrip("#").strip() for t in hashtags if str(t).strip()]
 
-        # ✅ Extract highlights with proper format
+        # Extract highlights with proper format
         highlights_raw = _safe_list(result.get("highlights", []))
         headlines_en = []
         
@@ -308,18 +316,26 @@ class RecipeExtractor:
         if not summary_en or len(summary_en) < 50:
             summary_en = f"{title_en} featuring simple ingredients and straightforward preparation."
 
+        # CALL 2 (only if NOT English): Translate EVERYTHING at once
         if _is_english(lang):
             title_og = title_en
             summary_og = summary_en
             headlines_og = headlines_en
         else:
-            # ✅ SECOND API CALL (only if not English) - Translation
-            title_og = self._translate_text(title_en, lang, keep_length=True)
-            summary_og = self._translate_text(summary_en, lang, keep_length=True)
-            headlines_og = self._translate_list(headlines_en, lang)
+            # Batch translate ALL text in ONE call
+            translation_result = self._translate_batch({
+                "title": title_en,
+                "summary": summary_en,
+                "headlines": headlines_en
+            }, lang)
+            
+            title_og = translation_result.get("title", title_en)
+            summary_og = translation_result.get("summary", summary_en)
+            headlines_og = translation_result.get("headlines", headlines_en)
+            
             headlines_og = [_clean_headline(h) for h in headlines_og if isinstance(h, str) and h.strip()]
             while len(headlines_og) < 4:
-                headlines_og.append("✨ 명확하고 쉬운 레시피")
+                headlines_og.append("✨ Recette claire et facile" if _is_french(lang) else "✨ Clear, easy recipe")
             headlines_og = headlines_og[:4]
 
         recipe_obj = result.get("recipe", {})
@@ -339,12 +355,15 @@ class RecipeExtractor:
 
         if _is_english(lang):
             ingredients_english = ingredients_original
+            instructions_original = model_instructions
         else:
+            # Translate ingredient names only (keep qty/unit)
             names = [ing.get("item", "") for ing in ingredients_original]
-            translated = self._translate_list(names, "en")
+            translated_names = self._translate_list(names, "en")
+            
             ingredients_english = []
             for i, ing in enumerate(ingredients_original):
-                item_en = translated[i] if i < len(translated) else _safe_str(ing.get("item", ""))
+                item_en = translated_names[i] if i < len(translated_names) else _safe_str(ing.get("item", ""))
                 emoji = infer_ingredient_emoji(item_en)
                 ingredients_english.append(
                     {
@@ -355,6 +374,9 @@ class RecipeExtractor:
                         "emoji": emoji,
                     }
                 )
+            
+            # Translate instructions to original language
+            instructions_original = self._translate_list(model_instructions, lang)
 
         recipe = {
             "english": {
@@ -367,7 +389,7 @@ class RecipeExtractor:
             "original": {
                 "title": title_og,
                 "ingredients": ingredients_original,
-                "instructions": model_instructions if _is_english(lang) else self._translate_list(model_instructions, lang),
+                "instructions": instructions_original,
                 "tips": _safe_list(recipe_obj.get("tips", [])),
                 "notes": _safe_list(recipe_obj.get("notes", [])),
             },
@@ -392,7 +414,7 @@ class RecipeExtractor:
 
         recipe_json = json.dumps(recipe, ensure_ascii=False)
 
-        logger.info("✅ Recipe extracted with %d API calls", 1 if _is_english(lang) else 2)
+        logger.info("✅ Recipe extracted with %d API calls", self.api_call_count)
 
         return {
             "content_type": "recipe",
@@ -467,7 +489,7 @@ EXTRACTION RULES:
      - "item": ingredient name (NO emojis, clean text)
      - "quantity": amount (e.g., "6", "1.5", "10")
      - "unit": measurement unit (e.g., "g", "tbsp", "cups", "pinch")
-   - **instructions**: 6-12 clear steps
+   - **instructions**: 6-12 clear steps IN ENGLISH
    - **tips**: optional array
    - **notes**: optional array
 
@@ -499,6 +521,8 @@ Return ALL fields in ONE JSON response:
         for attempt in range(max_retries + 1):
             try:
                 logger.info("🤖 Calling Mistral API (attempt %d/%d)...", attempt + 1, max_retries + 1)
+                self.api_call_count += 1
+                
                 response = self.client.chat.complete(
                     model=self.model,
                     messages=[
@@ -517,33 +541,42 @@ Return ALL fields in ONE JSON response:
                     raise
         raise ValueError(f"AI call failed after retries: {last_err}")
 
-    def _translate_text(self, text: str, target_lang: str, keep_length: bool = False) -> str:
-        if not text.strip():
-            return ""
+    def _translate_batch(self, data: Dict, target_lang: str) -> Dict:
+        """Translate title, summary, and headlines in ONE API call"""
+        
+        prompt = f"""Translate ALL fields into {target_lang}. Output ONLY valid JSON.
 
-        extra = "Keep roughly similar length.\n" if keep_length else ""
-        prompt = f"""Translate into {target_lang}. {extra}Output ONLY valid JSON.
+Return JSON with EXACT structure:
+{{
+  "title": "...",
+  "summary": "...",
+  "headlines": ["...", "...", "...", "..."]
+}}
 
-Return JSON: {{ "text": "..." }}
-
-TEXT:
-{text}
+DATA TO TRANSLATE:
+{json.dumps(data, ensure_ascii=False)}
 """
 
+        self.api_call_count += 1
         response = self.client.chat.complete(
             model=self.model,
             messages=[
-                {"role": "system", "content": "You output only valid JSON."},
+                {"role": "system", "content": "You output only valid JSON. Translate accurately."},
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
             temperature=0.1,
         )
 
-        data = json.loads(response.choices[0].message.content)
-        return _safe_str(data.get("text", "")).strip()
+        result = json.loads(response.choices[0].message.content)
+        return {
+            "title": _safe_str(result.get("title", "")),
+            "summary": _safe_str(result.get("summary", "")),
+            "headlines": _safe_list(result.get("headlines", []))
+        }
 
     def _translate_list(self, items: List[str], target_lang: str) -> List[str]:
+        """Translate list of items in ONE call"""
         if not items:
             return []
 
@@ -555,6 +588,7 @@ ITEMS:
 {json.dumps(items, ensure_ascii=False)}
 """
 
+        self.api_call_count += 1
         response = self.client.chat.complete(
             model=self.model,
             messages=[
@@ -568,4 +602,3 @@ ITEMS:
         data = json.loads(response.choices[0].message.content)
         out = _safe_list(data.get("items", []))
         return [_clean_headline(x) for x in out if isinstance(x, str) and x.strip()]
-    
