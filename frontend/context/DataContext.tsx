@@ -7,7 +7,7 @@ import React, {
   ReactNode,
 } from 'react';
 import { Video, Folder } from '../types';
-import { useAuth } from './AuthContext';
+import { useAuth, getAuthHeaders } from './AuthContext';
 
 interface User {
   id: string;
@@ -70,7 +70,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.setItem('custom_folders', JSON.stringify(folders));
   }, [folders]);
 
-  // ✅ CENTRAL FETCH LOGIC
+  // ✅ CENTRAL FETCH LOGIC WITH JWT
   const fetchVideos = async () => {
     if (!user) return;
     setIsLoading(true);
@@ -85,6 +85,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         credentials: 'include',
         cache: 'no-store',
         headers: {
+          ...getAuthHeaders(),  // ✅ Add JWT token
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache'
         }
@@ -174,6 +175,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
           return Array.from(uniqueById.values());
         });
+      } else if (response.status === 401) {
+        console.error('❌ Unauthorized - clearing token');
+        localStorage.removeItem('auth_token');
       }
     } catch (error) {
       console.error("Failed to load gallery:", error);
@@ -203,7 +207,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, videos]);
 
-  // ✅ Add Video with Duplicate Prevention
+  // ✅ Add Video with Duplicate Prevention + JWT
   const addVideo = async (url: string): Promise<AddVideoResult> => {
     try {
       const cleanUrl = url.trim().split('?')[0];
@@ -228,9 +232,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         method: 'POST',
         body: formData,
         credentials: 'include',
+        headers: getAuthHeaders()  // ✅ Add JWT token
       });
 
       if (response.status === 409) throw new Error('This video has already been saved.');
+      if (response.status === 401) {
+        localStorage.removeItem('auth_token');
+        throw new Error('Not authenticated');
+      }
 
       let result: any;
       try { result = await response.json(); } catch {}
@@ -281,7 +290,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // ✅ Delete Videos
+  // ✅ Delete Videos + JWT
   const deleteVideos = async (videoIds: string[]): Promise<void> => {
     if (!videoIds.length) return;
 
@@ -301,7 +310,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const response = await fetch(url, {
             method: 'DELETE',
             credentials: 'include',
+            headers: getAuthHeaders()  // ✅ Add JWT token
           });
+
+          if (response.status === 401) {
+            localStorage.removeItem('auth_token');
+            throw new Error('Not authenticated');
+          }
 
           if (!response.ok) {
             const text = await response.text().catch(() => '');
