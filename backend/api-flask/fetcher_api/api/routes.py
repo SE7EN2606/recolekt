@@ -461,15 +461,6 @@ def _build_bilingual_summary_object(summary_title, summary_text, bullets, hashta
         },
     }
 
-
-# Auth Helpers
-def get_user_id_from_request():
-    user_id = session.get("user_id")
-    if not user_id:
-        raise ValueError("User not authenticated")
-    return user_id
-
-
 def ensure_billing_customer(user_id: str):
     execute(
         "INSERT INTO billing_customers (user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING;",
