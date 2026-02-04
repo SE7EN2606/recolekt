@@ -114,7 +114,7 @@ export const HelpSupport: React.FC = () => {
         <section id="about" ref={aboutRef} className="scroll-mt-24">
           <SectionHeader title="About Recolekt" />
           <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm p-10 text-center">
-            <img src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/recolekt_logo_black.svg" alt="Logo" className="h-10 mx-auto mb-8" />
+            <img src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/recolekt_logo_black.png" alt="Logo" className="h-10 mx-auto mb-8" />
             <p className="text-gray-500 font-medium mb-10 leading-relaxed max-w-sm mx-auto text-sm">
               Recolekt is built for knowledge seekers who want to turn their daily video discoveries into a permanent library of wisdom.
             </p>
