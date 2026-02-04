@@ -6,11 +6,14 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Detect environment: Docker/Railway vs Local
-IS_DOCKER = os.path.exists("/app/.env")
+# ✅ Detect environment: Railway > Docker > Local
+IS_RAILWAY = bool(os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_PROJECT_ID'))
+IS_DOCKER = os.path.exists("/app/.env") or IS_RAILWAY
 IS_LOCAL = not IS_DOCKER
 
-print(f"🔍 Environment: {'DOCKER/RAILWAY' if IS_DOCKER else 'LOCAL DEVELOPMENT'}")
+print(f"🔍 Environment: {'RAILWAY' if IS_RAILWAY else 'DOCKER' if IS_DOCKER else 'LOCAL DEVELOPMENT'}")
+print(f"🔍 RAILWAY_ENVIRONMENT: {os.getenv('RAILWAY_ENVIRONMENT', 'Not set')}")
+print(f"🔍 RAILWAY_PROJECT_ID: {os.getenv('RAILWAY_PROJECT_ID', 'Not set')[:20] if os.getenv('RAILWAY_PROJECT_ID') else 'Not set'}...")
 
 if IS_LOCAL:
     # Load .env.local for local development
@@ -20,12 +23,14 @@ if IS_LOCAL:
         load_dotenv(env_local, override=True)
     else:
         print("⚠️ WARNING: .env.local not found in local mode!")
-else:
-    # Production: Load /app/.env
+elif IS_DOCKER and not IS_RAILWAY:
+    # Production Docker: Load /app/.env
     ROOT_ENV = Path("/app/.env")
     if ROOT_ENV.exists():
         print(f"✅ Loading production environment: {ROOT_ENV}")
         load_dotenv(ROOT_ENV, override=True)
+else:
+    print("✅ Railway detected - using environment variables from Railway dashboard")
 
 # Verify critical variables
 print(f"🔍 DATABASE_URL: {'✅ Set' if os.getenv('DATABASE_URL') else '❌ Missing'}")
@@ -49,7 +54,7 @@ import requests
 import numpy as np
 from PIL import Image
 
-from google.cloud import vision  # google-cloud-vision
+from google.cloud import vision
 
 # Add backend root to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -65,7 +70,7 @@ os.environ["TRANSFORMERS_OFFLINE"] = "1"
 # 🧠 Import AI Service
 # -------------------------------------------------
 print("Python executable:", sys.executable)
-for p in sys.path[:3]:  # Only show first 3 paths
+for p in sys.path[:3]:
     print("   ", p)
 
 from fetcher_api.services.ai_service import ai_service
@@ -92,7 +97,7 @@ app.config['SESSION_PERMANENT'] = True
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 app.config['SESSION_COOKIE_NAME'] = 'recolekt_session'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SECURE'] = not IS_LOCAL  # ✅ Only secure in production
+app.config['SESSION_COOKIE_SECURE'] = not IS_LOCAL
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_DOMAIN'] = None
 app.config['SESSION_COOKIE_PATH'] = '/'
@@ -119,7 +124,7 @@ print(f"SECRET_KEY: {flask_secret[:25]}..." if len(flask_secret) > 25 else f"SEC
 print("=" * 50)
 
 # -------------------------------------------------
-# 🌐 CORS - Environment-aware + Blueprint Support
+# 🌐 CORS - Environment-aware
 # -------------------------------------------------
 if IS_LOCAL:
     # Local: Allow localhost origins
@@ -139,9 +144,7 @@ else:
 
 print(f"🔍 CORS Origins: {cors_origins}")
 
-# ✅ Apply CORS globally with proper configuration
-from flask_cors import cross_origin
-
+# ✅ Apply CORS globally
 CORS(
     app,
     origins=cors_origins,
@@ -433,13 +436,14 @@ if not IS_LOCAL:
 # -------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
-    debug_mode = IS_LOCAL  # ✅ Debug only in local
+    debug_mode = IS_LOCAL
     
     logger.info("=" * 60)
     logger.info(f"🚀 Starting Flask app")
-    logger.info(f"   Environment: {'LOCAL DEV' if IS_LOCAL else 'PRODUCTION'}")
+    logger.info(f"   Environment: {'RAILWAY' if IS_RAILWAY else 'DOCKER' if IS_DOCKER else 'LOCAL DEV'}")
     logger.info(f"   Port: {port}")
     logger.info(f"   Debug: {debug_mode}")
+    logger.info(f"   CORS Origins: {cors_origins}")
     logger.info("=" * 60)
     
     app.run(
