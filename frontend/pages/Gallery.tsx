@@ -14,9 +14,6 @@ const CalendarArrowDown = ({ size = 20 }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 18 4 4 4-4"/><path d="M16 2v4"/><path d="M18 14v8"/><path d="M21 11.354V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2-2v14a2 2 0 0 0 2 2h7.343"/><path d="M3 10h18"/><path d="M8 2v4"/></svg>
 );
 
-/*
-✅ FIXED SAFE BASE URL - same as AuthContext/DataContext
-*/
 const RAW_API_BASE =
   import.meta.env.VITE_API_BASE ||
   import.meta.env.VITE_API_URL ||
@@ -35,9 +32,8 @@ export const Gallery: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signInWithGoogle } = useAuth();
   
-  // ✅ USE DATACONTEXT - NO LOCAL FETCH
   const { videos, folders, isLoading: dataLoading, refreshVideos, deleteVideos } = useData();
 
   const [selectionMode, setSelectionMode] = useState(false);
@@ -48,15 +44,10 @@ export const Gallery: React.FC = () => {
   const [targetFolderId, setTargetFolderId] = useState<string>('');
   const [showSkeleton, setShowSkeleton] = useState(true);
 
-  // 🔍 DEBUG
-  console.log('🎯 Gallery rendering with', videos.length, 'videos from DataContext');
-  if (videos.length > 0) {
-    console.log('🎯 First video in Gallery:', videos[0]);
-  }
+  console.log('🎯 Gallery rendering - authLoading:', authLoading, 'user:', !!user, 'videos:', videos.length);
 
-  useEffect(() => {
-    if (!authLoading && !user) navigate('/auth', { replace: true });
-  }, [authLoading, user, navigate]);
+  // ✅ REMOVED: The premature redirect that caused the loop
+  // Now we handle auth check properly below
 
   useEffect(() => {
     if (user && videos.length === 0 && !dataLoading) {
@@ -149,7 +140,6 @@ export const Gallery: React.FC = () => {
     const idsArray = Array.from(selectedIds);
     
     try {
-      // ✅ Use DataContext deleteVideos (handles encoding + state)
       await deleteVideos(idsArray);
       setSelectedIds(new Set());
       setSelectionMode(false);
@@ -173,17 +163,33 @@ export const Gallery: React.FC = () => {
     return folderId ? folderId.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : 'Gallery';
   };
 
-  if (authLoading) return (
-    <div className="w-full pt-8 md:pt-0">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="aspect-[9/16] rounded-2xl bg-gray-200 animate-pulse" />
-        ))}
+  // ✅ Show loading state while checking auth
+  if (authLoading) {
+    return (
+      <div className="w-full pt-8 md:pt-0">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="aspect-[9/16] rounded-2xl bg-gray-200 animate-pulse" />
+          ))}
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
-  if (!user) return null;
+  // ✅ Show login prompt if not authenticated (AFTER loading completes)
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome to Recolekt</h2>
+          <p className="text-gray-600 mb-6">Sign in to save and organize your favorite reels</p>
+          <Button variant="primary" onClick={signInWithGoogle}>
+            Sign in with Google
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full pt-8 md:pt-0 pb-0 md:pb-6">
@@ -237,7 +243,7 @@ export const Gallery: React.FC = () => {
         }
 
         .placeholder-skeleton { width: 100%; height: 100%; background: linear-gradient(90deg, #e5e7eb 0%, #f3f4f6 20%, #e5e7eb 40%, #e5e7eb 100%); background-size: 2000px 100%; animation: shimmer 2s linear infinite; }
-        .processing-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(4px); z-index: 10; gap: 12px; overflow: hidden; }
+        .processing-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-center; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(4px); z-index: 10; gap: 12px; overflow: hidden; }
         
         .scan-grid { 
           position: absolute; inset: 0; 
@@ -322,7 +328,6 @@ export const Gallery: React.FC = () => {
       {displayedVideos.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-3 mb-24 md:mb-12">
           {displayedVideos.map((video) => {
-            console.log('🎯 Rendering video card for:', video.id, 'category:', video.category);
             return (
               <div key={video.id} className="relative">
                 {video.category === 'Processing' ? (
