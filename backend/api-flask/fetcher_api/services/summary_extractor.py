@@ -1,5 +1,9 @@
 # fetcher_api/services/summary_extractor.py
 
+"""
+Summary Extractor - OPTIMIZED to make ONLY 1 API call per video
+"""
+
 import os
 import json
 import re
@@ -9,7 +13,7 @@ from mistralai import Mistral
 
 logger = logging.getLogger(__name__)
 
-SUMMARY_EXTRACTOR_VERSION = "summary-v6-bilingual-normalized"
+SUMMARY_EXTRACTOR_VERSION = "summary-v7-single-call-factual"
 
 
 def _is_english(lang: str) -> bool:
@@ -35,6 +39,13 @@ def _unique_keep_order(items: List[str]) -> List[str]:
     return out
 
 
+def _clean_headline(text: str) -> str:
+    text = (text or "").strip()
+    text = re.sub(r"^[•·●○◦▪▫-]\s*", "", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
 class SummaryExtractor:
     def __init__(self):
         api_key = os.getenv("MISTRAL_API_KEY")
@@ -44,16 +55,11 @@ class SummaryExtractor:
         self.model = "mistral-large-latest"
 
     def extract(self, transcript: str, caption: str, lang: str, classification: Dict) -> Dict:
-        """
-        Behavior:
-        - If lang is English → summarize in English only; original == english.
-        - If lang is not English → model returns both english + original blocks.
-        - Never returns 'Untitled' as a title; falls back to caption first line or 'Saved Video'.
-        """
         transcript = transcript or ""
         caption = caption or ""
         lang = lang or "en"
 
+        # ✅ SINGLE API CALL - Get everything at once
         prompt = self._build_summary_prompt(transcript, caption, lang)
         result = self._call_ai(prompt)
 
@@ -71,19 +77,44 @@ class SummaryExtractor:
         english_block = result.get("english") if isinstance(result.get("english"), dict) else None
         original_block = result.get("original") if isinstance(result.get("original"), dict) else None
 
-        if english_block or original_block:
-            eng_title = self._clean_title(_safe_str((english_block or {}).get("title", "")))
-            eng_summary = _safe_str((english_block or {}).get("summary", "")).strip()
-            eng_headlines = _safe_list((english_block or {}).get("headlines", []))
-
-            orig_title = self._clean_title(_safe_str((original_block or {}).get("title", "")))
-            orig_summary = _safe_str((original_block or {}).get("summary", "")).strip()
-            orig_headlines = _safe_list((original_block or {}).get("headlines", []))
+        if english_block:
+            eng_title = self._clean_title(_safe_str(english_block.get("title", "")))
+            eng_summary = _safe_str(english_block.get("summary", "")).strip()
+            
+            # ✅ Extract highlights properly
+            highlights_raw = english_block.get("highlights", [])
+            eng_headlines = []
+            
+            for h in highlights_raw:
+                if isinstance(h, dict):
+                    headline = _safe_str(h.get("headline", "")).strip()
+                    description = _safe_str(h.get("description", "")).strip()
+                    if headline and description:
+                        eng_headlines.append(f"{headline}: {description}")
+                elif isinstance(h, str):
+                    eng_headlines.append(_clean_headline(h))
         else:
             eng_title = self._clean_title(_safe_str(result.get("title", "")))
             eng_summary = _safe_str(result.get("summary", "")).strip()
-            eng_headlines = _safe_list(result.get("headlines", []))
+            eng_headlines = _safe_list(result.get("highlights", []))
+            eng_headlines = [_clean_headline(h) for h in eng_headlines if isinstance(h, str)]
 
+        if original_block:
+            orig_title = self._clean_title(_safe_str(original_block.get("title", "")))
+            orig_summary = _safe_str(original_block.get("summary", "")).strip()
+            
+            highlights_raw = original_block.get("highlights", [])
+            orig_headlines = []
+            
+            for h in highlights_raw:
+                if isinstance(h, dict):
+                    headline = _safe_str(h.get("headline", "")).strip()
+                    description = _safe_str(h.get("description", "")).strip()
+                    if headline and description:
+                        orig_headlines.append(f"{headline}: {description}")
+                elif isinstance(h, str):
+                    orig_headlines.append(_clean_headline(h))
+        else:
             orig_title = eng_title
             orig_summary = eng_summary
             orig_headlines = eng_headlines
@@ -102,18 +133,11 @@ class SummaryExtractor:
             orig_summary = eng_summary
             orig_headlines = eng_headlines
 
-        if not isinstance(eng_headlines, list):
-            eng_headlines = []
-        if not isinstance(orig_headlines, list):
-            orig_headlines = []
-
-        # Enforce exactly 4 headlines (best effort, UI expects 4)
-        eng_headlines = [h for h in eng_headlines if isinstance(h, str) and h.strip()]
-        orig_headlines = [h for h in orig_headlines if isinstance(h, str) and h.strip()]
+        # Enforce exactly 4 headlines
         while len(eng_headlines) < 4:
-            eng_headlines.append("✨ Key takeaway")
+            eng_headlines.append("Key takeaway")
         while len(orig_headlines) < 4:
-            orig_headlines.append("✨ Point clé")
+            orig_headlines.append("Point clé")
         eng_headlines = eng_headlines[:4]
         orig_headlines = orig_headlines[:4]
 
@@ -134,88 +158,118 @@ class SummaryExtractor:
             },
         }
 
+        logger.info("✅ Summary extracted with 1 API call")
+
         return {
             "content_type": "general",
             "extractor_version": SUMMARY_EXTRACTOR_VERSION,
             "category": category,
             "topic": topic,
-
             "title": eng_title,
-
-            # UI flattened fields
             "summary_title": eng_title,
             "summary_text": bilingual_summary,
             "summary_bullets": json.dumps(eng_headlines, ensure_ascii=False),
             "summary_hashtags": hashtags,
             "summary_emojis": emojis,
-
-            # Structured payload (alias; must NEVER be a wrapper around summary_text)
             "summary": bilingual_summary,
-
-            # Convenience top-level fields (English)
             "headlines": eng_headlines,
             "hashtags": hashtags,
             "emojis": emojis,
-
             "recipe": None,
             "workout": None,
         }
 
     def _build_summary_prompt(self, transcript: str, caption: str, lang: str) -> str:
         if _is_english(lang):
-            return f"""Summarize the content in English. Output ONLY valid JSON.
+            return f"""Summarize this video content. Output ONLY valid JSON with ALL fields in ONE response.
 
 TRANSCRIPT: {transcript[:3500]}
 CAPTION: {caption[:2000]}
 DETECTED_LANGUAGE: {lang}
 
-Return keys (all in English):
-- category: string (e.g., "Food", "Lifestyle", "Fitness")
-- topic: string (e.g., "Cooking", "Travel")
-- title: string (concise, under 60 chars, MUST NOT be "Untitled")
-- summary: string (2-3 sentences)
-- headlines: array of exactly 4 strings (short key points; may start with emoji; MUST NOT include bullet chars like "•")
-- hashtags: array of 3-10 strings (no # prefix)
-- emojis: array of 3-8 emoji characters
+EXTRACTION RULES:
 
-Rules:
-- If you cannot infer a good title, use the first sentence of the caption (trim to <= 60 chars) instead of "Untitled".
+1. **category**: English category (e.g., "Fitness", "Lifestyle", "Education")
+
+2. **topic**: English topic (e.g., "Kettlebell Workout", "Morning Routine")
+
+3. **title**: Concise English title (< 60 chars, NEVER "Untitled")
+
+4. **summary**: ONE FACTUAL PARAGRAPH (50-80 words)
+   - Describe WHAT HAPPENS in the video
+   - NO emojis, NO promotional language, NO author opinions
+   - NO phrases like: "This video shows", "Learn how", "Discover", "Watch as"
+   - State facts directly
+   
+   CORRECT EXAMPLES:
+   "A quick 10-minute kettlebell workout routine that can be done by anyone, even those with busy schedules. The routine involves three main exercises and a specific rule to keep the kettlebell in hand at all times."
+   
+   "Morning productivity routine featuring hydration, exercise, and focused work blocks. The system prioritizes high-impact tasks before checking email or social media."
+   
+   WRONG (DO NOT USE):
+   "This video shows you how to do a great kettlebell workout! 💪"
+   "Facile, rapide et irrésistible! 🔥"
+
+5. **highlights**: array of EXACTLY 4 objects, each with:
+   - "headline": Bold 3-5 word title
+   - "description": One sentence explaining the point
+   
+   Example:
+   [
+     {{"headline": "Time-Efficient Workout", "description": "You don't need an hour or even thirty minutes. All you need is ten minutes."}},
+     {{"headline": "Kettlebell Rules", "description": "Do not let go of the kettlebell for the entire ten minutes."}},
+     {{"headline": "Exercise Choices", "description": "Choose from three exercises: around the world, reverse lunges, single side squat into rotational press, or deadlift into high shoulder pull."}},
+     {{"headline": "Resting Position", "description": "30 seconds max rest when you are in the resting position."}}
+   ]
+
+6. **hashtags**: 5-10 keywords WITHOUT '#'
+
+7. **emojis**: 4 emojis (NO emojis in summary/highlights text)
+
+Return ALL fields in ONE JSON response.
 """
-        return f"""The content is in the original language: {lang}. Output ONLY valid JSON.
-
-Your job:
-1) Create a summary + 4 highlights in the ORIGINAL language ({lang}).
-2) Create an accurate ENGLISH translation of that summary + highlights.
+        
+        return f"""This content is in {lang}. Create BOTH English and original language versions. Output ONLY valid JSON.
 
 TRANSCRIPT: {transcript[:3500]}
 CAPTION: {caption[:2000]}
 DETECTED_LANGUAGE: {lang}
 
-Return JSON keys:
-- category: string (English category label, e.g., "Food", "Lifestyle", "Fitness")
-- topic: string (English topic label, e.g., "Cooking", "Travel")
-- english: object with keys:
-  - title: string (English, concise, <= 60 chars, MUST NOT be "Untitled")
-  - summary: string (English, 2-3 sentences)
-  - headlines: array of exactly 4 strings (English; may start with emoji; MUST NOT include bullet chars like "•")
-- original: object with keys:
-  - title: string (in {lang}, concise, <= 60 chars, MUST NOT be "Untitled")
-  - summary: string (in {lang}, 2-3 sentences)
-  - headlines: array of exactly 4 strings (in {lang}; may start with emoji; MUST NOT include bullet chars like "•")
-- hashtags: array of 3-10 strings (no # prefix; keep them language-appropriate)
-- emojis: array of 3-8 emoji characters
+EXTRACTION RULES:
 
-Hard rules:
-- NEVER output "Untitled" as a title.
-- If title is unclear, derive it from the caption’s first sentence (shorten to <= 60 chars).
+1. **category**: English category (e.g., "Fitness", "Lifestyle", "Education")
+
+2. **topic**: English topic
+
+3. **english** object with:
+   - **title**: Concise English title (< 60 chars, NEVER "Untitled")
+   - **summary**: ONE FACTUAL PARAGRAPH (50-80 words) - NO emojis, NO promotional language, state facts directly
+   - **highlights**: array of EXACTLY 4 objects with "headline" and "description"
+   
+   Example highlights:
+   [
+     {{"headline": "Main Technique", "description": "Description of primary method or approach."}},
+     {{"headline": "Key Benefit", "description": "Main advantage or outcome."}},
+     {{"headline": "Important Rule", "description": "Critical guideline to follow."}},
+     {{"headline": "Time Requirement", "description": "Duration or time commitment needed."}}
+   ]
+
+4. **original** object with same structure as english but in {lang}
+
+5. **hashtags**: 5-10 keywords WITHOUT '#'
+
+6. **emojis**: 4 emojis (NO emojis in summary/highlights text)
+
+Return ALL fields in ONE JSON response.
 """
 
     def _call_ai(self, prompt: str, max_retries: int = 2) -> Dict:
         for attempt in range(max_retries + 1):
+            logger.info("🤖 Calling Mistral API (attempt %d/%d)...", attempt + 1, max_retries + 1)
             response = self.client.chat.complete(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You output only valid JSON."},
+                    {"role": "system", "content": "You are a video content analyzer. Output only valid JSON with ALL fields in ONE response. Write factual summaries without emojis, promotional language, or author opinions. Format highlights as headline+description objects."},
                     {"role": "user", "content": prompt},
                 ],
                 response_format={"type": "json_object"},
@@ -254,15 +308,12 @@ Hard rules:
             "category": "Lifestyle",
             "topic": "General",
             "title": title,
-
             "summary_title": title,
             "summary_text": bilingual_summary,
             "summary_bullets": "[]",
             "summary_hashtags": [],
             "summary_emojis": [],
-
             "summary": bilingual_summary,
-
             "headlines": [],
             "hashtags": [],
             "emojis": [],

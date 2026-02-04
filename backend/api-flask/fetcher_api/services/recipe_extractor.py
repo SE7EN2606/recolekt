@@ -1,17 +1,21 @@
+# fetcher_api/services/recipe_extractor.py
+
+"""
+Recipe Extractor - OPTIMIZED to make ONLY 1-2 API calls per video
+"""
+
 import os
 import json
 import re
 import logging
-import unicodedata
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional
 
 from mistralai import Mistral
-
 from fetcher_api.services.emoji_mapper import infer_ingredient_emoji
 
 logger = logging.getLogger(__name__)
 
-RECIPE_EXTRACTOR_VERSION = "recipe-v13-analytical-summary-unit-fix"
+RECIPE_EXTRACTOR_VERSION = "recipe-v14-single-call-factual-summary"
 
 
 def _is_english(lang: str) -> bool:
@@ -249,7 +253,7 @@ def _ingredients_look_empty(ings: List[Dict[str, str]]) -> bool:
 
 def _clean_headline(text: str) -> str:
     text = (text or "").strip()
-    text = re.sub(r"^[•·●○◦▪▫]\s*", "", text)
+    text = re.sub(r"^[•·●○◦▪▫-]\s*", "", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
@@ -267,6 +271,7 @@ class RecipeExtractor:
         caption = caption or ""
         lang = lang or "en"
 
+        # ✅ SINGLE API CALL - Get everything at once
         prompt = self._build_recipe_prompt(transcript, caption, lang)
         result = self._call_ai(prompt)
 
@@ -277,10 +282,21 @@ class RecipeExtractor:
         hashtags = _safe_list(result.get("hashtags", []))
         hashtags = [str(t).lstrip("#").strip() for t in hashtags if str(t).strip()]
 
-        headlines_en = _safe_list(result.get("headlines", []))
-        headlines_en = [_clean_headline(h) for h in headlines_en if isinstance(h, str) and h.strip()]
+        # ✅ Extract highlights with proper format
+        highlights_raw = _safe_list(result.get("highlights", []))
+        headlines_en = []
+        
+        for h in highlights_raw:
+            if isinstance(h, dict):
+                headline = _safe_str(h.get("headline", "")).strip()
+                description = _safe_str(h.get("description", "")).strip()
+                if headline and description:
+                    headlines_en.append(f"{headline}: {description}")
+            elif isinstance(h, str):
+                headlines_en.append(_clean_headline(h))
+        
         while len(headlines_en) < 4:
-            headlines_en.append("✨ Clear, step-by-step recipe")
+            headlines_en.append("Clear, step-by-step recipe")
         headlines_en = headlines_en[:4]
 
         title_en = _clean_title(_safe_str(result.get("title", "")))
@@ -291,17 +307,13 @@ class RecipeExtractor:
         summary_en = _safe_str(result.get("summary", "")).strip()
         if not summary_en or len(summary_en) < 50:
             summary_en = f"{title_en} featuring simple ingredients and straightforward preparation."
-        
-        if len(summary_en) > 400:
-            summary_en = summary_en[:397] + "..."
-        elif len(summary_en) < 250:
-            summary_en = summary_en + " Traditional technique with accessible ingredients for home cooks."
 
         if _is_english(lang):
             title_og = title_en
             summary_og = summary_en
             headlines_og = headlines_en
         else:
+            # ✅ SECOND API CALL (only if not English) - Translation
             title_og = self._translate_text(title_en, lang, keep_length=True)
             summary_og = self._translate_text(summary_en, lang, keep_length=True)
             headlines_og = self._translate_list(headlines_en, lang)
@@ -380,6 +392,8 @@ class RecipeExtractor:
 
         recipe_json = json.dumps(recipe, ensure_ascii=False)
 
+        logger.info("✅ Recipe extracted with %d API calls", 1 if _is_english(lang) else 2)
+
         return {
             "content_type": "recipe",
             "extractor_version": RECIPE_EXTRACTOR_VERSION,
@@ -399,7 +413,7 @@ class RecipeExtractor:
         }
 
     def _build_recipe_prompt(self, transcript: str, caption: str, lang: str) -> str:
-        return f"""Analyze this recipe content and extract structured data. Output ONLY valid JSON.
+        return f"""Analyze this recipe content and extract ALL structured data in ONE response. Output ONLY valid JSON.
 
 ORIGINAL_LANGUAGE: {lang}
 
@@ -417,59 +431,78 @@ EXTRACTION RULES:
 
 3. **title**: English, descriptive, <= 90 characters, NEVER "Untitled"
 
-4. **summary**: Direct analytical description for quick recall
-   - 250-400 characters (1-2 sentences max)
-   - State facts directly - NO introductory phrases
-   - NEVER start with: "This recipe", "This post", "This demonstrates", "Learn how"
-   - NO emojis, NO promotional language
-   - Format: [Technique/dish] + [key ingredients] + [method/result]
+4. **summary**: ONE FACTUAL PARAGRAPH (50-80 words)
+   - Describe WHAT IS BEING MADE and HOW
+   - NO emojis, NO promotional language, NO author opinions
+   - NO phrases like: "This recipe", "This post", "Learn how", "Discover"
+   - State facts directly
    
-   CORRECT FORMAT:
+   CORRECT EXAMPLES:
    "Korean egg roll with curry-spiced eggs and butter-seasoned rice wrapped in seaweed. The curry powder adds aromatic depth while soy sauce and sesame oil provide umami richness."
    
    "Braised potatoes with spam in soy-based sauce, finished with oligosaccharide for glossy coating. Traditional Korean side dish technique."
    
-   "Grated potatoes piped into hot oil and fried until crispy-chewy texture achieved. Vienna sausage filling provides savory contrast."
-   
    WRONG (DO NOT USE):
-   "This recipe demonstrates a Korean-style egg roll technique using curry powder."
-   "This post shows you how to make delicious braised potatoes."
+   "This recipe shows you how to make delicious egg rolls! 🍳"
+   "Facile, rapide et irrésistible : le gâteau poire chocolat 🍐🍫"
 
-5. **headlines**: array of EXACTLY 4 strings
-   - Format: "EMOJI SPACE Description"
-   - NO bullet points (•, -, *)
-   - Example: "🍳 Curry-spiced eggs for aromatic flavor"
+5. **highlights**: array of EXACTLY 4 objects, each with:
+   - "headline": Bold 3-5 word title (e.g., "Time-Efficient Cooking", "Curry Spice Blend")
+   - "description": One sentence explaining the point
+   
+   Example:
+   [
+     {{"headline": "Curry-Spiced Eggs", "description": "Curry powder mixed into beaten eggs for aromatic flavor."}},
+     {{"headline": "Butter-Seasoned Rice", "description": "Rice mixed with butter before rolling for richness."}},
+     {{"headline": "Tight Rolling Technique", "description": "Roll tightly to prevent ingredients from falling out."}},
+     {{"headline": "Seaweed Wrapper", "description": "Use full sheet of seaweed for structural integrity."}}
+   ]
 
 6. **hashtags**: 5-10 keywords WITHOUT '#'
 
-7. **emojis**: 4 emojis
+7. **emojis**: 4 emojis (NO emojis in summary/highlights text)
 
-8. **recipe** object:
+8. **recipe** object (ALL IN ONE RESPONSE):
    - **ingredients**: array of objects with:
      - "item": ingredient name (NO emojis, clean text)
      - "quantity": amount (e.g., "6", "1.5", "10")
      - "unit": measurement unit (e.g., "g", "tbsp", "cups", "pinch")
    - **instructions**: 6-12 clear steps
-   - **tips**: optional
-   - **notes**: optional
+   - **tips**: optional array
+   - **notes**: optional array
 
-INGREDIENT FORMAT EXAMPLES:
-{{"item": "eggs", "quantity": "6", "unit": ""}}
-{{"item": "butter", "quantity": "10", "unit": "g"}}
-{{"item": "curry powder", "quantity": "1", "unit": "tbsp"}}
-{{"item": "salt", "quantity": "1", "unit": "pinch"}}
-
-Return JSON: category, topic, title, summary, headlines, hashtags, emojis, recipe
+Return ALL fields in ONE JSON response:
+{{
+  "category": "...",
+  "topic": "...",
+  "title": "...",
+  "summary": "...",
+  "highlights": [
+    {{"headline": "...", "description": "..."}},
+    {{"headline": "...", "description": "..."}},
+    {{"headline": "...", "description": "..."}},
+    {{"headline": "...", "description": "..."}}
+  ],
+  "hashtags": [...],
+  "emojis": [...],
+  "recipe": {{
+    "ingredients": [...],
+    "instructions": [...],
+    "tips": [...],
+    "notes": [...]
+  }}
+}}
 """
 
     def _call_ai(self, prompt: str, max_retries: int = 2) -> Dict:
         last_err: Optional[Exception] = None
         for attempt in range(max_retries + 1):
             try:
+                logger.info("🤖 Calling Mistral API (attempt %d/%d)...", attempt + 1, max_retries + 1)
                 response = self.client.chat.complete(
                     model=self.model,
                     messages=[
-                        {"role": "system", "content": "You are a recipe analysis expert. Output only valid JSON. Write analytical summaries without emojis or promotional language. Be precise with ingredient quantities and units."},
+                        {"role": "system", "content": "You are a recipe analysis expert. Output only valid JSON with ALL fields in ONE response. Write factual summaries without emojis, promotional language, or author opinions. Format highlights as headline+description objects."},
                         {"role": "user", "content": prompt},
                     ],
                     response_format={"type": "json_object"},
@@ -479,7 +512,7 @@ Return JSON: category, topic, title, summary, headlines, hashtags, emojis, recip
                 return json.loads(content)
             except Exception as e:
                 last_err = e
-                logger.error("❌ JSON parse failed (attempt %s): %s", attempt + 1, e)
+                logger.error("❌ AI call failed (attempt %s): %s", attempt + 1, e)
                 if attempt == max_retries:
                     raise
         raise ValueError(f"AI call failed after retries: {last_err}")
@@ -535,3 +568,4 @@ ITEMS:
         data = json.loads(response.choices[0].message.content)
         out = _safe_list(data.get("items", []))
         return [_clean_headline(x) for x in out if isinstance(x, str) and x.strip()]
+    

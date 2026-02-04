@@ -112,7 +112,7 @@ def is_user_verified():
 @auth_bp.route("/google", methods=["GET"])
 def google_login():
     """Initiate Google OAuth flow"""
-    redirect_uri = url_for('auth.google_callback', _external=True)
+    redirect_uri = url_for('auth.google_callback', _external=True, _scheme='https')
     logger.info(f"🔐 Google OAuth redirect_uri: {redirect_uri}")
     logger.info(f"🔐 User-Agent: {request.headers.get('User-Agent', 'Unknown')}")
     return google.authorize_redirect(redirect_uri)
