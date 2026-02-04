@@ -122,7 +122,7 @@ export const Auth: React.FC = () => {
           <div>
             <Link to="/" className="inline-block hover:opacity-80 transition-opacity">
               <img 
-                src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/frontend/assets/recolekt_logo_white.svg" 
+                src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/frontend/assets/recolekt_logo_white.png" 
                 alt="recolekt" 
                 className="h-10" 
               />
@@ -159,7 +159,7 @@ export const Auth: React.FC = () => {
                   <ArrowLeft size={16} /> Home
                </Link>
                <img 
-                  src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/frontend/assets/recolekt_logo_black.svg" 
+                  src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/frontend/assets/recolekt_logo_black.png" 
                   alt="recolekt" 
                   className="h-6" 
                 />
