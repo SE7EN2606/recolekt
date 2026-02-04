@@ -119,7 +119,7 @@ print(f"SECRET_KEY: {flask_secret[:25]}..." if len(flask_secret) > 25 else f"SEC
 print("=" * 50)
 
 # -------------------------------------------------
-# 🌐 CORS - Environment-aware
+# 🌐 CORS - Environment-aware + Blueprint Support
 # -------------------------------------------------
 if IS_LOCAL:
     # Local: Allow localhost origins
@@ -131,37 +131,63 @@ if IS_LOCAL:
     ]
 else:
     # Production: Allow production frontend
+    frontend_url = os.getenv('FRONTEND_BASE_URL', 'https://recolekt-front.netlify.app')
     cors_origins = [
-        os.getenv('FRONTEND_BASE_URL', 'https://recolekt-front.netlify.app')
+        frontend_url,
+        "https://recolekt-front.netlify.app",
     ]
 
 print(f"🔍 CORS Origins: {cors_origins}")
 
+# ✅ Apply CORS globally with proper configuration
+from flask_cors import cross_origin
+
 CORS(
     app,
-    resources={r"/api/*": {
-        "origins": cors_origins,
-        "supports_credentials": True,
-        "allow_headers": ["Content-Type", "Authorization", "Cache-Control", "Pragma"],
-        "expose_headers": ["Set-Cookie"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "max_age": 3600
-    }},
-    supports_credentials=True
+    origins=cors_origins,
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization", "Cache-Control", "Pragma"],
+    expose_headers=["Set-Cookie", "Content-Type"],
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    max_age=3600,
+    send_wildcard=False,
+    always_send=True
 )
+
+# ✅ Global after_request handler for ALL routes
+@app.after_request
+def add_cors_headers_global(response):
+    """Add CORS headers to ALL responses"""
+    origin = request.headers.get('Origin', '')
+    
+    if origin in cors_origins:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Cache-Control, Pragma'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Max-Age'] = '3600'
+        logger.debug(f"✅ CORS headers added to response from: {request.path}")
+    
+    return response
 
 # ✅ Global OPTIONS handler
 @app.before_request
 def handle_preflight():
+    """Handle OPTIONS preflight for all routes"""
     if request.method == "OPTIONS":
-        response = jsonify({"status": "ok"})
-        origin = request.headers.get("Origin", "*")
-        response.headers.add("Access-Control-Allow-Origin", origin)
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, Pragma")
-        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        response.headers.add("Access-Control-Allow-Credentials", "true")
-        response.headers.add("Access-Control-Max-Age", "3600")
-        return response, 200
+        origin = request.headers.get("Origin", "")
+        
+        if origin in cors_origins:
+            response = jsonify({"status": "ok"})
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Cache-Control, Pragma'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response.headers['Access-Control-Max-Age'] = '3600'
+            return response, 200
+        else:
+            logger.warning(f"⚠️ CORS: Blocked preflight from unauthorized origin: {origin}")
+            return jsonify({"error": "CORS origin not allowed"}), 403
 
 # -------------------------------------------------
 # 🧾 Logging
