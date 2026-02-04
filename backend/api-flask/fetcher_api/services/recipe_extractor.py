@@ -1,5 +1,3 @@
-# fetcher_api/services/recipe_extractor.py
-
 import os
 import json
 import re
@@ -9,13 +7,12 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from mistralai import Mistral
 
-# IMPORTANT: use the shared emoji mapper (your new system)
+# IMPORTANT: use the shared emoji mapper
 from fetcher_api.services.emoji_mapper import infer_ingredient_emoji
-
 
 logger = logging.getLogger(__name__)
 
-RECIPE_EXTRACTOR_VERSION = "recipe-v10-emoji-mapper"
+RECIPE_EXTRACTOR_VERSION = "recipe-v11-fixed-emojis-bullets"
 
 
 def _is_english(lang: str) -> bool:
@@ -85,8 +82,7 @@ def _split_trailing_emoji(text: str) -> Tuple[str, str]:
 
 def _extract_ingredients_lines(caption: str) -> List[str]:
     """
-    Very robust for EN/FR style captions: after the first 'ingr' line, keep scanning and collect lines
-    that LOOK like ingredient lines (start with a number/fraction). Stops at hashtags/outros.
+    Robust for EN/FR/KO captions: after first 'ingr' line, collect quantity-leading lines.
     """
     lines = [ln.strip() for ln in (caption or "").splitlines()]
     if not lines:
@@ -94,7 +90,7 @@ def _extract_ingredients_lines(caption: str) -> List[str]:
 
     start = None
     for i, ln in enumerate(lines):
-        if re.search(r"\bingr", ln.lower()):
+        if re.search(r"\b(ingr|준비|재료)", ln.lower()):
             start = i
             break
     if start is None:
@@ -107,13 +103,14 @@ def _extract_ingredients_lines(caption: str) -> List[str]:
         low = ln.lower()
         if ln.startswith("#"):
             break
-        if low.startswith(("partenariat", "partnership", "bon app", "bon appetit", "bon appétit")):
+        if low.startswith(("partenariat", "partnership", "bon app", "bon appetit", "bon appétit", "팔로우", "저장")):
             break
-        if ln.startswith(("👉", "🔗")):
+        if ln.startswith(("👉", "🔗", "@")):
             break
         if ln.endswith(":"):
             continue
 
+        # Match quantity patterns (works for EN/FR/KO)
         if re.match(r"^\s*(\d+(?:[.,]\d+)?|\d+\s*/\s*\d+)\b", ln):
             out.append(ln)
 
@@ -121,23 +118,26 @@ def _extract_ingredients_lines(caption: str) -> List[str]:
 
 
 def _parse_qty_unit_name(line: str) -> Optional[Dict[str, str]]:
+    """Parse ingredient line into quantity, unit, name"""
     raw = (line or "").strip()
     if not raw:
         return None
 
-    m = re.match(r"^\s*(\d+(?:[.,]\d+)?|\d+\s*/\s*\d+)\s+(.*)\s*$", raw)
+    # Match quantity at start
+    m = re.match(r"^\s*(\d+(?:[.,]\d+)?|\d+\s*/\s*\d+)\s+(.*)$", raw)
     if not m:
         return None
 
     qty = m.group(1).replace(" ", "")
     rest = m.group(2).strip()
 
+    # Common units (EN/FR/KO)
     unit_candidates = [
-        "c. à soupe", "c. a soupe", "c.à.s", "c a s",
-        "c. à café", "c. a cafe", "c.à.c", "c a c",
+        "c. à soupe", "c. a soupe", "c.à.s", "c a s", "큰술", "큰", "tbsp",
+        "c. à café", "c. a cafe", "c.à.c", "c a c", "작은술", "tsp",
         "cuillère à soupe", "cuillere a soupe",
         "cuillère à café", "cuillere a cafe",
-        "tablespoon", "teaspoon", "tbsp", "tsp",
+        "tablespoon", "teaspoon",
         "pincée", "pincee",
     ]
 
@@ -155,15 +155,16 @@ def _parse_qty_unit_name(line: str) -> Optional[Dict[str, str]]:
         tokens = rest.split()
         if tokens:
             t0 = tokens[0]
-            if re.match(r"^(g|kg|mg|ml|cl|l|gr)$", t0.lower()):
+            if re.match(r"^(g|kg|mg|ml|cl|l|gr|개|캔|cup|cups)$", t0.lower()):
                 unit = t0
                 name = " ".join(tokens[1:]).strip()
             else:
                 unit = ""
                 name = rest
 
-    name = re.sub(r"^(de|d’|d'|du|des)\s+", "", name, flags=re.IGNORECASE).strip()
-    name = re.sub(r"^(d’|d')\s*", "", name, flags=re.IGNORECASE).strip()
+    # Remove articles (EN/FR/KO)
+    name = re.sub(r"^(de|d'|d'|du|des|of|the)\s+", "", name, flags=re.IGNORECASE).strip()
+    name = re.sub(r"^(d'|d')\s*", "", name, flags=re.IGNORECASE).strip()
 
     if not name:
         return None
@@ -172,6 +173,7 @@ def _parse_qty_unit_name(line: str) -> Optional[Dict[str, str]]:
 
 
 def _build_ingredients_from_caption(caption: str) -> List[Dict[str, str]]:
+    """Extract ingredients from caption with proper emoji mapping"""
     lines = _extract_ingredients_lines(caption)
     out: List[Dict[str, str]] = []
 
@@ -179,14 +181,19 @@ def _build_ingredients_from_caption(caption: str) -> List[Dict[str, str]]:
         parsed = _parse_qty_unit_name(ln)
         if not parsed:
             continue
-        item = parsed["name"]
+        
+        item_name = parsed["name"]
+        
+        # Use emoji mapper for accurate emojis
+        emoji = infer_ingredient_emoji(item_name)
+        
         out.append(
             {
-                "item": item,
-                "name": item,
+                "item": item_name,
+                "name": item_name,
                 "quantity": parsed["quantity"],
                 "unit": parsed["unit"],
-                "emoji": infer_ingredient_emoji(item),
+                "emoji": emoji,
             }
         )
 
@@ -194,6 +201,7 @@ def _build_ingredients_from_caption(caption: str) -> List[Dict[str, str]]:
 
 
 def _normalize_ingredients_list(ings: Any) -> List[Dict[str, str]]:
+    """Normalize ingredient list with proper emoji mapping"""
     if not isinstance(ings, list):
         return []
 
@@ -201,13 +209,17 @@ def _normalize_ingredients_list(ings: Any) -> List[Dict[str, str]]:
     for ing in ings:
         if isinstance(ing, str):
             body, emoji = _split_trailing_emoji(ing)
+            # Use emoji mapper if no emoji found
+            if not emoji:
+                emoji = infer_ingredient_emoji(body)
+            
             out.append(
                 {
                     "item": body,
                     "name": body,
                     "quantity": "",
                     "unit": "",
-                    "emoji": emoji or infer_ingredient_emoji(body),
+                    "emoji": emoji,
                 }
             )
             continue
@@ -223,6 +235,7 @@ def _normalize_ingredients_list(ings: Any) -> List[Dict[str, str]]:
             if not emoji and trailing:
                 emoji = trailing
 
+            # Use emoji mapper for accurate matching
             emoji = emoji or infer_ingredient_emoji(item)
 
             out.append({"item": item, "name": item, "quantity": qty, "unit": unit, "emoji": emoji})
@@ -232,9 +245,7 @@ def _normalize_ingredients_list(ings: Any) -> List[Dict[str, str]]:
 
 
 def _ingredients_look_empty(ings: List[Dict[str, str]]) -> bool:
-    """
-    Detects the failure mode: list exists but items are empty strings.
-    """
+    """Detect if ingredients are actually empty/broken"""
     if not isinstance(ings, list) or not ings:
         return True
 
@@ -250,6 +261,16 @@ def _ingredients_look_empty(ings: List[Dict[str, str]]) -> bool:
             non_empty += 1
 
     return non_empty < 3
+
+
+def _clean_headline(text: str) -> str:
+    """Remove bullet points and clean headline text"""
+    text = (text or "").strip()
+    # Remove bullet characters
+    text = re.sub(r"^[•·●○◦▪▫]\s*", "", text)
+    # Remove multiple spaces
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 class RecipeExtractor:
@@ -275,8 +296,9 @@ class RecipeExtractor:
         hashtags = _safe_list(result.get("hashtags", []))
         hashtags = [str(t).lstrip("#").strip() for t in hashtags if str(t).strip()]
 
+        # Clean headlines - remove any bullet points
         headlines_en = _safe_list(result.get("headlines", []))
-        headlines_en = [h for h in headlines_en if isinstance(h, str) and h.strip()]
+        headlines_en = [_clean_headline(h) for h in headlines_en if isinstance(h, str) and h.strip()]
         while len(headlines_en) < 4:
             headlines_en.append("✨ Clear, step-by-step recipe")
         headlines_en = headlines_en[:4]
@@ -284,12 +306,13 @@ class RecipeExtractor:
         title_en = _clean_title(_safe_str(result.get("title", "")))
         caption_first_line = (caption.split("\n")[0] if caption else "").strip()
         if not title_en or title_en.lower() == "untitled":
-            title_en = _clean_title(caption_first_line) or "Saved Video"
+            title_en = _clean_title(caption_first_line) or "Saved Recipe"
 
         summary_en = _safe_str(result.get("summary", "")).strip()
         if not summary_en:
-            summary_en = f"{title_en}\n\nSimple technique, great results, and easy to customize."
+            summary_en = f"A delicious {title_en.lower()} recipe with simple ingredients and easy-to-follow steps."
 
+        # Translate if needed
         if _is_english(lang):
             title_og = title_en
             summary_og = summary_en
@@ -298,27 +321,30 @@ class RecipeExtractor:
             title_og = self._translate_text(title_en, lang, keep_length=True)
             summary_og = self._translate_text(summary_en, lang, keep_length=True)
             headlines_og = self._translate_list(headlines_en, lang)
-            headlines_og = [h for h in headlines_og if isinstance(h, str) and h.strip()]
+            headlines_og = [_clean_headline(h) for h in headlines_og if isinstance(h, str) and h.strip()]
             while len(headlines_og) < 4:
-                headlines_og.append("✨ Recette claire et facile")
+                headlines_og.append("✨ 명확하고 쉬운 레시피")
             headlines_og = headlines_og[:4]
 
         recipe_obj = result.get("recipe", {})
         if not isinstance(recipe_obj, dict):
             recipe_obj = {}
 
+        # Get ingredients from AI
         model_ingredients = _normalize_ingredients_list(recipe_obj.get("ingredients", []))
 
         model_instructions = recipe_obj.get("instructions", [])
         if not isinstance(model_instructions, list):
             model_instructions = []
 
+        # Fallback to caption parsing if AI ingredients are empty
         caption_ingredients = _build_ingredients_from_caption(caption)
         if _ingredients_look_empty(model_ingredients) and caption_ingredients:
             ingredients_original = caption_ingredients
         else:
             ingredients_original = model_ingredients
 
+        # Translate ingredients if needed
         if _is_english(lang):
             ingredients_english = ingredients_original
         else:
@@ -327,16 +353,19 @@ class RecipeExtractor:
             ingredients_english = []
             for i, ing in enumerate(ingredients_original):
                 item_en = translated[i] if i < len(translated) else _safe_str(ing.get("item", ""))
+                # Re-map emoji for English translation
+                emoji = infer_ingredient_emoji(item_en)
                 ingredients_english.append(
                     {
                         "item": item_en,
                         "name": item_en,
                         "quantity": _safe_str(ing.get("quantity", "")),
                         "unit": _safe_str(ing.get("unit", "")),
-                        "emoji": _safe_str(ing.get("emoji", "")) or infer_ingredient_emoji(item_en),
+                        "emoji": emoji,
                     }
                 )
 
+        # Build bilingual recipe object
         recipe = {
             "english": {
                 "title": title_en,
@@ -354,9 +383,22 @@ class RecipeExtractor:
             },
         }
 
+        # Build bilingual summary
         bilingual_summary = {
-            "english": {"title": title_en, "summary": summary_en, "headlines": headlines_en, "hashtags": hashtags, "emojis": emojis},
-            "original": {"title": title_og, "summary": summary_og, "headlines": headlines_og, "hashtags": hashtags, "emojis": emojis},
+            "english": {
+                "title": title_en,
+                "summary": summary_en,
+                "headlines": headlines_en,
+                "hashtags": hashtags,
+                "emojis": emojis
+            },
+            "original": {
+                "title": title_og,
+                "summary": summary_og,
+                "headlines": headlines_og,
+                "hashtags": hashtags,
+                "emojis": emojis
+            },
         }
 
         recipe_json = json.dumps(recipe, ensure_ascii=False)
@@ -365,10 +407,10 @@ class RecipeExtractor:
             "content_type": "recipe",
             "extractor_version": RECIPE_EXTRACTOR_VERSION,
             "category": _safe_str(result.get("category", "Food")).strip() or "Food",
-            "topic": _safe_str(result.get("topic", "Baking")).strip() or "Baking",
+            "topic": _safe_str(result.get("topic", "Cooking")).strip() or "Cooking",
             "title": title_en,
             "summary_title": title_en,
-            "summary_text": bilingual_summary,
+            "summary_text": bilingual_summary,  # ✅ Full bilingual object
             "summary_bullets": json.dumps(headlines_en, ensure_ascii=False),
             "summary_hashtags": hashtags,
             "summary_emojis": emojis,
@@ -380,7 +422,7 @@ class RecipeExtractor:
         }
 
     def _build_recipe_prompt(self, transcript: str, caption: str, lang: str) -> str:
-        return f"""Extract a recipe summary and directions. Output ONLY valid JSON.
+        return f"""Extract recipe information. Output ONLY valid JSON.
 
 ORIGINAL_LANGUAGE: {lang}
 
@@ -390,22 +432,33 @@ TRANSCRIPT:
 CAPTION:
 {caption[:6000]}
 
-REQUIREMENTS:
-- category: string (English)
-- topic: string (English)
-- title: string (English, <= 90 chars, MUST NOT be "Untitled")
-- summary: English, 3-5 sentences, must describe the recipe (NOT CTA, NOT sponsorship text, NOT discount codes)
-- headlines: array of exactly 4 English strings, each starts with an emoji, and must NOT contain any extra bullet characters like "•"
-- hashtags: array of 3-10 strings WITHOUT '#'
-- emojis: array of 4-8 emoji characters
-- recipe: object with:
-  - ingredients: list (objects or strings); if you see quantities in the caption, keep them
-  - instructions: list of 6-12 short steps (English)
-  - tips: optional list of strings
-  - notes: optional list of strings
+CRITICAL RULES:
+1. category: English category (e.g., "Side Dish", "Main Course", "Dessert")
+2. topic: English topic (e.g., "Korean Braised Potatoes", "Pasta", "Cake")
+3. title: English, <= 90 chars, descriptive, NEVER "Untitled"
+4. summary: English, 2-4 sentences describing the dish, cooking method, and flavors
+5. headlines: array of EXACTLY 4 strings
+   - Each MUST start with a single emoji (e.g., "🥔 Text here")
+   - NO bullet points (•, -, *, etc.)
+   - NO numbering
+   - Format: "EMOJI SPACE Description"
+6. hashtags: array of 5-10 keywords WITHOUT the '#' symbol
+7. emojis: array of 4 emojis that represent the dish
+8. recipe object with:
+   - ingredients: list of objects with "item", "quantity", "unit"
+   - instructions: 6-12 clear, numbered steps in English
+   - tips: optional cooking tips
+   - notes: optional notes
 
-Return JSON keys:
-category, topic, title, summary, headlines, hashtags, emojis, recipe
+EXAMPLE HEADLINE FORMAT (CORRECT):
+"🥔 Best potatoes for braising"
+"🍖 Adds rich savory flavor"
+
+WRONG (DO NOT DO THIS):
+"• 🥔 Best potatoes"
+"- Use starchy potatoes"
+
+Return JSON: category, topic, title, summary, headlines, hashtags, emojis, recipe
 """
 
     def _call_ai(self, prompt: str, max_retries: int = 2) -> Dict:
@@ -415,7 +468,7 @@ category, topic, title, summary, headlines, hashtags, emojis, recipe
                 response = self.client.chat.complete(
                     model=self.model,
                     messages=[
-                        {"role": "system", "content": "You output only valid JSON."},
+                        {"role": "system", "content": "You output only valid JSON. Never add bullet points to headlines."},
                         {"role": "user", "content": prompt},
                     ],
                     response_format={"type": "json_object"},
@@ -434,7 +487,7 @@ category, topic, title, summary, headlines, hashtags, emojis, recipe
         if not text.strip():
             return ""
 
-        extra = "Keep roughly similar length and sentence count.\n" if keep_length else ""
+        extra = "Keep roughly similar length.\n" if keep_length else ""
         prompt = f"""Translate into {target_lang}. {extra}Output ONLY valid JSON.
 
 Return JSON: {{ "text": "..." }}
@@ -460,7 +513,7 @@ TEXT:
         if not items:
             return []
 
-        prompt = f"""Translate each list item into {target_lang}. Keep leading emoji if present. Output ONLY valid JSON.
+        prompt = f"""Translate each item into {target_lang}. Keep emoji at start if present. NO bullet points. Output ONLY valid JSON.
 
 Return JSON: {{ "items": ["...", "..."] }}
 
@@ -471,7 +524,7 @@ ITEMS:
         response = self.client.chat.complete(
             model=self.model,
             messages=[
-                {"role": "system", "content": "You output only valid JSON."},
+                {"role": "system", "content": "You output only valid JSON. Never add bullets."},
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
@@ -480,4 +533,5 @@ ITEMS:
 
         data = json.loads(response.choices[0].message.content)
         out = _safe_list(data.get("items", []))
-        return [x for x in out if isinstance(x, str) and x.strip()]
+        # Clean any bullets that snuck in
+        return [_clean_headline(x) for x in out if isinstance(x, str) and x.strip()]
