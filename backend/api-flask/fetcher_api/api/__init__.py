@@ -1,13 +1,25 @@
-from flask import Blueprint
-from .auth_routes import auth_bp, oauth
-from .routes import api_bp
-from .billing_routes import billing_bp
+"""
+API Package - Register all route blueprints
+"""
+from flask import Flask
 
-def register_blueprints(app):
-    # Initialize OAuth with the app instance
-    oauth.init_app(app)
 
-    # Register blueprints
-    app.register_blueprint(api_bp, url_prefix="/api")
+def register_blueprints(app: Flask):
+    """Register all API blueprints with /api prefix"""
+    
+    from fetcher_api.api.routes import (
+        main_bp,
+        auth_bp,
+        video_bp,
+        reel_bp,
+        billing_bp,
+        admin_bp,
+    )
+    
+    # Register all blueprints with /api prefix
+    app.register_blueprint(main_bp, url_prefix="/api")
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
-    app.register_blueprint(billing_bp, url_prefix="/api/billing")
+    app.register_blueprint(video_bp, url_prefix="/api")
+    app.register_blueprint(reel_bp, url_prefix="/api")
+    app.register_blueprint(billing_bp, url_prefix="/api")
+    app.register_blueprint(admin_bp, url_prefix="/api")
