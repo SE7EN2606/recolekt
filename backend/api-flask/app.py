@@ -9,7 +9,6 @@ from datetime import timedelta
 
 from flask import Flask, send_from_directory, request, jsonify
 from flask_cors import CORS
-from flask_session import Session
 from werkzeug.exceptions import HTTPException
 from dotenv import load_dotenv
 import requests
@@ -43,6 +42,19 @@ os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 # -------------------------------------------------
+# 🧾 Logging setup (MOVED UP - before using logger)
+# -------------------------------------------------
+werkzeug_log = logging.getLogger("werkzeug")
+werkzeug_log.setLevel(logging.WARNING)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger(__name__)
+
+# -------------------------------------------------
 # 🧠 2. Diagnostics before creating Flask app
 # -------------------------------------------------
 print("Python executable:", sys.executable)
@@ -68,21 +80,21 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 if not app:
     raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
 
-# Configure session - ✅ FIXED: Use client-side sessions for cross-domain
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
-app.config['SESSION_TYPE'] = 'null'  # ✅ Client-side signed cookies (not filesystem)
-app.config['SESSION_PERMANENT'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+# Configure session - ✅ Use Flask's native client-side sessions
+secret_key = os.getenv('SECRET_KEY')
+if not secret_key or secret_key == 'your-secret-key-change-in-production':
+    # Generate fallback secret key (for dev only)
+    import secrets
+    secret_key = secrets.token_hex(32)
+    logger.warning("⚠️ Using generated SECRET_KEY - set SECRET_KEY env var in production!")
+
+app.config['SECRET_KEY'] = secret_key
 app.config['SESSION_COOKIE_NAME'] = 'recolekt_session'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'
-app.config['SESSION_COOKIE_DOMAIN'] = None
 app.config['SESSION_COOKIE_PATH'] = '/'
-app.config['SESSION_REFRESH_EACH_REQUEST'] = True
-
-# Initialize Flask-Session
-Session(app)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
 # Register blueprints
 register_blueprints(app)
@@ -121,18 +133,8 @@ CORS(
 )
 
 # -------------------------------------------------
-# 🧾 Logging
+# 🧾 Log credential status
 # -------------------------------------------------
-werkzeug_log = logging.getLogger("werkzeug")
-werkzeug_log.setLevel(logging.WARNING)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-logger = logging.getLogger(__name__)
-
 if os.getenv("MISTRAL_API_KEY"):
     logger.info("✅ MISTRAL_API_KEY loaded successfully.")
 else:
@@ -146,7 +148,7 @@ else:
 if flask_secret != 'NOT SET' and flask_secret != 'your-secret-key-change-in-production':
     logger.info("✅ Flask SECRET_KEY configured.")
 else:
-    logger.warning("⚠️ Flask SECRET_KEY not configured. Sessions will be insecure!")
+    logger.warning("⚠️ Flask SECRET_KEY not configured properly!")
 
 # -------------------------------------------------
 # ✅ CRITICAL: Global Error Handlers (JSON responses)
