@@ -17,7 +17,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// ✅ Single source of truth
 const RAW_API_BASE =
   import.meta.env.VITE_API_BASE ||
   import.meta.env.VITE_API_URL ||
@@ -31,7 +30,6 @@ function joinUrl(base: string, path: string) {
   return `${b}/${p}`;
 }
 
-// ✅ Helper function to get auth headers
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem('auth_token');
   return token ? {
@@ -44,30 +42,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    console.log('🔍 AuthContext mounted');
+    console.log('🔍 Current URL:', window.location.href);
+    
     // ✅ Check for token in URL (from OAuth callback)
     const params = new URLSearchParams(window.location.search);
     const token = params.get('token');
     
+    console.log('🔍 Token in URL?', token ? 'YES' : 'NO');
+    
     if (token) {
-      console.log('✅ Token received from OAuth callback');
+      console.log('✅ Token received from OAuth callback, storing...');
       localStorage.setItem('auth_token', token);
       
       // Remove token from URL
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
       
-      // Check auth immediately
+      console.log('✅ Token stored, checking auth...');
+      // ✅ Check auth immediately and return early
       checkAuthStatus();
-    } else {
-      // Normal auth check
-      const timer = setTimeout(() => {
-        checkAuthStatus();
-      }, 100);
-      return () => clearTimeout(timer);
+      return; // ✅ IMPORTANT: Don't run the timer
     }
-  }, []);
+    
+    // Normal auth check with small delay
+    console.log('ℹ️ No token in URL, checking existing auth...');
+    const timer = setTimeout(() => {
+      checkAuthStatus();
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, []); // ✅ Empty array - runs once on mount
 
   const checkAuthStatus = async () => {
+    console.log('🔍 checkAuthStatus started');
     try {
       const token = localStorage.getItem('auth_token');
       
@@ -78,6 +86,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      console.log('🔍 Token found, validating with backend...');
       const response = await fetch(joinUrl(API_BASE, '/api/auth/me'), {
         credentials: 'include',
         headers: getAuthHeaders()
@@ -110,12 +119,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.removeItem('auth_token');
       setUser(null);
     } finally {
+      console.log('🔍 checkAuthStatus complete, setting loading=false');
       setLoading(false);
     }
   };
 
   const signInWithGoogle = () => {
-    // Browser redirect to backend OAuth start route
     window.location.href = joinUrl(API_BASE, '/api/auth/google');
   };
 
@@ -127,12 +136,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: getAuthHeaders()
       });
 
-      // Clear token
       localStorage.removeItem('auth_token');
       setUser(null);
     } catch (error) {
       console.error('Logout error:', error);
-      // Clear token even on error
       localStorage.removeItem('auth_token');
       setUser(null);
       throw error;
@@ -164,5 +171,4 @@ export const useAuth = () => {
   return context;
 };
 
-// ✅ Export helper for other components to use
 export { getAuthHeaders };
