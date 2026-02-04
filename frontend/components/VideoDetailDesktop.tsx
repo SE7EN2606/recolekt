@@ -262,7 +262,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
             </button>
           </div>
 
-          <img src={viewModel.preview} alt={displayTitle} className="w-full h-full object-cover opacity-90" />
+          <img src={viewModel.preview || viewModel.gcs_urls?.preview_thumbnail || ''} alt={displayTitle} className="w-full h-full object-cover opacity-90"/>
 
           {hasTranslation && !isEditMode && (
             <button

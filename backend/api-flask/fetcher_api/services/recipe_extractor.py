@@ -12,7 +12,7 @@ from fetcher_api.services.emoji_mapper import infer_ingredient_emoji
 
 logger = logging.getLogger(__name__)
 
-RECIPE_EXTRACTOR_VERSION = "recipe-v11-fixed-emojis-bullets"
+RECIPE_EXTRACTOR_VERSION = "recipe-v12-emoji-strip-summary-fix"
 
 
 def _is_english(lang: str) -> bool:
@@ -61,6 +61,28 @@ def _norm(s: str) -> str:
     s = re.sub(r"[^\w\s]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
+
+def _strip_emoji_from_text(text: str) -> str:
+    """Remove all emoji characters from text"""
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F1E0-\U0001F1FF"  # flags
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F680-\U0001F6FF"  # transport & map
+        "\U0001F700-\U0001F77F"  # alchemical
+        "\U0001F780-\U0001F7FF"  # Geometric Shapes
+        "\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
+        "\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+        "\U0001FA00-\U0001FA6F"  # Chess Symbols
+        "\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+        "\U00002702-\U000027B0"  # Dingbats
+        "\U000024C2-\U0001F251"
+        "]+",
+        flags=re.UNICODE
+    )
+    return emoji_pattern.sub('', text).strip()
 
 
 _TRAILING_EMOJI_RE = re.compile(
@@ -182,7 +204,7 @@ def _build_ingredients_from_caption(caption: str) -> List[Dict[str, str]]:
         if not parsed:
             continue
         
-        item_name = parsed["name"]
+        item_name = _strip_emoji_from_text(parsed["name"])
         
         # Use emoji mapper for accurate emojis
         emoji = infer_ingredient_emoji(item_name)
@@ -208,10 +230,8 @@ def _normalize_ingredients_list(ings: Any) -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
     for ing in ings:
         if isinstance(ing, str):
-            body, emoji = _split_trailing_emoji(ing)
-            # Use emoji mapper if no emoji found
-            if not emoji:
-                emoji = infer_ingredient_emoji(body)
+            body = _strip_emoji_from_text(ing)
+            emoji = infer_ingredient_emoji(body)
             
             out.append(
                 {
@@ -228,17 +248,15 @@ def _normalize_ingredients_list(ings: Any) -> List[Dict[str, str]]:
             item = _safe_str(ing.get("item") or ing.get("name") or ing.get("ingredient") or "")
             qty = _safe_str(ing.get("quantity") or "")
             unit = _safe_str(ing.get("unit") or "")
-            emoji = _safe_str(ing.get("emoji") or "")
+            emoji_from_model = _safe_str(ing.get("emoji") or "")
 
-            item2, trailing = _split_trailing_emoji(item)
-            item = item2
-            if not emoji and trailing:
-                emoji = trailing
+            # Strip emojis from item name
+            item_clean = _strip_emoji_from_text(item)
 
             # Use emoji mapper for accurate matching
-            emoji = emoji or infer_ingredient_emoji(item)
+            emoji = emoji_from_model or infer_ingredient_emoji(item_clean)
 
-            out.append({"item": item, "name": item, "quantity": qty, "unit": unit, "emoji": emoji})
+            out.append({"item": item_clean, "name": item_clean, "quantity": qty, "unit": unit, "emoji": emoji})
             continue
 
     return out
@@ -410,7 +428,7 @@ class RecipeExtractor:
             "topic": _safe_str(result.get("topic", "Cooking")).strip() or "Cooking",
             "title": title_en,
             "summary_title": title_en,
-            "summary_text": bilingual_summary,  # ✅ Full bilingual object
+            "summary_text": bilingual_summary,
             "summary_bullets": json.dumps(headlines_en, ensure_ascii=False),
             "summary_hashtags": hashtags,
             "summary_emojis": emojis,
@@ -433,30 +451,37 @@ CAPTION:
 {caption[:6000]}
 
 CRITICAL RULES:
-1. category: English category (e.g., "Side Dish", "Main Course", "Dessert")
-2. topic: English topic (e.g., "Korean Braised Potatoes", "Pasta", "Cake")
+1. category: English category (e.g., "Appetizer", "Side Dish", "Dessert")
+2. topic: English topic (e.g., "Korean Potato Snack", "Crispy Finger Food")
 3. title: English, <= 90 chars, descriptive, NEVER "Untitled"
-4. summary: English, 2-4 sentences describing the dish, cooking method, and flavors
+4. summary: 2-4 sentences that SELL the dish
+   - Focus on taste, texture, and appeal
+   - Describe WHY someone would want to make this
+   - DO NOT list ingredients or preparation steps
+   - DO NOT mention cooking techniques or methods
+   - Make it enticing and mouth-watering
+   
+   GOOD EXAMPLES:
+   "This crispy potato snack delivers an irresistible combination of textures. The outside is golden and crunchy while the inside stays perfectly chewy. Each bite reveals a savory Vienna sausage filling that makes this snack absolutely addictive."
+   
+   "A Korean-style braised potato that's packed with deep savory flavors. The potatoes absorb the rich soy-based sauce, creating a glossy finish that pairs perfectly with rice. Simple to enjoy, impossible to stop eating."
+   
+   BAD EXAMPLES (DO NOT DO THIS):
+   "Different potato varieties can be used. The dish combines potatoes with spam. Add oligosaccharide for sweetness and microwave to get the texture."
+   "Grate potatoes, microwave them, pipe into oil, and fry until golden."
+
 5. headlines: array of EXACTLY 4 strings
-   - Each MUST start with a single emoji (e.g., "🥔 Text here")
-   - NO bullet points (•, -, *, etc.)
-   - NO numbering
+   - Each MUST start with emoji (e.g., "🥔 Perfect crispy texture")
+   - NO bullet points (•, -, *)
    - Format: "EMOJI SPACE Description"
-6. hashtags: array of 5-10 keywords WITHOUT the '#' symbol
-7. emojis: array of 4 emojis that represent the dish
-8. recipe object with:
-   - ingredients: list of objects with "item", "quantity", "unit"
-   - instructions: 6-12 clear, numbered steps in English
-   - tips: optional cooking tips
-   - notes: optional notes
 
-EXAMPLE HEADLINE FORMAT (CORRECT):
-"🥔 Best potatoes for braising"
-"🍖 Adds rich savory flavor"
-
-WRONG (DO NOT DO THIS):
-"• 🥔 Best potatoes"
-"- Use starchy potatoes"
+6. hashtags: 5-10 keywords WITHOUT '#'
+7. emojis: 4 emojis representing the dish
+8. recipe object:
+   - ingredients: objects with "item" (NO emojis in item text), "quantity", "unit"
+   - instructions: 6-12 clear steps
+   - tips: optional
+   - notes: optional
 
 Return JSON: category, topic, title, summary, headlines, hashtags, emojis, recipe
 """
@@ -468,7 +493,7 @@ Return JSON: category, topic, title, summary, headlines, hashtags, emojis, recip
                 response = self.client.chat.complete(
                     model=self.model,
                     messages=[
-                        {"role": "system", "content": "You output only valid JSON. Never add bullet points to headlines."},
+                        {"role": "system", "content": "You output only valid JSON. Never add bullet points to headlines. Write enticing summaries focused on taste and appeal, not preparation."},
                         {"role": "user", "content": prompt},
                     ],
                     response_format={"type": "json_object"},
@@ -533,5 +558,4 @@ ITEMS:
 
         data = json.loads(response.choices[0].message.content)
         out = _safe_list(data.get("items", []))
-        # Clean any bullets that snuck in
         return [_clean_headline(x) for x in out if isinstance(x, str) and x.strip()]

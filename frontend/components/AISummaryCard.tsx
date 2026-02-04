@@ -138,9 +138,8 @@ export const AISummaryCard: React.FC<AISummaryCardProps> = ({
             <ul className="space-y-2">
               {bullets.map((b, idx) => (
                 <li key={idx} className="text-sm text-gray-800 leading-relaxed">
-                  <span className="mr-2">{b.emoji || '•'}</span>
-                  <span className="font-medium">{b.headline}</span>
-                  {b.text ? <span className="text-gray-600"> — {b.text}</span> : null}
+                <span className="font-medium">{b.headline}</span>
+                {b.text ? <span className="text-gray-600"> — {b.text}</span> : null}
                 </li>
               ))}
             </ul>

@@ -27,5 +27,7 @@
   "mirin or sweet cooking wine": "ALCOHOL",
   "tonkatsu sauce": "SAUCE_PASTE",
   "butter": "FAT_OIL",
-  "oil frying": "FAT_OIL"
+  "oil frying": "FAT_OIL",
+  "vienna sausage": "PROTEIN_MEAT",
+  "piping bag": "OTHER"
 }
