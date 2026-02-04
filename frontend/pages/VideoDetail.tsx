@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
+import { getAuthHeaders } from '../context/AuthContext';
 import { ReportModal } from '../components/ReportModal';
 import { VideoDetailDesktop } from '../components/VideoDetailDesktop';
 import { VideoDetailMobile } from '../components/VideoDetailMobile';
@@ -20,12 +21,15 @@ import {
   scaleQuantity
 } from '../utils/conversionUtils';
 
-const API_BASE = import.meta.env.VITE_API_BASE; // Utilise uniquement la variable d'environnement
+
+const API_BASE = import.meta.env.VITE_API_BASE;
+
 
 const stripLeadingEmoji = (s: string) => {
   const text = (s || '').trim();
   return text.replace(/^[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+\s*/u, '').trim();
 };
+
 
 const safeStr = (v: any): string => {
   if (typeof v === 'string') return v;
@@ -33,11 +37,14 @@ const safeStr = (v: any): string => {
   return String(v);
 };
 
+
 const normalizeSummaryTextObj = (obj: any) => {
   if (!obj || typeof obj !== 'object') return obj;
 
+
   const enCandidate = obj.english ?? obj.EN ?? obj.en ?? null;
   const ogCandidate = obj.original ?? obj.OG ?? obj.og ?? null;
+
 
   if (obj.english || obj.original) {
     return {
@@ -47,6 +54,7 @@ const normalizeSummaryTextObj = (obj: any) => {
     };
   }
 
+
   if (enCandidate || ogCandidate) {
     return {
       ...obj,
@@ -55,12 +63,15 @@ const normalizeSummaryTextObj = (obj: any) => {
     };
   }
 
+
   return obj;
 };
+
 
 const extractTranscriptText = (maybe: any): string => {
   if (!maybe) return '';
   if (typeof maybe === 'string') return maybe;
+
 
   if (typeof maybe === 'object') {
     if (typeof maybe.transcript === 'string') return maybe.transcript;
@@ -68,14 +79,18 @@ const extractTranscriptText = (maybe: any): string => {
     if (typeof maybe.content === 'string') return maybe.content;
   }
 
+
   return '';
 };
+
 
 const extractSummaryString = (maybe: any, showOriginal: boolean): string => {
   if (typeof maybe === 'string') return maybe;
 
+
   const obj = normalizeSummaryTextObj(maybe);
   const chosen = showOriginal ? (obj?.original ?? null) : (obj?.english ?? null);
+
 
   if (chosen && typeof chosen === 'object') {
     if (typeof chosen.summary === 'string') return chosen.summary;
@@ -83,44 +98,55 @@ const extractSummaryString = (maybe: any, showOriginal: boolean): string => {
     if (typeof chosen.description === 'string') return chosen.description;
   }
 
+
   const fallback = obj?.english ?? obj?.original ?? null;
   if (fallback && typeof fallback === 'object') {
     if (typeof fallback.summary === 'string') return fallback.summary;
     if (typeof fallback.text === 'string') return fallback.text;
   }
 
+
   if (obj && typeof obj === 'object') {
     if (typeof obj.summary === 'string') return obj.summary;
   }
 
+
   return '';
 };
+
 
 // Extract trailing emoji from a string (best-effort)
 const splitTrailingEmoji = (text: string): { body: string; emoji: string } => {
   const s = (text || '').trim();
   if (!s) return { body: '', emoji: '' };
 
+
   const m = s.match(/^(.*?)(?:\s+)?([\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+)\s*$/u);
   if (!m) return { body: s, emoji: '' };
 
+
   return { body: (m[1] || '').trim(), emoji: (m[2] || '').trim() };
 };
+
 
 export const VideoDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { deleteVideos, videos } = useData();
 
+
   const [video, setVideo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
 
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [captionOpen, setCaptionOpen] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+
   const [servingScale, setServingScale] = useState(1);
   const [useMetric, setUseMetric] = useState(true);
+
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [tempTitle, setTempTitle] = useState('');
@@ -130,12 +156,16 @@ export const VideoDetail: React.FC = () => {
   const [tempBullets, setTempBullets] = useState<Array<{ headline: string; text: string; emoji?: string }>>([]);
   const [tempHashtags, setTempHashtags] = useState<string[]>([]);
 
+
   const [fetchedTranscript, setFetchedTranscript] = useState<string>('');
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+
 
   const notFoundPollRef = useRef(0);
   const transcriptFetchedRef = useRef<Set<string>>(new Set());
 
+
+  // ✅ UPDATED: Add JWT token to fetch requests
   const fetchJsonNoStore = useCallback(async (url: string) => {
     const u = url.includes('?') ? `${url}&_=${Date.now()}` : `${url}?_=${Date.now()}`;
     const res = await fetch(u, {
@@ -143,16 +173,19 @@ export const VideoDetail: React.FC = () => {
       cache: 'no-store',
       credentials: 'include',
       headers: {
+        ...getAuthHeaders(), // ✅ Add JWT token
         'Cache-Control': 'no-cache, no-store, must-revalidate',
-        Pragma: 'no-cache',
+        'Pragma': 'no-cache',
       },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   }, []);
 
+
   const fetchVideo = useCallback(async () => {
     if (!id) return;
+
 
     const foundInContext = videos.find(v => v.id === id || v.process_id === id);
     if (foundInContext) {
@@ -160,10 +193,12 @@ export const VideoDetail: React.FC = () => {
       setLoading(false);
     }
 
+
     try {
       const data = await fetchJsonNoStore(`${API_BASE}/api/saved_reels`);
       const reels = Array.isArray(data?.reels) ? data.reels : [];
       const found = reels.find((r: any) => r?.id === id || r?.process_id === id);
+
 
       if (!found) {
         notFoundPollRef.current += 1;
@@ -175,7 +210,9 @@ export const VideoDetail: React.FC = () => {
         return;
       }
 
+
       notFoundPollRef.current = 0;
+
 
       let normalized: any = found;
       try {
@@ -184,18 +221,22 @@ export const VideoDetail: React.FC = () => {
         normalized = found;
       }
 
+
       const merged = { ...normalized, __raw: found };
       setVideo(merged);
       setLoading(false);
+
 
       const apiTranscript =
         extractTranscriptText(found?.transcription) ||
         extractTranscriptText(normalized?.transcription) ||
         '';
 
+
       if (apiTranscript.trim() && !fetchedTranscript.trim()) {
         setFetchedTranscript(apiTranscript);
       }
+
 
       const transcriptUrl =
         found?.gcs_urls?.transcription ||
@@ -204,6 +245,7 @@ export const VideoDetail: React.FC = () => {
         (found?.gcs_paths?.transcription
           ? `https://storage.googleapis.com/recolekt-analysis/${found.gcs_paths.transcription}`
           : null);
+
 
       if (transcriptUrl && !transcriptFetchedRef.current.has(transcriptUrl)) {
         transcriptFetchedRef.current.add(transcriptUrl);
@@ -214,6 +256,7 @@ export const VideoDetail: React.FC = () => {
             headers: { Accept: 'application/json' },
           });
 
+
           if (transcriptRes.ok) {
             const transcriptData = await transcriptRes.json();
             const text =
@@ -222,6 +265,7 @@ export const VideoDetail: React.FC = () => {
               transcriptData?.content ||
               transcriptData?.data?.transcript ||
               '';
+
 
             if (String(text).trim()) setFetchedTranscript(String(text));
           } else {
@@ -233,6 +277,8 @@ export const VideoDetail: React.FC = () => {
       }
     } catch (e: any) {
       if (String(e?.message || '').includes('HTTP 401')) {
+        console.error('❌ Authentication failed - clearing token');
+        localStorage.removeItem('auth_token'); // ✅ Clear invalid token
         navigate('/auth');
         return;
       }
@@ -240,9 +286,11 @@ export const VideoDetail: React.FC = () => {
     }
   }, [API_BASE, fetchJsonNoStore, id, navigate, videos, fetchedTranscript]);
 
+
   useEffect(() => {
     fetchVideo();
   }, [fetchVideo]);
+
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -255,8 +303,10 @@ export const VideoDetail: React.FC = () => {
       }
     }, 2000);
 
+
     return () => clearInterval(interval);
   }, [video, fetchVideo]);
+
 
   const handleDelete = async () => {
     if (!video || !video.process_id) {
@@ -264,6 +314,7 @@ export const VideoDetail: React.FC = () => {
       setConfirmDelete(false);
       return;
     }
+
 
     try {
       await deleteVideos([video.process_id]);
@@ -275,6 +326,7 @@ export const VideoDetail: React.FC = () => {
     }
   };
 
+
   const handleShare = async () => {
     const title = getTitle(video || {});
     const shareData = {
@@ -282,6 +334,7 @@ export const VideoDetail: React.FC = () => {
       text: `Check out this reel: ${title}`,
       url: window.location.href,
     };
+
 
     try {
       if (navigator.share) {
@@ -295,21 +348,27 @@ export const VideoDetail: React.FC = () => {
     }
   };
 
+
   const viewModel = useMemo(() => {
     const v = video || {};
     const raw = v.__raw || {};
 
+
     const summaryObj = v?.summary ?? raw?.summary ?? {};
+
 
     const summaryTextObjRaw =
       v?.summary_text ??
       raw?.summary_text ??
       ((summaryObj && typeof summaryObj === 'object') ? (summaryObj as any).summary : null);
 
+
     const summary_text = normalizeSummaryTextObj(summaryTextObjRaw);
+
 
     const titleFromSummaryTextEn = safeStr(summary_text?.english?.title);
     const titleFromSummaryTextOg = safeStr(summary_text?.original?.title);
+
 
     const stableTitle =
       v?.display_title ||
@@ -322,11 +381,14 @@ export const VideoDetail: React.FC = () => {
       getTitle(raw) ||
       'Saved Reel';
 
+
     const author = pickFirstString(v?.author_name, raw?.author_name, 'Unknown');
     const category = getCategory(v) || getCategory(raw);
     const topic = getTopic(v) || getTopic(raw);
 
+
     const captionLike = safeStr(v?.caption) || safeStr(raw?.caption) || '';
+
 
     const description =
       extractSummaryString(summary_text, false) ||
@@ -335,12 +397,14 @@ export const VideoDetail: React.FC = () => {
       captionLike.split('\n')[0] ||
       '';
 
+
     const bulletsRaw =
       (v?.headlines_plain && Array.isArray(v.headlines_plain) && v.headlines_plain.length)
         ? v.headlines_plain
         : (raw?.headlines_plain && Array.isArray(raw.headlines_plain) && raw.headlines_plain.length)
           ? raw.headlines_plain
           : (getBullets(v).length ? getBullets(v) : getBullets(raw));
+
 
     const bullets = (Array.isArray(bulletsRaw) ? bulletsRaw : []).map((b: any) => {
       if (typeof b === 'string') return stripLeadingEmoji(b);
@@ -352,7 +416,9 @@ export const VideoDetail: React.FC = () => {
       return b;
     });
 
+
     const hashtags = getHashtags(v).length ? getHashtags(v) : getHashtags(raw);
+
 
     const createdAt = v?.created_at ?? raw?.created_at;
     const savedAt = createdAt
@@ -363,9 +429,11 @@ export const VideoDetail: React.FC = () => {
         })
       : '';
 
+
     const isRecipe =
       (v?.content_type ?? raw?.content_type) === 'recipe' &&
       (v?.recipe ?? raw?.recipe);
+
 
     let recipe = v?.recipe ?? raw?.recipe ?? null;
     if (recipe && typeof recipe === 'string') {
@@ -377,6 +445,7 @@ export const VideoDetail: React.FC = () => {
       }
     }
 
+
     const transcriptText =
       fetchedTranscript.trim() ||
       extractTranscriptText(v?.transcription) ||
@@ -385,7 +454,9 @@ export const VideoDetail: React.FC = () => {
       safeStr(raw?.transcript) ||
       '';
 
+
     const transcription = { transcript: transcriptText };
+
 
     const duration = v?.duration ?? raw?.duration ?? '';
     const sourceUrl = v?.source_url ?? raw?.source_url ?? '';
@@ -394,6 +465,7 @@ export const VideoDetail: React.FC = () => {
       raw?.gcs_urls?.preview_thumbnail ??
       v?.gcs_urls?.thumbnail ??
       '';
+
 
     return {
       title: stableTitle,
@@ -416,6 +488,7 @@ export const VideoDetail: React.FC = () => {
     };
   }, [video, fetchedTranscript]);
 
+
   const handleModifyToggle = () => {
     if (!isEditMode) {
       setTempTitle(viewModel.title);
@@ -430,6 +503,7 @@ export const VideoDetail: React.FC = () => {
     }
   };
 
+
   const renderIngredient = (ing: any, index: number) => {
     // Support:
     // - string: "200 g flour 🌾" (no leading 🔸, emoji extracted if present)
@@ -437,6 +511,7 @@ export const VideoDetail: React.FC = () => {
     let item = '';
     let qtyRaw = '';
     let emoji = '';
+
 
     if (typeof ing === 'string') {
       const parts = splitTrailingEmoji(ing);
@@ -452,11 +527,14 @@ export const VideoDetail: React.FC = () => {
       if (!emoji) emoji = parts.emoji;
     }
 
+
     const { val, unit } = parseQuantity(qtyRaw);
+
 
     return (
       <li key={index} className="flex flex-wrap items-baseline gap-2 py-1">
         {emoji ? <span className="text-lg leading-none select-none">{emoji}</span> : null}
+
 
         {(val || unit) && (
           <div className="flex items-baseline gap-1">
@@ -465,10 +543,12 @@ export const VideoDetail: React.FC = () => {
           </div>
         )}
 
+
         <span className="font-normal text-gray-900 text-base flex-1">{item}</span>
       </li>
     );
   };
+
 
   if (loading) {
     return (
@@ -479,9 +559,11 @@ export const VideoDetail: React.FC = () => {
     );
   }
 
+
   if (!video) {
     return <div className="p-10 text-center">Video not found</div>;
   }
+
 
   const sharedProps = {
     viewModel,
@@ -519,10 +601,12 @@ export const VideoDetail: React.FC = () => {
     convertToImperial,
   };
 
+
   return (
     <div className="animate-fade-in pb-2 md:pb-12">
       <VideoDetailDesktop {...sharedProps} />
       <VideoDetailMobile {...sharedProps} />
+
 
       {confirmDelete && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -546,6 +630,7 @@ export const VideoDetail: React.FC = () => {
           </div>
         </div>
       )}
+
 
       <ReportModal
         isOpen={isReportModalOpen}
