@@ -302,7 +302,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
               {/* Logo at Bottom */}
               <div className="py-8 mt-auto flex justify-center">
-                 <img alt="recolekt_logo" className="h-10" src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/frontend/assets/recolekt_logo_black.svg" />
+                 <img alt="recolekt_logo" className="h-10" src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/frontend/assets/recolekt_logo_black.png" />
               </div>
 
               <div className="h-20 md:h-0"></div>
