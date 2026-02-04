@@ -151,8 +151,13 @@ def is_user_verified():
 @auth_bp.route("/google", methods=["GET"])
 def google_login():
     """Initiate Google OAuth flow"""
-    redirect_uri = url_for('auth.google_callback', _external=True, _scheme='https')
+    # ✅ Use http locally, https in production
+    is_local = os.getenv('FLASK_ENV') == 'development' or not os.getenv('RAILWAY_ENVIRONMENT')
+    scheme = 'http' if is_local else 'https'
+    redirect_uri = url_for('auth.google_callback', _external=True, _scheme=scheme)
+    
     logger.info(f"🔐 Google OAuth redirect_uri: {redirect_uri}")
+    logger.info(f"🔐 Environment: {'LOCAL' if is_local else 'PRODUCTION'}")
     logger.info(f"🔐 User-Agent: {request.headers.get('User-Agent', 'Unknown')}")
     return google.authorize_redirect(redirect_uri)
 
