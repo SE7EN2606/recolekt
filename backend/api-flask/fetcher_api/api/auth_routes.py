@@ -31,7 +31,7 @@ FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").rstr
 JWT_SECRET = os.getenv('SECRET_KEY', 'your-secret-key')
 
 # ---------------------------------------------------------
-# HELPER FUNCTIONS
+# HELPER FUNCTIONS (USED BY ALL ROUTES)
 # ---------------------------------------------------------
 
 def create_jwt_token(user_id: str) -> str:
@@ -48,39 +48,62 @@ def decode_jwt_token(token: str):
     try:
         return jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
     except jwt.ExpiredSignatureError:
+        logger.warning("JWT token expired")
         return None
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError as e:
+        logger.warning(f"Invalid JWT token: {e}")
         return None
 
 def get_user_id_from_request():
-    """Get user_id from Authorization header (JWT token)"""
+    """
+    Get user_id from Authorization header (JWT token)
+    This function is used by ALL protected routes
+    """
+    # Check Authorization header for JWT token
     auth_header = request.headers.get('Authorization', '')
-    if not auth_header.startswith('Bearer '):
-        logger.warning("No Bearer token in Authorization header")
-        return None
     
-    token = auth_header.replace('Bearer ', '')
-    payload = decode_jwt_token(token)
+    if auth_header.startswith('Bearer '):
+        token = auth_header.replace('Bearer ', '').strip()
+        
+        if not token:
+            logger.debug("Empty Bearer token")
+            return None
+        
+        payload = decode_jwt_token(token)
+        
+        if not payload:
+            logger.debug("Invalid or expired JWT token")
+            return None
+        
+        user_id = payload.get('user_id')
+        logger.debug(f"✅ JWT authenticated user_id: {user_id}")
+        return user_id
     
-    if not payload:
-        logger.warning("Invalid or expired token")
-        return None
-    
-    user_id = payload.get('user_id')
-    logger.debug(f"JWT user_id: {user_id}")
-    return user_id
+    logger.debug("No Authorization header with Bearer token found")
+    return None
 
 def is_user_authenticated():
     """Check if user is authenticated via JWT"""
-    return get_user_id_from_request() is not None
+    user_id = get_user_id_from_request()
+    is_auth = user_id is not None
+    logger.debug(f"is_user_authenticated: {is_auth} (user_id: {user_id})")
+    return is_auth
 
 def is_user_verified():
     """Check if user account is verified"""
     user_id = get_user_id_from_request()
     if not user_id:
+        logger.debug("is_user_verified: False (no user_id)")
         return False
-    row = fetch_one("SELECT verified FROM users WHERE user_id = %s;", (user_id,))
-    return (row or {}).get('verified', False)
+    
+    try:
+        row = fetch_one("SELECT verified FROM users WHERE user_id = %s;", (user_id,))
+        verified = (row or {}).get('verified', False)
+        logger.debug(f"is_user_verified: {verified} for user {user_id}")
+        return verified
+    except Exception as e:
+        logger.error(f"Error checking user verification: {e}")
+        return False
 
 # ---------------------------------------------------------
 # AUTH ROUTES
@@ -91,16 +114,25 @@ def google_login():
     """Initiate Google OAuth flow"""
     redirect_uri = url_for('auth.google_callback', _external=True)
     logger.info(f"🔐 Google OAuth redirect_uri: {redirect_uri}")
+    logger.info(f"🔐 User-Agent: {request.headers.get('User-Agent', 'Unknown')}")
     return google.authorize_redirect(redirect_uri)
 
 
 @auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
     """Handle Google OAuth callback - returns JWT token in URL"""
+    logger.info("============================================================")
     logger.info("🔍 OAUTH CALLBACK TRIGGERED")
+    logger.info(f"🔍 Request URL: {request.url}")
+    logger.info(f"🔍 Request referrer: {request.referrer}")
+    logger.info(f"🔍 User-Agent: {request.headers.get('User-Agent', 'Unknown')}")
+    logger.info(f"🔍 Request args: {dict(request.args)}")
+    logger.info("============================================================")
     
     try:
         token = google.authorize_access_token()
+        logger.info(f"✅ Token received: {token is not None}")
+        
         user_info = token.get('userinfo')
         
         if not user_info:
@@ -157,6 +189,7 @@ def google_callback():
 @auth_bp.route("/logout", methods=["POST"])
 def logout():
     """Logout user (client-side token removal)"""
+    logger.info("👋 User logged out")
     return jsonify({"status": "logged_out"}), 200
 
 
@@ -202,6 +235,8 @@ def auth_status():
     user_id = get_user_id_from_request()
     is_auth = is_user_authenticated()
     is_verified = is_user_verified()
+    
+    logger.info(f"Auth status check - authenticated: {is_auth}, verified: {is_verified}, user_id: {user_id}")
     
     return jsonify({
         "authenticated": is_auth,
