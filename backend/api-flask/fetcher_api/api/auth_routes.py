@@ -5,8 +5,9 @@ import os
 import logging
 import jwt
 from datetime import datetime, timedelta
+from functools import wraps
 
-from flask import Blueprint, request, jsonify, redirect, url_for
+from flask import Blueprint, request, jsonify, redirect, url_for, make_response
 from authlib.integrations.flask_client import OAuth
 
 from fetcher_api.adapters.db import execute, fetch_one
@@ -29,6 +30,44 @@ google = oauth.register(
 
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").rstrip("/")
 JWT_SECRET = os.getenv('SECRET_KEY', 'your-secret-key')
+
+# ✅ CORS allowed origins
+ALLOWED_ORIGINS = [
+    'https://recolekt-front.netlify.app',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+]
+
+# ---------------------------------------------------------
+# CORS DECORATOR
+# ---------------------------------------------------------
+
+def add_cors_headers(f):
+    """Add CORS headers to response"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Handle OPTIONS preflight
+        if request.method == 'OPTIONS':
+            response = make_response('', 200)
+        else:
+            response = make_response(f(*args, **kwargs))
+        
+        origin = request.headers.get('Origin', '')
+        
+        if origin in ALLOWED_ORIGINS:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Cache-Control, Pragma'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response.headers['Access-Control-Max-Age'] = '3600'
+            logger.debug(f"✅ CORS headers added for origin: {origin}")
+        else:
+            logger.warning(f"⚠️ CORS: Origin not allowed: {origin}")
+        
+        return response
+    return decorated_function
 
 # ---------------------------------------------------------
 # HELPER FUNCTIONS (USED BY ALL ROUTES)
@@ -186,16 +225,24 @@ def google_callback():
         return redirect(f'{FRONTEND_BASE_URL}/auth?error=oauth_failed')
 
 
-@auth_bp.route("/logout", methods=["POST"])
+@auth_bp.route("/logout", methods=["POST", "OPTIONS"])
+@add_cors_headers
 def logout():
     """Logout user (client-side token removal)"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
     logger.info("👋 User logged out")
     return jsonify({"status": "logged_out"}), 200
 
 
-@auth_bp.route("/me", methods=["GET"])
+@auth_bp.route("/me", methods=["GET", "OPTIONS"])
+@add_cors_headers
 def get_current_user():
     """Get current authenticated user from JWT token"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
     user_id = get_user_id_from_request()
     
     if not user_id:
@@ -229,9 +276,13 @@ def get_current_user():
         return jsonify({'error': 'Internal error'}), 500
 
 
-@auth_bp.route("/status", methods=["GET"])
+@auth_bp.route("/status", methods=["GET", "OPTIONS"])
+@add_cors_headers
 def auth_status():
     """Check if user is authenticated and verified"""
+    if request.method == 'OPTIONS':
+        return '', 200
+    
     user_id = get_user_id_from_request()
     is_auth = is_user_authenticated()
     is_verified = is_user_verified()
