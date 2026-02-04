@@ -16,27 +16,23 @@ import requests
 import numpy as np
 from PIL import Image
 
-from google.cloud import vision  # google-cloud-vision
+from google.cloud import vision
 
 # -------------------------------------------------
 # 🪄 1. Environment setup (FORCE root .env)
 # -------------------------------------------------
 
-# Path to project root .env
 ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
 
 print("DEBUG: ROOT_ENV path =", ROOT_ENV)
 print("DEBUG: ROOT_ENV exists? ", ROOT_ENV.exists())
 
-# Force load root .env
 load_dotenv(ROOT_ENV, override=True)
 
 print("DEBUG: Loaded DATABASE_URL =", os.getenv("DATABASE_URL"))
 
-# Add backend root to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# ✅ Use Mistral instead of Gemini
 os.environ.setdefault(
     "MISTRAL_API_KEY",
     os.getenv("MISTRAL_API_KEY", "")
@@ -72,12 +68,11 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 if not app:
     raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
 
-# Configure session - ✅ FIXED: No duplicates
+# Configure session - ✅ FIXED: Use client-side sessions for cross-domain
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
-app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_FILE_DIR'] = '/tmp/flask_session'
+app.config['SESSION_TYPE'] = 'null'  # ✅ Client-side signed cookies (not filesystem)
 app.config['SESSION_PERMANENT'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)  # ✅ FIXED: Was SESSION_PERMANENT_LIFETIME
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 app.config['SESSION_COOKIE_NAME'] = 'recolekt_session'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE'] = True
@@ -143,7 +138,6 @@ if os.getenv("MISTRAL_API_KEY"):
 else:
     logger.warning("⚠️ MISTRAL_API_KEY not found. AI summaries will not work.")
 
-# Verify OAuth credentials
 if google_client_id != 'NOT SET' and google_secret != 'NOT SET':
     logger.info("✅ Google OAuth credentials loaded successfully.")
 else:
