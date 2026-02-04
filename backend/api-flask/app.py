@@ -1,64 +1,71 @@
+# ============================================
+# LOAD ENVIRONMENT VARIABLES FIRST
+# ============================================
 import os
 import sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Detect environment: Docker/Railway vs Local
+IS_DOCKER = os.path.exists("/app/.env")
+IS_LOCAL = not IS_DOCKER
+
+print(f"🔍 Environment: {'DOCKER/RAILWAY' if IS_DOCKER else 'LOCAL DEVELOPMENT'}")
+
+if IS_LOCAL:
+    # Load .env.local for local development
+    env_local = Path(__file__).parent / '.env.local'
+    if env_local.exists():
+        print(f"✅ Loading local environment: {env_local}")
+        load_dotenv(env_local, override=True)
+    else:
+        print("⚠️ WARNING: .env.local not found in local mode!")
+else:
+    # Production: Load /app/.env
+    ROOT_ENV = Path("/app/.env")
+    if ROOT_ENV.exists():
+        print(f"✅ Loading production environment: {ROOT_ENV}")
+        load_dotenv(ROOT_ENV, override=True)
+
+# Verify critical variables
+print(f"🔍 DATABASE_URL: {'✅ Set' if os.getenv('DATABASE_URL') else '❌ Missing'}")
+print(f"🔍 MISTRAL_API_KEY: {'✅ Set' if os.getenv('MISTRAL_API_KEY') else '❌ Missing'}")
+print(f"🔍 FRONTEND_BASE_URL: {os.getenv('FRONTEND_BASE_URL', 'Not set')}")
+
+# ============================================
+# NOW IMPORT EVERYTHING ELSE
+# ============================================
 import logging
 import warnings
 import tempfile
 import subprocess
-from pathlib import Path
 from datetime import timedelta
 
 from flask import Flask, send_from_directory, request, jsonify
 from flask_cors import CORS
+from flask_session import Session
 from werkzeug.exceptions import HTTPException
-from dotenv import load_dotenv
 import requests
 import numpy as np
 from PIL import Image
 
-from google.cloud import vision
+from google.cloud import vision  # google-cloud-vision
 
-# -------------------------------------------------
-# 🪄 1. Environment setup (FORCE root .env)
-# -------------------------------------------------
+# Add backend root to Python path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
-
-print("DEBUG: ROOT_ENV path =", ROOT_ENV)
-print("DEBUG: ROOT_ENV exists? ", ROOT_ENV.exists())
-
-load_dotenv(ROOT_ENV, override=True)
-
-print("DEBUG: Loaded DATABASE_URL =", os.getenv("DATABASE_URL"))
-
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-os.environ.setdefault(
-    "MISTRAL_API_KEY",
-    os.getenv("MISTRAL_API_KEY", "")
-)
+# Set Mistral API key
+os.environ.setdefault("MISTRAL_API_KEY", os.getenv("MISTRAL_API_KEY", ""))
 
 warnings.filterwarnings("ignore")
 os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 # -------------------------------------------------
-# 🧾 Logging setup (MOVED UP - before using logger)
-# -------------------------------------------------
-werkzeug_log = logging.getLogger("werkzeug")
-werkzeug_log.setLevel(logging.WARNING)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-logger = logging.getLogger(__name__)
-
-# -------------------------------------------------
-# 🧠 2. Diagnostics before creating Flask app
+# 🧠 Import AI Service
 # -------------------------------------------------
 print("Python executable:", sys.executable)
-for p in sys.path:
+for p in sys.path[:3]:  # Only show first 3 paths
     print("   ", p)
 
 from fetcher_api.services.ai_service import ai_service
@@ -68,33 +75,31 @@ print("AIService class:", ai_service.__class__)
 print("Has analyze_content:", hasattr(ai_service, "analyze_content"))
 
 # -------------------------------------------------
-# ⚙️ 3. Flask setup
+# ⚙️ Flask setup
 # -------------------------------------------------
 from fetcher_api import create_app
 from fetcher_api.api import register_blueprints
 
 app = create_app()
-from werkzeug.middleware.proxy_fix import ProxyFix
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
-
 if not app:
     raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
 
-# Configure session - ✅ Use Flask's native client-side sessions
-secret_key = os.getenv('SECRET_KEY')
-if not secret_key or secret_key == 'your-secret-key-change-in-production':
-    # Generate fallback secret key (for dev only)
-    import secrets
-    secret_key = secrets.token_hex(32)
-    logger.warning("⚠️ Using generated SECRET_KEY - set SECRET_KEY env var in production!")
-
-app.config['SECRET_KEY'] = secret_key
+# Configure session
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_FILE_DIR'] = '/tmp/flask_session'
+app.config['SESSION_PERMANENT'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 app.config['SESSION_COOKIE_NAME'] = 'recolekt_session'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SECURE'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.config['SESSION_COOKIE_SECURE'] = not IS_LOCAL  # ✅ Only secure in production
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_DOMAIN'] = None
 app.config['SESSION_COOKIE_PATH'] = '/'
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+app.config['SESSION_REFRESH_EACH_REQUEST'] = False
+
+# Initialize Flask-Session
+Session(app)
 
 # Register blueprints
 register_blueprints(app)
@@ -114,32 +119,69 @@ print(f"SECRET_KEY: {flask_secret[:25]}..." if len(flask_secret) > 25 else f"SEC
 print("=" * 50)
 
 # -------------------------------------------------
-# 🌐 CORS - FIXED: Allow all headers (*)
+# 🌐 CORS - Environment-aware
 # -------------------------------------------------
-ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "https://recolekt-front.netlify.app"
-]
+if IS_LOCAL:
+    # Local: Allow localhost origins
+    cors_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+else:
+    # Production: Allow production frontend
+    cors_origins = [
+        os.getenv('FRONTEND_BASE_URL', 'https://recolekt-front.netlify.app')
+    ]
+
+print(f"🔍 CORS Origins: {cors_origins}")
 
 CORS(
     app,
-    origins=ALLOWED_ORIGINS,
-    supports_credentials=True,
-    allow_headers="*",
-    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    expose_headers=["Content-Type", "Authorization"],
-    max_age=3600
+    resources={r"/api/*": {
+        "origins": cors_origins,
+        "supports_credentials": True,
+        "allow_headers": ["Content-Type", "Authorization", "Cache-Control", "Pragma"],
+        "expose_headers": ["Set-Cookie"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "max_age": 3600
+    }},
+    supports_credentials=True
 )
 
+# ✅ Global OPTIONS handler
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = jsonify({"status": "ok"})
+        origin = request.headers.get("Origin", "*")
+        response.headers.add("Access-Control-Allow-Origin", origin)
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, Pragma")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        response.headers.add("Access-Control-Allow-Credentials", "true")
+        response.headers.add("Access-Control-Max-Age", "3600")
+        return response, 200
+
 # -------------------------------------------------
-# 🧾 Log credential status
+# 🧾 Logging
 # -------------------------------------------------
+werkzeug_log = logging.getLogger("werkzeug")
+werkzeug_log.setLevel(logging.WARNING)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger(__name__)
+
 if os.getenv("MISTRAL_API_KEY"):
     logger.info("✅ MISTRAL_API_KEY loaded successfully.")
 else:
     logger.warning("⚠️ MISTRAL_API_KEY not found. AI summaries will not work.")
 
+# Verify OAuth credentials
 if google_client_id != 'NOT SET' and google_secret != 'NOT SET':
     logger.info("✅ Google OAuth credentials loaded successfully.")
 else:
@@ -148,14 +190,13 @@ else:
 if flask_secret != 'NOT SET' and flask_secret != 'your-secret-key-change-in-production':
     logger.info("✅ Flask SECRET_KEY configured.")
 else:
-    logger.warning("⚠️ Flask SECRET_KEY not configured properly!")
+    logger.warning("⚠️ Flask SECRET_KEY not configured. Sessions will be insecure!")
 
 # -------------------------------------------------
-# ✅ CRITICAL: Global Error Handlers (JSON responses)
+# ✅ Global Error Handlers
 # -------------------------------------------------
 @app.errorhandler(Exception)
 def handle_error(e):
-    """Return JSON instead of HTML for all errors"""
     code = 500
     message = str(e)
     error_type = type(e).__name__
@@ -205,9 +246,8 @@ def internal_error(e):
     }), 500
 
 # -------------------------------------------------
-# 🔎 OCR helpers (Google Vision + stillness detection)
+# 🔎 OCR helpers
 # -------------------------------------------------
-
 def _download_to_file(url: str, out_path: str, timeout: int = 30) -> None:
     r = requests.get(url, stream=True, timeout=timeout)
     r.raise_for_status()
@@ -283,15 +323,6 @@ def _vision_ocr_from_bytes(image_bytes: bytes, mode: str = "document") -> str:
 # -------------------------------------------------
 @app.route("/api/ocr", methods=["POST", "OPTIONS"])
 def api_ocr():
-    """
-    JSON body:
-      {
-        "thumbnail_url": "...",
-        "video_url": "...",
-        "mode": "document",
-        "force_ocr": false
-      }
-    """
     if request.method == "OPTIONS":
         return "", 200
     
@@ -357,23 +388,37 @@ def api_ocr():
         return jsonify({"error": f"OCR failed: {e}"}), 500
 
 # -------------------------------------------------
-# 🎨 4. Serve frontend
+# 🎨 Serve frontend (production only)
 # -------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+if not IS_LOCAL:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 
-@app.route("/")
-def index():
-    return send_from_directory(FRONTEND_DIR, "index.html")
+    @app.route("/")
+    def index():
+        return send_from_directory(FRONTEND_DIR, "index.html")
 
-@app.route("/frontend/<path:path>")
-def frontend_static(path):
-    return send_from_directory(FRONTEND_DIR, path)
+    @app.route("/frontend/<path:path>")
+    def frontend_static(path):
+        return send_from_directory(FRONTEND_DIR, path)
 
 # -------------------------------------------------
-# 🚀 5. Entry point
+# 🚀 Entry point
 # -------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
-    logger.info(f"🚀 Running Instagram Summarization API on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
+    debug_mode = IS_LOCAL  # ✅ Debug only in local
+    
+    logger.info("=" * 60)
+    logger.info(f"🚀 Starting Flask app")
+    logger.info(f"   Environment: {'LOCAL DEV' if IS_LOCAL else 'PRODUCTION'}")
+    logger.info(f"   Port: {port}")
+    logger.info(f"   Debug: {debug_mode}")
+    logger.info("=" * 60)
+    
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=debug_mode,
+        threaded=True
+    )
