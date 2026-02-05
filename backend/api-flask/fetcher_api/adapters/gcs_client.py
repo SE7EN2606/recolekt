@@ -2,6 +2,7 @@ import os
 import time
 import json
 import logging
+import tempfile
 from urllib.parse import urlparse
 
 import requests
@@ -24,8 +25,42 @@ class GCSClient:
 
     def _initialize(self):
         try:
-            # Use credentials file for local dev
-            if self.credentials_path and os.path.exists(self.credentials_path):
+            logger.info("🔍 checking GCP credentials...")
+            
+            # ✅ Option 1: Check for JSON in environment variable (Railway/production)
+            gcs_json = os.environ.get('GCS_CREDENTIALS_JSON')
+            if gcs_json:
+                logger.info("🔍 Using GCS_CREDENTIALS_JSON from environment")
+                try:
+                    creds_data = json.loads(gcs_json)
+                    project_id = creds_data.get('project_id')
+                    client_email = creds_data.get('client_email')
+                    
+                    logger.info(f"🔍 Project: {project_id}")
+                    logger.info(f"🔍 Service Account: {client_email}")
+                    
+                    if not creds_data.get('private_key'):
+                        raise ValueError("Missing private_key in credentials JSON")
+                    
+                    # ✅ Write to temp file for google.cloud.storage
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                        json.dump(creds_data, f)
+                        temp_creds_path = f.name
+                    
+                    self.client = storage.Client.from_service_account_json(temp_creds_path)
+                    
+                    # Clean up temp file
+                    try:
+                        os.unlink(temp_creds_path)
+                    except:
+                        pass
+                        
+                except json.JSONDecodeError as e:
+                    logger.error(f"❌ Invalid JSON in GCS_CREDENTIALS_JSON: {e}")
+                    return False
+            
+            # ✅ Option 2: Use credentials file for local dev
+            elif self.credentials_path and os.path.exists(self.credentials_path):
                 logger.info(f"🔍 Loading GCS credentials from: {self.credentials_path}")
                 
                 # Validate JSON structure
@@ -44,10 +79,11 @@ class GCSClient:
                 self.client = storage.Client.from_service_account_json(
                     self.credentials_path
                 )
+            
+            # ✅ Option 3: Use Cloud Run's default service account
             else:
-                # Use Cloud Run's default service account
-                logger.info("🔍 Using default GCP service account")
-                self.client = storage.Client()
+                logger.warning("⚠️ Google Cloud Credentials not found. GCS features will be DISABLED.")
+                return False
 
             # Verify bucket access
             logger.info(f"🔍 Testing access to bucket: {self.analysis_bucket_name}")
@@ -67,9 +103,10 @@ class GCSClient:
             logger.error(traceback.format_exc())
             return False
 
-    # ------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------
+    # ... rest of the class stays the same ...
+    
+    # [Keep all other methods unchanged - upload_file, download_blob_to_file, etc.]
+
     @staticmethod
     def _public_url(bucket_name: str, blob_name: str) -> str:
         return f"https://storage.googleapis.com/{bucket_name}/{blob_name}"
@@ -109,9 +146,6 @@ class GCSClient:
 
         raise ValueError(f"Unrecognized GCS URL host: {host}")
 
-    # ------------------------------------------------------------
-    # Fast retry upload with configurable timeout
-    # ------------------------------------------------------------
     def upload_file(
         self,
         local_file_path,
@@ -142,7 +176,6 @@ class GCSClient:
                     retry=None
                 )
 
-                # ✅ Return public URL without setting ACL (bucket is already public)
                 url = self._public_url(gcs_bucket_name, gcs_blob_name)
 
                 logger.info(
@@ -165,9 +198,6 @@ class GCSClient:
                 logger.error(f"Unexpected GCS upload error: {e}")
                 return None
 
-    # ------------------------------------------------------------
-    # Download helpers
-    # ------------------------------------------------------------
     def download_blob_to_file(
         self,
         gcs_bucket_name: str,

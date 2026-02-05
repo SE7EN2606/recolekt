@@ -86,7 +86,6 @@ print("Has analyze_content:", hasattr(ai_service, "analyze_content"))
 # ⚙️ Flask setup
 # -------------------------------------------------
 from fetcher_api import create_app
-from fetcher_api.api import register_blueprints
 
 app = create_app()
 if not app:
@@ -110,31 +109,8 @@ app.config['SESSION_REFRESH_EACH_REQUEST'] = False
 Session(app)
 
 # -------------------------------------------------
-# 🔐 Initialize OAuth BEFORE registering blueprints
-# -------------------------------------------------
-from authlib.integrations.flask_client import OAuth
-
-oauth = OAuth(app)
-oauth.register(
-    name='google',
-    client_id=os.getenv('GOOGLE_CLIENT_ID'),
-    client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
-    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
-    client_kwargs={'scope': 'openid email profile'}
-)
-
-# Store oauth in app config so routes can access it
-app.config['oauth'] = oauth
-logger.info("✅ OAuth initialized with Google provider")
-
-# Register all blueprints AFTER OAuth initialization
-from fetcher_api.api import register_blueprints
-register_blueprints(app)
-
-# -------------------------------------------------
 # 🔍 Environment Variables Check
 # -------------------------------------------------
-
 print("=" * 50)
 print("🔍 Environment Variables Check:")
 google_client_id = os.getenv('GOOGLE_CLIENT_ID', 'NOT SET')
@@ -180,6 +156,62 @@ CORS(
     always_send=True
 )
 
+# -------------------------------------------------
+# 🧾 Logging (MUST be defined before OAuth)
+# -------------------------------------------------
+werkzeug_log = logging.getLogger("werkzeug")
+werkzeug_log.setLevel(logging.WARNING)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger(__name__)
+
+# -------------------------------------------------
+# 🔐 Initialize OAuth (AFTER logger is created)
+# -------------------------------------------------
+from authlib.integrations.flask_client import OAuth
+
+oauth = OAuth(app)
+oauth.register(
+    name='google',
+    client_id=google_client_id,
+    client_secret=google_secret,
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'}
+)
+
+# Store oauth in app config so routes can access it
+app.config['oauth'] = oauth
+logger.info("✅ OAuth initialized with Google provider")
+
+# -------------------------------------------------
+# Register all blueprints (AFTER OAuth initialization)
+# -------------------------------------------------
+from fetcher_api.api import register_blueprints
+register_blueprints(app)
+
+# -------------------------------------------------
+# Check environment variables
+# -------------------------------------------------
+if os.getenv("MISTRAL_API_KEY"):
+    logger.info("✅ MISTRAL_API_KEY loaded successfully.")
+else:
+    logger.warning("⚠️ MISTRAL_API_KEY not found. AI summaries will not work.")
+
+# Verify OAuth credentials
+if google_client_id != 'NOT SET' and google_secret != 'NOT SET':
+    logger.info("✅ Google OAuth credentials loaded successfully.")
+else:
+    logger.warning("⚠️ Google OAuth credentials missing. Login will not work.")
+
+if flask_secret != 'NOT SET' and flask_secret != 'your-secret-key-change-in-production':
+    logger.info("✅ Flask SECRET_KEY configured.")
+else:
+    logger.warning("⚠️ Flask SECRET_KEY not configured. Sessions will be insecure!")
+
 # ✅ Global after_request handler for ALL routes
 @app.after_request
 def add_cors_headers_global(response):
@@ -214,35 +246,6 @@ def handle_preflight():
         else:
             logger.warning(f"⚠️ CORS: Blocked preflight from unauthorized origin: {origin}")
             return jsonify({"error": "CORS origin not allowed"}), 403
-
-# -------------------------------------------------
-# 🧾 Logging
-# -------------------------------------------------
-werkzeug_log = logging.getLogger("werkzeug")
-werkzeug_log.setLevel(logging.WARNING)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-logger = logging.getLogger(__name__)
-
-if os.getenv("MISTRAL_API_KEY"):
-    logger.info("✅ MISTRAL_API_KEY loaded successfully.")
-else:
-    logger.warning("⚠️ MISTRAL_API_KEY not found. AI summaries will not work.")
-
-# Verify OAuth credentials
-if google_client_id != 'NOT SET' and google_secret != 'NOT SET':
-    logger.info("✅ Google OAuth credentials loaded successfully.")
-else:
-    logger.warning("⚠️ Google OAuth credentials missing. Login will not work.")
-
-if flask_secret != 'NOT SET' and flask_secret != 'your-secret-key-change-in-production':
-    logger.info("✅ Flask SECRET_KEY configured.")
-else:
-    logger.warning("⚠️ Flask SECRET_KEY not configured. Sessions will be insecure!")
 
 # -------------------------------------------------
 # ✅ Global Error Handlers

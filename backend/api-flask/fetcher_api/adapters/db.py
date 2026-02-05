@@ -10,14 +10,16 @@ from pathlib import Path
 logger = logging.getLogger("db")
 
 # -------------------------------------------------
-# 🔒 Force-load root .env (always overrides system env)
+# 🔒 Load environment variables (but don't fail at import)
 # -------------------------------------------------
 ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
-load_dotenv(ROOT_ENV, override=True)
+if ROOT_ENV.exists():
+    load_dotenv(ROOT_ENV, override=True)
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is missing after loading .env")
+# Also try .env.local
+LOCAL_ENV = Path(__file__).resolve().parents[2] / ".env.local"
+if LOCAL_ENV.exists():
+    load_dotenv(LOCAL_ENV, override=True)
 
 # -------------------------------------------------
 # Lazy connection holder
@@ -31,11 +33,15 @@ def get_conn():
     Reconnects automatically if Neon closes idle sessions.
     """
     global _conn
+    
+    # Check for DATABASE_URL here, not at module import time
+    DATABASE_URL = os.environ.get("DATABASE_URL")
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not set. Check your .env.local file.")
 
     if _conn is None:
         logger.info("📡 Creating initial PostgreSQL connection...")
         _conn = psycopg2.connect(DATABASE_URL, sslmode="require")
-        # ✅ REMOVED autocommit - we want manual transaction control
         return _conn
 
     try:

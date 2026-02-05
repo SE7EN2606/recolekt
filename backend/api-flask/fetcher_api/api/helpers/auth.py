@@ -1,152 +1,65 @@
-# fetcher_api/api/routes/auth.py
+# fetcher_api/api/helpers/auth.py
 
 import os
 import logging
-from flask import Blueprint, request, jsonify, session, redirect, url_for, current_app
-from fetcher_api.adapters.db import execute, fetchone
-from fetcher_api.utils.timestamps import get_timestamp
-import jwt
-from datetime import datetime, timedelta, timezone
+from flask import session, request
+from fetcher_api.adapters.db import execute, fetch_one
 
-auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 logger = logging.getLogger('auth')
 
-# OAuth helper
-def get_google_client():
-    """Get Google OAuth client from app config"""
-    oauth = current_app.config.get('oauth')
-    if not oauth:
-        raise RuntimeError('OAuth not initialized')
-    return oauth.create_client('google')
 
-@auth_bp.route('/google', methods=['GET'])
-def google_login():
-    """Initiate Google OAuth login"""
-    try:
-        google = get_google_client()
-        
-        # Build callback URL
-        redirect_uri = url_for('auth.google_callback', _external=True)
-        
-        logger.info(f"🔐 Google OAuth redirect_uri: {redirect_uri}")
-        logger.info(f"🔐 Environment: {'LOCAL' if 'localhost' in redirect_uri else 'PRODUCTION'}")
-        logger.info(f"🔐 User-Agent: {request.headers.get('User-Agent', 'Unknown')}")
-        
-        return google.authorize_redirect(redirect_uri)
-    except Exception as e:
-        logger.error(f"❌ Google login failed: {e}", exc_info=True)
-        return jsonify({'error': 'OAuth initialization failed', 'details': str(e)}), 500
-
-@auth_bp.route('/google/callback')
-def google_callback():
-    """Handle Google OAuth callback"""
-    try:
-        google = get_google_client()
-        
-        # Get access token
-        token = google.authorize_access_token()
-        
-        # Get user info
-        resp = google.get('https://www.googleapis.com/oauth2/v3/userinfo')
-        user_info = resp.json()
-        
-        email = user_info.get('email')
-        name = user_info.get('name', '')
-        picture = user_info.get('picture', '')
-        google_id = user_info.get('sub')
-        
-        if not email or not google_id:
-            logger.error("❌ Missing email or google_id in OAuth response")
-            return redirect(f"{os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000')}/login?error=missing_data")
-        
-        logger.info(f"✅ Google OAuth successful for: {email}")
-        
-        # Check if user exists
-        existing_user = fetchone(
-            "SELECT id, email, name, picture FROM users WHERE email = %s",
-            (email,)
-        )
-        
-        if existing_user:
-            user_id = existing_user['id'] if hasattr(existing_user, 'keys') else existing_user[0]
-            logger.info(f"✅ Existing user logged in: {email} (ID: {user_id})")
-            
-            # Update user info
-            execute(
-                """
-                UPDATE users 
-                SET name = %s, picture = %s, googleid = %s, lastseenat = NOW(), updatedat = NOW()
-                WHERE email = %s
-                """,
-                (name, picture, google_id, email)
-            )
-        else:
-            # Create new user
-            execute(
-                """
-                INSERT INTO users (email, name, picture, googleid, createdat, updatedat, lastseenat)
-                VALUES (%s, %s, %s, %s, NOW(), NOW(), NOW())
-                """,
-                (email, name, picture, google_id)
-            )
-            
-            new_user = fetchone("SELECT id FROM users WHERE email = %s", (email,))
-            user_id = new_user['id'] if hasattr(new_user, 'keys') else new_user[0]
-            logger.info(f"✅ New user created: {email} (ID: {user_id})")
-        
-        # Create JWT token
-        jwt_secret = os.getenv('SECRET_KEY', 'your-secret-key')
-        jwt_payload = {
-            'user_id': user_id,
-            'email': email,
-            'exp': datetime.now(timezone.utc) + timedelta(days=7)
-        }
-        jwt_token = jwt.encode(jwt_payload, jwt_secret, algorithm='HS256')
-        
-        # Store in session (backup)
-        session['user_id'] = user_id
-        session['email'] = email
-        session.permanent = True
-        
-        # Redirect to frontend with JWT token
-        frontend_url = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000')
-        return redirect(f"{frontend_url}/auth/callback?token={jwt_token}")
-        
-    except Exception as e:
-        logger.error(f"❌ Google callback failed: {e}", exc_info=True)
-        frontend_url = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000')
-        return redirect(f"{frontend_url}/login?error=auth_failed")
-
-@auth_bp.route('/logout', methods=['POST'])
-def logout():
-    """Logout user"""
-    session.clear()
-    return jsonify({'message': 'Logged out successfully'}), 200
-
-@auth_bp.route('/me', methods=['GET'])
-def get_current_user():
-    """Get current authenticated user"""
+def get_user_id_from_request():
+    """
+    Get user_id from session or Authorization header (JWT).
+    Raises ValueError if not authenticated.
+    """
+    # Try session first
     user_id = session.get('user_id')
     
-    if not user_id:
-        return jsonify({'error': 'Not authenticated'}), 401
+    if user_id:
+        logger.debug(f"✅ User authenticated via session: {user_id}")
+        return user_id
     
-    user = fetchone(
-        "SELECT id, email, name, picture FROM users WHERE id = %s",
-        (user_id,)
+    # Try JWT from Authorization header
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        token = auth_header.replace('Bearer ', '').strip()
+        if token:
+            try:
+                import jwt
+                jwt_secret = os.getenv('SECRET_KEY', 'your-secret-key')
+                payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
+                user_id = payload.get('user_id')
+                
+                if user_id:
+                    logger.debug(f"✅ User authenticated via JWT: {user_id}")
+                    return user_id
+            except jwt.ExpiredSignatureError:
+                logger.warning("JWT token expired")
+            except jwt.InvalidTokenError as e:
+                logger.warning(f"Invalid JWT token: {e}")
+    
+    logger.warning("❌ No valid authentication found")
+    raise ValueError("User not authenticated")
+
+
+def ensure_billing_customer(user_id: str):
+    """Ensure billing customer record exists"""
+    execute(
+        "INSERT INTO billing_customers (user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING",
+        (user_id,),
+        commit=True
     )
-    
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
-    
-    if hasattr(user, 'keys'):
-        user_dict = dict(user)
-    else:
-        user_dict = {
-            'id': user[0],
-            'email': user[1],
-            'name': user[2],
-            'picture': user[3]
-        }
-    
-    return jsonify(user_dict), 200
+
+
+def get_plan(user_id: str) -> str:
+    """Get user's subscription plan"""
+    ensure_billing_customer(user_id)
+    row = fetch_one("SELECT plan FROM user_entitlements WHERE user_id=%s", (user_id,))
+    return (row or {}).get('plan', 'free')
+
+
+def count_saves(user_id: str) -> int:
+    """Count user's saved reels"""
+    row = fetch_one("SELECT COUNT(*)::int AS c FROM reels WHERE user_id=%s", (user_id,))
+    return int((row or {}).get('c', 0))
