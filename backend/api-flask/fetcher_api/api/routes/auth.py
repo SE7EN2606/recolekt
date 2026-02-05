@@ -7,7 +7,7 @@ from fetcher_api.adapters.db import execute, fetch_one
 from datetime import datetime, timedelta, timezone
 import jwt
 
-auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
+auth_bp = Blueprint('auth', __name__)
 logger = logging.getLogger('auth')
 
 
@@ -25,12 +25,15 @@ def google_login():
     try:
         google = get_google_client()
         
+        # Determine scheme based on environment
+        is_local = os.getenv('FLASK_ENV') == 'development' or not os.getenv('RAILWAY_ENVIRONMENT')
+        scheme = 'http' if is_local else 'https'
+        
         # Build callback URL
-        redirect_uri = url_for('auth.google_callback', _external=True)
+        redirect_uri = url_for('auth.google_callback', _external=True, _scheme=scheme)
         
         logger.info(f"🔐 Google OAuth redirect_uri: {redirect_uri}")
-        logger.info(f"🔐 Environment: {'LOCAL' if 'localhost' in redirect_uri else 'PRODUCTION'}")
-        logger.info(f"🔐 User-Agent: {request.headers.get('User-Agent', 'Unknown')}")
+        logger.info(f"🔐 Environment: {'LOCAL' if is_local else 'PRODUCTION'}")
         
         return google.authorize_redirect(redirect_uri)
     except Exception as e:
@@ -59,7 +62,7 @@ def google_callback():
         if not email or not google_id:
             logger.error("❌ Missing email or google_id in OAuth response")
             frontend_url = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000')
-            return redirect(f"{frontend_url}/login?error=missing_data")
+            return redirect(f"{frontend_url}/auth?error=missing_data")
         
         logger.info(f"✅ Google OAuth successful for: {email}")
         
@@ -70,7 +73,12 @@ def google_callback():
         )
         
         if existing_user:
-            user_id = existing_user['id']
+            # Handle both dict and tuple response
+            if isinstance(existing_user, dict):
+                user_id = existing_user['id']
+            else:
+                user_id = existing_user[0]
+            
             logger.info(f"✅ Existing user logged in: {email} (ID: {user_id})")
             
             # Update user info
@@ -95,31 +103,39 @@ def google_callback():
             )
             
             new_user = fetch_one("SELECT id FROM users WHERE email = %s", (email,))
-            user_id = new_user['id']
+            if isinstance(new_user, dict):
+                user_id = new_user['id']
+            else:
+                user_id = new_user[0]
+            
             logger.info(f"✅ New user created: {email} (ID: {user_id})")
         
         # Create JWT token
         jwt_secret = os.getenv('SECRET_KEY', 'your-secret-key')
-        jwt_payload = {
-            'user_id': user_id,
-            'email': email,
-            'exp': datetime.now(timezone.utc) + timedelta(days=7)
-        }
-        jwt_token = jwt.encode(jwt_payload, jwt_secret, algorithm='HS256')
+        jwt_token = jwt.encode(
+            {
+                'user_id': user_id,
+                'email': email,
+                'exp': datetime.now(timezone.utc) + timedelta(days=7),
+                'iat': datetime.now(timezone.utc)
+            },
+            jwt_secret,
+            algorithm='HS256'
+        )
         
-        # Store in session (backup)
+        # Store in session as backup
         session['user_id'] = user_id
         session['email'] = email
         session.permanent = True
         
         # Redirect to frontend with JWT token
         frontend_url = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000')
-        return redirect(f"{frontend_url}/auth/callback?token={jwt_token}")
+        return redirect(f"{frontend_url}/gallery?token={jwt_token}")
         
     except Exception as e:
         logger.error(f"❌ Google callback failed: {e}", exc_info=True)
         frontend_url = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000')
-        return redirect(f"{frontend_url}/login?error=auth_failed")
+        return redirect(f"{frontend_url}/auth?error=auth_failed")
 
 
 @auth_bp.route('/logout', methods=['POST', 'OPTIONS'])
@@ -138,53 +154,68 @@ def get_current_user():
     if request.method == 'OPTIONS':
         return '', 200
     
-    # Try JWT first
-    auth_header = request.headers.get('Authorization', '')
-    if auth_header.startswith('Bearer '):
-        token = auth_header.replace('Bearer ', '').strip()
-        try:
-            jwt_secret = os.getenv('SECRET_KEY', 'your-secret-key')
-            payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
-            user_id = payload.get('user_id')
-            
+    try:
+        user_id = None
+        
+        # Try JWT first
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header.replace('Bearer ', '').strip()
+            try:
+                jwt_secret = os.getenv('SECRET_KEY', 'your-secret-key')
+                payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
+                user_id = payload.get('user_id')
+                logger.info(f"✅ JWT auth successful for user_id: {user_id}")
+            except jwt.ExpiredSignatureError:
+                logger.warning("⚠️ JWT token expired")
+            except jwt.InvalidTokenError as e:
+                logger.warning(f"⚠️ Invalid JWT token: {e}")
+        
+        # Fall back to session
+        if not user_id:
+            user_id = session.get('user_id')
             if user_id:
-                user = fetch_one(
-                    "SELECT id, email, name, picture FROM users WHERE id = %s",
-                    (user_id,)
-                )
-                
-                if user:
-                    return jsonify({
-                        'id': user['id'],
-                        'email': user['email'],
-                        'name': user['name'],
-                        'picture': user['picture']
-                    }), 200
-        except jwt.ExpiredSignatureError:
-            logger.warning("JWT token expired")
-        except jwt.InvalidTokenError as e:
-            logger.warning(f"Invalid JWT token: {e}")
-    
-    # Fall back to session
-    user_id = session.get('user_id')
-    
-    if not user_id:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    user = fetch_one(
-        "SELECT id, email, name, picture FROM users WHERE id = %s",
-        (user_id,)
-    )
-    
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
-    
-    return jsonify({
-        'id': user['id'],
-        'email': user['email'],
-        'name': user['name'],
-        'picture': user['picture']
-    }), 200
+                logger.info(f"✅ Session auth successful for user_id: {user_id}")
+        
+        if not user_id:
+            logger.warning("❌ No authentication found")
+            return jsonify({'authenticated': False, 'error': 'Not authenticated'}), 401
+        
+        # Fetch user from database
+        user = fetch_one(
+            "SELECT id, email, name, picture FROM users WHERE id = %s",
+            (user_id,)
+        )
+        
+        if not user:
+            logger.error(f"❌ User not found in database: {user_id}")
+            return jsonify({'authenticated': False, 'error': 'User not found'}), 404
+        
+        # Handle both dict and tuple response
+        if isinstance(user, dict):
+            user_data = {
+                'id': user['id'],
+                'email': user['email'],
+                'name': user['name'],
+                'picture': user['picture']
+            }
+        else:
+            user_data = {
+                'id': user[0],
+                'email': user[1],
+                'name': user[2],
+                'picture': user[3]
+            }
+        
+        logger.info(f"✅ /me endpoint successful for: {user_data['email']}")
+        return jsonify({
+            'authenticated': True,
+            'user': user_data
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"❌ /me endpoint error: {e}", exc_info=True)
+        return jsonify({'authenticated': False, 'error': 'Internal server error', 'details': str(e)}), 500
 
 
 @auth_bp.route('/check', methods=['GET', 'OPTIONS'])
