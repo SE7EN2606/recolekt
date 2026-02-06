@@ -236,10 +236,11 @@ def parse_time_duration(duration: str) -> Optional[int]:
         return None
 
 
-def get_video_duration(video_path: str) -> Optional[int]:
+def get_video_duration(video_path: str) -> tuple[Optional[str], Optional[int]]:
     """
-    Get video duration in seconds using ffprobe.
-    Returns None if ffprobe fails or video_path is invalid.
+    Get video duration using ffprobe.
+    Returns (duration_str, duration_seconds) tuple.
+    Example: ("00:21", 21) or (None, None) if failed.
     """
     try:
         result = subprocess.run(
@@ -256,17 +257,24 @@ def get_video_duration(video_path: str) -> Optional[int]:
         )
         
         if result.returncode == 0 and result.stdout.strip():
-            duration = float(result.stdout.strip())
-            return int(duration)
-        
-        return None
-    
-    except (subprocess.TimeoutExpired, subprocess.SubprocessError, ValueError) as e:
-        logger.warning(f"Failed to get video duration for {video_path}: {e}")
-        return None
-    except FileNotFoundError:
-        logger.warning("ffprobe not found. Install ffmpeg to get video duration.")
-        return None
+            duration_seconds = int(float(result.stdout.strip()))
+            
+            # Format as MM:SS
+            minutes = duration_seconds // 60
+            seconds = duration_seconds % 60
+            duration_str = f"{minutes:02d}:{seconds:02d}"
+            
+            return duration_str, duration_seconds
+        else:
+            logger.warning(f"⚠️ ffprobe returned empty or error for: {video_path}")
+            return None, None
+            
+    except subprocess.TimeoutExpired:
+        logger.error(f"❌ ffprobe timeout for: {video_path}")
+        return None, None
+    except Exception as e:
+        logger.error(f"❌ Error getting video duration: {e}")
+        return None, None
 
 
 # ==================== FILE NAME SANITIZATION ====================

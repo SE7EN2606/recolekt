@@ -68,14 +68,14 @@ def google_callback():
         
         # Check if user exists
         existing_user = fetch_one(
-            "SELECT id, email, name, picture FROM users WHERE email = %s",
+            "SELECT user_id, email, name, picture FROM users WHERE email = %s",
             (email,)
         )
         
         if existing_user:
             # Handle both dict and tuple response
             if isinstance(existing_user, dict):
-                user_id = existing_user['id']
+                user_id = existing_user['user_id']
             else:
                 user_id = existing_user[0]
             
@@ -85,28 +85,26 @@ def google_callback():
             execute(
                 """
                 UPDATE users 
-                SET name = %s, picture = %s, googleid = %s, lastseenat = NOW(), updatedat = NOW()
+                SET name = %s, picture = %s, google_id = %s, updated_at = NOW()
                 WHERE email = %s
                 """,
                 (name, picture, google_id, email),
                 commit=True
             )
         else:
+            # Generate unique user_id
+            from fetcher_api.utils.timestamps import get_unique_id
+            user_id = get_unique_id(email)
+            
             # Create new user
             execute(
                 """
-                INSERT INTO users (email, name, picture, googleid, createdat, updatedat, lastseenat)
-                VALUES (%s, %s, %s, %s, NOW(), NOW(), NOW())
+                INSERT INTO users (user_id, email, name, picture, google_id, verified, created_at)
+                VALUES (%s, %s, %s, %s, %s, TRUE, NOW())
                 """,
-                (email, name, picture, google_id),
+                (user_id, email, name, picture, google_id),
                 commit=True
             )
-            
-            new_user = fetch_one("SELECT id FROM users WHERE email = %s", (email,))
-            if isinstance(new_user, dict):
-                user_id = new_user['id']
-            else:
-                user_id = new_user[0]
             
             logger.info(f"✅ New user created: {email} (ID: {user_id})")
         
@@ -183,7 +181,7 @@ def get_current_user():
         
         # Fetch user from database
         user = fetch_one(
-            "SELECT id, email, name, picture FROM users WHERE id = %s",
+            "SELECT user_id, email, name, picture FROM users WHERE user_id = %s",
             (user_id,)
         )
         
@@ -194,7 +192,7 @@ def get_current_user():
         # Handle both dict and tuple response
         if isinstance(user, dict):
             user_data = {
-                'id': user['id'],
+                'id': user['user_id'],
                 'email': user['email'],
                 'name': user['name'],
                 'picture': user['picture']
