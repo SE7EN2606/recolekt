@@ -113,8 +113,8 @@ export const Gallery: React.FC = () => {
       const idsArray = Array.from(selectedIds);
       
       for (const id of idsArray) {
-        const encodedId = encodeURIComponent(id);
-        const url = joinUrl(API_BASE, `/api/update_reel/${encodedId}`);
+        const encodedId = encodeURIComponent(String(id)); // ✅ FIXED: Cast to String
+        const url = joinUrl(API_BASE, `/api/reel/${encodedId}`);
         
         await fetch(url, {
           method: 'PUT',

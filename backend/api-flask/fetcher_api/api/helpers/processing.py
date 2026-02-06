@@ -31,7 +31,7 @@ def cleanup_video_from_gcs(shortcode):
     """Delete MP4 video from GCS after processing completes (keeps thumbnails + JSONs)"""
     try:
         storage_client = storage.Client()
-        bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-analysis")
+        bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-storage")  # ✅ FIXED
         bucket = storage_client.bucket(bucket_name)
 
         video_path = f"media/IG_reels/{shortcode}/{shortcode}_video.mp4"
@@ -267,7 +267,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
         # 6. Upload Caption + Transcription JSONs to GCS
         if save_to_gcs and gcs_client.available:
             try:
-                bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-analysis")
+                bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
                 storage_client = storage.Client()
                 bucket = storage_client.bucket(bucket_name)
 
@@ -322,11 +322,6 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
 
         logger.info(f"💾 Saving to database with duration={result.get('duration')}")
         insert_reel_into_db(result)
-
-        # 9. Cleanup MP4 from GCS
-        if video_uploaded_successfully:
-            logger.info("🗑️ Processing complete - cleaning up MP4 from GCS...")
-            cleanup_video_from_gcs(shortcode)
 
         # Log completion
         safe_title = display_title
