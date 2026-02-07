@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 
-import { LanguageProvider } from './context/LanguageContext'; // ✅ FIXED: was LanguageProvider
+import { LanguageProvider } from './context/LanguageContext';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
+import { MobileBottomNav } from './components/MobileBottomNav';
+import { AddVideoModal } from './components/AddVideoModal';
 import { Home } from './pages/Home';
 import { Gallery } from './pages/Gallery';
 import { VideoDetail } from './pages/VideoDetail';
@@ -14,15 +16,20 @@ import { BillingPage } from './pages/BillingPage';
 import { Features } from './pages/Features';
 import { Auth } from './pages/Auth';
 import { AccountSettings } from './pages/AccountSettings'; 
-import { AppSettings } from './pages/AppSettings'; 
+import { AppSettings } from './pages/AppSettings';
+import { useAuth } from './context/AuthContext';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
+  const { user } = useAuth();
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
   const isHomePage = location.pathname === '/';
   const isFeaturesPage = location.pathname === '/features';
   const isAuthPage = location.pathname === '/auth';
   
-  const showSidebar = !isHomePage && !isFeaturesPage && !isAuthPage;
+  const showSidebar = !isHomePage && !isFeaturesPage && !isAuthPage && user;
+  const showMobileNav = user && !isHomePage && !isFeaturesPage && !isAuthPage;
 
   if (isAuthPage) {
     return <>{children}</>;
@@ -42,6 +49,19 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <div className="flex-1 w-full min-w-0">{children}</div>
         </div>
       </main>
+
+      {/* Mobile Bottom Navigation */}
+      {showMobileNav && (
+        <MobileBottomNav onAddClick={() => setIsAddModalOpen(true)} />
+      )}
+
+      {/* Add Video Modal */}
+      {user && (
+        <AddVideoModal 
+          isOpen={isAddModalOpen} 
+          onClose={() => setIsAddModalOpen(false)} 
+        />
+      )}
 
       {!isAuthPage && (
         <footer className="hidden md:block bg-dark-900 text-white pt-16 pb-24 md:pb-8 border-t border-gray-800">
