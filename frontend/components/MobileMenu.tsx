@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
   X, 
   Search, 
-  Folder, 
+  FolderOpen, 
   Plus, 
   LayoutGrid, 
   Heart, 
@@ -36,7 +36,7 @@ interface MobileMenuProps {
 }
 
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
-  const { folders, addFolder } = useData();
+  const { folders, addFolder, videos } = useData();
   const { user, signOut } = useAuth();
   
   const [shouldRender, setShouldRender] = useState(false);
@@ -75,6 +75,11 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   const systemIds = ['all', 'favorites', 'shared', 'archive'];
   const customFolders = (folders || []).filter(f => !systemIds.includes(f.id));
   const parentOptions = customFolders.map(f => ({ id: f.id, name: f.name }));
+
+  // ✅ Calculate video count for each folder
+  const getVideoCount = (folderId: string) => {
+    return videos.filter(v => v.folderId === folderId).length;
+  };
 
   if (!shouldRender) return null;
 
@@ -138,7 +143,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     ))}
                   </div>
 
-                  {/* ✅ FIXED: Removed Google/Apple buttons, kept only Sign In/Up linking to /auth */}
                   <div className="mt-auto pb-12">
                     <div className="space-y-4">
                       <Button 
@@ -209,12 +213,12 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                               <div key={folder.id} className="border-b border-gray-50 last:border-0">
                                 <button onClick={() => handleNav(`/gallery/${folder.id}`)} className="w-full flex items-center justify-between p-5 group transition-all active:bg-gray-50">
                                   <div className="flex items-center gap-4">
-                                    <Folder size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                                    <FolderOpen size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                                     <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{folder.name}</span>
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md tracking-wider group-hover:bg-primary-50 group-hover:text-primary-600 transition-colors">
-                                      {(folder as any).itemCount || 0}
+                                      {getVideoCount(folder.id)}
                                     </span>
                                   </div>
                                 </button>

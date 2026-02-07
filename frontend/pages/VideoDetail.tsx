@@ -48,16 +48,22 @@ const normalizeSummaryTextObj = (obj: any) => {
 
   if (obj.english || obj.original) {
     return {
-      ...obj,
-      english: obj.english ?? enCandidate,
-      original: obj.original ?? ogCandidate,
+      english: enCandidate,
+      original: ogCandidate,
     };
   }
 
 
-  if (enCandidate || ogCandidate) {
+  if (obj.EN || obj.OG) {
     return {
-      ...obj,
+      english: enCandidate,
+      original: ogCandidate,
+    };
+  }
+
+
+  if (obj.en || obj.og) {
+    return {
       english: enCandidate,
       original: ogCandidate,
     };
@@ -84,55 +90,46 @@ const extractTranscriptText = (maybe: any): string => {
 };
 
 
-const extractSummaryString = (maybe: any, showOriginal: boolean): string => {
-  if (typeof maybe === 'string') return maybe;
+const extractSummaryString = (obj: any, preferOriginal: boolean): string => {
+  if (!obj || typeof obj !== 'object') return '';
 
 
-  const obj = normalizeSummaryTextObj(maybe);
-  const chosen = showOriginal ? (obj?.original ?? null) : (obj?.english ?? null);
+  const en = obj.english;
+  const og = obj.original;
 
 
-  if (chosen && typeof chosen === 'object') {
-    if (typeof chosen.summary === 'string') return chosen.summary;
-    if (typeof chosen.text === 'string') return chosen.text;
-    if (typeof chosen.description === 'string') return chosen.description;
-  }
+  if (preferOriginal && og) return safeStr(og.summary || og.description || og.text || '');
+  if (en) return safeStr(en.summary || en.description || en.text || '');
+  if (og) return safeStr(og.summary || og.description || og.text || '');
 
 
-  const fallback = obj?.english ?? obj?.original ?? null;
-  if (fallback && typeof fallback === 'object') {
-    if (typeof fallback.summary === 'string') return fallback.summary;
-    if (typeof fallback.text === 'string') return fallback.text;
-  }
-
-
-  if (obj && typeof obj === 'object') {
-    if (typeof obj.summary === 'string') return obj.summary;
-  }
+  if (typeof obj.summary === 'string') return obj.summary;
+  if (typeof obj.description === 'string') return obj.description;
+  if (typeof obj.text === 'string') return obj.text;
 
 
   return '';
 };
 
 
-// Extract trailing emoji from a string (best-effort)
 const splitTrailingEmoji = (text: string): { body: string; emoji: string } => {
-  const s = (text || '').trim();
-  if (!s) return { body: '', emoji: '' };
-
-
-  const m = s.match(/^(.*?)(?:\s+)?([\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+)\s*$/u);
-  if (!m) return { body: s, emoji: '' };
-
-
-  return { body: (m[1] || '').trim(), emoji: (m[2] || '').trim() };
+  const emojiRegex = /[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+$/u;
+  const match = text.match(emojiRegex);
+  if (match) {
+    return {
+      emoji: match[0].trim(),
+      body: text.replace(emojiRegex, '').trim(),
+    };
+  }
+  return { body: text.trim(), emoji: '' };
 };
 
 
 export const VideoDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { deleteVideos, videos } = useData();
+  // ✅ FIX: Add refreshVideos from context
+  const { deleteVideos, videos, refreshVideos } = useData();
 
 
   const [video, setVideo] = useState<any>(null);
@@ -187,6 +184,7 @@ export const VideoDetail: React.FC = () => {
     if (!id) return;
 
 
+    // ✅ FIX: Check context first (will have updated folder data)
     const foundInContext = videos.find(v => v.id === id || v.process_id === id);
     if (foundInContext) {
       setVideo(foundInContext);
@@ -247,46 +245,29 @@ export const VideoDetail: React.FC = () => {
           : null);
 
 
-      if (transcriptUrl && !transcriptFetchedRef.current.has(transcriptUrl)) {
-        transcriptFetchedRef.current.add(transcriptUrl);
+      if (transcriptUrl && !transcriptFetchedRef.current.has(String(id))) {
+        transcriptFetchedRef.current.add(String(id));
         try {
-          const transcriptRes = await fetch(transcriptUrl, {
-            method: 'GET',
-            cache: 'no-store',
-            headers: { Accept: 'application/json' },
+          const txtRes = await fetch(transcriptUrl, {
+            credentials: 'include',
+            headers: getAuthHeaders(),
           });
-
-
-          if (transcriptRes.ok) {
-            const transcriptData = await transcriptRes.json();
-            const text =
-              transcriptData?.transcript ||
-              transcriptData?.text ||
-              transcriptData?.content ||
-              transcriptData?.data?.transcript ||
-              '';
-
-
-            if (String(text).trim()) setFetchedTranscript(String(text));
-          } else {
-            console.warn('⚠️ Transcript fetch not ok:', transcriptRes.status);
+          if (txtRes.ok) {
+            const txt = await txtRes.text();
+            if (txt.trim()) setFetchedTranscript(txt.trim());
           }
         } catch (err) {
-          console.error('❌ Transcript fetch error:', err);
+          console.error('Failed to fetch transcript from GCS:', err);
         }
       }
-    } catch (e: any) {
-      if (String(e?.message || '').includes('HTTP 401')) {
-        console.error('❌ Authentication failed - clearing token');
-        localStorage.removeItem('auth_token'); // ✅ Clear invalid token
-        navigate('/auth');
-        return;
-      }
+    } catch (err) {
+      console.error('Error fetching video:', err);
       setLoading(false);
     }
-  }, [API_BASE, fetchJsonNoStore, id, navigate, videos, fetchedTranscript]);
+  }, [id, fetchJsonNoStore, fetchedTranscript, videos]); // ✅ FIX: Added 'videos' dependency
 
 
+  // ✅ FIX: Listen to videos context changes
   useEffect(() => {
     fetchVideo();
   }, [fetchVideo]);
@@ -505,11 +486,8 @@ export const VideoDetail: React.FC = () => {
 
 
   const renderIngredient = (ing: any, index: number) => {
-    // Support:
-    // - string: "200 g flour 🌾" (no leading 🔸, emoji extracted if present)
-    // - object: { item|name, quantity, unit, emoji }
-    let item = '';
     let qtyRaw = '';
+    let item = '';
     let emoji = '';
 
 

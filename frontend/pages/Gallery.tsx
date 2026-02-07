@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { VideoCard } from '../components/VideoCard';
 import { Button } from '../components/Button';
-import { Search, X, FolderInput, CheckCircle2 } from 'lucide-react';
+import { Search, X, FolderOpen, Folders, CheckCircle2 } from 'lucide-react'; // ✅ Add CheckCircle2
 import { useData } from '../context/DataContext';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, getAuthHeaders } from '../context/AuthContext';
+
+
 
 // --- ICONS ---
 const CalendarArrowUp = ({ size = 20 }) => (
@@ -14,18 +16,26 @@ const CalendarArrowDown = ({ size = 20 }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 18 4 4 4-4"/><path d="M16 2v4"/><path d="M18 14v8"/><path d="M21 11.354V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2-2v14a2 2 0 0 0 2 2h7.343"/><path d="M3 10h18"/><path d="M8 2v4"/></svg>
 );
 
+
+
 const RAW_API_BASE =
   import.meta.env.VITE_API_BASE ||
   import.meta.env.VITE_API_URL ||
   'http://localhost:5001';
 
+
+
 const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
+
+
 
 function joinUrl(base: string, path: string) {
   const b = String(base || '').replace(/\/+$/, '');
   const p = String(path || '').replace(/^\/+/, '');
   return `${b}/${p}`;
 }
+
+
 
 export const Gallery: React.FC = () => {
   const { folderId } = useParams<{ folderId?: string }>();
@@ -36,6 +46,8 @@ export const Gallery: React.FC = () => {
   
   const { videos, folders, isLoading: dataLoading, refreshVideos, deleteVideos } = useData();
 
+
+
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -45,16 +57,26 @@ export const Gallery: React.FC = () => {
   const [showSkeleton, setShowSkeleton] = useState(true);
   const [hasTriggeredInitialFetch, setHasTriggeredInitialFetch] = useState(false);
 
+  // ✅ Function to calculate video count for each folder
+  const getVideoCount = (folderId: string) => {
+    return videos.filter(v => v.folderId === folderId).length;
+  };
+
+
+
   console.log('🎯 Gallery rendering - authLoading:', authLoading, 'user:', !!user, 'videos:', videos.length);
 
-  // ✅ FIX: Removed refreshVideos from deps to prevent infinite loop
+
+
   useEffect(() => {
     if (user && videos.length === 0 && !dataLoading && !hasTriggeredInitialFetch) {
       console.log('🔄 Triggering refreshVideos because videos array is empty');
       setHasTriggeredInitialFetch(true);
       refreshVideos();
     }
-  }, [user, dataLoading, hasTriggeredInitialFetch]); // ✅ Removed videos.length and refreshVideos
+  }, [user, dataLoading, hasTriggeredInitialFetch]);
+
+
 
   useEffect(() => {
     const newTempId = searchParams.get('new');
@@ -62,19 +84,27 @@ export const Gallery: React.FC = () => {
       refreshVideos();
       window.history.replaceState(null, '', window.location.pathname);
     }
-  }, [searchParams]); // ✅ Removed refreshVideos from deps
+  }, [searchParams]);
+
+
 
   useEffect(() => {
     document.body.style.overflow = isMoveModalOpen ? 'hidden' : 'unset';
   }, [isMoveModalOpen]);
+
+
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSkeleton(false), 500);
     return () => clearTimeout(timer);
   }, []);
 
+
+
   const isFavoritesView = folderId === 'favorites';
   const isAllView = !folderId || folderId === 'all';
+
+
 
   let displayedVideos = videos.filter(v => {
     if (isFavoritesView) return v.isFavorite;
@@ -82,12 +112,16 @@ export const Gallery: React.FC = () => {
     return v.folderId === folderId;
   });
 
+
+
   if (searchQuery) {
     displayedVideos = displayedVideos.filter(v =>
       v.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       v.author?.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }
+
+
 
   displayedVideos.sort((a, b) => {
     const aProcessing = a.category === 'Processing';
@@ -99,7 +133,11 @@ export const Gallery: React.FC = () => {
     return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
   });
 
+
+
   console.log('🎯 displayedVideos count:', displayedVideos.length);
+
+
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -107,49 +145,61 @@ export const Gallery: React.FC = () => {
     setSelectedIds(next);
   };
 
+
+
   const handleMoveSubmit = async () => {
     if (!targetFolderId) return;
+    
+    console.log('🔄 Moving videos to folder:', targetFolderId);
+    
     try {
       const idsArray = Array.from(selectedIds);
       
       for (const id of idsArray) {
-        const encodedId = encodeURIComponent(String(id)); // ✅ FIXED: Cast to String
-        const url = joinUrl(API_BASE, `/api/reel/${encodedId}`);
+        const encodedId = encodeURIComponent(String(id));
+        const url = joinUrl(API_BASE, `/api/update/${encodedId}`);
         
-        await fetch(url, {
+        console.log('📤 Updating video:', encodedId, 'to folder:', targetFolderId);
+        
+        const response = await fetch(url, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+          },
           body: JSON.stringify({ folder_id: targetFolderId }),
           credentials: 'include'
         });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to update video ${id}: ${response.status}`);
+        }
+        
+        console.log('✅ Video updated successfully:', encodedId);
       }
       
+      console.log('🔄 Refreshing videos from backend...');
       await refreshVideos();
+      
+      console.log('✅ Videos refreshed, closing modal');
       setSelectedIds(new Set());
       setSelectionMode(false);
       setIsMoveModalOpen(false);
     } catch (err) {
-      console.error('Failed to move videos:', err);
-      alert('Failed to move videos');
+      console.error('❌ Failed to move videos:', err);
+      alert('Failed to move videos. Please try again.');
     }
   };
 
-  const handleDelete = async () => {
-    if (selectedIds.size === 0 || !confirm(`Delete ${selectedIds.size} video(s)?`)) return;
-    
-    const idsArray = Array.from(selectedIds);
-    
-    try {
-      await deleteVideos(idsArray);
-      setSelectedIds(new Set());
-      setSelectionMode(false);
-    } catch (err) {
-      console.error('Failed to delete videos:', err);
-      alert('Failed to delete videos');
-    }
-  };
+
+
+  // ✅ REMOVED handleDelete function
+
+
 
   const getProcessingMessage = (video: any) => video.title || "Processing…";
+
+
 
   const getFolderTitle = () => {
     if (isFavoritesView) return 'Favorites';
@@ -163,7 +213,8 @@ export const Gallery: React.FC = () => {
     return folderId ? folderId.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : 'Gallery';
   };
 
-  // ✅ Show loading state while checking auth
+
+
   if (authLoading) {
     return (
       <div className="w-full pt-8 md:pt-0">
@@ -176,7 +227,8 @@ export const Gallery: React.FC = () => {
     );
   }
 
-  // ✅ Show login prompt if not authenticated (AFTER loading completes)
+
+
   if (!user) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
@@ -190,6 +242,8 @@ export const Gallery: React.FC = () => {
       </div>
     );
   }
+
+
 
   return (
     <div className="w-full pt-8 md:pt-0 pb-0 md:pb-6">
@@ -292,18 +346,44 @@ export const Gallery: React.FC = () => {
             <h1 className="text-2xl font-bold text-gray-900">{getFolderTitle()}</h1>
             <p className="text-gray-500 text-sm mt-1">{displayedVideos.length} items</p>
           </div>
+          
+          {/* ✅ FIXED: Updated mobile and desktop buttons */}
           <div className="flex items-center gap-2">
             {selectionMode ? (
               <>
-                <Button variant="outline" size="sm" className="h-9 px-5" onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}>Cancel</Button>
-                <Button variant="primary" size="sm" className="h-9 px-5" disabled={selectedIds.size === 0} onClick={() => setIsMoveModalOpen(true)}>Move {selectedIds.size > 0 && `(${selectedIds.size})`}</Button>
-                <Button variant="danger" size="sm" className="h-9 px-5" disabled={selectedIds.size === 0} onClick={handleDelete}>Delete {selectedIds.size > 0 && `(${selectedIds.size})`}</Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-9 px-3 md:px-5 text-xs md:text-sm" 
+                  onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
+                >
+                  <span className="hidden md:inline">Cancel</span>
+                  <span className="md:hidden">✕</span>
+                </Button>
+                <Button 
+                  variant="primary" 
+                  size="sm" 
+                  className="h-9 px-3 md:px-5 text-xs md:text-sm whitespace-nowrap" 
+                  disabled={selectedIds.size === 0} 
+                  onClick={() => setIsMoveModalOpen(true)}
+                >
+                  <span className="hidden md:inline">Move{selectedIds.size > 0 && ` (${selectedIds.size})`}</span>
+                  <span className="md:hidden">Move{selectedIds.size > 0 && ` (${selectedIds.size})`}</span>
+                </Button>
               </>
             ) : (
-              <Button variant="outline" size="sm" className="h-9 px-5" onClick={() => setSelectionMode(true)}>Manage</Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-9 px-3 md:px-5 text-xs md:text-sm" 
+                onClick={() => setSelectionMode(true)}
+              >
+                Manage
+              </Button>
             )}
           </div>
         </div>
+        
         <div className="hidden md:flex items-center gap-3">
           <div className="relative flex-1 w-full md:w-3/4">
             <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none shadow-sm transition-shadow hover:border-gray-300" />
@@ -375,6 +455,7 @@ export const Gallery: React.FC = () => {
         </div>
       )}
 
+      {/* ✅ UPDATED: New icons in move modal */}
       {isMoveModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-scale-up">
@@ -388,7 +469,7 @@ export const Gallery: React.FC = () => {
               <div className="space-y-2">
                 <button onClick={() => setTargetFolderId('default')} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${targetFolderId === 'default' ? 'bg-primary-50 text-primary-700 ring-2 ring-primary-500 ring-inset' : 'hover:bg-gray-50 text-gray-700'}`}>
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${targetFolderId === 'default' ? 'bg-white' : 'bg-gray-100'}`}>
-                    <FolderInput size={20} />
+                    <Folders size={20} className={targetFolderId === 'default' ? 'text-primary-600' : 'text-gray-600'} />
                   </div>
                   <div className="flex-1 text-left">
                     <p className="font-semibold">All my videos</p>
@@ -397,32 +478,29 @@ export const Gallery: React.FC = () => {
                   {targetFolderId === 'default' && <CheckCircle2 size={20} className="text-primary-600" />}
                 </button>
                 {folders.map((f: any) => {
-                  const folderId = String(f?.id || '');
+                  const folId = String(f?.id || '');
                   const folderName = String(f?.name || 'Untitled');
-                  const folderEmoji = String(f?.emoji || '📁');
-                  const folderVideoCount = Number(f?.videoCount || 0);
                   
                   return (
-                    <React.Fragment key={folderId}>
-                      <button onClick={() => setTargetFolderId(folderId)} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${targetFolderId === folderId ? 'bg-primary-50 text-primary-700 ring-2 ring-primary-500 ring-inset' : 'hover:bg-gray-50 text-gray-700'}`}>
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${targetFolderId === folderId ? 'bg-white' : 'bg-gray-100'}`}>
-                          <span className="text-lg">{folderEmoji}</span>
+                    <React.Fragment key={folId}>
+                      <button onClick={() => setTargetFolderId(folId)} className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all ${targetFolderId === folId ? 'bg-primary-50 text-primary-700 ring-2 ring-primary-500 ring-inset' : 'hover:bg-gray-50 text-gray-700'}`}>
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${targetFolderId === folId ? 'bg-white' : 'bg-gray-100'}`}>
+                          <FolderOpen size={20} className={targetFolderId === folId ? 'text-primary-600' : 'text-gray-600'} />
                         </div>
                         <div className="flex-1 text-left">
                           <p className="font-semibold">{folderName}</p>
-                          <p className="text-xs opacity-70">{folderVideoCount} videos</p>
+                          <p className="text-xs opacity-70">{getVideoCount(folId)} videos</p>
                         </div>
-                        {targetFolderId === folderId && <CheckCircle2 size={20} className="text-primary-600" />}
+                        {targetFolderId === folId && <CheckCircle2 size={20} className="text-primary-600" />}
                       </button>
                       {Array.isArray(f?.subFolders) && f.subFolders.map((sub: any) => {
                         const subId = String(sub?.id || '');
                         const subName = String(sub?.name || 'Untitled');
-                        const subEmoji = String(sub?.emoji || '📁');
                         
                         return (
                           <button key={subId} onClick={() => setTargetFolderId(subId)} className={`w-full flex items-center gap-3 p-3 pl-8 rounded-xl transition-all ${targetFolderId === subId ? 'bg-primary-50 text-primary-700 ring-2 ring-primary-500 ring-inset' : 'hover:bg-gray-50 text-gray-700'}`}>
                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${targetFolderId === subId ? 'bg-white' : 'bg-gray-100'}`}>
-                              <span className="text-sm">{subEmoji}</span>
+                              <FolderOpen size={18} className={targetFolderId === subId ? 'text-primary-600' : 'text-gray-600'} />
                             </div>
                             <div className="flex-1 text-left">
                               <p className="font-semibold text-sm">{subName}</p>

@@ -9,11 +9,15 @@ import React, {
 import { Video, Folder } from '../types';
 import { useAuth, getAuthHeaders } from './AuthContext';
 
+
+
 interface User {
   id: string;
   name: string;
   email: string;
 }
+
+
 
 export type AddVideoResult = {
   clientTempId: string;
@@ -24,10 +28,14 @@ export type AddVideoResult = {
   previewUrl?: string | null;
 };
 
+
+
 interface DataContextType {
   videos: Video[];
   folders: Folder[];
   isLoading: boolean;
+
+
 
   addFolder: (name: string, parentId?: string | null) => void;
   updateFolder: (id: string, name: string) => void;
@@ -39,7 +47,11 @@ interface DataContextType {
   refreshVideos: () => Promise<void>;
 }
 
+
+
 const DataContext = createContext<DataContextType | undefined>(undefined);
+
+
 
 /*
 ✅ FIXED SAFE BASE URL (same approach everywhere)
@@ -49,13 +61,19 @@ const RAW_API_BASE =
   import.meta.env.VITE_API_URL ||
   'http://localhost:5001';
 
+
+
 const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
+
+
 
 function joinUrl(base: string, path: string) {
   const b = String(base || '').replace(/\/+$/, '');
   const p = String(path || '').replace(/^\/+/, '');
   return `${b}/${p}`;
 }
+
+
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
@@ -66,20 +84,32 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return saved ? JSON.parse(saved) : [];
   });
 
+
+
   useEffect(() => {
     localStorage.setItem('custom_folders', JSON.stringify(folders));
   }, [folders]);
+
+
 
   // ✅ CENTRAL FETCH LOGIC WITH JWT
   const fetchVideos = async () => {
     if (!user) return;
     setIsLoading(true);
 
+
+
     try {
       const url = joinUrl(
         API_BASE,
         `/api/saved_reels?page=1&per_page=100&t=${Date.now()}`
       );
+
+
+
+      console.log('🔄 DataContext: Fetching videos from backend...');
+
+
 
       const response = await fetch(url, {
         credentials: 'include',
@@ -91,18 +121,28 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       });
 
+
+
       if (response.ok) {
         const data = await response.json();
+
+
 
         const loadedVideos = (data.reels || []).map((r: any) => {
           const summary = r.summary || {};
 
+
+
           const isDone = r.status === 'done' || r.status === 'completed';
+
+
 
           let finalCategory = summary.category || 'General';
           if (!isDone) {
             finalCategory = 'Processing';
           }
+
+
 
           let displayTitle = 'Processing...';
           if (isDone) {
@@ -116,6 +156,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               displayTitle = 'Untitled';
             }
           }
+
+
 
           const mappedVideo: any = {
             id: r.id,
@@ -139,12 +181,33 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             __raw: r
           };
 
+
+
           return mappedVideo as Video;
         });
+
+        // ✅ DEBUG: Log first video details
+        if (loadedVideos.length > 0) {
+          console.log('🔍 First video raw from backend:', loadedVideos[0].__raw.folder_id);
+          console.log('🔍 First video mapped:', loadedVideos[0].folderId);
+        }
+
+
+
+        // ✅ DEBUG: Log what we loaded from backend
+        console.log('🔍 DataContext: Loaded videos from backend:', loadedVideos.map(v => ({ 
+          id: v.id.substring(0, 30) + '...', 
+          folderId: v.folderId,
+          category: v.category
+        })));
+
+
 
         setVideos(prevVideos => {
           const loadedByUrl = new Map(loadedVideos.map(v => [v.originalUrl, v]));
           const loadedById = new Map(loadedVideos.map(v => [v.id, v]));
+
+
 
           const loadedByShortcode = new Map<string, Video>();
           loadedVideos.forEach(v => {
@@ -154,26 +217,52 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }
           });
 
+
+
           const seenIds = new Set<string>();
           const optimisticOnly = prevVideos.filter(v => {
             if (seenIds.has(v.id)) return false;
             seenIds.add(v.id);
 
+
+
             if (v.category !== 'Processing') return false;
 
+
+
             const shortcode = v.id.split('--')[0].split('_')[0];
+
+
 
             if (loadedById.has(v.id)) return false;
             if (v.originalUrl && loadedByUrl.has(v.originalUrl)) return false;
             if (loadedByShortcode.has(shortcode)) return false;
 
+
+
             return true;
           });
 
-          const finalVideos = [...loadedVideos, ...optimisticOnly];
+
+
+          // ✅ FIX: Put loadedVideos AFTER optimisticOnly so fresh data wins!
+          const finalVideos = [...optimisticOnly, ...loadedVideos];
           const uniqueById = new Map(finalVideos.map(v => [v.id, v]));
 
-          return Array.from(uniqueById.values());
+
+
+          const result = Array.from(uniqueById.values());
+          
+          // ✅ DEBUG: Log what we're setting
+          console.log('🔍 DataContext: Setting videos state:', result.map(v => ({ 
+            id: v.id.substring(0, 30) + '...', 
+            folderId: v.folderId,
+            category: v.category
+          })));
+
+
+
+          return result;
         });
       } else if (response.status === 401) {
         console.error('❌ Unauthorized - clearing token');
@@ -186,15 +275,21 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+
+
   // ✅ Initial fetch when user logs in
   useEffect(() => {
     if (user) fetchVideos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+
+
   // ✅ AUTO-REFRESH: Poll every 10 seconds if processing videos exist
   useEffect(() => {
     if (!user) return;
+
+
 
     const interval = setInterval(() => {
       const hasProcessing = videos.some(v => v.category === 'Processing');
@@ -203,14 +298,20 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     }, 10000);
 
+
+
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, videos]);
+
+
 
   // ✅ Add Video with Duplicate Prevention + JWT
   const addVideo = async (url: string): Promise<AddVideoResult> => {
     try {
       const cleanUrl = url.trim().split('?')[0];
+
+
 
       const existingVideo = videos.find(v => v.originalUrl === cleanUrl);
       if (existingVideo) {
@@ -225,8 +326,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
       }
 
+
+
       const formData = new FormData();
       formData.append('url', cleanUrl);
+
+
 
       const response = await fetch(joinUrl(API_BASE, '/api/summarize'), {
         method: 'POST',
@@ -235,21 +340,31 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         headers: getAuthHeaders()  // ✅ Add JWT token
       });
 
+
+
       if (response.status === 409) throw new Error('This video has already been saved.');
       if (response.status === 401) {
         localStorage.removeItem('auth_token');
         throw new Error('Not authenticated');
       }
 
+
+
       let result: any;
       try { result = await response.json(); } catch {}
+
+
 
       if (!response.ok) {
         throw new Error(result?.error || 'Failed to import video.');
       }
 
+
+
       const createdAt = new Date().toISOString();
       const videoId = result?.reel_id || `temp_${cleanUrl.split('/').pop()}_${Date.now()}`;
+
+
 
       const newVideo: Video = {
         id: videoId,
@@ -269,12 +384,18 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         status: 'processing',
       };
 
+
+
       setVideos(prev => {
         const filtered = prev.filter(v => v.originalUrl !== cleanUrl);
         return [newVideo, ...filtered];
       });
 
+
+
       setTimeout(fetchVideos, 5000);
+
+
 
       return {
         clientTempId: `temp_${Date.now()}`,
@@ -290,21 +411,33 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+
+
   // ✅ Delete Videos + JWT
   const deleteVideos = async (videoIds: string[]): Promise<void> => {
     if (!videoIds.length) return;
 
+
+
     const before = videos;
+
+
 
     try {
       console.log('🗑️ Deleting videos:', videoIds);
 
+
+
       // Optimistic UI
       setVideos(prev => prev.filter(v => !videoIds.includes(v.id)));
+
+
 
       const deletePromises = videoIds.map(async (videoId) => {
         const encodedId = encodeURIComponent(videoId);
         const url = joinUrl(API_BASE, `/api/reel/${encodedId}`);
+
+
 
         try {
           const response = await fetch(url, {
@@ -313,16 +446,22 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             headers: getAuthHeaders()  // ✅ Add JWT token
           });
 
+
+
           if (response.status === 401) {
             localStorage.removeItem('auth_token');
             throw new Error('Not authenticated');
           }
+
+
 
           if (!response.ok) {
             const text = await response.text().catch(() => '');
             console.error(`❌ Failed to delete ${videoId} from backend:`, response.status, text);
             throw new Error(`Delete failed for ${videoId}: ${response.status}`);
           }
+
+
 
           console.log(`✅ Deleted ${videoId} from backend`);
         } catch (error) {
@@ -331,17 +470,25 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       });
 
+
+
       await Promise.all(deletePromises);
+
+
 
       console.log('✅ All videos deleted');
     } catch (error) {
       console.error('❌ Failed to delete videos (restoring):', error);
+
+
 
       // Restore, then refetch to be sure
       setVideos(before);
       await fetchVideos();
     }
   };
+
+
 
   // Folder Actions
   const addFolder = (name: string, parentId: string | null = null) => {
@@ -360,6 +507,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+
+
   const updateFolder = (id: string, name: string) => {
     const updateRecursive = (list: Folder[]): Folder[] => {
       return list.map(f => {
@@ -371,6 +520,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setFolders(prev => updateRecursive(prev));
   };
 
+
+
   const deleteFolder = (id: string) => {
     const deleteRecursive = (list: Folder[]): Folder[] => {
       return list
@@ -380,13 +531,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setFolders(prev => deleteRecursive(prev));
   };
 
+
+
   const toggleFavorite = (videoId: string) => {
     setVideos(prev => prev.map(v => v.id === videoId ? { ...v, isFavorite: !v.isFavorite } : v));
   };
 
+
+
   const moveVideos = (videoIds: string[], targetFolderId: string) => {
     setVideos(prev => prev.map(v => (videoIds.includes(v.id) ? { ...v, folderId: targetFolderId } : v)));
   };
+
+
 
   const value = useMemo(() => ({
     videos,
@@ -402,8 +559,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     refreshVideos: fetchVideos
   }), [videos, folders, isLoading]);
 
+
+
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 };
+
+
 
 export const useData = () => {
   const context = useContext(DataContext);

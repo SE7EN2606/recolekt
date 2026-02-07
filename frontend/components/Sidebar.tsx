@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { 
-  Folder, 
+  FolderOpen, // ✅ Changed from Folder
   LayoutGrid, 
   Heart, 
   Archive, 
@@ -25,7 +25,7 @@ const FolderIcon = ({ size = 18, className = "" }: {size?: number, className?: s
 );
 
 export const Sidebar: React.FC = () => {
-  const { folders, addFolder } = useData();
+  const { folders, addFolder, videos } = useData();
   const [isInputModalOpen, setIsInputModalOpen] = useState(false);
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
@@ -44,6 +44,10 @@ export const Sidebar: React.FC = () => {
     name: f.name
   }));
 
+  const getVideoCount = (folderId: string) => {
+    return videos.filter(v => v.folderId === folderId).length;
+  };
+
   const linkClass = (active: boolean) => `
     group flex items-center justify-between w-full p-2.5 rounded-xl transition-all duration-200
     ${active 
@@ -61,7 +65,6 @@ export const Sidebar: React.FC = () => {
     <>
       <aside className="hidden md:flex flex-col h-[calc(100vh-100px)] sticky top-24 overflow-y-auto no-scrollbar pr-2 pb-4">
         
-        {/* --- Top Action --- */}
         <div className="mb-6">
           <Button
             fullWidth
@@ -74,9 +77,7 @@ export const Sidebar: React.FC = () => {
           </Button>
         </div>
 
-        {/* --- Library Section --- */}
         <div className="mb-6">
-          {/* ✅ Edit Button Moved Here */}
           <div className="flex items-center justify-between px-3 mb-3">
             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
               Library
@@ -115,14 +116,12 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
 
-        {/* --- Collections Section --- */}
         <div className="mb-6 flex-1">
           <div className="flex items-center justify-between px-3 mb-3">
             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
               Collections
             </h3>
             
-            {/* ✅ New Collection Button (Aligned Right) */}
             <button 
               onClick={() => setIsInputModalOpen(true)}
               className="text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-all p-1.5 rounded-md"
@@ -135,22 +134,21 @@ export const Sidebar: React.FC = () => {
           <div className="space-y-1">
             {customFolders.map(folder => (
               <div key={folder.id}>
-                {/* Parent Folder */}
+                {/* ✅ UPDATED: Changed Folder to FolderOpen */}
                 <NavLink to={`/gallery/${folder.id}`} className={({ isActive }) => linkClass(isActive)}>
                   {({ isActive }) => (
                     <>
                       <div className="flex items-center gap-3 min-w-0">
-                        <Folder size={20} className={iconClass(isActive)} />
+                        <FolderOpen size={20} className={iconClass(isActive)} />
                         <span className="text-sm truncate">{folder.name}</span>
                       </div>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex-shrink-0 ${isActive ? 'bg-white text-primary-700' : 'bg-gray-100 text-gray-500 group-hover:bg-white group-hover:text-primary-600 transition-colors'}`}>
-                        {(folder as any).itemCount || 0}
+                        {getVideoCount(folder.id)}
                       </span>
                     </>
                   )}
                 </NavLink>
 
-                {/* Subfolders */}
                 {folder.subFolders && folder.subFolders.length > 0 && (
                   <div className="space-y-1 mt-1">
                     {folder.subFolders.map(sub => (
@@ -176,14 +174,12 @@ export const Sidebar: React.FC = () => {
               </div>
             ))}
 
-            {/* Empty State */}
             {customFolders.length === 0 && (
               <div onClick={() => setIsInputModalOpen(true)} className="p-4 border-2 border-dashed border-gray-100 rounded-xl text-center cursor-pointer hover:border-primary-200 hover:bg-primary-50/30 transition-all group">
                 <span className="text-xs font-bold text-gray-400 group-hover:text-primary-500">Create collection</span>
               </div>
             )}
 
-            {/* Shared & Archive */}
             <div className="pt-2 mt-2 border-t border-gray-50 space-y-1">
                 <NavLink to="/gallery/shared" className={({ isActive }) => linkClass(isActive)}>
                   {({ isActive }) => (
@@ -214,7 +210,6 @@ export const Sidebar: React.FC = () => {
 
       </aside>
 
-      {/* --- Modals --- */}
       <InputModal 
         isOpen={isInputModalOpen} 
         onClose={() => setIsInputModalOpen(false)} 

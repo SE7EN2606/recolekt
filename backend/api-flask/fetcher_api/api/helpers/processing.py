@@ -329,6 +329,11 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
             safe_title = safe_title.get("english", "Saved Video")
         logger.info(f"✅ Processing Complete: {safe_title}")
 
+        # 9. Cleanup MP4 from GCS
+        if video_uploaded_successfully:
+            logger.info("🗑️ Processing complete - cleaning up MP4 from GCS...")
+            cleanup_video_from_gcs(shortcode)
+
         # 10. Cleanup local files
         cleanup_file(video_path)
         if temp_dir and os.path.exists(temp_dir):
