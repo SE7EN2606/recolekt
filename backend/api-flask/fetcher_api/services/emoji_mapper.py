@@ -34,36 +34,32 @@ _STOP_PHRASES = [
 ]
 
 _STOP_WORDS = {
-    "of",
-    "for",  # helps canonicalize "oil for frying" -> "oil frying" -> guarded by "oil"
-    "fresh", "ground", "minced", "chopped", "sliced", "crushed",
-    "toasted", "roasted", "soaked", "dried",
-    "cooked",  # helps canonicalize "cooked rice" -> "rice"
-    "large", "small", "medium",
+    "of", "for", "fresh", "ground", "minced", "chopped", "sliced", "crushed",
+    "toasted", "roasted", "soaked", "dried", "cooked", "large", "small", "medium",
     "some", "a", "an", "the",
 }
 
 _SPELLING_FIXES = {
     "potatoe": "potato",
     "potatos": "potato",
+    "gochuchang": "gochujang",
+    "mirin ": "mirin",
 }
 
 LEGACY_CATEGORY_ALIASES: Dict[str, str] = {
-    # Old cache values you showed
     "OIL_FAT": "FAT_OIL",
-    # If you ever had these variants
     "OLIVE_OIL": "FAT_OIL",
     "OIL": "FAT_OIL",
 }
 
 CATEGORY_TO_EMOJI: Dict[str, str] = {
     # Proteins
-    "PROTEIN_MEAT": "🍖",
+    "PROTEIN_MEAT": "🥩",
     "PROTEIN_FISH": "🐟",
     "PROTEIN_EGG": "🥚",
-    "PROTEIN_DAIRY": "🧀",
+    "PROTEIN_DAIRY": "🥛",
     "PROTEIN_SOY": "🫘",
-    "PROTEIN_OTHER": "🍽️",
+    "PROTEIN_OTHER": "🍳",
 
     # Plants
     "VEGETABLE": "🥬",
@@ -78,29 +74,34 @@ CATEGORY_TO_EMOJI: Dict[str, str] = {
     # Carbs
     "RICE": "🍚",
     "GRAIN": "🌾",
-    "STARCH": "🌾",
+    "STARCH": "🍞",
 
     # Nuts / seeds
     "LEGUME": "🫘",
     "NUT_SEED": "🥜",
 
-    # Fats (your requirement)
-    "FAT_OIL": "⚱️",
+    # Fats
+    "FAT_OIL": "🧈",
     "BUTTER": "🧈",
 
-    # Sweeteners
-    "SWEETENER": "🍯",
+    # Sweeteners - MORE SPECIFIC
+    "SWEETENER": "🧊",
+    "SWEETENER_POWDER": "❄️",
+    "SWEETENER_BROWN": "🟤",
+    "SWEETENER_LIQUID": "🍯",
+    "SWEETENER_CHOCOLATE": "🍫",
 
     # Flavor builders
     "CONDIMENT": "🥫",
-    "SAUCE_PASTE": "🥫",
+    "SAUCE_PASTE": "🍲",
     "SPICE": "🧂",
+    "VANILLA": "🌸",
     "CHILI": "🌶️",
     "FERMENTED": "🥣",
 
     # Liquids
     "LIQUID": "💧",
-    "ALCOHOL": "🍷",
+    "ALCOHOL": "🍶",
 
     # Fallback
     "OTHER": "🍽️",
@@ -108,7 +109,146 @@ CATEGORY_TO_EMOJI: Dict[str, str] = {
 
 ALLOWED_CATEGORIES = set(CATEGORY_TO_EMOJI.keys())
 
+# --- Static Overrides ---
+STATIC_CATEGORY_OVERRIDES: Dict[str, str] = {
+    # Dairy
+    "yogurt": "PROTEIN_DAIRY",
+    "yaourt": "PROTEIN_DAIRY",
+    "yaourt nature": "PROTEIN_DAIRY",
+    "milk": "PROTEIN_DAIRY",
+    "lait": "PROTEIN_DAIRY",
+    "cream": "PROTEIN_DAIRY",
+    "creme": "PROTEIN_DAIRY",
+    "cheese": "PROTEIN_DAIRY",
+    "fromage": "PROTEIN_DAIRY",
+    
+    # Eggs
+    "egg": "PROTEIN_EGG",
+    "eggs": "PROTEIN_EGG",
+    "oeuf": "PROTEIN_EGG",
+    "oeufs": "PROTEIN_EGG",
+    
+    # Fats
+    "butter": "BUTTER",
+    "beurre": "BUTTER",
+    "oil": "FAT_OIL",
+    "huile": "FAT_OIL",
+    "sesame oil": "FAT_OIL",
+    "olive oil": "FAT_OIL",
+    "vegetable oil": "FAT_OIL",
+    "canola oil": "FAT_OIL",
+    "corn oil": "FAT_OIL",
+    "sunflower oil": "FAT_OIL",
+    "perilla oil": "FAT_OIL",
 
+    # Grains
+    "flour": "GRAIN",
+    "farine": "GRAIN",
+    "rice": "RICE",
+    "pasta": "GRAIN",
+    "noodle": "STARCH",
+    "glass noodle": "STARCH",
+    
+    # Sugars (more specific)
+    "sugar": "SWEETENER",
+    "sucre": "SWEETENER",
+    "granulated sugar": "SWEETENER",
+    "sucre en poudre": "SWEETENER",
+    "powdered sugar": "SWEETENER_POWDER",
+    "sucre glace": "SWEETENER_POWDER",
+    "brown sugar": "SWEETENER_BROWN",
+    "cassonade": "SWEETENER_BROWN",
+    "honey": "SWEETENER_LIQUID",
+    "miel": "SWEETENER_LIQUID",
+    "maple syrup": "SWEETENER_LIQUID",
+    "corn syrup": "SWEETENER_LIQUID",
+    
+    # Chocolate
+    "chocolate chip": "SWEETENER_CHOCOLATE",
+    "chocolate chips": "SWEETENER_CHOCOLATE",
+    "pepites de chocolat": "SWEETENER_CHOCOLATE",
+    "cocoa": "SWEETENER_CHOCOLATE",
+    "cacao": "SWEETENER_CHOCOLATE",
+    "chocolate": "SWEETENER_CHOCOLATE",
+    "chocolat": "SWEETENER_CHOCOLATE",
+    "dark chocolate": "SWEETENER_CHOCOLATE",
+    "chocolat noir": "SWEETENER_CHOCOLATE",
+    "milk chocolate": "SWEETENER_CHOCOLATE",
+    "chocolat au lait": "SWEETENER_CHOCOLATE",
+    
+    # Vanilla
+    "vanilla": "VANILLA",
+    "vanille": "VANILLA",
+    "vanilla extract": "VANILLA",
+    "extrait de vanille": "VANILLA",
+    "vanilla liquid": "VANILLA",
+    "vanilla pod": "VANILLA",
+    "gousse de vanille": "VANILLA",
+    
+    # Baking
+    "baking powder": "SPICE",
+    "levure chimique": "SPICE",
+    "baking soda": "SPICE",
+    "bicarbonate": "SPICE",
+    "bicarbonate de soude": "SPICE",
+    "yeast": "FERMENTED",
+    "levure": "FERMENTED",
+    
+    # Spices
+    "salt": "SPICE",
+    "sel": "SPICE",
+    "pepper": "SPICE",
+    "poivre": "SPICE",
+    "cinnamon": "SPICE",
+    "cannelle": "SPICE",
+    "cumin": "SPICE",
+    "turmeric": "SPICE",
+    
+    # Fruits
+    "apple": "FRUIT",
+    "pomme": "FRUIT",
+    "pear": "FRUIT",
+    "poire": "FRUIT",
+    "pears in syrup": "FRUIT",
+    "poires au sirop": "FRUIT",
+    
+    # Nuts
+    "walnut": "NUT_SEED",
+    "walnuts": "NUT_SEED",
+    "noix": "NUT_SEED",
+    "almond": "NUT_SEED",
+    "amande": "NUT_SEED",
+    
+    # Sauces & Condiments
+    "soy sauce": "CONDIMENT",
+    "oyster sauce": "CONDIMENT",
+    "tonkatsu sauce": "CONDIMENT",
+    "ketchup": "CONDIMENT",
+    "mayonnaise": "CONDIMENT",
+    "mustard": "CONDIMENT",
+    "vinegar": "CONDIMENT",
+    
+    # Fermented
+    "kimchi": "FERMENTED",
+    "gochujang": "CHILI",
+    "sriracha": "CHILI",
+    
+    # Alcohol
+    "mirin": "ALCOHOL",
+    "sweet cooking wine": "ALCOHOL",
+    "wine": "ALCOHOL",
+    "vin": "ALCOHOL",
+
+    # Starches
+    "potato starch": "STARCH",
+    "starch": "STARCH",
+
+    # Fix misspellings
+    "potatoe": "POTATO",
+    "potato": "POTATO",
+}
+
+# --- Canonicalization ---
 def _norm(s: str) -> str:
     s = (s or "").strip().lower()
     s = unicodedata.normalize("NFKD", s)
@@ -116,7 +256,6 @@ def _norm(s: str) -> str:
     s = re.sub(r"[^\w\s/.-]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
-
 
 def _canonical_key(s: str) -> str:
     s = _norm(s)
@@ -157,20 +296,7 @@ def _canonical_key(s: str) -> str:
 
     return s.strip()
 
-
-def _normalize_category(cat: str) -> str:
-    cat = (cat or "").strip()
-    cat = LEGACY_CATEGORY_ALIASES.get(cat, cat)
-    return cat
-
-
-def _write_json(path: str, data: Dict[str, str]) -> None:
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
-
-
+# --- Cache ---
 def _load_cache() -> Dict[str, str]:
     if not os.path.exists(CACHE_PATH):
         return {}
@@ -195,18 +321,12 @@ def _load_cache() -> Dict[str, str]:
             continue
         sanitized[ck] = cv
 
-    # Auto-migrate file on disk if it changed (fixes your current situation)
-    try:
-        if sanitized != raw:
-            _write_json(CACHE_PATH, sanitized)
-    except Exception:
-        pass
+    if sanitized != raw:
+        _write_json(CACHE_PATH, sanitized)
 
     return sanitized
 
-
 def _save_cache(cache: Dict[str, str]) -> None:
-    # Always write canonical keys + normalized categories
     cleaned: Dict[str, str] = {}
     for k, v in (cache or {}).items():
         ck = _canonical_key(k)
@@ -215,48 +335,17 @@ def _save_cache(cache: Dict[str, str]) -> None:
             cleaned[ck] = cv
     _write_json(CACHE_PATH, cleaned)
 
+def _write_json(path: str, data: Dict[str, str]) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
 
-_CATEGORY_CACHE: Dict[str, str] = _load_cache()
-
-
-# Static overrides always win
-STATIC_CATEGORY_OVERRIDES: Dict[str, str] = {
-    # Fats: your rule
-    "butter": "BUTTER",
-    "oil": "FAT_OIL",
-    "sesame oil": "FAT_OIL",
-    "olive oil": "FAT_OIL",
-    "vegetable oil": "FAT_OIL",
-    "canola oil": "FAT_OIL",
-    "corn oil": "FAT_OIL",
-    "sunflower oil": "FAT_OIL",
-    "perilla oil": "FAT_OIL",
-
-    # Rice / starches
-    "rice": "RICE",
-    "potato starch": "STARCH",
-    "glass noodle": "STARCH",
-    "noodle": "STARCH",
-    "starch": "STARCH",
-
-    # Kimchi + gochujang (from earlier requirements)
-    "kimchi": "VEGETABLE",
-    "gochujang": "CHILI",
-
-    # Common items
-    "salt": "SPICE",
-    "pepper": "SPICE",
-    "soy sauce": "CONDIMENT",
-    "oyster sauce": "CONDIMENT",
-    "tonkatsu sauce": "CONDIMENT",
-    "mirin": "ALCOHOL",
-    "sweet cooking wine": "ALCOHOL",
-
-    # Fix misspelling seen in your cache
-    "potatoe": "POTATO",
-    "potato": "POTATO",
-}
-
+# --- Classification ---
+def _normalize_category(cat: str) -> str:
+    cat = (cat or "").strip()
+    cat = LEGACY_CATEGORY_ALIASES.get(cat, cat)
+    return cat
 
 def _build_category_prompt(ingredient: str) -> str:
     return f"""
@@ -271,7 +360,12 @@ Rules:
 - Butter → BUTTER
 - Salt/pepper/seasoning powders → SPICE
 - Sauces/pastes → CONDIMENT or SAUCE_PASTE
-- Sugars/syrups/honey → SWEETENER
+- Granulated/white sugar → SWEETENER
+- Powdered sugar → SWEETENER_POWDER
+- Brown sugar → SWEETENER_BROWN
+- Honey/syrup → SWEETENER_LIQUID
+- Chocolate/cocoa → SWEETENER_CHOCOLATE
+- Vanilla → VANILLA
 - Water / neutral liquids → LIQUID
 - Do NOT invent categories
 
@@ -285,9 +379,7 @@ INGREDIENT:
 {ingredient}
 """.strip()
 
-
 _client: Optional[Mistral] = None
-
 
 def _get_client() -> Mistral:
     global _client
@@ -297,7 +389,6 @@ def _get_client() -> Mistral:
             raise RuntimeError("MISTRAL_API_KEY not set")
         _client = Mistral(api_key=api_key)
     return _client
-
 
 def _classify_with_ai(ingredient_key: str) -> str:
     client = _get_client()
@@ -321,7 +412,7 @@ def _classify_with_ai(ingredient_key: str) -> str:
 
     return cat
 
-
+# --- Main ---
 def infer_ingredient_emoji(ingredient_english: str) -> str:
     """
     Deterministic emoji inference:
@@ -334,13 +425,13 @@ def infer_ingredient_emoji(ingredient_english: str) -> str:
     toks = set(key.split())
 
     # Hard guards (these must beat a bad cache forever)
-    if "butter" in toks:
+    if "butter" in toks or "beurre" in toks:
         return CATEGORY_TO_EMOJI["BUTTER"]
-    if "oil" in toks:
+    if "oil" in toks or "huile" in toks:
         return CATEGORY_TO_EMOJI["FAT_OIL"]
-    if "salt" in toks:
+    if "salt" in toks or "sel" in toks:
         return CATEGORY_TO_EMOJI["SPICE"]
-    if "pepper" in toks:
+    if "pepper" in toks or "poivre" in toks:
         return CATEGORY_TO_EMOJI["SPICE"]
 
     if key in STATIC_CATEGORY_OVERRIDES:
@@ -355,3 +446,6 @@ def infer_ingredient_emoji(ingredient_english: str) -> str:
     _CATEGORY_CACHE[key] = cat
     _save_cache(_CATEGORY_CACHE)
     return CATEGORY_TO_EMOJI[cat]
+
+# --- Init ---
+_CATEGORY_CACHE: Dict[str, str] = _load_cache()

@@ -10,35 +10,103 @@ logger = logging.getLogger('auth')
 
 def get_user_id_from_request():
     """
-    Get user_id from session or Authorization header (JWT).
+    Get user_id from:
+    1) Flask session (web app)
+    2) Authorization: Bearer <api_token> (Shortcuts / API clients)
+    3) Authorization: Bearer <jwt> (legacy JWT)
+
     Raises ValueError if not authenticated.
     """
-    # Try session first
+    # -------------------------------------------------
+    # 1) Try session first (browser/web app)
+    # -------------------------------------------------
     user_id = session.get('user_id')
-    
     if user_id:
         logger.debug(f"✅ User authenticated via session: {user_id}")
         return user_id
-    
-    # Try JWT from Authorization header
-    auth_header = request.headers.get('Authorization', '')
+
+    # -------------------------------------------------
+    # 2) Try Authorization header
+    # -------------------------------------------------
+    auth_header = request.headers.get('Authorization', '') or ''
     if auth_header.startswith('Bearer '):
         token = auth_header.replace('Bearer ', '').strip()
+
         if token:
+            # 2a) FIRST: check api_tokens table (plain text tokens)
+            try:
+                row = fetch_one(
+                    """
+                    SELECT user_id
+                    FROM api_tokens
+                    WHERE token = %s AND is_revoked = FALSE
+                    """,
+                    (token,)
+                )
+                
+                if row and row.get('user_id'):
+                    api_user_id = row['user_id']
+
+                    # Update last_used_at
+                    try:
+                        execute(
+                            "UPDATE api_tokens SET last_used_at = NOW() WHERE token = %s",
+                            (token,),
+                            commit=True
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to update last_used_at: {e}")
+
+                    logger.info(f"✅ User authenticated via API token (api_tokens): {api_user_id}")
+                    return api_user_id
+            except Exception as e:
+                logger.warning(f"⚠️ API token lookup failed: {e}")
+
+            # 2b) SECOND: check user_api_tokens table (hashed tokens)
+            try:
+                from fetcher_api.utils.tokens import hash_token
+                token_hash = hash_token(token)
+                
+                row = fetch_one(
+                    """
+                    SELECT user_id
+                    FROM user_api_tokens
+                    WHERE token_hash = %s AND is_active = TRUE
+                    """,
+                    (token_hash,)
+                )
+                
+                if row and row.get('user_id'):
+                    api_user_id = row['user_id']
+
+                    # Update last_used_at
+                    try:
+                        execute(
+                            "UPDATE user_api_tokens SET last_used_at = NOW() WHERE token_hash = %s",
+                            (token_hash,),
+                            commit=True
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to update last_used_at: {e}")
+
+                    logger.info(f"✅ User authenticated via API token (user_api_tokens): {api_user_id}")
+                    return api_user_id
+            except Exception as e:
+                logger.warning(f"⚠️ Hashed API token lookup failed: {e}")
+
+            # 2c) FALLBACK: check if it's a JWT
             try:
                 import jwt
                 jwt_secret = os.getenv('SECRET_KEY', 'your-secret-key')
                 payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
-                user_id = payload.get('user_id')
-                
-                if user_id:
-                    logger.debug(f"✅ User authenticated via JWT: {user_id}")
-                    return user_id
-            except jwt.ExpiredSignatureError:
-                logger.warning("JWT token expired")
-            except jwt.InvalidTokenError as e:
-                logger.warning(f"Invalid JWT token: {e}")
-    
+                jwt_user_id = payload.get('user_id')
+
+                if jwt_user_id:
+                    logger.debug(f"✅ User authenticated via JWT: {jwt_user_id}")
+                    return jwt_user_id
+            except Exception as e:
+                logger.warning(f"JWT decode error: {e}")
+
     logger.warning("❌ No valid authentication found")
     raise ValueError("User not authenticated")
 

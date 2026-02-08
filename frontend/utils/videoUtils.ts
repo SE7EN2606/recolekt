@@ -56,14 +56,28 @@ export function pickFirstString(...vals: any[]): string {
 }
 
 export function getBullets(v: AnyObj) {
-  // ✅ Try multiple possible paths
+  // ✅ NEW: Check summary_text first (new backend format)
+  const summaryText = v?.summary_text;
+  if (summaryText) {
+    const englishHeadlines = summaryText?.english?.headlines || summaryText?.english?.highlights;
+    const originalHeadlines = summaryText?.original?.headlines || summaryText?.original?.highlights;
+    
+    if (Array.isArray(englishHeadlines) && englishHeadlines.length > 0) {
+      return dedupeBullets(englishHeadlines);
+    }
+    if (Array.isArray(originalHeadlines) && originalHeadlines.length > 0) {
+      return dedupeBullets(originalHeadlines);
+    }
+  }
+
+  // ✅ Fallback: Try multiple possible paths
   const candidates =
-    v?.ai_analysis?.headlines ??
     v?.summary?.headlines ??
+    v?.summary?.highlights ??
     v?.headlines ??
+    v?.highlights ??
     v?.summary?.bullets ??
     v?.summary_bullets ??
-    v?.ai_analysis_headlines ??
     [];
 
   // ✅ Parse if it's a JSON string
@@ -82,7 +96,17 @@ export function getBullets(v: AnyObj) {
 }
 
 export function getDescription(v: AnyObj) {
-  // ✅ Try multiple possible paths, extractEnglish handles dual-language
+  // ✅ Try summary_text first (new backend format)
+  const summaryText = v?.summary_text;
+  if (summaryText) {
+    const englishSummary = summaryText?.english?.summary;
+    const originalSummary = summaryText?.original?.summary;
+    
+    if (englishSummary) return safeStr(englishSummary).trim();
+    if (originalSummary) return safeStr(originalSummary).trim();
+  }
+
+  // ✅ Fallback: Try multiple possible paths
   const result = pickFirstString(
     v?.summary?.summary,
     v?.summary_text,
@@ -99,7 +123,17 @@ export function getDescription(v: AnyObj) {
 }
 
 export function getTitle(v: AnyObj) {
-  // ✅ Handle dual-language titles
+  // ✅ Try summary_text first
+  const summaryText = v?.summary_text;
+  if (summaryText) {
+    const englishTitle = summaryText?.english?.title;
+    const originalTitle = summaryText?.original?.title;
+    
+    if (englishTitle) return safeStr(englishTitle).trim();
+    if (originalTitle) return safeStr(originalTitle).trim();
+  }
+
+  // ✅ Fallback
   return pickFirstString(
     v?.summary?.title, 
     v?.summary_title, 
@@ -130,6 +164,21 @@ export function getCategory(v: AnyObj) {
 }
 
 export function getHashtags(v: AnyObj) {
+  // ✅ Try summary_text first
+  const summaryText = v?.summary_text;
+  if (summaryText) {
+    const englishHashtags = summaryText?.english?.hashtags;
+    const originalHashtags = summaryText?.original?.hashtags;
+    
+    if (Array.isArray(englishHashtags) && englishHashtags.length > 0) {
+      return englishHashtags.map((t: string) => safeStr(t).replace(/^#/, '').trim()).filter(Boolean);
+    }
+    if (Array.isArray(originalHashtags) && originalHashtags.length > 0) {
+      return originalHashtags.map((t: string) => safeStr(t).replace(/^#/, '').trim()).filter(Boolean);
+    }
+  }
+
+  // ✅ Fallback
   const raw = v?.summary?.hashtags ?? v?.summary_hashtags ?? v?.summaryhashtags ?? v?.hashtags ?? [];
   const tags = Array.isArray(raw) ? raw : [];
   return tags.map((t: string) => safeStr(t).replace(/^#/, '').trim()).filter(Boolean);
@@ -142,28 +191,22 @@ export function sanitizeServings(servings: any): number {
   return num;
 }
 
-// ✅ FIXED: Parse quantity strings (CORRECT REGEX)
 export function parseQuantity(qty: string): { val: string; unit: string } {
   if (!qty) return { val: '', unit: '' };
   
   const trimmed = qty.trim();
-  
-  // Regex to find numbers (including fractions like 1/2 or decimals like 1.5) at the start
   const match = trimmed.match(/^([\d\.\,\/\s]+)(.*)$/);
   
-  // CASE A: It starts with a number (e.g. "180 g", "5", "1/2 cup")
   if (match && /\d/.test(match[1])) {
     return { 
-      val: match[1].trim(), // The Number -> Purple
-      unit: match[2].trim() // The Unit -> Black (only if exists)
+      val: match[1].trim(),
+      unit: match[2].trim()
     };
   }
 
-  // CASE B: No number found (e.g. "au goût", "to taste", "pinch")
   return { val: trimmed, unit: '' };
 }
 
-// ✅ FIXED: Convert imperial to metric (CORRECT REGEX)
 export function convertToMetric(quantity: string): string {
   const conversions: Record<string, { unit: string; factor: number }> = {
     'cup': { unit: 'ml', factor: 240 },
@@ -210,7 +253,6 @@ export function convertToMetric(quantity: string): string {
   return `${rounded} ${conversion.unit}`;
 }
 
-// ✅ FIXED: Scale quantities (CORRECT REGEX)
 export function scaleQuantity(quantity: string, scale: number): string {
   if (!quantity) return quantity;
   if (scale === 1) return quantity;

@@ -199,25 +199,39 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
 
   const summaryTextObj = viewModel?.summary_text || null;
 
+  // ✅ FIXED: Extract bullets correctly from summary_text
   const rawBullets = showOriginal
     ? (summaryTextObj?.original?.headlines ||
+        summaryTextObj?.original?.highlights ||
         summary?.original?.headlines ||
         summary?.headlines ||
-        summary?.bullets ||
         viewModel?.bullets)
     : (summaryTextObj?.english?.headlines ||
+        summaryTextObj?.english?.highlights ||
         summary?.english?.headlines ||
         summary?.headlines ||
-        summary?.bullets ||
         viewModel?.bullets);
 
   const bulletsForCard = asArray(rawBullets).map((b: any) => {
-    if (typeof b === 'string') return b;
+    if (typeof b === 'string') {
+      // Parse "Headline: Description" format
+      const parts = b.split(':', 1);
+      if (parts.length === 2) {
+        return {
+          headline: parts[0].trim(),
+          text: parts[1].trim()
+        };
+      }
+      return { headline: b, text: '' };
+    }
+    
     if (b && typeof b === 'object') {
-      const headline = asString(b.headline || b.text);
-      const text = asString(b.text);
+      const headline = asString(b.headline || b.text || '');
+      // ✅ Map "description" to "text" for compatibility
+      const text = asString(b.text || b.description || '');
       return { ...b, headline, text };
     }
+    
     return b;
   });
 

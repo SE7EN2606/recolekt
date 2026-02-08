@@ -14,6 +14,7 @@ def register_blueprints(app: Flask):
         reel_bp,
         billing_bp,
         admin_bp,
+        api_bp,  # ← ADD THIS LINE
     )
     
     # Register all blueprints with /api prefix
@@ -23,3 +24,4 @@ def register_blueprints(app: Flask):
     app.register_blueprint(reel_bp, url_prefix="/api")
     app.register_blueprint(billing_bp, url_prefix="/api")
     app.register_blueprint(admin_bp, url_prefix="/api")
+    app.register_blueprint(api_bp)

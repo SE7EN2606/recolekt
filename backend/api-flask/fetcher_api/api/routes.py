@@ -3,15 +3,27 @@
 """
 Main API routes - Simple endpoints and health checks
 """
+import os
+import json
 import logging
-from flask import Blueprint, jsonify
+import tempfile
+import threading
+from datetime import datetime
+from flask import Blueprint, jsonify, request
 
-from fetcher_api.adapters.db import fetch_one
+from fetcher_api.adapters.db import fetch_one, execute
 from fetcher_api.api.helpers.auth import get_user_id_from_request
 
 logger = logging.getLogger("api")
 
 api_bp = Blueprint("api", __name__)
+
+SAVE_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "saved_reels")
+)
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
 
 
 @api_bp.route("/", methods=["GET"])
@@ -31,7 +43,7 @@ def health():
 
 
 @api_bp.route("/plan", methods=["GET"])
-def get_plan():
+def get_plan_route():
     """Get user's subscription plan"""
     try:
         user_id = get_user_id_from_request()
@@ -44,15 +56,279 @@ def get_plan():
     return jsonify({"plan": plan})
 
 
+def get_plan(user_id: str) -> str:
+    """Helper: get user plan"""
+    row = fetch_one("SELECT plan FROM user_entitlements WHERE user_id=%s", (user_id,))
+    return (row or {}).get("plan", "free")
+
+
+def count_saves(user_id: str) -> int:
+    """Helper: count user's saved reels"""
+    row = fetch_one("SELECT COUNT(*)::int AS c FROM reels WHERE user_id=%s", (user_id,))
+    return int((row or {}).get("c", 0))
+
+
 @api_bp.route("/saves/count", methods=["GET"])
-def count_saves():
+def count_saves_route():
     """Get count of user's saved reels"""
     try:
         user_id = get_user_id_from_request()
     except ValueError:
         return jsonify({"error": "Authentication required"}), 401
     
-    row = fetch_one("SELECT COUNT(*)::int AS c FROM reels WHERE user_id=%s", (user_id,))
-    count = int((row or {}).get("c", 0))
+    count = count_saves(user_id)
     
     return jsonify({"count": count})
+
+
+# ---------------------------------------------------------
+# API TOKEN MANAGEMENT
+# ---------------------------------------------------------
+
+@api_bp.route("/api_token/generate", methods=["POST"])
+def generate_api_token_route():
+    """Generate a new API token for the logged-in user"""
+    try:
+        user_id = get_user_id_from_request()
+    except ValueError:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    from fetcher_api.utils.tokens import generate_api_token, hash_token, get_token_prefix
+    
+    # Generate token
+    token = generate_api_token()
+    token_hash = hash_token(token)
+    token_prefix = get_token_prefix(token)
+    
+    # Deactivate old tokens
+    execute(
+        "UPDATE user_api_tokens SET is_active = FALSE WHERE user_id = %s;",
+        (user_id,)
+    )
+    
+    # Insert new token
+    execute(
+        """
+        INSERT INTO user_api_tokens (user_id, token_hash, token_prefix)
+        VALUES (%s, %s, %s);
+        """,
+        (user_id, token_hash, token_prefix)
+    )
+    
+    logger.info(f"✅ Generated API token for user {user_id}")
+    
+    return jsonify({
+        "ok": True,
+        "token": token,  # Only shown once
+        "prefix": token_prefix
+    })
+
+
+@api_bp.route("/api_token/info", methods=["GET"])
+def get_api_token_info():
+    """Get info about user's current token (not the token itself)"""
+    try:
+        user_id = get_user_id_from_request()
+    except ValueError:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    row = fetch_one(
+        """
+        SELECT token_prefix, created_at, last_used_at, is_active
+        FROM user_api_tokens
+        WHERE user_id = %s AND is_active = TRUE
+        ORDER BY created_at DESC
+        LIMIT 1;
+        """,
+        (user_id,)
+    )
+    
+    if not row:
+        return jsonify({"has_token": False})
+    
+    return jsonify({
+        "has_token": True,
+        "prefix": row.get('token_prefix'),
+        "created_at": row.get('created_at').isoformat() if row.get('created_at') else None,
+        "last_used_at": row.get('last_used_at').isoformat() if row.get('last_used_at') else None
+    })
+
+
+@api_bp.route("/api_token/revoke", methods=["POST"])
+def revoke_api_token():
+    """Revoke user's API token"""
+    try:
+        user_id = get_user_id_from_request()
+    except ValueError:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    execute(
+        "UPDATE user_api_tokens SET is_active = FALSE WHERE user_id = %s;",
+        (user_id,)
+    )
+    
+    logger.info(f"🔒 Revoked API tokens for user {user_id}")
+    
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------
+# IMPORT SHARE (from iOS Shortcuts)
+# ---------------------------------------------------------
+
+@api_bp.route("/api/import_share", methods=["POST"])
+def import_share():
+    """
+    Accept URL from iOS Shortcut (or other client) with Bearer token auth.
+    Triggers background processing and returns a link to open.
+    """
+    # Get token from Authorization header
+    auth_header = request.headers.get('Authorization', '')
+    
+    if not auth_header.startswith('Bearer '):
+        return jsonify({"error": "Missing or invalid Authorization header"}), 401
+    
+    token = auth_header.replace('Bearer ', '').strip()
+    
+    if not token:
+        return jsonify({"error": "Empty token"}), 401
+    
+    # Hash and look up user
+    from fetcher_api.utils.tokens import hash_token
+    token_hash = hash_token(token)
+    
+    row = fetch_one(
+        """
+        SELECT user_id
+        FROM user_api_tokens
+        WHERE token_hash = %s AND is_active = TRUE;
+        """,
+        (token_hash,)
+    )
+    
+    if not row:
+        logger.warning(f"⚠️ Invalid API token attempt")
+        return jsonify({"error": "Invalid or expired token"}), 401
+    
+    user_id = row.get('user_id')
+    
+    # Update last_used_at
+    execute(
+        "UPDATE user_api_tokens SET last_used_at = NOW() WHERE token_hash = %s;",
+        (token_hash,)
+    )
+    
+    # Get URL from request body
+    data = request.get_json()
+    if not data or not data.get('url'):
+        return jsonify({"error": "Missing 'url' in request body"}), 400
+    
+    url = data.get('url').strip()
+    client = data.get('client', 'unknown')
+    
+    logger.info(f"📲 Import share from {client} for user {user_id}: {url}")
+    
+    # Check duplicate
+    from fetcher_api.services.db_insert import check_duplicate_reel
+    if check_duplicate_reel(user_id, url):
+        return jsonify({
+            "ok": False,
+            "error": "duplicate",
+            "message": "This video has already been saved."
+        }), 409
+    
+    # Check plan limits
+    plan = get_plan(user_id)
+    if plan == "free" and count_saves(user_id) >= 10:
+        return jsonify({
+            "ok": False,
+            "error": "limit_reached",
+            "message": "Free plan limit reached (10 saves). Upgrade to Pro.",
+            "upgrade": True
+        }), 403
+    
+    # Trigger processing (reuse existing /summarize logic)
+    from fetcher_api.adapters.instagram_client import instagram_client
+    from fetcher_api.utils.timestamps import get_timestamp, get_unique_id
+    from fetcher_api.services.video_analysis import download_instagram_video
+    from fetcher_api.services.storage import generate_gcs_paths
+    from fetcher_api.api.helpers.processing import background_process
+    
+    shortcode = instagram_client.extract_shortcode(url) or "unknown"
+    shortcode = shortcode.rstrip()
+    process_id = f"{shortcode}_{get_timestamp()}_{get_unique_id(url)}"
+    
+    # Start background processing (simplified - you can expand this)
+    temp_dir = tempfile.mkdtemp()
+    video_path = os.path.join(temp_dir, f"{process_id}.mp4")
+    
+    try:
+        dl = download_instagram_video(url, video_path)
+        
+        if not dl.get("success"):
+            return jsonify({
+                "ok": False,
+                "error": "download_failed",
+                "message": "Failed to download video"
+            }), 400
+        
+        metadata = dl.get("metadata") or {}
+        caption = metadata.get("caption", "") or ""
+        author_name = metadata.get("username", "") or ""
+        
+        # Create preview record
+        gcs_paths = generate_gcs_paths(shortcode, "IG")
+        
+        preview_record = {
+            "process_id": process_id,
+            "status": "processing",
+            "source_url": url,
+            "folder_id": "default",
+            "caption": caption,
+            "author_name": author_name,
+            "summary": {"title": "Processing…"},
+            "gcs_urls": {},
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        early_path = os.path.join(SAVE_DIR, f"{process_id}.json")
+        with open(early_path, "w", encoding="utf-8") as f:
+            json.dump(preview_record, f, ensure_ascii=False, indent=2)
+        
+        # Trigger background processing
+        threading.Thread(
+            target=background_process,
+            args=(
+                {"process_id": process_id, "gcs_paths": gcs_paths},
+                video_path,
+                temp_dir,
+                shortcode,
+                caption,
+                url,
+                True,  # save_to_gcs
+                author_name,
+                SAVE_DIR,
+                user_id
+            ),
+            daemon=True
+        ).start()
+        
+        logger.info(f"✅ Started processing {process_id} via import_share")
+        
+        # Return success with open_url
+        open_url = f"{FRONTEND_BASE_URL}/gallery/all?refresh=1"
+        
+        return jsonify({
+            "ok": True,
+            "reel_id": process_id,
+            "open_url": open_url,
+            "message": "Processing started"
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Import share error: {e}")
+        return jsonify({
+            "ok": False,
+            "error": "processing_error",
+            "message": str(e)
+        }), 500

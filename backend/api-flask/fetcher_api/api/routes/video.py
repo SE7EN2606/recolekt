@@ -1,3 +1,4 @@
+# fetcher_api/api/routes/video.py
 """
 Video processing routes - /summarize endpoint
 """
@@ -45,7 +46,7 @@ def summarize():
         return jsonify({"error": "Authentication required"}), 401
     
     save_to_gcs = request.form.get("save_to_gcs", "true").lower() == "true" and gcs_client.available
-    url = request.form.get("url")
+    url = request.form.get("url") or request.form.get("URL")  # ← FIXED: Accept both lowercase and uppercase
     file = request.files.get("file")
     
     if not file and not url:

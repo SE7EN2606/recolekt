@@ -158,44 +158,51 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
             parsed = json_loads_maybe(workout_raw, default=None)
             workout_obj = parsed if isinstance(parsed, dict) else None
 
-        # Normalize top-level summary-ish fields (may vary by analyzer implementation)
-        summary_field = ai_result.get("summary", "")
-        if isinstance(summary_field, str):
-            top_level_summary = summary_field
-        elif isinstance(summary_field, dict):
-            eng_sum = ensure_dict(summary_field.get("english", {}))
-            top_level_summary = eng_sum.get("summary", "") or eng_sum.get("text", "") or ""
-        else:
-            top_level_summary = ""
+        # Extract bilingual summary from ai_result
+        summary_from_ai = ai_result.get("summary", {})
+        if not isinstance(summary_from_ai, dict) or "english" not in summary_from_ai:
+            # Fallback: Build from flat fields
+            summary_from_ai = {
+                "english": {
+                    "title": ai_result.get("title", ""),
+                    "summary": ai_result.get("summary_text", ""),
+                    "headlines": ensure_list(ai_result.get("headlines", [])),
+                    "hashtags": ensure_list(ai_result.get("hashtags", [])),
+                    "emojis": ensure_list(ai_result.get("emojis", [])),
+                },
+                "original": {
+                    "title": ai_result.get("title", ""),
+                    "summary": ai_result.get("summary_text", ""),
+                    "headlines": ensure_list(ai_result.get("headlines", [])),
+                    "hashtags": ensure_list(ai_result.get("hashtags", [])),
+                    "emojis": ensure_list(ai_result.get("emojis", [])),
+                },
+            }
 
-        top_level_headlines = ai_result.get("headlines", [])
-        top_level_hashtags = ai_result.get("hashtags", [])
-        top_level_emojis = ai_result.get("emojis", [])
-
-        top_level_headlines = ensure_list(top_level_headlines)
-        top_level_hashtags = ensure_list(top_level_hashtags)
-        top_level_emojis = ensure_list(top_level_emojis)
+        # Extract English and Original blocks
+        eng_summary = ensure_dict(summary_from_ai.get("english", {}))
+        orig_summary = ensure_dict(summary_from_ai.get("original", {}))
 
         # Handle both recipe and general content
         if content_type == "recipe" and recipe_obj:
-            # Recipe content - extract dual-language data
+            # Recipe content - use recipe titles, keep summary structure
             eng_recipe = ensure_dict(recipe_obj.get("english", {}))
             orig_recipe = ensure_dict(recipe_obj.get("original", {}))
 
             summary_block = {
                 "english": {
-                    "title": eng_recipe.get("title", "Recipe"),
-                    "summary": top_level_summary,
-                    "headlines": top_level_headlines,
-                    "hashtags": top_level_hashtags,
-                    "emojis": top_level_emojis,
+                    "title": eng_recipe.get("title", "") or eng_summary.get("title", "Recipe"),
+                    "summary": eng_summary.get("summary", ""),
+                    "headlines": eng_summary.get("headlines", []),
+                    "hashtags": eng_summary.get("hashtags", []),
+                    "emojis": eng_summary.get("emojis", []),
                 },
                 "original": {
-                    "title": orig_recipe.get("title", "Recette"),
-                    "summary": top_level_summary,
-                    "headlines": top_level_headlines,
-                    "hashtags": top_level_hashtags,
-                    "emojis": top_level_emojis,
+                    "title": orig_recipe.get("title", "") or orig_summary.get("title", "Recette"),
+                    "summary": orig_summary.get("summary", ""),
+                    "headlines": orig_summary.get("headlines", []),
+                    "hashtags": orig_summary.get("hashtags", []),
+                    "emojis": orig_summary.get("emojis", []),
                 },
             }
 
@@ -204,40 +211,12 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
             display_topic = ai_result.get("topic", "Recipe")
 
         else:
-            # General content - use summary structure if present
-            summary_data = ai_result.get("summary", {})
+            # General content - use summary structure directly
+            summary_block = summary_from_ai
 
-            if isinstance(summary_data, dict) and "english" in summary_data:
-                # Dual-language summary
-                summary_block = summary_data
-
-                eng = ensure_dict(summary_data.get("english", {}))
-                display_title = eng.get("title", "Saved Video")
-                display_category = eng.get("category", "General")
-                display_topic = eng.get("topic", "General")
-
-            else:
-                # Fallback: build minimal structure
-                summary_block = {
-                    "english": {
-                        "title": ai_result.get("title", "Saved Video"),
-                        "summary": top_level_summary,
-                        "headlines": top_level_headlines,
-                        "hashtags": top_level_hashtags,
-                        "emojis": top_level_emojis,
-                    },
-                    "original": {
-                        "title": ai_result.get("title", "Saved Video"),
-                        "summary": top_level_summary,
-                        "headlines": top_level_headlines,
-                        "hashtags": top_level_hashtags,
-                        "emojis": top_level_emojis,
-                    },
-                }
-
-                display_title = ai_result.get("title", "Saved Video")
-                display_category = ai_result.get("category", "General")
-                display_topic = ai_result.get("topic", "General")
+            display_title = eng_summary.get("title", "Saved Video")
+            display_category = ai_result.get("category", "General")
+            display_topic = ai_result.get("topic", "General")
 
         eng_data = ensure_dict(ensure_dict(summary_block).get("english", {}))
 
