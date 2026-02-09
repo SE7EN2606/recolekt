@@ -107,7 +107,7 @@ def summarize():
         logger.error("❌ No file or URL provided")
         return jsonify({"error": "Provide either file or URL"}), 400
 
-    # ✅ FIX: Check for duplicate BEFORE any processing
+    # ✅ BETTER FIX: Check for duplicate and handle error status
     if url:
         url = str(url).strip()
         existing_reel = fetch_one(
@@ -121,12 +121,20 @@ def summarize():
         
         if existing_reel:
             logger.info(f"📌 Reel already exists: {existing_reel['id']}")
-            return jsonify({
-                "reel_id": existing_reel['id'],
-                "status": existing_reel.get('status', 'completed'),
-                "message": "This reel already exists in your collection",
-                "preview_url": existing_reel.get('preview_url')
-            }), 200
+            
+            # If the existing reel has error status, allow reprocessing
+            if existing_reel.get('status') == 'error':
+                logger.info(f"⚠️ Existing reel has error status, deleting and reprocessing")
+                execute("DELETE FROM reels WHERE id = %s", (existing_reel['id'],))
+                # Continue with normal processing below (don't return here)
+            else:
+                # Reel exists and is OK - return it
+                return jsonify({
+                    "reel_id": existing_reel['id'],
+                    "status": existing_reel.get('status', 'completed'),
+                    "message": "This reel already exists in your collection",
+                    "preview_url": existing_reel.get('preview_url')
+                }), 200
 
     temp_dir = tempfile.mkdtemp(dir=TEMP_DIR_BASE)
     video_path = None
