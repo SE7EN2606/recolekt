@@ -138,13 +138,10 @@ def summarize():
 
     temp_dir = tempfile.mkdtemp(dir=TEMP_DIR_BASE)
     video_path = None
-    caption = ""
-    author_name = ""
-    post = None
     result = {
         "process_id": "",
         "summary": {},
-        "caption": caption
+        "caption": ""
     }
 
     try:
@@ -169,8 +166,6 @@ def summarize():
         gcs_paths = generate_gcs_paths(shortcode, "IG")
         result["gcs_paths"] = gcs_paths
         
-        preview_url = None
-        
         # ✅ FIX: Don't try to generate thumbnail here either
         # Let background_process handle everything
         logger.info(f"⏭️ Skipping thumbnail generation - will be done in background")
@@ -178,7 +173,7 @@ def summarize():
         result["gcs_urls"] = {"preview_thumbnail": None, "video": None}
         gcs_urls_json = json.dumps(result["gcs_urls"])
 
-        # Database INSERT with detailed logging
+        # ✅ FIX: Insert with NULL for caption/author - background will update
         logger.info(f"💾 Inserting into database...")
         logger.info(f"   ID: {result['process_id']}")
         logger.info(f"   User: {user_id}")
@@ -186,12 +181,12 @@ def summarize():
         
         execute(
             """
-            INSERT INTO reels (id, user_id, source_url, status, folder_id, caption, author_name, gcs_urls, created_at)
-            VALUES (%s, %s, %s, 'processing', 'default', %s, %s, %s, NOW())
+            INSERT INTO reels (id, user_id, source_url, status, folder_id, gcs_urls, created_at)
+            VALUES (%s, %s, %s, 'processing', 'default', %s, NOW())
             """,
-            (result["process_id"], user_id, url, "", "", gcs_urls_json),
+            (result["process_id"], user_id, url, gcs_urls_json),
         )
-        logger.info(f"✅ Database record created")
+        logger.info(f"✅ Database record created (caption/author will be added by background)")
 
     except Exception as e:
         logger.error(f"❌ Error in main processing: {e}", exc_info=True)
@@ -202,7 +197,7 @@ def summarize():
         logger.info(f"🚀 Starting background processing thread...")
         threading.Thread(
             target=background_process,
-            args=(result, video_path, temp_dir, shortcode, caption, url, save_to_gcs, author_name, None, user_id),
+            args=(result, video_path, temp_dir, shortcode, "", url, save_to_gcs, "", None, user_id),
             daemon=True,
         ).start()
         logger.info(f"✅ Background thread started")

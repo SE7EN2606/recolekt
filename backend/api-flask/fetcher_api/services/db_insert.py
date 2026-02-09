@@ -57,12 +57,12 @@ def insert_reel_into_db(reel_data):
             summary_text_json = None
         
         # ✅ FIXED: Only mark as "done" if explicitly passed from background worker
-        # The background worker will pass status="done" when ALL processing is complete
         final_status = reel_data.get("status", "processing")
         
         logger.info(f"🔧 [DB_INSERT] Display title: '{display_title}'")
         logger.info(f"🔧 [DB_INSERT] final_status: {final_status}")
         logger.info(f"🔧 [DB_INSERT] duration: {reel_data.get('duration')}")
+        logger.info(f"🔧 [DB_INSERT] author_name: {reel_data.get('author_name')}")
 
         # Ensure JSONB fields are valid strings
         gcs_urls = reel_data.get("gcs_urls", {})
@@ -110,6 +110,7 @@ def insert_reel_into_db(reel_data):
         ON CONFLICT (id) DO UPDATE SET
             status = EXCLUDED.status,
             caption = EXCLUDED.caption,
+            author_name = EXCLUDED.author_name,
             duration = EXCLUDED.duration,
             summary_title = EXCLUDED.summary_title,
             summary_text = EXCLUDED.summary_text,
@@ -132,8 +133,8 @@ def insert_reel_into_db(reel_data):
             "source_url": reel_data.get("source_url"),
             "status": final_status,
             "folder_id": reel_data.get("folder_id", "default"),
-            "caption": reel_data.get("caption", ""),
-            "author_name": reel_data.get("author_name", ""),
+            "caption": reel_data.get("caption") or "",
+            "author_name": reel_data.get("author_name") or "",
             "duration": reel_data.get("duration"),
             "is_long_video": reel_data.get("is_long_video", False),
             
@@ -164,7 +165,7 @@ def insert_reel_into_db(reel_data):
         logger.info(f"🔧 [DB_INSERT] SQL executed successfully. Committing transaction...")
         conn.commit()
         
-        logger.info(f"✅ [DB] Successfully saved {process_id} | status={final_status} | duration={reel_data.get('duration')} | title='{display_title}'")
+        logger.info(f"✅ [DB] Successfully saved {process_id} | status={final_status} | duration={reel_data.get('duration')} | author='{reel_data.get('author_name')}' | title='{display_title}'")
 
     except Exception as e:
         logger.error(f"❌❌❌ [DB_INSERT] FAILED for {process_id}: {e}")
