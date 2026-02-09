@@ -20,7 +20,7 @@ from fetcher_api.api.helpers.normalizers import (
     json_stringify,
 )
 from fetcher_api.utils.ocr_utils import maybe_ocr_and_merge_text
-from fetcher_api.services.video_analysis import download_instagram_video
+from fetcher_api.services.video_analysis import download_instagram_video, generate_reel_thumbnail
 
 logger = logging.getLogger("api")
 
@@ -28,7 +28,6 @@ logger = logging.getLogger("api")
 def cleanup_video_from_gcs(shortcode):
     """Delete MP4 video from GCS after processing completes (keeps thumbnails + JSONs)"""
     try:
-        # ✅ FIX: Import and re-initialize GCS client in background thread
         from fetcher_api.adapters.gcs_client import gcs_client
         
         if not gcs_client.available:
@@ -53,7 +52,6 @@ def cleanup_video_from_gcs(shortcode):
 
 
 def background_process(result, video_path, temp_dir, shortcode, caption, url, save_to_gcs, author_name, save_dir, user_id):
-    # ✅ FIX: Re-initialize GCS client in background thread
     from fetcher_api.adapters.gcs_client import gcs_client
     
     try:
@@ -67,7 +65,6 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
             logger.info(f"⬇️ Background downloading video: {url}")
             dl_result = download_instagram_video(url, video_path)
 
-            # dl_result should be dict; guard anyway
             dl_result = ensure_dict(dl_result)
 
             if not dl_result.get("success"):
@@ -105,7 +102,20 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
             logger.warning("⚠️ No duration extracted! Setting to None")
             result["duration"] = None
 
-        # 3. Transcribe
+        # 3. Generate Thumbnail
+        thumbnail_path = None
+        if os.path.exists(video_path):
+            try:
+                logger.info(f"🖼️ Generating thumbnail from video...")
+                thumbnail_path = generate_reel_thumbnail(video_path, temp_dir)
+                if thumbnail_path and os.path.exists(thumbnail_path):
+                    logger.info(f"✅ Thumbnail generated: {thumbnail_path}")
+                else:
+                    logger.warning("⚠️ Thumbnail generation returned None or file doesn't exist")
+            except Exception as e:
+                logger.error(f"❌ Thumbnail generation failed: {e}")
+
+        # 4. Transcribe
         raw_transcription = transcribe_video_deepgram(video_path)
 
         transcription_data = {}
@@ -128,23 +138,21 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
 
         logger.info(f"🗣️ Audio transcribed. Language detected: {detected_lang}")
 
-        # 4. OCR Merge
+        # 5. OCR Merge
         merged_text = transcript_text
         try:
             merged_text, _ = maybe_ocr_and_merge_text(transcript_text, caption, None, None, "document")
         except Exception as e:
             logger.warning(f"OCR step failed: {e}")
 
-        # 5. AI Analysis (Dual-Language)
+        # 6. AI Analysis (Dual-Language)
         logger.info("🤖 Starting AI Analysis (Dual-Language Mode)...")
 
         ai_result = analyze_instagram_video(merged_text, caption, detected_lang)
         ai_result = ensure_dict(ai_result)
 
-        # Content type + special payloads
         content_type = ai_result.get("content_type", "general") or "general"
 
-        # IMPORTANT: recipe/workout may arrive as JSON strings -> parse safely for dict access
         recipe_raw = ai_result.get("recipe")
         workout_raw = ai_result.get("workout")
 
@@ -163,10 +171,8 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
             parsed = json_loads_maybe(workout_raw, default=None)
             workout_obj = parsed if isinstance(parsed, dict) else None
 
-        # Extract bilingual summary from ai_result
         summary_from_ai = ai_result.get("summary", {})
         if not isinstance(summary_from_ai, dict) or "english" not in summary_from_ai:
-            # Fallback: Build from flat fields
             summary_from_ai = {
                 "english": {
                     "title": ai_result.get("title", ""),
@@ -184,13 +190,10 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
                 },
             }
 
-        # Extract English and Original blocks
         eng_summary = ensure_dict(summary_from_ai.get("english", {}))
         orig_summary = ensure_dict(summary_from_ai.get("original", {}))
 
-        # Handle both recipe and general content
         if content_type == "recipe" and recipe_obj:
-            # Recipe content - use recipe titles, keep summary structure
             eng_recipe = ensure_dict(recipe_obj.get("english", {}))
             orig_recipe = ensure_dict(recipe_obj.get("original", {}))
 
@@ -216,7 +219,6 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
             display_topic = ai_result.get("topic", "Recipe")
 
         else:
-            # General content - use summary structure directly
             summary_block = summary_from_ai
 
             display_title = eng_summary.get("title", "Saved Video")
@@ -227,11 +229,10 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
 
         result.update(
             {
-                "summary": summary_block,  # DUAL-LANGUAGE STRUCTURE PRESERVED
+                "summary": summary_block,
                 "caption": caption,
                 "author_name": author_name,
                 "content_type": content_type,
-                # Flat fields for database/search (English by default)
                 "summary_category": display_category,
                 "summary_topic": display_topic,
                 "summary_title": display_title,
@@ -239,7 +240,6 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
                 "summary_bullets": json.dumps(ensure_list(eng_data.get("headlines", [])), ensure_ascii=False),
                 "summary_hashtags": ensure_list(eng_data.get("hashtags", [])),
                 "summary_emojis": ensure_list(eng_data.get("emojis", [])),
-                # Special content types (MUST BE JSON STRINGS FOR POSTGRESQL)
                 "recipe": json_stringify(recipe_raw) if recipe_raw is not None else None,
                 "workout": json_stringify(workout_raw) if workout_raw is not None else None,
                 "transcription": transcription_data,
@@ -247,10 +247,29 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
             }
         )
 
-        # 6. Upload Caption + Transcription JSONs to GCS
+        # 7. Upload Thumbnail + Caption + Transcription JSONs to GCS
         if save_to_gcs and gcs_client.available:
             try:
                 bucket = gcs_client.client.bucket(gcs_client.analysis_bucket_name)
+
+                # Upload Thumbnail
+                if thumbnail_path and os.path.exists(thumbnail_path):
+                    thumbnail_gcs_path = f"media/IG_reels/{shortcode}/{shortcode}_thumbnail.jpeg"
+                    thumbnail_blob = bucket.blob(thumbnail_gcs_path)
+                    thumbnail_blob.upload_from_filename(thumbnail_path, content_type="image/jpeg")
+                    
+                    thumbnail_url = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/{thumbnail_gcs_path}"
+                    
+                    gcs_urls = result.get("gcs_urls", {})
+                    if isinstance(gcs_urls, str):
+                        gcs_urls = json_loads_maybe(gcs_urls, default={})
+                    gcs_urls = ensure_dict(gcs_urls)
+                    gcs_urls["preview_thumbnail"] = thumbnail_url
+                    result["gcs_urls"] = gcs_urls
+                    
+                    logger.info(f"✅ Uploaded thumbnail: {thumbnail_gcs_path}")
+                else:
+                    logger.warning("⚠️ No thumbnail to upload")
 
                 # Upload Caption JSON
                 caption_json_path = f"media/IG_reels/{shortcode}/{shortcode}_caption.json"
@@ -271,9 +290,9 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
                 logger.info(f"✅ Uploaded transcription JSON: {transcription_json_path}")
 
             except Exception as e:
-                logger.error(f"❌ Failed to upload caption/transcription JSONs: {e}")
+                logger.error(f"❌ Failed to upload files to GCS: {e}")
 
-        # 7. GCS Uploads (Video + Result)
+        # 8. GCS Uploads (Video + Result)
         video_uploaded_successfully = False
         if save_to_gcs and gcs_client.available:
             try:
@@ -298,25 +317,26 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
             except Exception as e:
                 logger.error(f"GCS upload failed: {e}")
 
-        # 8. Finalize
+        # 9. Finalize
         result["status"] = "done"
 
         logger.info(f"💾 Saving to database with duration={result.get('duration')}")
         insert_reel_into_db(result)
 
-        # Log completion
         safe_title = display_title
         if isinstance(safe_title, dict):
             safe_title = safe_title.get("english", "Saved Video")
         logger.info(f"✅ Processing Complete: {safe_title}")
 
-        # 9. Cleanup MP4 from GCS
+        # 10. Cleanup MP4 from GCS
         if video_uploaded_successfully:
             logger.info("🗑️ Processing complete - cleaning up MP4 from GCS...")
             cleanup_video_from_gcs(shortcode)
 
-        # 10. Cleanup local files
+        # 11. Cleanup local files
         cleanup_file(video_path)
+        if thumbnail_path:
+            cleanup_file(thumbnail_path)
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
 
