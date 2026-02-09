@@ -6,7 +6,6 @@ import json
 import shutil
 import logging
 from datetime import datetime
-from google.cloud import storage
 
 from fetcher_api.services.transcription import transcribe_video_deepgram
 from fetcher_api.services.ai_service import analyze_instagram_video
@@ -22,7 +21,6 @@ from fetcher_api.api.helpers.normalizers import (
 )
 from fetcher_api.utils.ocr_utils import maybe_ocr_and_merge_text
 from fetcher_api.services.video_analysis import download_instagram_video
-from fetcher_api.adapters.gcs_client import gcs_client
 
 logger = logging.getLogger("api")
 
@@ -30,10 +28,14 @@ logger = logging.getLogger("api")
 def cleanup_video_from_gcs(shortcode):
     """Delete MP4 video from GCS after processing completes (keeps thumbnails + JSONs)"""
     try:
-        storage_client = storage.Client()
-        bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-storage")  # ✅ FIXED
-        bucket = storage_client.bucket(bucket_name)
-
+        # ✅ FIX: Import and re-initialize GCS client in background thread
+        from fetcher_api.adapters.gcs_client import gcs_client
+        
+        if not gcs_client.available:
+            logger.warning("⚠️ GCS client not available, skipping MP4 cleanup")
+            return False
+        
+        bucket = gcs_client.client.bucket(gcs_client.analysis_bucket_name)
         video_path = f"media/IG_reels/{shortcode}/{shortcode}_video.mp4"
 
         blob = bucket.blob(video_path)
@@ -51,6 +53,9 @@ def cleanup_video_from_gcs(shortcode):
 
 
 def background_process(result, video_path, temp_dir, shortcode, caption, url, save_to_gcs, author_name, save_dir, user_id):
+    # ✅ FIX: Re-initialize GCS client in background thread
+    from fetcher_api.adapters.gcs_client import gcs_client
+    
     try:
         logger.info(f"🧵 Background worker started for {result['process_id']}")
 
@@ -235,7 +240,6 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
                 "summary_hashtags": ensure_list(eng_data.get("hashtags", [])),
                 "summary_emojis": ensure_list(eng_data.get("emojis", [])),
                 # Special content types (MUST BE JSON STRINGS FOR POSTGRESQL)
-                # IMPORTANT: Avoid double-dumping if already JSON text
                 "recipe": json_stringify(recipe_raw) if recipe_raw is not None else None,
                 "workout": json_stringify(workout_raw) if workout_raw is not None else None,
                 "transcription": transcription_data,
@@ -246,9 +250,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
         # 6. Upload Caption + Transcription JSONs to GCS
         if save_to_gcs and gcs_client.available:
             try:
-                bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
-                storage_client = storage.Client()
-                bucket = storage_client.bucket(bucket_name)
+                bucket = gcs_client.client.bucket(gcs_client.analysis_bucket_name)
 
                 # Upload Caption JSON
                 caption_json_path = f"media/IG_reels/{shortcode}/{shortcode}_caption.json"
