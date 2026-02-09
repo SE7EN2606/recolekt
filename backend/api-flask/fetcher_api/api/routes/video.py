@@ -8,7 +8,7 @@ import re
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 
-from fetcher_api.adapters.db import execute
+from fetcher_api.adapters.db import execute, fetch_one
 from fetcher_api.adapters.gcs_client import gcs_client
 from fetcher_api.adapters.instagram_client import instagram_client
 from fetcher_api.utils.files import save_uploaded_file, cleanup_file
@@ -107,6 +107,27 @@ def summarize():
         logger.error("❌ No file or URL provided")
         return jsonify({"error": "Provide either file or URL"}), 400
 
+    # ✅ FIX: Check for duplicate BEFORE any processing
+    if url:
+        url = str(url).strip()
+        existing_reel = fetch_one(
+            """
+            SELECT id, status, (gcs_urls::jsonb->>'preview_thumbnail') as preview_url 
+            FROM reels 
+            WHERE user_id = %s AND source_url = %s
+            """,
+            (user_id, url)
+        )
+        
+        if existing_reel:
+            logger.info(f"📌 Reel already exists: {existing_reel['id']}")
+            return jsonify({
+                "reel_id": existing_reel['id'],
+                "status": existing_reel.get('status', 'completed'),
+                "message": "This reel already exists in your collection",
+                "preview_url": existing_reel.get('preview_url')
+            }), 200
+
     temp_dir = tempfile.mkdtemp(dir=TEMP_DIR_BASE)
     video_path = None
     caption = ""
@@ -126,7 +147,6 @@ def summarize():
             result["process_id"] = f"{shortcode}--{get_timestamp()}--{get_unique_id(url or filename)}"
             logger.info(f"📁 File upload: {result['process_id']}")
         else:
-            url = str(url).strip()
             logger.info(f"🔗 Processing Instagram URL: {url}")
             shortcode = instagram_client.extract_shortcode(url) or "unknown"
             shortcode = shortcode.rstrip("-")
@@ -178,7 +198,6 @@ def summarize():
             """
             INSERT INTO reels (id, user_id, source_url, status, folder_id, caption, author_name, gcs_urls, created_at)
             VALUES (%s, %s, %s, 'processing', 'default', %s, %s, %s, NOW())
-            ON CONFLICT (id) DO UPDATE SET status = 'processing', updated_at = NOW()
             """,
             (result["process_id"], user_id, url, caption, author_name, gcs_urls_json),
         )
