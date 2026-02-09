@@ -24,6 +24,7 @@ from fetcher_api.api.helpers.auth import get_user_id_from_request
 
 logger = logging.getLogger("video")
 
+# ✅ FIX: Blueprint definition (this was missing!)
 video_bp = Blueprint("video", __name__)
 
 TEMP_DIR_BASE = os.path.join(tempfile.gettempdir(), "recolekt_processing")
