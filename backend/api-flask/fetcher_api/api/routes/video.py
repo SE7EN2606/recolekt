@@ -107,7 +107,7 @@ def summarize():
         logger.error("❌ No file or URL provided")
         return jsonify({"error": "Provide either file or URL"}), 400
 
-    # ✅ BETTER FIX: Check for duplicate and handle error status
+    # ✅ Check for duplicate and handle error status
     if url:
         url = str(url).strip()
         existing_reel = fetch_one(
@@ -162,36 +162,20 @@ def summarize():
             video_path = os.path.join(temp_dir, f"{result['process_id']}.mp4")
             logger.info(f"🆔 Process ID: {result['process_id']}")
 
-            try:
-                logger.info(f"📸 Fetching Instagram post metadata...")
-                post = instagram_client.get_post(shortcode)
-                if post:
-                    caption = post.caption or ""
-                    author_name = post.owner_username or ""
-                    logger.info(f"✅ Got metadata: @{author_name}")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not fetch Instagram metadata: {e}")
+            # ✅ FIX: Skip metadata fetch here - let background_process handle it
+            # This avoids the 401 error from Instagram when called via iOS Shortcut
+            logger.info(f"⏭️ Skipping metadata fetch - will be done in background")
 
         gcs_paths = generate_gcs_paths(shortcode, "IG")
         result["gcs_paths"] = gcs_paths
         
         preview_url = None
-        thumb_path = os.path.join(temp_dir, f"{shortcode}_thumbnail.jpeg")
-        thumbnail_success = False
         
-        logger.info(f"🖼️ Generating thumbnail...")
-        if post:
-            thumbnail_success = download_instagram_thumbnail(post, thumb_path)
-        if not thumbnail_success and video_path and os.path.exists(video_path):
-            generate_reel_thumbnail(video_path, thumb_path, 0.0)
-            
-        if os.path.exists(thumb_path) and save_to_gcs and gcs_client.available:
-            logger.info(f"☁️ Uploading thumbnail to GCS...")
-            preview_url = gcs_client.upload_file(thumb_path, gcs_client.analysis_bucket_name, gcs_paths["preview_thumbnail"])
-            cleanup_file(thumb_path)
-            logger.info(f"✅ Thumbnail uploaded: {preview_url}")
+        # ✅ FIX: Don't try to generate thumbnail here either
+        # Let background_process handle everything
+        logger.info(f"⏭️ Skipping thumbnail generation - will be done in background")
 
-        result["gcs_urls"] = {"preview_thumbnail": preview_url, "video": None}
+        result["gcs_urls"] = {"preview_thumbnail": None, "video": None}
         gcs_urls_json = json.dumps(result["gcs_urls"])
 
         # Database INSERT with detailed logging
@@ -199,15 +183,13 @@ def summarize():
         logger.info(f"   ID: {result['process_id']}")
         logger.info(f"   User: {user_id}")
         logger.info(f"   URL: {url}")
-        logger.info(f"   Caption: {caption[:50] if caption else 'None'}...")
-        logger.info(f"   Author: {author_name}")
         
         execute(
             """
             INSERT INTO reels (id, user_id, source_url, status, folder_id, caption, author_name, gcs_urls, created_at)
             VALUES (%s, %s, %s, 'processing', 'default', %s, %s, %s, NOW())
             """,
-            (result["process_id"], user_id, url, caption, author_name, gcs_urls_json),
+            (result["process_id"], user_id, url, "", "", gcs_urls_json),
         )
         logger.info(f"✅ Database record created")
 
@@ -228,7 +210,7 @@ def summarize():
         logger.error(f"❌ Failed to start background thread: {e}", exc_info=True)
 
     return jsonify({
-        "status": "preview_ready" if preview_url else "processing",
+        "status": "processing",
         "reel_id": result["process_id"],
-        "preview_url": preview_url
+        "preview_url": None
     })
