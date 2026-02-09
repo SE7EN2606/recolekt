@@ -84,7 +84,9 @@ def summarize():
     
     try:
         user_id = get_user_id_from_request()
-    except ValueError:
+        logger.info(f"✅ User authenticated: {user_id}")
+    except ValueError as e:
+        logger.error(f"❌ Auth failed: {e}")
         return jsonify({"error": "Authentication required"}), 401
 
     save_to_gcs = True
@@ -102,6 +104,7 @@ def summarize():
     url = _extract_url_from_request()
 
     if not file and not url:
+        logger.error("❌ No file or URL provided")
         return jsonify({"error": "Provide either file or URL"}), 400
 
     temp_dir = tempfile.mkdtemp(dir=TEMP_DIR_BASE)
@@ -121,20 +124,25 @@ def summarize():
             video_path = save_uploaded_file(file, temp_dir)
             shortcode = get_unique_id(filename).rstrip("-")
             result["process_id"] = f"{shortcode}--{get_timestamp()}--{get_unique_id(url or filename)}"
+            logger.info(f"📁 File upload: {result['process_id']}")
         else:
             url = str(url).strip()
+            logger.info(f"🔗 Processing Instagram URL: {url}")
             shortcode = instagram_client.extract_shortcode(url) or "unknown"
             shortcode = shortcode.rstrip("-")
             result["process_id"] = f"{shortcode}--{get_timestamp()}--{get_unique_id(url)}"
             video_path = os.path.join(temp_dir, f"{result['process_id']}.mp4")
+            logger.info(f"🆔 Process ID: {result['process_id']}")
 
             try:
+                logger.info(f"📸 Fetching Instagram post metadata...")
                 post = instagram_client.get_post(shortcode)
                 if post:
                     caption = post.caption or ""
                     author_name = post.owner_username or ""
-            except Exception:
-                pass
+                    logger.info(f"✅ Got metadata: @{author_name}")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not fetch Instagram metadata: {e}")
 
         gcs_paths = generate_gcs_paths(shortcode, "IG")
         result["gcs_paths"] = gcs_paths
@@ -142,18 +150,30 @@ def summarize():
         preview_url = None
         thumb_path = os.path.join(temp_dir, f"{shortcode}_thumbnail.jpeg")
         thumbnail_success = False
+        
+        logger.info(f"🖼️ Generating thumbnail...")
         if post:
             thumbnail_success = download_instagram_thumbnail(post, thumb_path)
         if not thumbnail_success and video_path and os.path.exists(video_path):
             generate_reel_thumbnail(video_path, thumb_path, 0.0)
             
         if os.path.exists(thumb_path) and save_to_gcs and gcs_client.available:
+            logger.info(f"☁️ Uploading thumbnail to GCS...")
             preview_url = gcs_client.upload_file(thumb_path, gcs_client.analysis_bucket_name, gcs_paths["preview_thumbnail"])
             cleanup_file(thumb_path)
+            logger.info(f"✅ Thumbnail uploaded: {preview_url}")
 
         result["gcs_urls"] = {"preview_thumbnail": preview_url, "video": None}
         gcs_urls_json = json.dumps(result["gcs_urls"])
 
+        # Database INSERT with detailed logging
+        logger.info(f"💾 Inserting into database...")
+        logger.info(f"   ID: {result['process_id']}")
+        logger.info(f"   User: {user_id}")
+        logger.info(f"   URL: {url}")
+        logger.info(f"   Caption: {caption[:50] if caption else 'None'}...")
+        logger.info(f"   Author: {author_name}")
+        
         execute(
             """
             INSERT INTO reels (id, user_id, source_url, status, folder_id, caption, author_name, gcs_urls, created_at)
@@ -162,16 +182,23 @@ def summarize():
             """,
             (result["process_id"], user_id, url, caption, author_name, gcs_urls_json),
         )
+        logger.info(f"✅ Database record created")
 
     except Exception as e:
-        logger.error(f"Error: {e}", exc_info=True)
+        logger.error(f"❌ Error in main processing: {e}", exc_info=True)
         return jsonify({"error": "Internal error"}), 500
 
-    threading.Thread(
-        target=background_process,
-        args=(result, video_path, temp_dir, shortcode, caption, url, save_to_gcs, author_name, None, user_id),
-        daemon=True,
-    ).start()
+    # Start background processing with error handling
+    try:
+        logger.info(f"🚀 Starting background processing thread...")
+        threading.Thread(
+            target=background_process,
+            args=(result, video_path, temp_dir, shortcode, caption, url, save_to_gcs, author_name, None, user_id),
+            daemon=True,
+        ).start()
+        logger.info(f"✅ Background thread started")
+    except Exception as e:
+        logger.error(f"❌ Failed to start background thread: {e}", exc_info=True)
 
     return jsonify({
         "status": "preview_ready" if preview_url else "processing",
