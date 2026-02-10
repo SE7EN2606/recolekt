@@ -1,3 +1,4 @@
+# fetcher_api/api/__init__.py
 """
 API Package - Register all route blueprints
 """
@@ -14,7 +15,8 @@ def register_blueprints(app: Flask):
         reel_bp,
         billing_bp,
         admin_bp,
-        api_bp,  # ← ADD THIS LINE
+        api_bp,
+        cleanup_bp,  # ✅ ADD THIS
     )
     
     # Register all blueprints with /api prefix
@@ -25,3 +27,4 @@ def register_blueprints(app: Flask):
     app.register_blueprint(billing_bp, url_prefix="/api")
     app.register_blueprint(admin_bp, url_prefix="/api")
     app.register_blueprint(api_bp)
+    app.register_blueprint(cleanup_bp)  # ✅ ADD THIS
