@@ -6,7 +6,7 @@ Cleanup job for stuck processing reels
 import logging
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify
-from fetcher_api.api.helpers.auth import get_user_id_from_request, require_auth
+from fetcher_api.api.helpers.auth import get_user_id_from_request
 from fetcher_api.db.neon_db import get_neon_pool
 
 logger = logging.getLogger("cleanup")
@@ -14,13 +14,17 @@ logger = logging.getLogger("cleanup")
 cleanup_bp = Blueprint("cleanup", __name__)
 
 @cleanup_bp.route("/api/cleanup/stuck-reels", methods=["POST"])
-@require_auth
 def cleanup_stuck_reels():
     """
     Mark reels stuck in 'processing' for >30 minutes as 'failed'
     """
     try:
-        user_id = get_user_id_from_request()
+        # ✅ Get user_id (raises ValueError if not authenticated)
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError as e:
+            logger.warning(f"❌ Unauthorized cleanup attempt: {e}")
+            return jsonify({"error": "Not authenticated"}), 401
         
         pool = get_neon_pool()
         

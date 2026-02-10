@@ -1,74 +1,133 @@
-# fetcher_api/api/routes/cleanup.py
+# fetcher_api/api/helpers/auth.py
 
-"""
-Cleanup job for stuck processing reels
-"""
+import os
 import logging
-from datetime import datetime, timedelta
-from flask import Blueprint, jsonify
-from fetcher_api.api.helpers.auth import get_user_id_from_request
-from fetcher_api.db.neon_db import get_neon_pool
+from flask import session, request
+from fetcher_api.adapters.db import execute, fetch_one
 
-logger = logging.getLogger("cleanup")
+logger = logging.getLogger('auth')
 
-cleanup_bp = Blueprint("cleanup", __name__)
 
-@cleanup_bp.route("/api/cleanup/stuck-reels", methods=["POST"])
-def cleanup_stuck_reels():
+def get_user_id_from_request():
     """
-    Mark reels stuck in 'processing' for >30 minutes as 'failed'
+    Get user_id from:
+    1) Flask session (web app)
+    2) Authorization: Bearer <api_token> (Shortcuts / API clients)
+    3) Authorization: Bearer <jwt> (legacy JWT)
+
+    Raises ValueError if not authenticated.
     """
-    try:
-        # ✅ Get user_id (raises ValueError if not authenticated)
-        try:
-            user_id = get_user_id_from_request()
-        except ValueError as e:
-            logger.warning(f"❌ Unauthorized cleanup attempt: {e}")
-            return jsonify({"error": "Not authenticated"}), 401
-        
-        pool = get_neon_pool()
-        
-        with pool.connection() as conn:
-            with conn.cursor() as cur:
-                # Find stuck reels
-                threshold = datetime.utcnow() - timedelta(minutes=30)
+    # -------------------------------------------------
+    # 1) Try session first (browser/web app)
+    # -------------------------------------------------
+    user_id = session.get('user_id')
+    if user_id:
+        logger.debug(f"✅ User authenticated via session: {user_id}")
+        return user_id
+
+    # -------------------------------------------------
+    # 2) Try Authorization header
+    # -------------------------------------------------
+    auth_header = request.headers.get('Authorization', '') or ''
+    if auth_header.startswith('Bearer '):
+        token = auth_header.replace('Bearer ', '').strip()
+
+        if token:
+            # 2a) FIRST: check api_tokens table (plain text tokens)
+            try:
+                row = fetch_one(
+                    """
+                    SELECT user_id
+                    FROM api_tokens
+                    WHERE token = %s AND is_revoked = FALSE
+                    """,
+                    (token,)
+                )
                 
-                cur.execute("""
-                    SELECT id, source_url, created_at
-                    FROM reels
-                    WHERE user_id = %s
-                      AND status = 'processing'
-                      AND created_at < %s
-                """, (user_id, threshold))
+                if row and row.get('user_id'):
+                    api_user_id = row['user_id']
+
+                    # Update last_used_at
+                    try:
+                        execute(
+                            "UPDATE api_tokens SET last_used_at = NOW() WHERE token = %s",
+                            (token,),
+                            commit=True
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to update last_used_at: {e}")
+
+                    logger.info(f"✅ User authenticated via API token (api_tokens): {api_user_id}")
+                    return api_user_id
+            except Exception as e:
+                logger.warning(f"⚠️ API token lookup failed: {e}")
+
+            # 2b) SECOND: check user_api_tokens table (hashed tokens)
+            try:
+                from fetcher_api.utils.tokens import hash_token
+                token_hash = hash_token(token)
                 
-                stuck_reels = cur.fetchall()
+                row = fetch_one(
+                    """
+                    SELECT user_id
+                    FROM user_api_tokens
+                    WHERE token_hash = %s AND is_active = TRUE
+                    """,
+                    (token_hash,)
+                )
                 
-                if not stuck_reels:
-                    return jsonify({
-                        "message": "No stuck reels found",
-                        "cleaned": 0
-                    }), 200
-                
-                # Mark as failed
-                stuck_ids = [r[0] for r in stuck_reels]
-                
-                cur.execute("""
-                    UPDATE reels
-                    SET status = 'failed',
-                        error_message = 'Processing timeout - please try again'
-                    WHERE id = ANY(%s)
-                """, (stuck_ids,))
-                
-                conn.commit()
-                
-                logger.info(f"✅ Cleaned up {len(stuck_ids)} stuck reels for user {user_id}")
-                
-                return jsonify({
-                    "message": f"Cleaned up {len(stuck_ids)} stuck reels",
-                    "cleaned": len(stuck_ids),
-                    "reel_ids": stuck_ids
-                }), 200
-                
-    except Exception as e:
-        logger.error(f"❌ Error cleaning stuck reels: {e}")
-        return jsonify({"error": "Failed to cleanup stuck reels"}), 500
+                if row and row.get('user_id'):
+                    api_user_id = row['user_id']
+
+                    # Update last_used_at
+                    try:
+                        execute(
+                            "UPDATE user_api_tokens SET last_used_at = NOW() WHERE token_hash = %s",
+                            (token_hash,),
+                            commit=True
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to update last_used_at: {e}")
+
+                    logger.info(f"✅ User authenticated via API token (user_api_tokens): {api_user_id}")
+                    return api_user_id
+            except Exception as e:
+                logger.warning(f"⚠️ Hashed API token lookup failed: {e}")
+
+            # 2c) FALLBACK: check if it's a JWT
+            try:
+                import jwt
+                jwt_secret = os.getenv('SECRET_KEY', 'your-secret-key')
+                payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
+                jwt_user_id = payload.get('user_id')
+
+                if jwt_user_id:
+                    logger.debug(f"✅ User authenticated via JWT: {jwt_user_id}")
+                    return jwt_user_id
+            except Exception as e:
+                logger.warning(f"JWT decode error: {e}")
+
+    logger.warning("❌ No valid authentication found")
+    raise ValueError("User not authenticated")
+
+
+def ensure_billing_customer(user_id: str):
+    """Ensure billing customer record exists"""
+    execute(
+        "INSERT INTO billing_customers (user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING",
+        (user_id,),
+        commit=True
+    )
+
+
+def get_plan(user_id: str) -> str:
+    """Get user's subscription plan"""
+    ensure_billing_customer(user_id)
+    row = fetch_one("SELECT plan FROM user_entitlements WHERE user_id=%s", (user_id,))
+    return (row or {}).get('plan', 'free')
+
+
+def count_saves(user_id: str) -> int:
+    """Count user's saved reels"""
+    row = fetch_one("SELECT COUNT(*)::int AS c FROM reels WHERE user_id=%s", (user_id,))
+    return int((row or {}).get('c', 0))
