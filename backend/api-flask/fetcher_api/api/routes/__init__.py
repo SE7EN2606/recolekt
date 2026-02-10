@@ -1,3 +1,4 @@
+# fetcher_api/api/routes/__init__.py
 """
 API Routes Package - All route blueprints
 """
@@ -8,7 +9,7 @@ from fetcher_api.api.routes.reel import reel_bp
 from fetcher_api.api.routes.billing import billing_bp
 from fetcher_api.api.routes.admin import admin_bp
 from fetcher_api.api.routes.api_token import api_bp
-from fetcher_api.api.routes.cleanup import cleanup_bp  # ✅ ADD THIS
+from fetcher_api.api.routes.cleanup import cleanup_bp
 
 __all__ = [
     'main_bp',
@@ -18,5 +19,5 @@ __all__ = [
     'billing_bp',
     'admin_bp',
     'api_bp',
-    'cleanup_bp',  # ✅ ADD THIS
+    'cleanup_bp',
 ]

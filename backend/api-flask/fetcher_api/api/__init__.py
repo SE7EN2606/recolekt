@@ -16,15 +16,15 @@ def register_blueprints(app: Flask):
         billing_bp,
         admin_bp,
         api_bp,
-        cleanup_bp,  # ✅ ADD THIS
+        cleanup_bp,
     )
     
-    # Register all blueprints with /api prefix
+    # Register all blueprints
     app.register_blueprint(main_bp, url_prefix="/api")
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(video_bp, url_prefix="/api")
     app.register_blueprint(reel_bp, url_prefix="/api")
     app.register_blueprint(billing_bp, url_prefix="/api")
     app.register_blueprint(admin_bp, url_prefix="/api")
-    app.register_blueprint(api_bp)
-    app.register_blueprint(cleanup_bp)  # ✅ ADD THIS
+    app.register_blueprint(api_bp)  # ✅ Already has /api_token prefix
+    app.register_blueprint(cleanup_bp)  # ✅ Already has /api prefix in routes
