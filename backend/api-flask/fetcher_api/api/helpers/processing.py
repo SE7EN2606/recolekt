@@ -20,7 +20,7 @@ from fetcher_api.api.helpers.normalizers import (
     json_stringify,
 )
 from fetcher_api.utils.ocr_utils import maybe_ocr_and_merge_text
-from fetcher_api.services.video_analysis import download_instagram_video, generate_reel_thumbnail
+from fetcher_api.services.video_analysis import download_instagram_video
 
 logger = logging.getLogger("api")
 
@@ -61,6 +61,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
         result["source_url"] = url
 
         # 1. Download Video (if not done in main thread)
+        post_object = None
         if not os.path.exists(video_path):
             logger.info(f"⬇️ Background downloading video: {url}")
             dl_result = download_instagram_video(url, video_path)
@@ -73,6 +74,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
                 insert_reel_into_db(result)
                 return
 
+            post_object = dl_result.get("post")
             meta = ensure_dict(dl_result.get("metadata", {}))
             if not caption:
                 caption = meta.get("caption", "")
@@ -102,18 +104,41 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
             logger.warning("⚠️ No duration extracted! Setting to None")
             result["duration"] = None
 
-        # 3. Generate Thumbnail
+        # 3. Find/Download Thumbnail
         thumbnail_path = None
         if os.path.exists(video_path):
             try:
-                logger.info(f"🖼️ Generating thumbnail from video...")
-                thumbnail_path = generate_reel_thumbnail(video_path, temp_dir)
-                if thumbnail_path and os.path.exists(thumbnail_path):
-                    logger.info(f"✅ Thumbnail generated: {thumbnail_path}")
-                else:
-                    logger.warning("⚠️ Thumbnail generation returned None or file doesn't exist")
+                logger.info(f"🖼️ Looking for Instagram thumbnail...")
+                
+                # Check if instaloader downloaded thumbnail alongside video
+                video_dir = os.path.dirname(video_path)
+                possible_thumbnail_paths = [
+                    os.path.join(video_dir, f"{shortcode}.jpg"),
+                    os.path.join(video_dir, f"{shortcode}.jpeg"),
+                    os.path.join(video_dir, f"{result['process_id']}.jpg"),
+                    os.path.join(video_dir, f"{result['process_id']}.jpeg"),
+                ]
+                
+                for path in possible_thumbnail_paths:
+                    if os.path.exists(path):
+                        thumbnail_path = path
+                        logger.info(f"✅ Found thumbnail from instaloader: {thumbnail_path}")
+                        break
+                
+                # If not found and we have post object, download it
+                if not thumbnail_path and post_object:
+                    from fetcher_api.services.video_analysis import download_instagram_thumbnail
+                    thumbnail_path = os.path.join(video_dir, f"{shortcode}_thumbnail.jpg")
+                    if download_instagram_thumbnail(post_object, thumbnail_path):
+                        logger.info(f"✅ Downloaded Instagram thumbnail: {thumbnail_path}")
+                    else:
+                        thumbnail_path = None
+                
+                if not thumbnail_path:
+                    logger.warning("⚠️ No thumbnail found or downloaded")
+                    
             except Exception as e:
-                logger.error(f"❌ Thumbnail generation failed: {e}")
+                logger.error(f"❌ Thumbnail search/download failed: {e}")
 
         # 4. Transcribe
         raw_transcription = transcribe_video_deepgram(video_path)
