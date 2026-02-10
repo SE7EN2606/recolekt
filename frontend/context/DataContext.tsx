@@ -42,9 +42,6 @@ interface DataContextType {
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
-/*
-✅ FIXED SAFE BASE URL (same approach everywhere)
-*/
 const RAW_API_BASE =
   import.meta.env.VITE_API_BASE ||
   import.meta.env.VITE_API_URL ||
@@ -71,19 +68,41 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.setItem('custom_folders', JSON.stringify(folders));
   }, [folders]);
 
-  // ✅ FIX: Auto-fetch folders when user logs in
+  // ✅ NEW: Cleanup stuck reels from backend
+  const cleanupStuckReels = async () => {
+    if (!user) return;
+    
+    try {
+      const url = joinUrl(API_BASE, '/api/cleanup/stuck-reels');
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.cleaned > 0) {
+          console.log(`🧹 Cleaned up ${data.cleaned} stuck reels from backend`);
+          await fetchVideos(); // Refresh to show failed status
+        }
+      }
+    } catch (error) {
+      console.error('❌ Failed to cleanup stuck reels:', error);
+    }
+  };
+
   useEffect(() => {
     if (user) {
-      console.log('📁 User logged in, fetching folders automatically');
+      console.log('📁 User logged in, fetching folders and cleaning up...');
       refreshFolders();
+      cleanupStuckReels(); // ✅ Run cleanup on login
     } else {
-      // Clear folders when user logs out
       const saved = localStorage.getItem('custom_folders');
       setFolders(saved ? JSON.parse(saved) : []);
     }
   }, [user]);
 
-  // ✅ CENTRAL FETCH LOGIC WITH JWT
   const fetchVideos = async () => {
     if (!user) return;
     setIsLoading(true);
@@ -100,7 +119,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         credentials: 'include',
         cache: 'no-store',
         headers: {
-          ...getAuthHeaders(),  // ✅ Add JWT token
+          ...getAuthHeaders(),
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache'
         }
@@ -111,12 +130,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         const loadedVideos = (data.reels || []).map((r: any) => {
           const summary = r.summary || {};
-
           const isDone = r.status === 'done' || r.status === 'completed';
+          const isFailed = r.status === 'failed'; // ✅ Add failed check
 
           let finalCategory = summary.category || 'General';
-          if (!isDone) {
+          if (!isDone && !isFailed) {
             finalCategory = 'Processing';
+          } else if (isFailed) {
+            finalCategory = 'Failed'; // ✅ New category
           }
 
           let displayTitle = 'Processing...';
@@ -130,6 +151,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             } else {
               displayTitle = 'Untitled';
             }
+          } else if (isFailed) {
+            displayTitle = 'Processing Failed'; // ✅ Failed title
           }
 
           const mappedVideo: any = {
@@ -151,19 +174,18 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             recipe: r.recipe,
             workout: r.workout,
             status: r.status,
+            errorMessage: r.error_message || null, // ✅ Add error message
             __raw: r
           };
 
           return mappedVideo as Video;
         });
 
-        // ✅ DEBUG: Log first video details
         if (loadedVideos.length > 0) {
           console.log('🔍 First video raw from backend:', loadedVideos[0].__raw.folder_id);
           console.log('🔍 First video mapped:', loadedVideos[0].folderId);
         }
 
-        // ✅ DEBUG: Log what we loaded from backend
         console.log('🔍 DataContext: Loaded videos from backend:', loadedVideos.map(v => ({ 
           id: v.id.substring(0, 30) + '...', 
           folderId: v.folderId,
@@ -183,6 +205,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           });
 
           const seenIds = new Set<string>();
+
           const optimisticOnly = prevVideos.filter(v => {
             if (seenIds.has(v.id)) return false;
             seenIds.add(v.id);
@@ -198,13 +221,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             return true;
           });
 
-          // ✅ FIX: Put loadedVideos AFTER optimisticOnly so fresh data wins!
           const finalVideos = [...optimisticOnly, ...loadedVideos];
           const uniqueById = new Map(finalVideos.map(v => [v.id, v]));
 
           const result = Array.from(uniqueById.values());
           
-          // ✅ DEBUG: Log what we're setting
           console.log('🔍 DataContext: Setting videos state:', result.map(v => ({ 
             id: v.id.substring(0, 30) + '...', 
             folderId: v.folderId,
@@ -224,7 +245,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // ✅ NEW: Fetch folders from backend
   const refreshFolders = async () => {
     if (!user) {
       console.log('⚠️ DataContext: No user, skipping folder fetch');
@@ -255,7 +275,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       console.log('📁 DataContext: Loaded folders:', fetchedFolders.length);
       
-      // Merge with localStorage folders
       setFolders(prevFolders => {
         const merged = [...prevFolders];
         fetchedFolders.forEach((backendFolder: Folder) => {
@@ -272,28 +291,24 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // ✅ Initial fetch when user logs in
   useEffect(() => {
     if (user) fetchVideos();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // ✅ AUTO-REFRESH: Poll every 10 seconds if processing videos exist
   useEffect(() => {
     if (!user) return;
 
     const interval = setInterval(() => {
       const hasProcessing = videos.some(v => v.category === 'Processing');
       if (hasProcessing) {
+        console.log('⏱️ Auto-refreshing (processing videos detected)');
         fetchVideos();
       }
     }, 10000);
 
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, videos]);
 
-  // ✅ Add Video with Duplicate Prevention + JWT
   const addVideo = async (url: string): Promise<AddVideoResult> => {
     try {
       const cleanUrl = url.trim().split('?')[0];
@@ -318,7 +333,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         method: 'POST',
         body: formData,
         credentials: 'include',
-        headers: getAuthHeaders()  // ✅ Add JWT token
+        headers: getAuthHeaders()
       });
 
       if (response.status === 409) throw new Error('This video has already been saved.');
@@ -376,7 +391,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // ✅ Delete Videos + JWT
   const deleteVideos = async (videoIds: string[]): Promise<void> => {
     if (!videoIds.length) return;
 
@@ -385,7 +399,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       console.log('🗑️ Deleting videos:', videoIds);
 
-      // Optimistic UI
       setVideos(prev => prev.filter(v => !videoIds.includes(v.id)));
 
       const deletePromises = videoIds.map(async (videoId) => {
@@ -396,7 +409,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const response = await fetch(url, {
             method: 'DELETE',
             credentials: 'include',
-            headers: getAuthHeaders()  // ✅ Add JWT token
+            headers: getAuthHeaders()
           });
 
           if (response.status === 401) {
@@ -423,13 +436,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (error) {
       console.error('❌ Failed to delete videos (restoring):', error);
 
-      // Restore, then refetch to be sure
       setVideos(before);
       await fetchVideos();
     }
   };
 
-  // Folder Actions
   const addFolder = (name: string, parentId: string | null = null) => {
     const newFolder: Folder = { id: Date.now().toString(), name, subFolders: [] };
     if (parentId) {
