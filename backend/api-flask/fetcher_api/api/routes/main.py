@@ -30,6 +30,26 @@ def health():
     })
 
 
+@main_bp.route("/folders", methods=["GET"])
+def get_folders():
+    """Return user folders (stub for now)"""
+    try:
+        user_id = get_user_id_from_request()
+        logger.info(f"📁 Folders fetched for user: {user_id}")
+        
+        return jsonify({
+            "folders": [
+                {"id": "default", "name": "All Videos", "subFolders": []}
+            ]
+        }), 200
+        
+    except ValueError:
+        return jsonify({"error": "Unauthorized"}), 401
+    except Exception as e:
+        logger.error(f"❌ Error fetching folders: {e}")
+        return jsonify({"error": "Failed to fetch folders"}), 500
+
+
 @main_bp.route("/plan", methods=["GET"])
 def get_plan():
     """Get user's subscription plan"""
