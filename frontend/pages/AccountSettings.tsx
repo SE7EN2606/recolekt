@@ -4,7 +4,7 @@ import { ExternalLink, Trash2, TriangleAlert, Smartphone, Loader2 } from 'lucide
 import { Button } from '../components/Button';
 import { useAuth, getAuthHeaders } from '../context/AuthContext';
 import { InstallShortcutModal } from '../components/InstallShortcutModal';
-import shortcutsIcon from '../assets/shortcuts-icon.png';  // ← ADD THIS
+import shortcutsIcon from '/assets/shortcuts_icon.png';  // ← ADD THIS
 
 const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
