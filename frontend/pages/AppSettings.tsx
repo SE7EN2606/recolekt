@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   User, Globe, LogOut, ChevronRight, 
-  HelpCircle, Info, Moon, Sun, Zap, Check, Video, Infinity, PieChart, Key
+  HelpCircle, Info, Moon, Sun, Zap, Check, Video, Infinity, PieChart
 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -16,11 +16,6 @@ export const AppSettings: React.FC = () => {
   const [lang, setLang] = useState<'EN' | 'FR'>('EN');
   const [darkMode, setDarkMode] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-
-  // API Token state
-  const [apiToken, setApiToken] = useState<string | null>(null);
-  const [tokenInfo, setTokenInfo] = useState<any>(null);
-  const [isGeneratingToken, setIsGeneratingToken] = useState(false);
 
   const isPro = user?.isPro || false;
   const clipsUsed = 4;
@@ -36,79 +31,6 @@ export const AppSettings: React.FC = () => {
       navigate('/auth');
     }
   }, [loading, isAuthenticated, navigate]);
-
-  // Fetch token info on mount
-  useEffect(() => {
-    const fetchTokenInfo = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api_token/info`, {
-          credentials: 'include'
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setTokenInfo(data);
-        }
-      } catch (err) {
-        console.error('Failed to fetch token info:', err);
-      }
-    };
-    
-    if (isAuthenticated) {
-      fetchTokenInfo();
-    }
-  }, [isAuthenticated]);
-
-  const handleGenerateToken = async () => {
-    if (tokenInfo?.has_token && !confirm('This will invalidate your current token. Continue?')) {
-      return;
-    }
-    
-    setIsGeneratingToken(true);
-    
-    try {
-      const res = await fetch(`${API_BASE}/api_token/generate`, {
-        method: 'POST',
-        credentials: 'include'
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        setApiToken(data.token);
-        setTokenInfo({ has_token: true, prefix: data.prefix, created_at: new Date().toISOString() });
-      } else {
-        alert('Failed to generate token');
-      }
-    } catch (err) {
-      console.error('Token generation error:', err);
-      alert('Error generating token');
-    } finally {
-      setIsGeneratingToken(false);
-    }
-  };
-
-  const handleRevokeToken = async () => {
-    if (!confirm('This will revoke your API token and break any existing Shortcuts. Continue?')) {
-      return;
-    }
-    
-    try {
-      const res = await fetch(`${API_BASE}/api_token/revoke`, {
-        method: 'POST',
-        credentials: 'include'
-      });
-      
-      if (res.ok) {
-        setTokenInfo({ has_token: false });
-        setApiToken(null);
-        alert('Token revoked successfully');
-      } else {
-        alert('Failed to revoke token');
-      }
-    } catch (err) {
-      console.error('Token revocation error:', err);
-      alert('Error revoking token');
-    }
-  };
 
   const handleLogout = async () => {
     try {
@@ -156,6 +78,7 @@ export const AppSettings: React.FC = () => {
       </div>
 
       <div className="space-y-6">
+        {/* User Card */}
         <div className="bg-white md:rounded-3xl shadow-sm p-6 md:p-8 border border-gray-100">
           <div className="flex items-center gap-5 mb-6">
             <div className="w-16 h-16 bg-dark-900 rounded-full flex items-center justify-center text-white text-2xl font-black shadow-lg overflow-hidden border-2 border-white">
@@ -237,84 +160,6 @@ export const AppSettings: React.FC = () => {
                </>
              )}
           </div>
-        </div>
-
-        {/* API Token Section */}
-        <div className="bg-white rounded-3xl shadow-sm p-6 md:p-8 border border-gray-100">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 rounded-xl bg-purple-50 text-purple-600">
-              <Key size={20} />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">
-                API Token
-              </h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                For iOS Shortcuts integration
-              </p>
-            </div>
-          </div>
-
-          {apiToken ? (
-            <div className="space-y-3">
-              <div className="bg-gray-50 rounded-lg p-4 font-mono text-xs break-all border border-gray-200">
-                {apiToken}
-              </div>
-              <p className="text-xs text-amber-600">
-                ⚠️ Copy this token now. It won't be shown again.
-              </p>
-              <Button
-                onClick={() => {
-                  navigator.clipboard.writeText(apiToken);
-                  alert('Token copied to clipboard!');
-                }}
-                variant="outline"
-                size="sm"
-                fullWidth
-              >
-                Copy Token
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {tokenInfo?.has_token && (
-                <div className="text-sm text-gray-600 mb-2 bg-gray-50 rounded-lg p-3 border border-gray-100">
-                  <div className="font-mono text-xs">{tokenInfo.prefix}</div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    Created: {tokenInfo.created_at ? new Date(tokenInfo.created_at).toLocaleDateString() : 'N/A'}
-                  </div>
-                  {tokenInfo.last_used_at && (
-                    <div className="text-xs text-gray-500">
-                      Last used: {new Date(tokenInfo.last_used_at).toLocaleDateString()}
-                    </div>
-                  )}
-                </div>
-              )}
-              
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleGenerateToken}
-                  variant="primary"
-                  size="sm"
-                  disabled={isGeneratingToken}
-                  className="flex-1"
-                >
-                  {isGeneratingToken ? 'Generating...' : tokenInfo?.has_token ? 'Regenerate Token' : 'Generate Token'}
-                </Button>
-                
-                {tokenInfo?.has_token && (
-                  <Button
-                    onClick={handleRevokeToken}
-                    variant="outline"
-                    size="sm"
-                    disabled={isGeneratingToken}
-                  >
-                    Revoke
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Upgrade Card */}

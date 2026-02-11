@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ExternalLink, Trash2, TriangleAlert, Download, Key, Smartphone, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { ExternalLink, Trash2, TriangleAlert, Smartphone, Loader2 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth, getAuthHeaders } from '../context/AuthContext';
 import { InstallShortcutModal } from '../components/InstallShortcutModal';
+import shortcutsIcon from '../assets/shortcuts-icon.png';
 
 const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
@@ -24,7 +25,7 @@ export const AccountSettings: React.FC = () => {
   const [isLoadingToken, setIsLoadingToken] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   
-  // New state for modal
+  // Shortcut modal state
   const [showShortcutModal, setShowShortcutModal] = useState(false);
   const [shortcutData, setShortcutData] = useState<any>(null);
   const [isLoadingShortcut, setIsLoadingShortcut] = useState(false);
@@ -87,7 +88,6 @@ export const AccountSettings: React.FC = () => {
       
       const data = await response.json();
       
-      // Show token to user (only time they'll see it)
       const copyToken = confirm(
         `✅ Token Generated!\n\n${data.token}\n\n` +
         `This is the only time you'll see the full token.\n\n` +
@@ -108,7 +108,6 @@ export const AccountSettings: React.FC = () => {
     }
   };
 
-  // New function for shortcut installation
   const handleInstallShortcut = async () => {
     try {
       setIsLoadingShortcut(true);
@@ -130,6 +129,15 @@ export const AccountSettings: React.FC = () => {
     }
   };
 
+  // Auto-save email when editing is complete
+  const handleEmailBlur = async () => {
+    if (isEditingEmail && email !== user?.email) {
+      // TODO: Add actual save API call here
+      console.log('Auto-saving email:', email);
+      setIsEditingEmail(false);
+    }
+  };
+
   if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
@@ -140,7 +148,7 @@ export const AccountSettings: React.FC = () => {
 
   const displayName = user.name || 'User';
 
-  const InputField = ({ label, value, readOnly = false, onChange, action }: any) => (
+  const InputField = ({ label, value, readOnly = false, onChange, onBlur, action }: any) => (
     <div className="border-b border-gray-100 py-6 last:border-0 relative">
       <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">
         {label}
@@ -151,6 +159,7 @@ export const AccountSettings: React.FC = () => {
           value={value}
           readOnly={readOnly}
           onChange={onChange}
+          onBlur={onBlur}
           className={`flex-1 bg-transparent text-xl font-black text-gray-900 outline-none transition-colors ${readOnly ? 'cursor-default' : 'focus:text-primary-600'}`}
         />
         {action}
@@ -168,6 +177,7 @@ export const AccountSettings: React.FC = () => {
       </div>
 
       <div className="space-y-6">
+        {/* Personal Info Card */}
         <div className="bg-white md:rounded-3xl shadow-sm p-6 md:p-8 border border-gray-100">
           
           {/* Avatar Section */}
@@ -191,6 +201,7 @@ export const AccountSettings: React.FC = () => {
             </div>
           </div>
 
+          {/* Form Fields */}
           <div className="space-y-2">
             <InputField label="Full Name" value={displayName.toUpperCase()} readOnly />
             
@@ -199,6 +210,7 @@ export const AccountSettings: React.FC = () => {
               value={email} 
               readOnly={!isEditingEmail}
               onChange={(e: any) => setEmail(e.target.value)}
+              onBlur={handleEmailBlur}
               action={
                 <button 
                   onClick={() => setIsEditingEmail(!isEditingEmail)}
@@ -208,91 +220,108 @@ export const AccountSettings: React.FC = () => {
                       : 'bg-white border-gray-200 text-gray-600 hover:border-primary-600 hover:text-primary-600 shadow-sm'}
                   `}
                 >
-                  {isEditingEmail ? 'Save' : 'Edit'}
+                  {isEditingEmail ? 'Done' : 'Edit'}
                 </button>
               }
             />
 
             <InputField label="Country" value="FRANCE" readOnly />
           </div>
-
-          {/* Payment Section */}
-          <div className="pt-10 border-t border-gray-100">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Payment Method</h3>
-              <span className="text-[10px] font-black text-primary-600 bg-primary-50 px-3 py-1 rounded-full uppercase tracking-widest">Via Stripe</span>
-            </div>
-            
-            <div className="p-6 bg-gray-50 rounded-3xl border border-gray-100 flex items-center justify-between group hover:border-primary-200 transition-colors">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-8 bg-white border border-gray-200 rounded-lg flex items-center justify-center font-black italic text-[10px] text-gray-400 shadow-sm">VISA</div>
-                <div>
-                  <span className="block font-black text-gray-900 tracking-tight">•••• 4242</span>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Expires 12/26</span>
-                </div>
-              </div>
-              <button 
-                onClick={() => window.open('https://billing.stripe.com/p/login/test_portal', '_blank')}
-                className="flex items-center gap-2 bg-white px-5 py-2.5 rounded-xl text-xs font-black text-gray-900 border border-gray-200 shadow-sm hover:shadow-md transition-all active:scale-95"
-              >
-                Manage <ExternalLink size={14} />
-              </button>
-            </div>
-          </div>
-
-          <div className="pt-8">
-            <Button 
-              fullWidth 
-              size="sm" 
-              className="py-3 px-4 text-sm font-black rounded-xl shadow-lg shadow-primary-600/20" 
-              onClick={() => navigate('/gallery')}
-            >
-              Save Changes
-            </Button>
-          </div>
         </div>
 
-        {/* ✅ UPDATED: iOS Shortcuts Section */}
-        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 md:rounded-3xl border border-blue-100 p-6 md:p-8">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="p-3 bg-white rounded-xl text-blue-600 shadow-sm">
-              <Smartphone size={28} />
+        {/* iOS/macOS Shortcuts Section */}
+        <div className="bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 md:rounded-3xl border border-purple-100/50 p-6 md:p-8 shadow-sm">
+          <div className="flex items-start gap-4 mb-6">
+            {/* Custom Shortcuts Icon */}
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg bg-gradient-to-br from-[#8b5cf6] to-[#7c3aed] overflow-hidden">
+              <img 
+                src={shortcutsIcon}
+                alt="Recolekt Shortcut" 
+                className="w-10 h-10 object-contain"
+              />
             </div>
-            <div>
-              <h3 className="text-xl font-black text-blue-900 tracking-tight">Save Reels from Instagram</h3>
-              <p className="text-blue-700 text-sm font-medium mt-1">One-click iOS shortcut for your iPhone</p>
+            
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-gray-900 tracking-tight mb-1">
+                Save Reels from Instagram
+              </h3>
+              <p className="text-sm text-gray-600 font-medium">
+                One-click shortcut for iPhone & Mac
+              </p>
             </div>
           </div>
 
-          {/* BIG INSTALL BUTTON */}
+          {/* Install Button - Purple Style */}
           <button
             onClick={handleInstallShortcut}
             disabled={isLoadingShortcut}
-            className="w-full flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 text-white rounded-2xl font-black text-base uppercase tracking-widest hover:bg-blue-700 transition-all shadow-2xl shadow-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed mb-6"
+            className="inline-flex items-center justify-center rounded-xl font-medium transition-all duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed bg-primary-600 text-white hover:bg-primary-700 shadow-lg shadow-primary-600/20 w-full px-8 py-5 text-base font-black uppercase tracking-widest mb-6"
           >
             {isLoadingShortcut ? (
               <>
-                <Loader2 className="w-6 h-6 animate-spin" />
+                <Loader2 className="w-6 h-6 animate-spin mr-3" />
                 Loading...
               </>
             ) : (
               <>
-                <Download className="w-6 h-6" />
-                Install iOS Shortcut
+                <svg 
+                  xmlns="http://www.w3.org/2000/svg" 
+                  width="24" 
+                  height="24" 
+                  viewBox="0 0 24 24" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  strokeWidth="2" 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  className="w-6 h-6 mr-3"
+                >
+                  <path d="M12 15V3"></path>
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <path d="m7 10 5 5 5-5"></path>
+                </svg>
+                Install Shortcut
               </>
             )}
           </button>
 
-          {/* Simple Instructions */}
-          <div className="bg-white rounded-2xl p-5 border border-blue-100">
-            <h4 className="font-black text-blue-900 text-xs uppercase tracking-widest mb-3">How to Use:</h4>
-            <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800 font-medium">
-              <li>Click the button above</li>
+          {/* Instructions */}
+          <div className="bg-white/60 backdrop-blur-sm rounded-xl p-4 border border-white/50">
+            <h4 className="font-bold text-gray-900 text-xs uppercase tracking-wider mb-3 flex items-center gap-2">
+              <span className="w-1 h-4 bg-gradient-to-b from-[#8b5cf6] to-[#7c3aed] rounded-full"></span>
+              How to Use
+            </h4>
+            <ol className="list-decimal list-inside space-y-1.5 text-sm text-gray-700 font-medium">
+              <li>Click "Install Shortcut" above</li>
               <li>Copy your personal API token</li>
               <li>Tap "Get Shortcut" to install</li>
               <li>Paste your token when prompted</li>
               <li>Share any Instagram reel → "Recolekt" ✨</li>
             </ol>
+          </div>
+        </div>
+
+        {/* Payment Section */}
+        <div className="bg-white md:rounded-3xl shadow-sm p-6 md:p-8 border border-gray-100">
+          <div className="flex items-center justify-between mb-8">
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Payment Method</h3>
+            <span className="text-[10px] font-black text-primary-600 bg-primary-50 px-3 py-1 rounded-full uppercase tracking-widest">Via Stripe</span>
+          </div>
+          
+          <div className="p-6 bg-gray-50 rounded-3xl border border-gray-100 flex items-center justify-between group hover:border-primary-200 transition-colors">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-8 bg-white border border-gray-200 rounded-lg flex items-center justify-center font-black italic text-[10px] text-gray-400 shadow-sm">VISA</div>
+              <div>
+                <span className="block font-black text-gray-900 tracking-tight">•••• 4242</span>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Expires 12/26</span>
+              </div>
+            </div>
+            <button 
+              onClick={() => window.open('https://billing.stripe.com/p/login/test_portal', '_blank')}
+              className="flex items-center gap-2 bg-white px-5 py-2.5 rounded-xl text-xs font-black text-gray-900 border border-gray-200 shadow-sm hover:shadow-md transition-all active:scale-95"
+            >
+              Manage <ExternalLink size={14} />
+            </button>
           </div>
         </div>
 
