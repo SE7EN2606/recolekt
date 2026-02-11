@@ -4,7 +4,6 @@ import { ExternalLink, Trash2, TriangleAlert, Smartphone, Loader2 } from 'lucide
 import { Button } from '../components/Button';
 import { useAuth, getAuthHeaders } from '../context/AuthContext';
 import { InstallShortcutModal } from '../components/InstallShortcutModal';
-import shortcutsIcon from '../assets/shortcuts-icon.png';
 
 const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
@@ -233,13 +232,11 @@ export const AccountSettings: React.FC = () => {
         <div className="bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 md:rounded-3xl border border-purple-100/50 p-6 md:p-8 shadow-sm">
           <div className="flex items-start gap-4 mb-6">
             {/* Custom Shortcuts Icon */}
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg bg-gradient-to-br from-[#8b5cf6] to-[#7c3aed] overflow-hidden">
-              <img 
-                src={shortcutsIcon}
-                alt="Recolekt Shortcut" 
-                className="w-10 h-10 object-contain"
-              />
-            </div>
+            <img 
+              src="/assets/shortcuts-icon.png"
+              alt="Recolekt Shortcut" 
+              className="w-14 h-14 rounded-2xl shadow-lg"
+            />
             
             <div className="flex-1">
               <h3 className="text-xl font-bold text-gray-900 tracking-tight mb-1">
