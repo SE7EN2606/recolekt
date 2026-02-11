@@ -2,14 +2,13 @@
 """
 API Token Routes - For iOS Shortcuts integration
 """
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, jsonify, request
 from fetcher_api.adapters.db import execute, fetch_one
 from fetcher_api.api.helpers.auth import get_user_id_from_request
 from fetcher_api.utils.tokens import generate_api_token, get_token_prefix
 import os
 import logging
 from datetime import datetime
-from io import BytesIO
 
 logger = logging.getLogger('api_token')
 
@@ -92,20 +91,15 @@ def revoke_token():
     return jsonify({'message': 'Token revoked successfully'})
 
 
-# ✅ DOWNLOAD SHORTCUT ENDPOINT
-@api_bp.route('/download-shortcut', methods=['GET'])
-def download_shortcut():
+@api_bp.route('/install-shortcut', methods=['GET'])
+def install_shortcut():
     """
-    Generate personalized iOS Shortcut with user's API token
+    Get user's API token and the universal iCloud shortcut link
     """
     try:
-        # Get authenticated user
-        try:
-            user_id = get_user_id_from_request()
-        except ValueError:
-            return jsonify({"error": "Not authenticated"}), 401
+        user_id = get_user_id_from_request()
         
-        # Get or create user's API token
+        # Get or create token
         token_row = fetch_one("""
             SELECT token FROM api_tokens 
             WHERE user_id = %s AND is_revoked = FALSE 
@@ -114,52 +108,32 @@ def download_shortcut():
         """, (user_id,))
         
         if not token_row:
-            # Auto-generate token if user doesn't have one
             token_value = generate_api_token()
             execute("""
                 INSERT INTO api_tokens (user_id, token, created_at, is_revoked)
                 VALUES (%s, %s, NOW(), FALSE)
             """, (user_id, token_value), commit=True)
-            
-            logger.info(f"✅ Auto-generated API token for shortcut download: {user_id}")
+            logger.info(f"✅ Auto-generated token for user {user_id}")
         else:
             token_value = token_row['token']
         
-        # Get API base URL from environment
-        api_base = os.getenv('BACKEND_URL', 'https://recolekt-api.up.railway.app')
-        
-        # Load shortcut template from templates folder
-        template_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            'templates',
-            'shortcut_template.plist'
+        # Universal iCloud shortcut link (same for everyone!)
+        icloud_shortcut_url = os.getenv(
+            'ICLOUD_SHORTCUT_URL',
+            'https://www.icloud.com/shortcuts/YOUR_SHORTCUT_ID_HERE'
         )
         
-        logger.info(f"📁 Loading template from: {template_path}")
+        return jsonify({
+            'success': True,
+            'api_token': token_value,
+            'shortcut_url': icloud_shortcut_url,
+            'instructions': [
+                'Tap "Get Shortcut" to install',
+                'When prompted, paste your API token',
+                'Done! Share any Instagram reel to Recolekt'
+            ]
+        })
         
-        with open(template_path, 'r', encoding='utf-8') as f:
-            shortcut_str = f.read()
-        
-        # Replace placeholders
-        shortcut_str = shortcut_str.replace('{{API_TOKEN}}', token_value)
-        shortcut_str = shortcut_str.replace('{{API_BASE_URL}}', api_base)
-        
-        # Convert to bytes
-        shortcut_bytes = shortcut_str.encode('utf-8')
-        
-        logger.info(f"✅ Generated iOS shortcut for user {user_id} with token {get_token_prefix(token_value)}")
-        
-        # Return as downloadable file
-        return send_file(
-            BytesIO(shortcut_bytes),
-            mimetype='application/octet-stream',
-            as_attachment=True,
-            download_name='Recolekt-SaveReel.shortcut'
-        )
-        
-    except FileNotFoundError:
-        logger.error(f"❌ Template file not found at: {template_path}")
-        return jsonify({"error": "Shortcut template not found"}), 500
     except Exception as e:
-        logger.error(f"❌ Failed to generate shortcut: {e}", exc_info=True)
-        return jsonify({"error": "Failed to generate shortcut"}), 500
+        logger.error(f"❌ Failed to get install info: {e}")
+        return jsonify({"error": str(e)}), 500

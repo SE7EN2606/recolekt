@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ExternalLink, Trash2, TriangleAlert, Download, Key, Smartphone, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth, getAuthHeaders } from '../context/AuthContext';
+import { InstallShortcutModal } from '../components/InstallShortcutModal';
 
 const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
@@ -22,7 +23,11 @@ export const AccountSettings: React.FC = () => {
   const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null);
   const [isLoadingToken, setIsLoadingToken] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
+  
+  // New state for modal
+  const [showShortcutModal, setShowShortcutModal] = useState(false);
+  const [shortcutData, setShortcutData] = useState<any>(null);
+  const [isLoadingShortcut, setIsLoadingShortcut] = useState(false);
 
   useEffect(() => {
     if (user?.email) {
@@ -103,52 +108,25 @@ export const AccountSettings: React.FC = () => {
     }
   };
 
-  const downloadShortcut = async () => {
-    setIsDownloading(true);
+  // New function for shortcut installation
+  const handleInstallShortcut = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api_token/download-shortcut`, {
+      setIsLoadingShortcut(true);
+      const response = await fetch(`${API_BASE}/api_token/install-shortcut`, {
         headers: getAuthHeaders(),
         credentials: 'include',
       });
 
-      if (response.status === 404) {
-        const data = await response.json();
-        if (data.action === 'generate_token') {
-          const shouldGenerate = confirm(
-            'You need an API token first.\n\n' +
-            'Generate one now to download your personalized shortcut?'
-          );
-          if (shouldGenerate) {
-            await generateToken();
-            // After generating, try downloading again
-            setTimeout(() => downloadShortcut(), 1000);
-          }
-        }
-        return;
-      }
+      if (!response.ok) throw new Error('Failed to get shortcut info');
 
-      if (!response.ok) throw new Error('Failed to download shortcut');
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'Recolekt-SaveReel.shortcut';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-      alert(
-        '✅ Shortcut Downloaded!\n\n' +
-        'Open the file on your iPhone to install it.\n' +
-        'Then share any Instagram reel → tap "Recolekt"'
-      );
+      const data = await response.json();
+      setShortcutData(data);
+      setShowShortcutModal(true);
     } catch (error) {
-      console.error('Failed to download shortcut:', error);
-      alert('Failed to download shortcut. Please try again.');
+      console.error('Error:', error);
+      alert('Failed to get shortcut. Please try again.');
     } finally {
-      setIsDownloading(false);
+      setIsLoadingShortcut(false);
     }
   };
 
@@ -274,32 +252,33 @@ export const AccountSettings: React.FC = () => {
           </div>
         </div>
 
-        {/* ✅ NEW: iOS Shortcuts Section */}
+        {/* ✅ UPDATED: iOS Shortcuts Section */}
         <div className="bg-gradient-to-br from-blue-50 to-indigo-50 md:rounded-3xl border border-blue-100 p-6 md:p-8">
-  <div className="flex items-center gap-4 mb-6">
-    <div className="p-3 bg-white rounded-xl text-blue-600 shadow-sm">
-      <Smartphone size={28} />
-    </div>
-    <div>
-      <h3 className="text-xl font-black text-blue-900 tracking-tight">Save Reels from Instagram</h3>
-      <p className="text-blue-700 text-sm font-medium mt-1">One-click iOS shortcut for your iPhone</p>
-    </div>
-  </div>
-          {/* BIG DOWNLOAD BUTTON */}
+          <div className="flex items-center gap-4 mb-6">
+            <div className="p-3 bg-white rounded-xl text-blue-600 shadow-sm">
+              <Smartphone size={28} />
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-blue-900 tracking-tight">Save Reels from Instagram</h3>
+              <p className="text-blue-700 text-sm font-medium mt-1">One-click iOS shortcut for your iPhone</p>
+            </div>
+          </div>
+
+          {/* BIG INSTALL BUTTON */}
           <button
-            onClick={downloadShortcut}
-            disabled={isDownloading}
+            onClick={handleInstallShortcut}
+            disabled={isLoadingShortcut}
             className="w-full flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 text-white rounded-2xl font-black text-base uppercase tracking-widest hover:bg-blue-700 transition-all shadow-2xl shadow-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed mb-6"
           >
-            {isDownloading ? (
+            {isLoadingShortcut ? (
               <>
                 <Loader2 className="w-6 h-6 animate-spin" />
-                Downloading...
+                Loading...
               </>
             ) : (
               <>
                 <Download className="w-6 h-6" />
-                Download iOS Shortcut
+                Install iOS Shortcut
               </>
             )}
           </button>
@@ -309,12 +288,14 @@ export const AccountSettings: React.FC = () => {
             <h4 className="font-black text-blue-900 text-xs uppercase tracking-widest mb-3">How to Use:</h4>
             <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800 font-medium">
               <li>Click the button above</li>
-              <li>Open the file on your iPhone</li>
-              <li>Tap "Add Shortcut"</li>
+              <li>Copy your personal API token</li>
+              <li>Tap "Get Shortcut" to install</li>
+              <li>Paste your token when prompted</li>
               <li>Share any Instagram reel → "Recolekt" ✨</li>
             </ol>
           </div>
         </div>
+
         {/* Danger Zone */}
         <div className="bg-red-50 rounded-[32px] border border-red-100 p-8">
           <div className="flex items-start gap-4">
@@ -340,6 +321,16 @@ export const AccountSettings: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Install Modal */}
+      {shortcutData && (
+        <InstallShortcutModal
+          isOpen={showShortcutModal}
+          onClose={() => setShowShortcutModal(false)}
+          apiToken={shortcutData.api_token}
+          shortcutUrl={shortcutData.shortcut_url}
+        />
+      )}
     </div>
   );
 };
