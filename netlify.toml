@@ -3,3 +3,8 @@ from = "https://recolekt-front.netlify.app/*"
 to = "https://recolekt.app/:splat"
 status = 301
 force = true
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200
