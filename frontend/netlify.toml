@@ -3,12 +3,24 @@ command = "npm run build"
 publish = "dist"
 
 [[headers]]
-  for = "/assets/*.js"
-  [headers.values]
-    Content-Type = "application/javascript; charset=utf-8"
+for = "/assets/*.js"
+[headers.values]
+Content-Type = "application/javascript; charset=utf-8"
 
 [[headers]]
-  for = "/assets/*.css"
-  [headers.values]
-    Content-Type = "text/css; charset=utf-8"
-    
+for = "/assets/*.css"
+[headers.values]
+Content-Type = "text/css; charset=utf-8"
+
+# Redirect Netlify subdomain to your custom domain (keep path/query)
+[[redirects]]
+from = "https://recolekt-front.netlify.app/*"
+to = "https://recolekt.app/:splat"
+status = 301
+force = true
+
+# SPA fallback for React Router (deep links like /gallery)
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200
