@@ -23,6 +23,7 @@ import { Button } from './Button';
 import { InputModal } from './InputModal';
 import { ManageCollectionsModal } from './ManageCollectionsModal';
 
+
 // Custom Icon: Folder Open (Sub Folder)
 const FolderIcon = ({ size = 22, className = "" }: { size?: number; className?: string }) => (
   <svg
@@ -40,22 +41,27 @@ const FolderIcon = ({ size = 22, className = "" }: { size?: number; className?: 
   </svg>
 );
 
+
 interface MobileMenuProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   const { folders, addFolder, videos } = useData();
   const { user, signOut, loading, isAuthenticated } = useAuth();
+
 
   const [shouldRender, setShouldRender] = useState(false);
   const [animateOpen, setAnimateOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
 
+
   const navigate = useNavigate();
   const location = useLocation();
+
 
   useEffect(() => {
     if (isOpen) {
@@ -72,41 +78,55 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     }
   }, [isOpen]);
 
+
   const handleNewCollection = (name: string, parentId?: string) => {
     addFolder(name, parentId);
     setIsModalOpen(false);
   };
+
 
   const handleNav = (path: string) => {
     navigate(path);
     onClose();
   };
 
+
   const systemIds = ['all', 'favorites', 'shared', 'archive'];
   const customFolders = (folders || []).filter(f => !systemIds.includes(f.id));
   const parentOptions = customFolders.map(f => ({ id: f.id, name: f.name }));
+
 
   // ✅ Calculate video count for each folder
   const getVideoCount = (folderId: string) => {
     return (videos || []).filter(v => v.folderId === folderId).length;
   };
 
+
   if (!shouldRender) return null;
 
-  // IMPORTANT: avoid flashing signed-out UI while auth is still resolving. [web:171]
+
+  // IMPORTANT: avoid flashing signed-out UI while auth is still resolving.
   const showAuthedUI = !loading && (isAuthenticated || !!user);
   const showSignedOutUI = !loading && !showAuthedUI;
+
 
   return (
     <>
       <div
         className={`
           fixed top-0 left-0 w-full z-[100] bg-[#f8fafc] overflow-hidden
-          transition-[height] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
-          ${animateOpen ? 'h-[100dvh]' : 'h-0'}
+          transform-gpu transition-[height] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
+          ${animateOpen ? 'h-[100vh]' : 'h-0'}
         `}
+        style={{ 
+          // Hardware acceleration fix to prevent logo jiggle
+          backfaceVisibility: 'hidden',
+          WebkitBackfaceVisibility: 'hidden',
+          transform: 'translateZ(0)',
+          WebkitTransform: 'translateZ(0)'
+        }}
       >
-        <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4 md:px-6 lg:px-8">
+        <div className="flex flex-col h-full max-w-[1100px] mx-auto px-4 md:px-6 lg:px-8">
           {/* Header */}
           <div className="h-[85px] md:h-[90px] flex items-center justify-between flex-shrink-0 border-b border-gray-100 gap-4">
             {loading ? (
@@ -128,6 +148,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
               <div className="flex-1"></div>
             )}
 
+
             <button
               onClick={onClose}
               className="p-2 -mr-2 text-gray-600 bg-transparent hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
@@ -135,6 +156,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
               <X size={24} />
             </button>
           </div>
+
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto py-8">
@@ -153,12 +175,14 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     <div className="h-10 w-44 bg-gray-200 rounded-xl animate-pulse" />
                   </div>
 
+
                   <div className="mt-auto pb-12 space-y-4">
                     <div className="h-14 w-full bg-gray-200 rounded-xl animate-pulse" />
                     <div className="h-4 w-64 mx-auto bg-gray-200 rounded animate-pulse" />
                   </div>
                 </div>
               )}
+
 
               {showSignedOutUI && (
                 <div className="flex flex-col h-full space-y-8 px-2">
@@ -184,6 +208,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     ))}
                   </div>
 
+
                   <div className="mt-auto pb-12">
                     <div className="space-y-4">
                       <Button
@@ -208,6 +233,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                   </div>
                 </div>
               )}
+
 
               {showAuthedUI && (
                 <div className="flex-1">
@@ -241,6 +267,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       </div>
                     </section>
 
+
                     {/* Collections */}
                     <section>
                       <div className="flex items-center justify-between px-4 mb-3">
@@ -254,6 +281,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                             <SquarePen size={18} />
                           </button>
 
+
                           <button
                             onClick={() => setIsModalOpen(true)}
                             className="text-primary-600 active:scale-95 transition-transform"
@@ -262,6 +290,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                           </button>
                         </div>
                       </div>
+
 
                       <div className="bg-white rounded-[28px] border border-gray-100 overflow-hidden shadow-sm">
                         {customFolders.length > 0 &&
@@ -302,6 +331,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                             </div>
                           ))}
 
+
                         {customFolders.length === 0 && (
                           <div className="text-center p-8 border-b border-gray-50">
                             <p className="text-gray-400 text-sm font-medium">No collections yet.</p>
@@ -313,6 +343,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                             </button>
                           </div>
                         )}
+
 
                         <div className="border-b border-gray-50 last:border-0">
                           <button
@@ -345,6 +376,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       </div>
                     </section>
 
+
                     {/* Resources */}
                     <section>
                       <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">Resources</h3>
@@ -371,6 +403,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                         </button>
                       </div>
                     </section>
+
 
                     {/* Account */}
                     <section>
@@ -417,6 +450,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                 </div>
               )}
 
+
               {/* Logo at Bottom */}
               <div className="py-8 mt-auto flex justify-center">
                 <img
@@ -426,11 +460,13 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                 />
               </div>
 
+
               <div className="h-20 md:h-0"></div>
             </div>
           </div>
         </div>
       </div>
+
 
       <InputModal
         isOpen={isModalOpen}
@@ -440,6 +476,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
         placeholder="Name your collection..."
         parentOptions={parentOptions}
       />
+
 
       <ManageCollectionsModal
         isOpen={isManageModalOpen}

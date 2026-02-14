@@ -34,19 +34,6 @@ const safeStr = (v: any): string => {
   return String(v);
 };
 
-const extractTranscriptText = (maybe: any): string => {
-  if (!maybe) return '';
-  if (typeof maybe === 'string') return maybe;
-
-  if (typeof maybe === 'object') {
-    if (typeof maybe.transcript === 'string') return maybe.transcript;
-    if (typeof maybe.text === 'string') return maybe.text;
-    if (typeof maybe.content === 'string') return maybe.content;
-  }
-
-  return '';
-};
-
 const splitTrailingEmoji = (text: string): { body: string; emoji: string } => {
   const emojiRegex = /[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+$/u;
   const match = text.match(emojiRegex);
@@ -59,17 +46,10 @@ const splitTrailingEmoji = (text: string): { body: string; emoji: string } => {
   return { body: text.trim(), emoji: '' };
 };
 
-// ✅ Helper to extract Instagram shortcode from URL
-const extractShortcodeFromUrl = (url: string): string | null => {
-  if (!url) return null;
-  const match = url.match(/instagram\.com\/(?:p|reel|reels)\/([A-Za-z0-9_-]+)/);
-  return match ? match[1] : null;
-};
-
 export const VideoDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { deleteVideos, videos, refreshVideos } = useData();
+  const { deleteVideos, videos } = useData();
 
   const [video, setVideo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -89,11 +69,9 @@ export const VideoDetail: React.FC = () => {
   const [tempBullets, setTempBullets] = useState<Array<{ headline: string; text: string; emoji?: string }>>([]);
   const [tempHashtags, setTempHashtags] = useState<string[]>([]);
 
-  const [fetchedTranscript, setFetchedTranscript] = useState<string>('');
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   const notFoundPollRef = useRef(0);
-  const transcriptFetchedRef = useRef<Set<string>>(new Set());
 
   const fetchJsonNoStore = useCallback(async (url: string) => {
     const u = url.includes('?') ? `${url}&_=${Date.now()}` : `${url}?_=${Date.now()}`;
@@ -144,69 +122,43 @@ export const VideoDetail: React.FC = () => {
         normalized = found;
       }
 
-      const merged = { ...normalized, __raw: found };
-      setVideo(merged);
-      setLoading(false);
-
-      const apiTranscript =
-        extractTranscriptText(found?.transcription) ||
-        extractTranscriptText(normalized?.transcription) ||
-        '';
-
-      if (apiTranscript.trim() && !fetchedTranscript.trim()) {
-        setFetchedTranscript(apiTranscript);
+      // ✅ TRY 1: Fetch transcription.json from GCS (most reliable!)
+      const shortcode = found.id.split('--')[0];
+      const transcriptionUrl = `https://storage.googleapis.com/recolekt-storage/media/IG_reels/${shortcode}/${shortcode}_transcription.json`;
+      
+      let transcriptionText = '';
+      
+      try {
+        const transcriptRes = await fetch(transcriptionUrl);
+        if (transcriptRes.ok) {
+          const transcriptData = await transcriptRes.json();
+          transcriptionText = transcriptData.transcript || '';
+        }
+      } catch (err) {
+        console.log('⚠️ No transcription.json found in GCS, trying API fallback...');
       }
 
-      // ✅ Extract shortcode from source_url or use reel_id
-      const shortcode = 
-        found?.shortcode || 
-        found?.reel_id || 
-        extractShortcodeFromUrl(found?.source_url) || 
-        id.split('--')[0];
-
-      console.log('🔍 Using shortcode:', shortcode);
-      console.log('🔍 found.shortcode:', found?.shortcode);
-      console.log('🔍 found.reel_id:', found?.reel_id);
-      console.log('🔍 found.source_url:', found?.source_url);
-
-      const transcriptJsonUrl = `https://storage.googleapis.com/recolekt-storage/media/IG_reels/${shortcode}/${shortcode}_transcription.json`;
-
-      console.log('🔍 Transcript JSON URL:', transcriptJsonUrl);
-
-      if (transcriptJsonUrl && !transcriptFetchedRef.current.has(String(id))) {
-        transcriptFetchedRef.current.add(String(id));
-        try {
-          const jsonRes = await fetch(transcriptJsonUrl, {
-            credentials: 'include',
-            headers: getAuthHeaders(),
-          });
-          if (jsonRes.ok) {
-            const jsonData = await jsonRes.json();
-            console.log('🔍 Fetched transcript JSON:', jsonData);
-            
-            // Extract transcript text from JSON
-            const transcriptText = 
-              jsonData?.transcript || 
-              jsonData?.text || 
-              jsonData?.content || 
-              (typeof jsonData === 'string' ? jsonData : '');
-            
-            if (transcriptText.trim()) {
-              setFetchedTranscript(transcriptText.trim());
-              console.log('🔍 Set transcript text:', transcriptText.substring(0, 200));
-            }
-          } else {
-            console.log('🔍 Transcript JSON fetch failed:', jsonRes.status);
-          }
-        } catch (err) {
-          console.error('Failed to fetch transcript JSON from GCS:', err);
+      // ✅ TRY 2: Fallback to API response if GCS failed
+      if (!transcriptionText && found.transcription) {
+        if (typeof found.transcription === 'string') {
+          transcriptionText = found.transcription;
         }
       }
+
+      const merged = { 
+        ...normalized, 
+        __raw: found,
+        transcription: transcriptionText  // ✅ Store the final text
+      };
+      
+      setVideo(merged);
+      setLoading(false);
+      
     } catch (err) {
       console.error('Error fetching video:', err);
       setLoading(false);
     }
-  }, [id, fetchJsonNoStore, fetchedTranscript, videos]);
+  }, [id, fetchJsonNoStore, videos]);
 
   useEffect(() => {
     fetchVideo();
@@ -267,15 +219,11 @@ export const VideoDetail: React.FC = () => {
     const v = video || {};
     const raw = v.__raw || {};
 
-    // ✅ Get the bilingual summary object - handle both wrapped and direct formats
     let summaryObj = v?.summary ?? raw?.summary ?? {};
     
-    // ✅ If summaryObj has a nested 'summary' property, unwrap it
     if (summaryObj && typeof summaryObj === 'object' && summaryObj.summary && !summaryObj.english && !summaryObj.original) {
       summaryObj = summaryObj.summary;
     }
-    
-    console.log('🔍 VideoDetail viewModel summaryObj (after unwrap):', summaryObj);
 
     const author = pickFirstString(v?.author_name, raw?.author_name, v?.author, raw?.author) || 'Unknown';
     const category = getCategory(v) || getCategory(raw);
@@ -283,7 +231,6 @@ export const VideoDetail: React.FC = () => {
 
     const captionLike = safeStr(v?.caption) || safeStr(raw?.caption) || '';
 
-    // ✅ Extract english summary from the bilingual structure
     const englishBlock = summaryObj?.english || summaryObj?.EN || summaryObj?.en || {};
     const originalBlock = summaryObj?.original || summaryObj?.OG || summaryObj?.og || {};
 
@@ -299,12 +246,8 @@ export const VideoDetail: React.FC = () => {
       getTitle(raw) ||
       'Saved Reel';
 
-    // ✅ Use english.summary
     const description = safeStr(englishBlock?.summary) || safeStr(originalBlock?.summary) || '';
 
-    console.log('🔍 VideoDetail description extracted:', description);
-
-    // ✅ Extract bullets from english block
     const bulletsRaw = englishBlock?.headlines || englishBlock?.bullets || originalBlock?.headlines || originalBlock?.bullets || [];
 
     const bullets = (Array.isArray(bulletsRaw) ? bulletsRaw : []).map((b: any) => {
@@ -329,7 +272,6 @@ export const VideoDetail: React.FC = () => {
         })
       : '';
 
-    // ✅ Check if recipe exists (don't rely on content_type)
     const recipeData = v?.recipe ?? raw?.recipe ?? null;
     const isRecipe = !!(recipeData && typeof recipeData === 'object' && (recipeData.english || recipeData.original));
 
@@ -343,21 +285,8 @@ export const VideoDetail: React.FC = () => {
       }
     }
 
-    console.log('🔍 VideoDetail isRecipe:', isRecipe, 'recipe:', recipe);
-
-    // ✅ Enhanced transcript extraction
-    const transcriptText =
-      fetchedTranscript.trim() ||
-      extractTranscriptText(v?.transcription) ||
-      extractTranscriptText(raw?.transcription) ||
-      safeStr(v?.transcript) ||
-      safeStr(raw?.transcript) ||
-      '';
-
-    console.log('🔍 VideoDetail transcriptText:', transcriptText);
-    console.log('🔍 VideoDetail fetchedTranscript:', fetchedTranscript);
-
-    const transcription = transcriptText ? { transcript: transcriptText } : { transcript: '' };
+    // ✅ SIMPLE: Use the transcription we fetched (GCS or API)
+    const transcription = v?.transcription || '';
 
     const duration = v?.duration ?? raw?.duration ?? '';
     const sourceUrl = v?.source_url ?? raw?.source_url ?? '';
@@ -385,7 +314,7 @@ export const VideoDetail: React.FC = () => {
       preview,
       summary: summaryObj,
     };
-  }, [video, fetchedTranscript]);
+  }, [video]);
 
   const handleModifyToggle = () => {
     if (!isEditMode) {

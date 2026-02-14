@@ -9,11 +9,13 @@ import React, {
 import { Video, Folder } from '../types';
 import { useAuth, getAuthHeaders } from './AuthContext';
 
+
 interface User {
   id: string;
   name: string;
   email: string;
 }
+
 
 export type AddVideoResult = {
   clientTempId: string;
@@ -23,6 +25,7 @@ export type AddVideoResult = {
   createdAt: string;
   previewUrl?: string | null;
 };
+
 
 interface DataContextType {
   videos: Video[];
@@ -40,20 +43,25 @@ interface DataContextType {
   refreshFolders: () => Promise<void>;
 }
 
+
 const DataContext = createContext<DataContextType | undefined>(undefined);
+
 
 const RAW_API_BASE =
   import.meta.env.VITE_API_BASE ||
   import.meta.env.VITE_API_URL ||
   'http://localhost:5001';
 
+
 const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
+
 
 function joinUrl(base: string, path: string) {
   const b = String(base || '').replace(/\/+$/, '');
   const p = String(path || '').replace(/^\/+/, '');
   return `${b}/${p}`;
 }
+
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
@@ -155,6 +163,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             displayTitle = 'Processing Failed'; // ✅ Failed title
           }
 
+          // ✅ FIXED: Extract transcript text directly from API response
+          const transcriptText = 
+            (typeof r.transcription === 'string' ? r.transcription : '') ||
+            r.transcription?.transcript ||
+            r.transcript ||
+            '';
+
           const mappedVideo: any = {
             id: r.id,
             title: displayTitle,
@@ -166,7 +181,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             category: finalCategory,
             tags: summary.hashtags || [],
             summary: summary,
-            transcript: r.transcription?.transcript || '',
+            transcript: transcriptText,  // ✅ FIXED - use extracted text
+            transcription: r.transcription,  // ✅ Keep raw for VideoDetail
             originalUrl: r.source_url,
             isFavorite: r.is_favorite,
             folderId: r.folder_id || 'default',
@@ -184,6 +200,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (loadedVideos.length > 0) {
           console.log('🔍 First video raw from backend:', loadedVideos[0].__raw.folder_id);
           console.log('🔍 First video mapped:', loadedVideos[0].folderId);
+          console.log('✅ First video transcript:', loadedVideos[0].transcript ? `${loadedVideos[0].transcript.substring(0, 50)}...` : 'No transcript');
         }
 
         console.log('🔍 DataContext: Loaded videos from backend:', loadedVideos.map(v => ({ 

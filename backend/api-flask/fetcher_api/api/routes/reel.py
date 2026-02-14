@@ -32,6 +32,40 @@ def add_no_cache_headers(response):
     return response
 
 
+def parse_transcription(transcription_raw):
+    """
+    Extract clean transcript text from DB column.
+    
+    Input can be:
+    - JSON string: '{"status": "ok", "transcript": "...", "detected_language": "fr"}'
+    - Dict: {"status": "ok", "transcript": "...", "detected_language": "fr"}
+    - Plain text: "Transcript text..."
+    - None
+    
+    Returns: Clean transcript text or None
+    """
+    if not transcription_raw:
+        return None
+    
+    # If it's already a dict
+    if isinstance(transcription_raw, dict):
+        return transcription_raw.get("transcript")
+    
+    # If it's a JSON string, parse it
+    if isinstance(transcription_raw, str):
+        try:
+            parsed = json.loads(transcription_raw)
+            if isinstance(parsed, dict) and "transcript" in parsed:
+                return parsed["transcript"]
+        except (json.JSONDecodeError, ValueError):
+            pass
+        
+        # If parsing failed, return as-is (assume it's plain text)
+        return transcription_raw
+    
+    return None
+
+
 @reel_bp.route("/saved_reels", methods=["GET"])
 def list_saved_reels():
     """Get paginated list of user's saved reels"""
@@ -72,20 +106,20 @@ def list_saved_reels():
             
             caption = row_dict.get("caption") or ""
             
-            # ✅ NEW: Extract transcript text from JSON wrapper
-            transcription_raw = row_dict.get("transcription")
-            if transcription_raw:
-                transcription_obj = json_loads_maybe(transcription_raw, default=transcription_raw)
-                if isinstance(transcription_obj, dict):
-                    row_dict["transcription"] = transcription_obj.get("transcript", "")
-                else:
-                    row_dict["transcription"] = transcription_raw
-            else:
-                row_dict["transcription"] = None
-            
             # Parse recipe/workout JSON if string
             row_dict["recipe"] = json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe"))
             row_dict["workout"] = json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout"))
+            
+            # ✅ Parse transcription and extract clean text
+            transcription_raw = row_dict.get("transcription")
+            transcription_clean = parse_transcription(transcription_raw)
+            row_dict["transcription"] = transcription_clean
+            
+            # ✅ DEBUG: Log what we're sending
+            if transcription_clean:
+                logger.info(f"✅ Sending transcript for {row_dict.get('id')}: {transcription_clean[:100]}...")
+            else:
+                logger.debug(f"⚠️ No transcript for {row_dict.get('id')}")
             
             # Repair recipe bilingual blocks from caption when needed
             if isinstance(row_dict.get("recipe"), dict):
@@ -375,17 +409,6 @@ def search_reels():
             
             caption = row_dict.get("caption") or ""
             
-            # ✅ NEW: Extract transcript text from JSON wrapper
-            transcription_raw = row_dict.get("transcription")
-            if transcription_raw:
-                transcription_obj = json_loads_maybe(transcription_raw, default=transcription_raw)
-                if isinstance(transcription_obj, dict):
-                    row_dict["transcription"] = transcription_obj.get("transcript", "")
-                else:
-                    row_dict["transcription"] = transcription_raw
-            else:
-                row_dict["transcription"] = None
-            
             bullets = json_loads_maybe(row_dict.get("summary_bullets"), default=row_dict.get("summary_bullets"))
             if not isinstance(bullets, list):
                 bullets = []
@@ -403,6 +426,11 @@ def search_reels():
             
             recipe = json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe"))
             workout = json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout"))
+            
+            # ✅ Parse transcription and extract clean text
+            transcription_raw = row_dict.get("transcription")
+            transcription_clean = parse_transcription(transcription_raw)
+            row_dict["transcription"] = transcription_clean
             
             if isinstance(recipe, dict):
                 recipe = repair_recipe_from_caption(recipe, caption)

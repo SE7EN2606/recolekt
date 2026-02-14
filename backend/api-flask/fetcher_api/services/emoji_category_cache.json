@@ -67,5 +67,10 @@
   "quail egg": "PROTEIN_EGG",
   "garlic chive": "ALLIUM",
   "oligodang oligosaccharide": "SWEETENER_LIQUID",
-  "fruit jelly": "SWEETENER_LIQUID"
+  "fruit jelly": "SWEETENER_LIQUID",
+  "gelatin sheet": "OTHER",
+  "speculoos paste": "SAUCE_PASTE",
+  "vanilla bean": "VANILLA",
+  "light brown sugar": "SWEETENER_BROWN",
+  "kinder maxi": "SWEETENER_CHOCOLATE"
 }

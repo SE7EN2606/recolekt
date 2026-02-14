@@ -78,10 +78,6 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
   onReportClick,
   onDeleteClick,
 }) => {
-  // Debug logging
-  console.log('🔍 VideoDetailMobile viewModel.isRecipe:', viewModel.isRecipe);
-  console.log('🔍 VideoDetailMobile viewModel.recipe:', viewModel.recipe);
-  
   return (
     <div className="md:hidden -mx-4 sm:mx-0">
       <div className="relative w-full aspect-[9/8] bg-black" style={{ marginTop: '1rem' }}>
@@ -348,7 +344,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             </button>
             {transcriptOpen && (
               <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                {viewModel.transcription.transcript}
+                {viewModel.transcription}
               </div>
             )}
           </div>
