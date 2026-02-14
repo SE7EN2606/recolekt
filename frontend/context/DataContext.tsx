@@ -158,7 +158,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const mappedVideo: any = {
             id: r.id,
             title: displayTitle,
-            author: r.author_name || 'Instagram User',
+            author: r.author_name || r.author || 'Instagram User',  // ✅ FIXED - fallback chain
             platform: 'instagram',
             thumbnailUrl: r.gcs_urls?.preview_thumbnail || '',
             duration: r.duration || '',
@@ -174,7 +174,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             recipe: r.recipe,
             workout: r.workout,
             status: r.status,
-            errorMessage: r.error_message || null, // ✅ Add error message
+            errorMessage: r.error_message || null,
             __raw: r
           };
 

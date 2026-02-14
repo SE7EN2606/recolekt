@@ -117,7 +117,7 @@ export const Gallery: React.FC = () => {
   if (searchQuery) {
     displayedVideos = displayedVideos.filter(v =>
       v.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      v.author?.toLowerCase().includes(searchQuery.toLowerCase())
+      (v.author_name || v.author)?.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }
 

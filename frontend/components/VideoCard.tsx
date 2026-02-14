@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Globe, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'; // ✅ Add AlertCircle
+import { Heart, Globe, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface VideoCardProps {
   video: any;
@@ -14,11 +14,11 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
   const [isFavorite, setIsFavorite] = useState(video.is_favorite || video.isFavorite || false);
   const [showOriginal, setShowOriginal] = useState(false);
 
-  const isProcessing = video.status === 'processing'; // ✅ Changed
-  const isFailed = video.status === 'failed'; // ✅ New
-  const isDisabled = isProcessing || isFailed; // ✅ New
+  const isProcessing = video.status === 'processing';
+  const isFailed = video.status === 'failed';
+  const isDisabled = isProcessing || isFailed;
 
-  // --- 1. TITLE & LANGUAGE LOGIC ---
+  // --- 1. TITLE & LANGUAGE LOGIC (FIXED) ---
   
   const defaultTitle = "Untitled Video";
   
@@ -33,23 +33,25 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
   const hasTranslation = hasSummaryTextTranslation || hasRecipeTranslation || hasSummaryTitleTranslation;
 
   let originalTitle = defaultTitle;
-  
-  if (hasSummaryTitleTranslation) {
-    originalTitle = summaryTitle.original;
-  } else if (hasRecipeTranslation && recipe.original.title) {
-    originalTitle = recipe.original.title;
-  } else if (hasSummaryTextTranslation) {
-    originalTitle = summaryText.original;
-  }
-
   let englishTitle = defaultTitle;
-  
-  if (hasSummaryTitleTranslation) {
-    englishTitle = summaryTitle.english;
-  } else if (hasRecipeTranslation && recipe.english.title) {
-    englishTitle = recipe.english.title;
-  } else if (hasSummaryTextTranslation) {
-    englishTitle = summaryText.english;
+
+  // ✅ FIXED: Properly extract title from bilingual objects
+  if (hasSummaryTextTranslation) {
+    // First priority: summary_text object with title field
+    englishTitle = summaryText.english?.title || summaryText.english?.summary || defaultTitle;
+    originalTitle = summaryText.original?.title || summaryText.original?.summary || defaultTitle;
+  } else if (hasRecipeTranslation) {
+    // Second priority: recipe object
+    englishTitle = recipe.english?.title || defaultTitle;
+    originalTitle = recipe.original?.title || defaultTitle;
+  } else if (video.title) {
+    // Fallback to top-level title field
+    englishTitle = video.title;
+    originalTitle = video.title;
+  } else if (typeof summaryTitle === 'string') {
+    // Legacy string title
+    englishTitle = summaryTitle;
+    originalTitle = summaryTitle;
   }
 
   let languageCode = 'OG';
@@ -65,7 +67,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
   const handleHeartClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (isDisabled) return; // ✅ Changed
+    if (isDisabled) return;
     
     setIsFavorite(!isFavorite);
     // TODO: Update favorite in backend
@@ -74,13 +76,13 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
   const handleLanguageToggle = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (isDisabled) return; // ✅ Changed
+    if (isDisabled) return;
     
     setShowOriginal(!showOriginal);
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
-    if (isDisabled) { // ✅ Changed
+    if (isDisabled) {
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -142,7 +144,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
         
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
 
-        {/* ✅ Processing Overlay */}
+        {/* Processing Overlay */}
         {isProcessing && (
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-40 flex items-center justify-center pointer-events-none">
             <div className="flex flex-col items-center gap-3">
@@ -152,7 +154,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
           </div>
         )}
 
-        {/* ✅ Failed Overlay */}
+        {/* Failed Overlay */}
         {isFailed && (
           <div className="absolute inset-0 bg-red-500/90 backdrop-blur-sm z-40 flex items-center justify-center pointer-events-none">
             <div className="flex flex-col items-center gap-3 px-4 text-center">
@@ -179,7 +181,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
           </div>
         )}
 
-        {hasTranslation && !isDisabled && !selectionMode && ( // ✅ Changed
+        {hasTranslation && !isDisabled && !selectionMode && (
           <button
             onClick={handleLanguageToggle}
             className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg flex items-center gap-1.5 text-white hover:bg-black/80 transition-colors z-30 group/lang"
@@ -226,11 +228,11 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
             <div className="flex justify-start pointer-events-auto">
               <button 
                 onClick={handleHeartClick}
-                disabled={isDisabled} // ✅ Changed
+                disabled={isDisabled}
                 className={`
                   absolute top-3 left-3 flex-shrink-0 z-30
                   w-7 h-7 rounded-full flex items-center justify-center transition-all duration-200
-                  ${isDisabled // ✅ Changed
+                  ${isDisabled
                     ? 'bg-transparent opacity-30 cursor-not-allowed'
                     : 'bg-white/20 backdrop-blur-md hover:bg-white/60 hover:scale-100 shadow-sm'
                   }
@@ -256,7 +258,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
         <h3 
           onClick={handleCardClick}
           className={`font-semibold text-gray-900 leading-tight line-clamp-2 transition-colors ${
-            isDisabled ? 'cursor-not-allowed opacity-50' : 'hover:text-primary-600 cursor-pointer' // ✅ Changed
+            isDisabled ? 'cursor-not-allowed opacity-50' : 'hover:text-primary-600 cursor-pointer'
           }`}
           title={displayTitle}
         >
@@ -270,7 +272,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
           className="inline-flex items-center gap-2 mt-1.5 w-fit group/author"
           onClick={(e) => {
             e.stopPropagation();
-            if (isDisabled) e.preventDefault(); // ✅ Changed
+            if (isDisabled) e.preventDefault();
           }}
         >
           <svg className="w-3 h-3 text-pink-500 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
@@ -278,7 +280,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
           </svg>
           
           <span className={`text-xs font-medium text-gray-500 truncate group-hover/author:text-gray-900 transition-colors ${
-            isDisabled ? 'opacity-50' : '' // ✅ Changed
+            isDisabled ? 'opacity-50' : ''
           }`}>
             {author}
           </span>

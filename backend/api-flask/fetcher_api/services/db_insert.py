@@ -18,12 +18,6 @@ def check_duplicate_reel(user_id, source_url):
         logger.error(f"Error checking duplicate: {e}")
         return False
 
-def _get_text(value, lang="english"):
-    """Helper to extract language from Dual-Language objects or return string."""
-    if isinstance(value, dict):
-        return value.get(lang) or value.get("original") or ""
-    return value or ""
-
 def insert_reel_into_db(reel_data):
     """
     Inserts or updates a reel record in the DB with Dual-Language support.
@@ -36,30 +30,29 @@ def insert_reel_into_db(reel_data):
         
         logger.info(f"🔧 [DB_INSERT] Starting insert for process_id: {process_id}")
         
-        # --- DUAL-LANGUAGE TITLE HANDLING ---
+        # ✅ FIXED: Store FULL bilingual JSONB object
         raw_title = reel_data.get("summary_title")
         raw_text = reel_data.get("summary_text")
         
-        logger.info(f"🔧 [DB_INSERT] Raw title type: {type(raw_title)}, value: {raw_title}")
+        logger.info(f"🔧 [DB_INSERT] Raw title type: {type(raw_title)}, value preview: {str(raw_title)[:100]}")
+        logger.info(f"🔧 [DB_INSERT] Raw text type: {type(raw_text)}, value preview: {str(raw_text)[:100]}")
         
-        # ✅ FIXED: Store FULL JSONB object, not just English string
         # Convert dict to JSON string for JSONB columns
         if isinstance(raw_title, dict):
-            summary_title_json = json.dumps(raw_title)
-            display_title = _get_text(raw_title, "english")  # For logging only
+            summary_title_json = json.dumps(raw_title, ensure_ascii=False)
         else:
-            summary_title_json = None
-            display_title = raw_title or ""
+            summary_title_json = raw_title or None
         
         if isinstance(raw_text, dict):
-            summary_text_json = json.dumps(raw_text)
+            summary_text_json = json.dumps(raw_text, ensure_ascii=False)
         else:
-            summary_text_json = None
+            summary_text_json = raw_text or None
         
         # ✅ FIXED: Only mark as "done" if explicitly passed from background worker
         final_status = reel_data.get("status", "processing")
         
-        logger.info(f"🔧 [DB_INSERT] Display title: '{display_title}'")
+        logger.info(f"🔧 [DB_INSERT] summary_title_json type: {type(summary_title_json)}")
+        logger.info(f"🔧 [DB_INSERT] summary_text_json type: {type(summary_text_json)}")
         logger.info(f"🔧 [DB_INSERT] final_status: {final_status}")
         logger.info(f"🔧 [DB_INSERT] duration: {reel_data.get('duration')}")
         logger.info(f"🔧 [DB_INSERT] author_name: {reel_data.get('author_name')}")
@@ -67,22 +60,29 @@ def insert_reel_into_db(reel_data):
         # Ensure JSONB fields are valid strings
         gcs_urls = reel_data.get("gcs_urls", {})
         if isinstance(gcs_urls, dict):
-            gcs_urls = json.dumps(gcs_urls)
+            gcs_urls = json.dumps(gcs_urls, ensure_ascii=False)
 
         transcription = reel_data.get("transcription", {})
         if isinstance(transcription, dict):
-            transcription = json.dumps(transcription)
+            transcription = json.dumps(transcription, ensure_ascii=False)
         
         # ✅ FIXED: summary_bullets should be JSONB
         summary_bullets = reel_data.get("summary_bullets", [])
         if isinstance(summary_bullets, list):
-            summary_bullets_json = json.dumps(summary_bullets)
+            summary_bullets_json = json.dumps(summary_bullets, ensure_ascii=False)
+        elif isinstance(summary_bullets, str):
+            summary_bullets_json = summary_bullets
         else:
-            summary_bullets_json = summary_bullets or "[]"
+            summary_bullets_json = "[]"
 
         # Handle complex objects
         recipe_json = reel_data.get("recipe")
+        if isinstance(recipe_json, dict):
+            recipe_json = json.dumps(recipe_json, ensure_ascii=False)
+            
         workout_json = reel_data.get("workout")
+        if isinstance(workout_json, dict):
+            workout_json = json.dumps(workout_json, ensure_ascii=False)
 
         sql = """
         INSERT INTO reels (
@@ -100,12 +100,12 @@ def insert_reel_into_db(reel_data):
             %(id)s, %(user_id)s, %(source_url)s, %(status)s, %(folder_id)s,
             %(caption)s, %(author_name)s, %(duration)s, %(is_long_video)s,
             
-            %(summary_category)s, %(summary_topic)s, %(summary_title)s, %(summary_text)s,
-            %(summary_bullets)s, %(summary_hashtags)s, %(summary_emojis)s,
+            %(summary_category)s, %(summary_topic)s, %(summary_title)s::jsonb, %(summary_text)s::jsonb,
+            %(summary_bullets)s::jsonb, %(summary_hashtags)s, %(summary_emojis)s,
             
-            %(content_type)s, %(recipe)s, %(workout)s,
+            %(content_type)s, %(recipe)s::jsonb, %(workout)s::jsonb,
             
-            %(gcs_urls)s, %(transcription)s, %(created_at)s, NOW()
+            %(gcs_urls)s::jsonb, %(transcription)s::jsonb, %(created_at)s, NOW()
         )
         ON CONFLICT (id) DO UPDATE SET
             status = EXCLUDED.status,
@@ -140,10 +140,10 @@ def insert_reel_into_db(reel_data):
             
             "summary_category": reel_data.get("summary_category", "General"),
             "summary_topic": reel_data.get("summary_topic", "General"),
-            "summary_title": summary_title_json,  # ✅ FIXED: Store full JSONB
-            "summary_text": summary_text_json,     # ✅ FIXED: Store full JSONB
+            "summary_title": summary_title_json,  # ✅ JSONB string
+            "summary_text": summary_text_json,     # ✅ JSONB string
             
-            "summary_bullets": summary_bullets_json,  # ✅ FIXED: JSONB array
+            "summary_bullets": summary_bullets_json,  # ✅ JSONB array
             "summary_hashtags": reel_data.get("summary_hashtags", []),
             "summary_emojis": reel_data.get("summary_emojis", []),
             
@@ -165,7 +165,7 @@ def insert_reel_into_db(reel_data):
         logger.info(f"🔧 [DB_INSERT] SQL executed successfully. Committing transaction...")
         conn.commit()
         
-        logger.info(f"✅ [DB] Successfully saved {process_id} | status={final_status} | duration={reel_data.get('duration')} | author='{reel_data.get('author_name')}' | title='{display_title}'")
+        logger.info(f"✅ [DB] Successfully saved {process_id} | status={final_status}")
 
     except Exception as e:
         logger.error(f"❌❌❌ [DB_INSERT] FAILED for {process_id}: {e}")

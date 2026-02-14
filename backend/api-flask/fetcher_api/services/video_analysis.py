@@ -211,9 +211,27 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
 
         logger.info(f"✅ Video saved to {output_path}")
 
+        # ✅ FIXED: Proper username extraction with fallback
+        username = ""
+        if hasattr(post, 'owner_username') and post.owner_username:
+            username = post.owner_username
+            logger.info(f"🔍 Method 1: Got username from owner_username: '{username}'")
+        elif hasattr(post, 'owner_profile'):
+            try:
+                username = post.owner_profile.username
+                logger.info(f"🔍 Method 2: Got username from owner_profile: '{username}'")
+            except:
+                pass
+        
+        if not username:
+            logger.warning(f"⚠️ Could not extract username for shortcode: {shortcode}")
+            username = "Unknown"
+        
+        logger.info(f"✅ Final username: '{username}'")
+
         # Extract metadata
         metadata = {
-            "username": post.owner_username,
+            "username": username,
             "caption": post.caption if post.caption else "",
             "likes": post.likes,
             "comments": post.comments,

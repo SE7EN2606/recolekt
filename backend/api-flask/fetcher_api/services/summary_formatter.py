@@ -3,14 +3,11 @@
 """
 Summary formatting + guardrails (UI contract):
 
-- Paragraph: 250–400 characters max (single factual paragraph).
-- Bullets: exactly 4 items, each has a short headline + one-sentence description.
-- No emojis anywhere in paragraph/headlines/descriptions.
+- Paragraph: 250–350 characters max (single factual paragraph).
+- Bullets: exactly 4 items, each has a short headline + one-sentence description + emoji.
+- No emojis in paragraph/headlines/descriptions text (only in separate emoji field).
 - No marketing fluff / author comments / CTA phrasing.
 - Focus on WHAT the video is about (not a recipe, not ingredient lists, not step dumps).
-
-This module is deterministic and should be used as a post-processor so we don't
-trust model formatting to be perfect.
 """
 
 import re
@@ -54,16 +51,23 @@ def clean_text(text: str) -> str:
     return s
 
 
-def _looks_like_recipe_dump(s: str) -> bool:
+def _looks_like_recipe_dump(s: str, content_type: str = "general") -> bool:
     """
-    Heuristic: if paragraph looks like ingredients/instructions list, we treat it as invalid for ai_summary.
-    We do NOT attempt to rewrite facts; we just avoid obviously bad content.
+    Heuristic: if paragraph looks like ingredients/instructions list, treat as invalid.
+    EXCEPTION: for content_type="recipe", allow recipe-descriptive language.
     """
     t = (s or "").lower()
     if not t:
         return True
 
-    # Strong recipe markers + list patterns
+    # For recipe content, only reject if it's a clear ingredient list (lots of quantities)
+    if content_type == "recipe":
+        qty_tokens = len(re.findall(r"(\b\d+([.,]\d+)?\b|\b\d+/\d+\b)", t))
+        if qty_tokens >= 8:
+            return True
+        return False
+
+    # For non-recipe content, be stricter
     markers = [
         "ingrédient", "ingredients", "ingredient", "g", "kg", "ml", "l ", "tbsp", "tsp",
         "cuillère", "c. à", "c a", "gram", "grams", "oven", "preheat", "bake", "minutes",
@@ -73,7 +77,6 @@ def _looks_like_recipe_dump(s: str) -> bool:
     if hits >= 4:
         return True
 
-    # Too many quantity-like tokens suggests ingredient list
     qty_tokens = len(re.findall(r"(\b\d+([.,]\d+)?\b|\b\d+/\d+\b)", t))
     if qty_tokens >= 6:
         return True
@@ -81,11 +84,7 @@ def _looks_like_recipe_dump(s: str) -> bool:
     return False
 
 
-def clamp_paragraph_chars(text: str, min_chars: int = 250, max_chars: int = 400) -> str:
-    """
-    Trim to <= max_chars at a word boundary. If too short, keep as-is (don't hallucinate).
-    Always return a single paragraph, emoji-free.
-    """
+def clamp_paragraph_chars(text: str, min_chars: int = 250, max_chars: int = 350) -> str:
     s = clean_text(text)
     if not s:
         return ""
@@ -99,17 +98,12 @@ def clamp_paragraph_chars(text: str, min_chars: int = 250, max_chars: int = 400)
             cut += "."
         s = cut
 
-    # If it's obviously a recipe dump, reject (caller should fallback)
-    if _looks_like_recipe_dump(s):
-        return ""
-
     return s
 
 
 def clean_headline(text: str) -> str:
     s = clean_text(text)
     s = re.sub(r"^[\-\*\u2022]\s*", "", s).strip()
-    # Remove trailing punctuation spam
     s = s.strip(" \t\r\n,.;:!-–—")
     return s
 
@@ -118,7 +112,6 @@ def _ensure_one_sentence(desc: str) -> str:
     s = clean_text(desc).strip(" \t\r\n")
     if not s:
         return ""
-    # Prefer one sentence; if multiple, keep first clause until sentence end-ish.
     if len(re.findall(r"[.!?]", s)) >= 2:
         parts = re.split(r"(?<=[.!?])\s+", s)
         s = parts[0].strip()
@@ -129,20 +122,18 @@ def _ensure_one_sentence(desc: str) -> str:
 
 
 def normalize_bullets(highlights: Any) -> List[Dict[str, str]]:
-    """
-    Accept model output formats and return exactly 4 bullets:
-    [{"headline": "...", "description": "..."}, ...]
-    """
     bullets: List[Dict[str, str]] = []
 
     if isinstance(highlights, list):
         for h in highlights:
             headline = ""
             desc = ""
+            emoji = ""  # ✅ FIXED: Track emoji
 
             if isinstance(h, dict):
                 headline = clean_headline(str(h.get("headline") or h.get("title") or ""))
                 desc = str(h.get("description") or h.get("text") or "")
+                emoji = str(h.get("emoji") or "")  # ✅ FIXED: Extract emoji
             elif isinstance(h, str):
                 s = clean_text(h)
                 if ":" in s:
@@ -162,18 +153,28 @@ def normalize_bullets(highlights: Any) -> List[Dict[str, str]]:
             desc = _ensure_one_sentence(desc)
 
             if headline and desc:
-                bullets.append({"headline": headline, "description": desc})
+                # ✅ FIXED: Include emoji in output
+                bullets.append({
+                    "headline": headline, 
+                    "description": desc,
+                    "emoji": emoji
+                })
 
-    # Fill to exactly 4
     while len(bullets) < 4:
-        bullets.append({"headline": "Key detail", "description": "A concrete detail shown in the clip."})
+        bullets.append({
+            "headline": "Key detail", 
+            "description": "A concrete detail shown in the clip.",
+            "emoji": ""  # ✅ FIXED: Include emoji field
+        })
 
     bullets = bullets[:4]
 
-    # Final cleanup
     for b in bullets:
         b["headline"] = clean_headline(b.get("headline", "")) or "Key detail"
         b["description"] = _ensure_one_sentence(b.get("description", "")) or "A concrete detail shown in the clip."
+        # ✅ FIXED: Ensure emoji field exists
+        if "emoji" not in b:
+            b["emoji"] = ""
 
     return bullets
 
@@ -182,25 +183,23 @@ def format_ai_summary(
     title_en: str,
     summary_en_raw: str,
     highlights_raw: Any,
+    content_type: str = "general",
 ) -> Tuple[str, List[Dict[str, str]]]:
     """
     Produce (paragraph, bullets) in the strict UI contract.
-
-    If summary can't be made valid (recipe dump / too short / empty), fall back to a conservative paragraph
-    derived from the title (no hallucinated details).
+    Each bullet now includes: headline, description, emoji
     """
-    paragraph = clamp_paragraph_chars(summary_en_raw, 250, 400)
+    paragraph = clamp_paragraph_chars(summary_en_raw, 250, 350)
     bullets = normalize_bullets(highlights_raw)
 
-    if not paragraph:
-        # Conservative fallback: factual but minimal; no invented claims.
+    if not paragraph or _looks_like_recipe_dump(paragraph, content_type):
         base = clean_text(title_en).strip(" \t\r\n,.;:!-–—")
         if not base:
             base = "Saved content"
         paragraph = clamp_paragraph_chars(
             f"{base}. The clip presents key details and visuals around this topic in a short, factual format.",
             250,
-            400,
+            350,
         )
         if not paragraph:
             paragraph = f"{base}."

@@ -1,3 +1,4 @@
+# fetcher_api/api/routes/reel.py
 """
 Reel management routes - list, update, delete, search
 """
@@ -50,7 +51,7 @@ def list_saved_reels():
                 summary_category, summary_title, summary_topic, summary_text,
                 summary_bullets, summary_hashtags, summary_emojis,
                 content_type, created_at, caption, author_name,
-                is_long_video, duration, recipe, workout,
+                is_long_video, duration, recipe, workout, transcription,
                 gcs_urls::jsonb->'preview_thumbnail' as preview_thumbnail
             FROM reels
             WHERE user_id = %s
@@ -70,6 +71,17 @@ def list_saved_reels():
                 continue
             
             caption = row_dict.get("caption") or ""
+            
+            # ✅ NEW: Extract transcript text from JSON wrapper
+            transcription_raw = row_dict.get("transcription")
+            if transcription_raw:
+                transcription_obj = json_loads_maybe(transcription_raw, default=transcription_raw)
+                if isinstance(transcription_obj, dict):
+                    row_dict["transcription"] = transcription_obj.get("transcript", "")
+                else:
+                    row_dict["transcription"] = transcription_raw
+            else:
+                row_dict["transcription"] = None
             
             # Parse recipe/workout JSON if string
             row_dict["recipe"] = json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe"))
@@ -119,16 +131,23 @@ def list_saved_reels():
             row_dict["summary_hashtags"] = hashtags
             row_dict["summary_emojis"] = emojis
             
-            # Backward compatible summary wrapper
-            row_dict["summary"] = {
+            # ✅ FIXED: Keep the bilingual structure in summary
+            row_dict["summary"] = summary_text if isinstance(summary_text, dict) else {
                 "category": row_dict.get("summary_category", "General"),
                 "title": summary_title_str,
                 "topic": row_dict.get("summary_topic", ""),
-                "summary": english_preview if english_preview else "",
-                "bullets": bullets,
-                "hashtags": hashtags,
-                "emojis": emojis,
-                "bilingual": summary_text if isinstance(summary_text, dict) else None,
+                "english": {
+                    "summary": english_preview if english_preview else "",
+                    "headlines": bullets,
+                    "hashtags": hashtags,
+                    "emojis": emojis,
+                },
+                "original": {
+                    "summary": "",
+                    "headlines": bullets,
+                    "hashtags": hashtags,
+                    "emojis": emojis,
+                }
             }
             
             thumb = row_dict.get("preview_thumbnail")
@@ -334,7 +353,7 @@ def search_reels():
                 summary_category, summary_title, summary_topic, summary_text,
                 summary_bullets, summary_hashtags, summary_emojis,
                 content_type, recipe, workout, created_at,
-                caption, author_name, is_long_video, duration,
+                caption, author_name, is_long_video, duration, transcription,
                 gcs_urls::jsonb as gcs_urls
             FROM reels
             WHERE user_id = %s
@@ -355,6 +374,17 @@ def search_reels():
                 continue
             
             caption = row_dict.get("caption") or ""
+            
+            # ✅ NEW: Extract transcript text from JSON wrapper
+            transcription_raw = row_dict.get("transcription")
+            if transcription_raw:
+                transcription_obj = json_loads_maybe(transcription_raw, default=transcription_raw)
+                if isinstance(transcription_obj, dict):
+                    row_dict["transcription"] = transcription_obj.get("transcript", "")
+                else:
+                    row_dict["transcription"] = transcription_raw
+            else:
+                row_dict["transcription"] = None
             
             bullets = json_loads_maybe(row_dict.get("summary_bullets"), default=row_dict.get("summary_bullets"))
             if not isinstance(bullets, list):
@@ -399,15 +429,23 @@ def search_reels():
             row_dict["summary_hashtags"] = hashtags
             row_dict["summary_emojis"] = emojis
             
-            row_dict["summary"] = {
+            # ✅ FIXED: Keep the bilingual structure in summary
+            row_dict["summary"] = summary_text if isinstance(summary_text, dict) else {
                 "category": row_dict.get("summary_category", "General"),
                 "title": summary_title_str,
                 "topic": row_dict.get("summary_topic", ""),
-                "summary": english_preview if english_preview else "",
-                "hashtags": hashtags,
-                "bullets": bullets,
-                "emojis": emojis,
-                "bilingual": summary_text if isinstance(summary_text, dict) else None,
+                "english": {
+                    "summary": english_preview if english_preview else "",
+                    "headlines": bullets,
+                    "hashtags": hashtags,
+                    "emojis": emojis,
+                },
+                "original": {
+                    "summary": "",
+                    "headlines": bullets,
+                    "hashtags": hashtags,
+                    "emojis": emojis,
+                }
             }
             
             row_dict["content_type"] = row_dict.get("content_type", "generic")

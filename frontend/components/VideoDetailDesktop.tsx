@@ -20,6 +20,7 @@ import { IOSShareIcon } from './VideoIcons';
 import { AISummaryCard } from './AISummaryCard';
 import { useLanguage } from '../context/LanguageContext';
 
+
 interface VideoDetailDesktopProps {
   viewModel: any;
   isEditMode: boolean;
@@ -55,13 +56,16 @@ interface VideoDetailDesktopProps {
   convertToImperial: (qty: string) => string;
 }
 
+
 const asString = (v: any) => (typeof v === 'string' ? v : '');
 const asArray = (v: any) => (Array.isArray(v) ? v : []);
+
 
 const coerceText = (v: any): string => {
   if (typeof v === 'string') return v;
   if (!v) return '';
   if (Array.isArray(v)) return v.map(coerceText).filter(Boolean).join(' ').trim();
+
 
   if (typeof v === 'object') {
     if ((v as any).english !== undefined || (v as any).original !== undefined) {
@@ -75,6 +79,7 @@ const coerceText = (v: any): string => {
   }
   return '';
 };
+
 
 export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
   viewModel,
@@ -112,37 +117,42 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
 }) => {
   const { t, showOriginal, toggleLanguage } = useLanguage();
 
-  // =========================
-  // ✅ DEBUG LINES (TOP)
-  // =========================
-  // NOTE: These are safe; remove later.
+
   console.log('🎬 VideoDetailDesktop viewModel:', viewModel);
   console.log('🎬 VideoDetailDesktop viewModel keys:', Object.keys(viewModel || {}));
   console.log('🎬 VideoDetailDesktop viewModel.summary_text:', viewModel?.summary_text);
   console.log('🎬 VideoDetailDesktop viewModel.summary:', viewModel?.summary);
   console.log('🎬 VideoDetailDesktop viewModel.transcription:', viewModel?.transcription);
 
+
   const summary = viewModel?.summary || {};
   const recipeData = viewModel?.recipe || {};
+
 
   const hashtags = asArray(viewModel?.hashtags).length
     ? asArray(viewModel?.hashtags)
     : asArray(summary?.hashtags);
 
+
   const titleData = summary?.title;
   const isDualLanguageTitle = typeof titleData === 'object' && titleData?.english && titleData?.original;
 
+
   const hasRecipeTranslation = !!(viewModel.isRecipe && recipeData?.english && recipeData?.original);
+
 
   const hasTranslation =
     hasRecipeTranslation ||
     isDualLanguageTitle ||
     !!(summary?.english && summary?.original);
 
+
   const rawLangCode = recipeData?.language_code || 'en';
   const languageCode = (rawLangCode.toLowerCase() === 'en' && hasTranslation) ? 'OG' : rawLangCode.toUpperCase();
 
+
   let displayTitle = viewModel?.title || '';
+
 
   if (showOriginal) {
     if (hasRecipeTranslation && recipeData?.original?.title) {
@@ -160,14 +170,22 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
     }
   }
 
+
   const activeRecipe = (showOriginal && hasRecipeTranslation)
     ? recipeData.original
     : (recipeData.english || recipeData);
 
-  const getProfileUrl = () => `https://www.instagram.com/${(viewModel.author || '').replace('@', '')}/`;
+  // ✅ FIXED: Use author_name instead of author
+  const authorName = viewModel.author_name || viewModel.author || '';
+  const getProfileUrl = () => {
+    if (!authorName) return '#';
+    return `https://www.instagram.com/${authorName.replace('@', '')}/`;
+  };
+
 
   const handleHashtagClick = (tag: string) =>
     window.open(`https://www.instagram.com/explore/tags/${tag.replace('#', '')}/`, '_blank');
+
 
   const renderCaptionWithHashtags = (text: string) => {
     if (!text) return null;
@@ -190,16 +208,10 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
     );
   };
 
-  const nestedSummaryText = showOriginal
-    ? (coerceText(summary?.original?.summary) || coerceText(summary?.summary))
-    : (coerceText(summary?.english?.summary) || coerceText(summary?.summary));
 
-  const summaryText = asString(viewModel?.description) || nestedSummaryText;
-  const summaryTextForCard = typeof summaryText === 'string' ? summaryText : coerceText(summaryText);
+  const summaryTextObj = viewModel?.summary_text || viewModel?.summary || null;
 
-  const summaryTextObj = viewModel?.summary_text || null;
 
-  // ✅ FIXED: Extract bullets correctly from summary_text
   const rawBullets = showOriginal
     ? (summaryTextObj?.original?.headlines ||
         summaryTextObj?.original?.highlights ||
@@ -212,50 +224,59 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
         summary?.headlines ||
         viewModel?.bullets);
 
+
   const bulletsForCard = asArray(rawBullets).map((b: any) => {
     if (typeof b === 'string') {
-      // Parse "Headline: Description" format
-      const parts = b.split(':', 1);
-      if (parts.length === 2) {
+      const emojiMatch = b.match(/^([\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+)\s*/u);
+      const emoji = emojiMatch ? emojiMatch[1] : '•';
+      const remaining = b.replace(/^[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+\s*/u, '').trim();
+      
+      const parts = remaining.split(/\s*[-:]\s*/);
+      if (parts.length >= 2) {
         return {
+          emoji,
           headline: parts[0].trim(),
-          text: parts[1].trim()
+          text: parts.slice(1).join(' - ').trim()
         };
       }
-      return { headline: b, text: '' };
+      return { emoji, headline: remaining, text: '' };
     }
     
     if (b && typeof b === 'object') {
-      const headline = asString(b.headline || b.text || '');
-      // ✅ Map "description" to "text" for compatibility
+      const headline = asString(b.headline || b.title || b.text || '');
       const text = asString(b.text || b.description || '');
-      return { ...b, headline, text };
+      const emoji = asString(b.emoji || '•');
+      
+      return { emoji, headline, text };
     }
     
     return b;
   });
 
-  // ✅ Checks the correct source for AISummaryCard (summary_text)
+
   const hasSummaryContent = !!(
     summaryTextObj?.english?.summary ||
-    summaryTextObj?.english?.headlines?.length ||
     summaryTextObj?.original?.summary ||
-    summaryTextObj?.original?.headlines?.length
+    summaryTextObj?.english?.headlines?.length ||
+    summaryTextObj?.original?.headlines?.length ||
+    summaryTextObj?.summary?.english?.summary ||
+    summaryTextObj?.summary?.original?.summary ||
+    summaryTextObj?.summary?.english?.headlines?.length ||
+    summaryTextObj?.summary?.original?.headlines?.length
   );
 
-  // =========================
-  // ✅ DEBUG LINES (DERIVED)
-  // =========================
+
   console.log('🎬 VideoDetailDesktop derived:', {
     hasTranslation,
     languageCode,
     showOriginal,
     summaryTextObjExists: !!summaryTextObj,
     hasSummaryContent,
-    summaryTextForCard,
     bulletsForCardCount: bulletsForCard.length,
     hasTranscript: !!viewModel?.transcription?.transcript,
+    authorName, // ✅ DEBUG
   });
+
 
   return (
     <div className="hidden md:grid md:grid-cols-[1.5fr_1fr] gap-8 items-start">
@@ -276,7 +297,9 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
             </button>
           </div>
 
+
           <img src={viewModel.preview || viewModel.gcs_urls?.preview_thumbnail || ''} alt={displayTitle} className="w-full h-full object-cover opacity-90"/>
+
 
           {hasTranslation && !isEditMode && (
             <button
@@ -288,6 +311,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
             </button>
           )}
 
+
           {viewModel.duration && (
             <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-medium text-white z-20">
               {viewModel.duration}
@@ -295,26 +319,32 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
           )}
         </div>
 
+
         <div className="mb-3">
           <EditableTitle title={displayTitle} isEditMode={isEditMode} value={tempTitle} onChange={setTempTitle} />
         </div>
 
+
         <div className="mb-6 flex items-center justify-between">
-          <a href={getProfileUrl()} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 group/author">
-            <svg className="w-3 h-3 text-pink-500" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
-            </svg>
-            <span className="text-xs font-medium text-gray-500 truncate group-hover/author:text-gray-900 transition-colors">
-              {viewModel.author}
-            </span>
-          </a>
+          {/* ✅ FIXED: Only show author link if we have a username */}
+          {authorName && (
+            <a href={getProfileUrl()} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 group/author">
+              <svg className="w-3 h-3 text-pink-500" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+              </svg>
+              <span className="text-xs font-medium text-gray-500 truncate group-hover/author:text-gray-900 transition-colors">
+                {authorName}
+              </span>
+            </a>
+          )}
           {viewModel.savedAt && <div className="text-xs text-gray-400">Saved {viewModel.savedAt}</div>}
         </div>
+
 
         {hasSummaryContent && (
           <div className="mb-8">
             {console.log('🎬 VideoDetailDesktop passing to AISummaryCard:', {
-              summaryData: viewModel.summary_text,
+              summaryData: summaryTextObj?.summary || summaryTextObj,
               showOriginal,
               hasSummaryContent,
             })}
@@ -322,11 +352,12 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
               isEditMode={isEditMode}
               value={tempDescription}
               onChange={setTempDescription}
-              summaryData={viewModel.summary_text}
+              summaryData={summaryTextObj?.summary || summaryTextObj}
               showOriginal={showOriginal}
             />
           </div>
         )}
+
 
         {isEditMode && (
           <div className="mb-8">
@@ -338,6 +369,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
             />
           </div>
         )}
+
 
         {viewModel.isRecipe && activeRecipe && (
           <div className="space-y-6 mb-8" key={`recipe-${showOriginal}`}>
@@ -374,6 +406,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
           </div>
         )}
 
+
         {viewModel.caption && (
           <div className="mb-8 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
             <button
@@ -392,6 +425,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
         )}
       </div>
 
+
       <div className="space-y-6">
         {viewModel.sourceUrl && (
           <div className="bg-gradient-to-br from-violet-50 to-indigo-50 p-6 border border-violet-200 rounded-lg">
@@ -404,6 +438,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
             </a>
           </div>
         )}
+
 
         <div className="bg-white border border-gray-200 p-6 rounded-lg">
           <div className="flex items-center gap-2 text-xs uppercase text-gray-500 font-semibold mb-3">
@@ -423,6 +458,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
             </span>
           )}
         </div>
+
 
         {(viewModel.topic || isEditMode) && (
           <div className="bg-white border border-gray-200 p-6 rounded-lg">
@@ -445,6 +481,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
           </div>
         )}
 
+
         {(hashtags.length > 0 || isEditMode) && (
           <div className="bg-white border border-gray-200 p-6 rounded-lg">
             <div className="flex items-center gap-2 text-xs uppercase text-gray-500 font-semibold mb-3">
@@ -454,6 +491,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
             <EditableHashtags hashtags={hashtags} isEditMode={isEditMode} value={tempHashtags} onChange={setTempHashtags} />
           </div>
         )}
+
 
         {viewModel.transcription && (
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
@@ -471,6 +509,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
             )}
           </div>
         )}
+
 
         <div className="bg-gradient-to-br from-blue-50 to-cyan-50 p-6 border border-blue-200 rounded-lg">
           <div className="text-xs uppercase tracking-wide text-blue-900 font-semibold mb-3">Settings</div>

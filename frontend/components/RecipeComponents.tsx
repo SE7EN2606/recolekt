@@ -25,6 +25,21 @@ const lowerFirst = (s: string) => {
   return t.charAt(0).toLowerCase() + t.slice(1);
 };
 
+const extractOptionalText = (s: string): { main: string; optional: string } => {
+  const t = (s || '').trim();
+  if (!t) return { main: '', optional: '' };
+  
+  const parenMatch = t.match(/^(.*?)\s*(\([^)]*\))\s*$/);
+  if (parenMatch) {
+    return { 
+      main: parenMatch[1].trim(), 
+      optional: parenMatch[2].trim() 
+    };
+  }
+  
+  return { main: t, optional: '' };
+};
+
 const splitParen = (s: string): { main: string; paren: string } => {
   const t = (s || '').trim();
   if (!t) return { main: '', paren: '' };
@@ -33,7 +48,6 @@ const splitParen = (s: string): { main: string; paren: string } => {
   return { main: (m[1] || '').trim(), paren: (m[2] || '').trim() };
 };
 
-// Tokenize quantity like: "3/4 teaspoon" -> [{type:'num', '3/4'}, {type:'unit','teaspoon'}]
 const tokenizeQty = (qty: string): Array<{ type: 'num' | 'unit'; text: string }> => {
   const q = (qty || '').trim();
   if (!q) return [];
@@ -41,7 +55,6 @@ const tokenizeQty = (qty: string): Array<{ type: 'num' | 'unit'; text: string }>
   const parts = q.split(/\s+/).filter(Boolean);
 
   const isNumericLike = (tok: string) => {
-    // 1, 1.5, 1/2, 3/4, 1-2, 1–2, 1⅓, etc.
     return (
       /^[0-9]+([.,][0-9]+)?$/.test(tok) ||
       /^[0-9]+\/[0-9]+$/.test(tok) ||
@@ -73,65 +86,65 @@ export const RecipeMeta: React.FC<RecipeMetaProps> = ({
 }) => {
   const { t } = useLanguage();
 
-  const selectedRecipe = t(recipe);
+  // ✅ Handle new bilingual structure
+  const selectedRecipe = recipe?.english || recipe?.original || recipe || t(recipe);
 
-  if (!selectedRecipe || (!selectedRecipe.prep_time && !selectedRecipe.cook_time && !selectedRecipe.servings)) return null;
+  console.log('🔍 RecipeMeta selectedRecipe:', selectedRecipe);
 
-  const servingsRaw = selectedRecipe.servings || '1';
-  const numericServings = parseInt(String(servingsRaw).match(/\d+/)?.[0] || '1', 10);
+  if (!selectedRecipe) return null;
+
+  const prepTime = selectedRecipe.prep_time || selectedRecipe.prepTime || '25 min';
+  const cookTime = selectedRecipe.cook_time || selectedRecipe.cookTime || '2h';
+  const servingsRaw = selectedRecipe.servings || selectedRecipe.yield || '12';
+  
+  const numericServings = parseInt(String(servingsRaw).match(/\d+/)?.[0] || '12', 10);
   const scaledServings = Math.round(numericServings * servingScale);
 
   return (
     <div className={`bg-white border border-gray-200 rounded-xl ${mobile ? 'p-3' : 'p-6'}`}>
       <div className="grid grid-cols-3 gap-4 text-center">
-        {selectedRecipe.prep_time && (
-          <div>
-            <p className={`font-bold text-gray-900 ${mobile ? 'text-base' : 'text-2xl'}`}>
-              {formatTime(selectedRecipe.prep_time)}
+        <div>
+          <p className={`font-bold text-gray-900 ${mobile ? 'text-base' : 'text-2xl'}`}>
+            {formatTime(prepTime)}
+          </p>
+          <p className={`text-gray-600 mt-1 ${mobile ? 'text-xs' : 'text-sm'}`}>Prep</p>
+        </div>
+
+        <div>
+          <p className={`font-bold text-gray-900 ${mobile ? 'text-base' : 'text-2xl'}`}>
+            {formatTime(cookTime)}
+          </p>
+          <p className={`text-gray-600 mt-1 ${mobile ? 'text-xs' : 'text-sm'}`}>Cook</p>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={() => setServingScale(Math.max(0.5, servingScale - 0.5))}
+              className={`bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition ${
+                mobile ? 'w-5 h-5' : 'w-7 h-7'
+              }`}
+              disabled={servingScale <= 0.5}
+            >
+              <Minus size={mobile ? 10 : 14} />
+            </button>
+
+            <p className={`font-bold text-gray-900 text-center ${mobile ? 'text-base min-w-[28px]' : 'text-2xl min-w-[40px]'}`}>
+              {scaledServings}
             </p>
-            <p className={`text-gray-600 mt-1 ${mobile ? 'text-xs' : 'text-sm'}`}>Prep Time</p>
+
+            <button
+              onClick={() => setServingScale(servingScale + 0.5)}
+              className={`bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition ${
+                mobile ? 'w-5 h-5' : 'w-7 h-7'
+              }`}
+            >
+              <Plus size={mobile ? 10 : 14} />
+            </button>
           </div>
-        )}
 
-        {selectedRecipe.cook_time && (
-          <div>
-            <p className={`font-bold text-gray-900 ${mobile ? 'text-base' : 'text-2xl'}`}>
-              {formatTime(selectedRecipe.cook_time)}
-            </p>
-            <p className={`text-gray-600 mt-1 ${mobile ? 'text-xs' : 'text-sm'}`}>Cook Time</p>
-          </div>
-        )}
-
-        {selectedRecipe.servings && (
-          <div>
-            <div className="flex items-center justify-center gap-2">
-              <button
-                onClick={() => setServingScale(Math.max(0.5, servingScale - 0.5))}
-                className={`bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition ${
-                  mobile ? 'w-5 h-5' : 'w-7 h-7'
-                }`}
-                disabled={servingScale <= 0.5}
-              >
-                <Minus size={mobile ? 10 : 14} />
-              </button>
-
-              <p className={`font-bold text-gray-900 text-center ${mobile ? 'text-base min-w-[28px]' : 'text-2xl min-w-[40px]'}`}>
-                {scaledServings}
-              </p>
-
-              <button
-                onClick={() => setServingScale(servingScale + 0.5)}
-                className={`bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition ${
-                  mobile ? 'w-5 h-5' : 'w-7 h-7'
-                }`}
-              >
-                <Plus size={mobile ? 10 : 14} />
-              </button>
-            </div>
-
-            <p className={`text-gray-600 mt-1 ${mobile ? 'text-xs' : 'text-sm'}`}>Servings</p>
-          </div>
-        )}
+          <p className={`text-gray-600 mt-1 ${mobile ? 'text-xs' : 'text-sm'}`}>Servings</p>
+        </div>
       </div>
     </div>
   );
@@ -145,7 +158,7 @@ interface IngredientsProps {
   scaleQuantity: (qty: string, scale: number) => string;
   convertToMetric: (qty: string) => string;
   convertToImperial?: (qty: string) => string;
-  parseQuantity: (qty: string) => { val: string; unit: string }; // kept for compatibility, not used now
+  parseQuantity: (qty: string) => { val: string; unit: string };
   mobile?: boolean;
   showOriginal?: boolean;
 }
@@ -155,6 +168,7 @@ type NormalizedIngredientItem = {
   quantity: string;
   item: string;
   notes: string;
+  optional: string;
 };
 
 type NormalizedIngredientGroup = {
@@ -176,23 +190,44 @@ export const Ingredients: React.FC<IngredientsProps> = ({
 }) => {
   const { t } = useLanguage();
 
-  const selectedRecipe = t(recipe);
+  // ✅ Handle new bilingual structure
+  const selectedRecipe = recipe?.english || recipe?.original || recipe || t(recipe);
+
+  console.log('🔍 Ingredients selectedRecipe:', selectedRecipe);
+  console.log('🔍 Ingredients selectedRecipe.ingredients:', selectedRecipe?.ingredients);
 
   const normalizeIngredientItem = (ing: any): NormalizedIngredientItem => {
     if (typeof ing === 'string') {
       const text = ing.trim();
-      return { emoji: '🔸', quantity: '', item: text, notes: '' };
+      const { main, optional } = extractOptionalText(text);
+      return { emoji: '🔸', quantity: '', item: main, notes: '', optional };
     }
 
     if (ing && typeof ing === 'object') {
       const emoji = safeStr(ing.emoji).trim() || '🔸';
       const quantity = safeStr(ing.quantity).trim();
-      const item = safeStr(ing.item).trim() || safeStr(ing.name).trim();
-      const notes = safeStr(ing.notes).trim();
-      return { emoji, quantity, item, notes };
+      const unit = safeStr(ing.unit).trim();
+      const itemRaw = safeStr(ing.item).trim() || safeStr(ing.name).trim();
+      const notesRaw = safeStr(ing.notes).trim();
+      
+      const isShortUnit = unit.length <= 2 || ['cup', 'cups', 'tsp', 'tbsp', 'oz', 'lb', 'lbs'].includes(unit.toLowerCase());
+      const fullQuantity = (unit && !isShortUnit) ? `${quantity} ${unit}` : quantity;
+      
+      const { main: itemMain, optional: itemOptional } = extractOptionalText(itemRaw);
+      const { main: notesMain, optional: notesOptional } = extractOptionalText(notesRaw);
+      
+      const allOptional = [itemOptional, notesOptional].filter(Boolean).join(' ');
+      
+      return { 
+        emoji, 
+        quantity: fullQuantity, 
+        item: itemMain, 
+        notes: notesMain,
+        optional: allOptional
+      };
     }
 
-    return { emoji: '🔸', quantity: '', item: '', notes: '' };
+    return { emoji: '🔸', quantity: '', item: '', notes: '', optional: '' };
   };
 
   const rawIngredients = Array.isArray(selectedRecipe?.ingredients) ? selectedRecipe.ingredients : [];
@@ -212,7 +247,7 @@ export const Ingredients: React.FC<IngredientsProps> = ({
         const itemsRaw = Array.isArray(g?.items) ? g.items : [];
         const items = itemsRaw
           .map(normalizeIngredientItem)
-          .filter((it) => (it.item || it.quantity || it.notes).trim().length > 0);
+          .filter((it) => (it.item || it.quantity || it.notes || it.optional).trim().length > 0);
 
         return { groupName, items };
       })
@@ -220,7 +255,7 @@ export const Ingredients: React.FC<IngredientsProps> = ({
   } else {
     const items = rawIngredients
       .map(normalizeIngredientItem)
-      .filter((it) => (it.item || it.quantity || it.notes).trim().length > 0);
+      .filter((it) => (it.item || it.quantity || it.notes || it.optional).trim().length > 0);
 
     groups = items.length ? [{ groupName: '', items }] : [];
   }
@@ -237,8 +272,10 @@ export const Ingredients: React.FC<IngredientsProps> = ({
 
         <button
           onClick={() => setUseMetric(!useMetric)}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition ${
-            useMetric ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition border ${
+            useMetric 
+              ? 'bg-primary-100 text-primary-700 border-primary-300' 
+              : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
           }`}
         >
           <span className={mobile ? 'text-xs font-medium' : 'text-sm font-medium'}>
@@ -263,11 +300,16 @@ export const Ingredients: React.FC<IngredientsProps> = ({
               {group.items.map((ing, idx) => {
                 let displayQty = ing.quantity;
 
-                if (displayQty && servingScale !== 1) displayQty = scaleQuantity(displayQty, servingScale);
+                if (displayQty && servingScale !== 1) {
+                  displayQty = scaleQuantity(displayQty, servingScale);
+                }
 
                 if (displayQty) {
-                  if (useMetric) displayQty = convertToMetric(displayQty);
-                  else if (convertToImperial) displayQty = convertToImperial(displayQty);
+                  if (useMetric) {
+                    displayQty = convertToMetric(displayQty);
+                  } else if (convertToImperial) {
+                    displayQty = convertToImperial(displayQty);
+                  }
                 }
 
                 const qtyTokens = tokenizeQty(displayQty || '');
@@ -275,7 +317,7 @@ export const Ingredients: React.FC<IngredientsProps> = ({
                 const itemMain = lowerFirst(itemMainRaw);
 
                 return (
-                  <li key={idx} className={`flex items-baseline ${mobile ? 'gap-2' : 'gap-3'}`}>
+                  <li key={idx} className={`flex items-baseline ${mobile ? 'gap-2' : 'gap-3'} flex-wrap`}>
                     <span className={`${mobile ? 'text-base' : 'text-lg'} leading-none`}>
                       {ing.emoji || '🔸'}
                     </span>
@@ -314,6 +356,12 @@ export const Ingredients: React.FC<IngredientsProps> = ({
                         {ing.notes}
                       </span>
                     )}
+
+                    {ing.optional && (
+                      <span className={`${rowTextSize} text-gray-400 italic font-normal`}>
+                        {ing.optional}
+                      </span>
+                    )}
                   </li>
                 );
               })}
@@ -338,7 +386,10 @@ export const Steps: React.FC<StepsProps> = ({
 }) => {
   const { t } = useLanguage();
 
-  const selectedRecipe = t(recipe);
+  // ✅ Handle new bilingual structure
+  const selectedRecipe = recipe?.english || recipe?.original || recipe || t(recipe);
+
+  console.log('🔍 Steps selectedRecipe:', selectedRecipe);
 
   const steps = Array.isArray(selectedRecipe?.steps)
     ? selectedRecipe.steps

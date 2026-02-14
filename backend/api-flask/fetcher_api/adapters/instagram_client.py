@@ -71,6 +71,22 @@ class InstagramClient:
                 return m.group(1)
         return None
 
+    def extract_username_from_url(self, url: str) -> Optional[str]:
+        """
+        Fallback: Extract username from Instagram URL.
+        Examples:
+          - https://www.instagram.com/christelle_is_flabbergasting/reel/...
+          - https://www.instagram.com/reel/DUbI8uHDGy1/
+        """
+        # Try to match: instagram.com/USERNAME/reel or instagram.com/USERNAME/p
+        match = re.search(r'instagram\.com/([a-zA-Z0-9._]+)(?:/reel|/p|/tv|/reels)?/', url)
+        if match:
+            potential_username = match.group(1)
+            # Filter out known non-username paths
+            if potential_username not in ['reel', 'reels', 'p', 'tv', 'stories', 'explore']:
+                return potential_username
+        return None
+
     # ------------------------------------------------
     # Metadata fetch (NO profile pics)
     # ------------------------------------------------
@@ -108,7 +124,34 @@ class InstagramClient:
 
             post = instaloader.Post.from_shortcode(self.loader.context, shortcode)
 
-            username = getattr(post, "owner_username", "") or ""
+            # ✅ FIXED: Try multiple ways to get username
+            username = None
+            
+            # Method 1: Direct attribute
+            if hasattr(post, 'owner_username') and post.owner_username:
+                username = post.owner_username
+                logger.info(f"🔍 Method 1: Got username from owner_username: '{username}'")
+            
+            # Method 2: Owner profile object
+            if not username and hasattr(post, 'owner_profile'):
+                try:
+                    username = post.owner_profile.username
+                    logger.info(f"🔍 Method 2: Got username from owner_profile: '{username}'")
+                except:
+                    pass
+            
+            # Method 3: Extract from URL (fallback)
+            if not username:
+                username = self.extract_username_from_url(url)
+                if username:
+                    logger.info(f"🔍 Method 3: Extracted username from URL: '{username}'")
+            
+            # Final fallback
+            if not username:
+                username = ""
+                logger.warning(f"⚠️ Could not extract username for shortcode: {shortcode}")
+            
+            logger.info(f"✅ Final username: '{username}' for shortcode: {shortcode}")
 
             return {
                 "shortcode": shortcode,

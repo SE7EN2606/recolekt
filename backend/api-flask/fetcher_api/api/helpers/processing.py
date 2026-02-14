@@ -79,12 +79,12 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
             if not caption:
                 caption = meta.get("caption", "")
             if not author_name:
-                author_name = meta.get("username", "")
+                author_name = meta.get("username", "")  # ✅ FIXED - was "author_name"
 
             result["caption"] = caption
             result["author_name"] = author_name
 
-        # 2. Extract Duration
+            # 2. Extract Duration
         logger.info(f"📹 Attempting to extract duration from: {video_path}")
 
         if os.path.exists(video_path):
@@ -252,6 +252,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
 
         eng_data = ensure_dict(ensure_dict(summary_block).get("english", {}))
 
+        # ✅ FIXED: Save the full bilingual structure to database
         result.update(
             {
                 "summary": summary_block,
@@ -260,8 +261,8 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
                 "content_type": content_type,
                 "summary_category": display_category,
                 "summary_topic": display_topic,
-                "summary_title": display_title,
-                "summary_text": eng_data.get("summary", "") if isinstance(eng_data.get("summary", ""), str) else "",
+                "summary_title": summary_block,  # ✅ FIXED: Save full bilingual object
+                "summary_text": summary_block,   # ✅ FIXED: Save full bilingual object, not just English string
                 "summary_bullets": json.dumps(ensure_list(eng_data.get("headlines", [])), ensure_ascii=False),
                 "summary_hashtags": ensure_list(eng_data.get("hashtags", [])),
                 "summary_emojis": ensure_list(eng_data.get("emojis", [])),
@@ -271,6 +272,9 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url, sa
                 "created_at": datetime.utcnow().isoformat(),
             }
         )
+
+        logger.info(f"🔍 summary_block type: {type(summary_block)}")
+        logger.info(f"🔍 summary_block preview: {str(summary_block)[:200]}")
 
         # 7. Upload Thumbnail + Caption + Transcription JSONs to GCS
         if save_to_gcs and gcs_client.available:
