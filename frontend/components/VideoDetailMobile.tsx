@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   ArrowLeft,
   ChevronDown,
@@ -16,6 +16,7 @@ import { parseQuantity, convertToMetric, scaleQuantity } from '../utils/videoUti
 import { LinkifiedText } from './LinkifiedText';
 import { IOSShareIcon, HashtagIcon } from './VideoIcons';
 import { AISummaryCard } from './AISummaryCard';
+
 
 interface VideoDetailMobileProps {
   viewModel: any;
@@ -48,6 +49,7 @@ interface VideoDetailMobileProps {
   onDeleteClick: () => void;
 }
 
+
 export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
   viewModel,
   isEditMode,
@@ -78,13 +80,29 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
   onReportClick,
   onDeleteClick,
 }) => {
+
+  // Prevent rubber-banding / overscroll on mount
+  useEffect(() => {
+    document.body.style.overscrollBehaviorY = 'none';
+    return () => {
+      document.body.style.overscrollBehaviorY = 'auto';
+    };
+  }, []);
+
   return (
-    <div className="md:hidden -mx-4 sm:mx-0">
-      <div className="relative w-full aspect-[9/8] bg-black" style={{ marginTop: '1rem' }}>
-        <img src={viewModel.preview} alt={viewModel.title} className="w-full h-full object-cover opacity-90" />
+    <div className="md:hidden w-full min-h-screen bg-white" style={{ overscrollBehaviorY: 'none' }}>
+      <div className="relative w-full aspect-[9/8] bg-black">
+        {/* Added transform-gpu to prevent image twitching during scroll */}
+        <img 
+          src={viewModel.preview} 
+          alt={viewModel.title} 
+          className="w-full h-full object-cover opacity-90 transform-gpu translate-z-0" 
+          style={{ willChange: 'transform' }}
+        />
+
 
         {/* Top overlay buttons */}
-        <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start bg-gradient-to-b from-black/60 to-transparent">
+        <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start bg-gradient-to-b from-black/60 to-transparent z-10">
           <button
             onClick={onNavigateBack}
             className="group w-9 h-9 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-2xl hover:bg-white/40 transition-colors"
@@ -93,6 +111,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               <ArrowLeft size={18} />
             </span>
           </button>
+
 
           <button
             onClick={onShare}
@@ -104,6 +123,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           </button>
         </div>
 
+
         {viewModel.duration && viewModel.duration !== '0:00' && (
           <div className="absolute bottom-3 right-3 bg-black/80 text-white text-xs px-2 py-1 rounded">
             {viewModel.duration}
@@ -111,7 +131,8 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
         )}
       </div>
 
-      <div className="px-4 pt-5 pb-6">
+
+      <div className="px-4 pt-5 pb-24"> {/* Added padding-bottom to clear fixed nav */}
         <div className="mb-3">
           <EditableTitle
             title={viewModel.title}
@@ -121,6 +142,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             mobile
           />
         </div>
+
 
         <div className="flex items-center justify-between mb-4">
           <a
@@ -143,6 +165,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           {viewModel.savedAt && <span className="text-xs text-gray-500">{viewModel.savedAt}</span>}
         </div>
 
+
         {/* Edit mode: Cancel/Save buttons at top */}
         {isEditMode && (
           <div className="mb-4 flex gap-2">
@@ -161,6 +184,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           </div>
         )}
 
+
         {/* Purple block with Category, Topic, Hashtags & Edit button */}
         <div className="mb-5 bg-violet-50 border border-violet-200 rounded-xl overflow-hidden p-4">
           {isEditMode ? (
@@ -176,6 +200,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
                     placeholder="Category"
                   />
                 </div>
+
 
                 <div className="flex items-center gap-2 min-w-0">
                   <Tags size={16} className="text-gray-600 flex-shrink-0" />
@@ -206,6 +231,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
                 </div>
               </div>
 
+
               <button
                 onClick={onModifyToggle}
                 className="flex items-center justify-center w-7 h-7 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition"
@@ -215,6 +241,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               </button>
             </div>
           )}
+
 
           {/* Hashtags */}
           {((viewModel.hashtags || []) as string[]).length > 0 && (
@@ -254,6 +281,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           )}
         </div>
 
+
         {/* AI Summary Card */}
         {viewModel.summary && (
           <AISummaryCard
@@ -264,6 +292,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             showOriginal={false}
           />
         )}
+
 
         {/* Bullets (edit mode only) */}
         {isEditMode && (
@@ -277,6 +306,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             />
           </div>
         )}
+
 
         {/* Recipe Section */}
         {viewModel.isRecipe && viewModel.recipe && (
@@ -299,6 +329,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             />
             <Steps recipe={viewModel.recipe} mobile />
 
+
             {viewModel.recipe.tips?.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                 <h3 className="text-xs font-bold text-amber-900 mb-1.5">💡 Tips</h3>
@@ -313,6 +344,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             )}
           </div>
         )}
+
 
         {/* Original Caption */}
         {viewModel.caption && (
@@ -332,6 +364,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           </div>
         )}
 
+
         {/* Transcript */}
         {viewModel.transcription && (
           <div className="mb-6 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
@@ -350,6 +383,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           </div>
         )}
 
+
         {/* Report & Delete buttons */}
         {!isEditMode && (
           <div className="mb-3 grid grid-cols-2 gap-3">
@@ -361,6 +395,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               Report Issue
             </button>
 
+
             <button
               onClick={onDeleteClick}
               className="flex items-center justify-center gap-1.5 px-3 py-2.5 text-red-600 bg-red-50 border border-red-200 rounded-xl font-medium text-xs"
@@ -370,6 +405,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             </button>
           </div>
         )}
+
 
         {/* Instagram button */}
         {!isEditMode && viewModel.sourceUrl && (
@@ -384,6 +420,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           </a>
         )}
       </div>
+
 
       <MobileBottomNav onAddClick={() => {}} />
     </div>
