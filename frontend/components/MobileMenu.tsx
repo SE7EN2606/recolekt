@@ -69,11 +69,14 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => setAnimateOpen(true));
       });
+      // Lock body scroll and overscroll
       document.body.style.overflow = 'hidden';
+      document.body.style.overscrollBehavior = 'none';
     } else {
       setAnimateOpen(false);
       const timer = setTimeout(() => setShouldRender(false), 500);
       document.body.style.overflow = '';
+      document.body.style.overscrollBehavior = '';
       return () => clearTimeout(timer);
     }
   }, [isOpen]);
@@ -119,15 +122,17 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
           ${animateOpen ? 'h-[100vh]' : 'h-0'}
         `}
         style={{ 
-          // Hardware acceleration fix to prevent logo jiggle
+          // Hardware acceleration fix
           backfaceVisibility: 'hidden',
           WebkitBackfaceVisibility: 'hidden',
           transform: 'translateZ(0)',
-          WebkitTransform: 'translateZ(0)'
+          WebkitTransform: 'translateZ(0)',
+          // Prevent scroll chaining
+          overscrollBehavior: 'none'
         }}
       >
         <div className="flex flex-col h-full max-w-[1100px] mx-auto px-4 md:px-6 lg:px-8">
-          {/* Header */}
+          {/* Header - Fixed Height */}
           <div className="h-[85px] md:h-[90px] flex items-center justify-between flex-shrink-0 border-b border-gray-100 gap-4">
             {loading ? (
               <div className="relative flex-1">
@@ -158,8 +163,8 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
           </div>
 
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto py-8">
+          {/* Scrollable Content - Logo REMOVED from here */}
+          <div className="flex-1 overflow-y-auto py-8 overscroll-contain">
             <div
               className={`transition-opacity duration-500 delay-100 ${
                 animateOpen ? 'opacity-100' : 'opacity-0'
@@ -174,19 +179,12 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     <div className="h-10 w-36 bg-gray-200 rounded-xl animate-pulse" />
                     <div className="h-10 w-44 bg-gray-200 rounded-xl animate-pulse" />
                   </div>
-
-
-                  <div className="mt-auto pb-12 space-y-4">
-                    <div className="h-14 w-full bg-gray-200 rounded-xl animate-pulse" />
-                    <div className="h-4 w-64 mx-auto bg-gray-200 rounded animate-pulse" />
-                  </div>
                 </div>
               )}
 
 
               {showSignedOutUI && (
                 <div className="flex flex-col h-full space-y-8 px-2">
-                  {/* Navigation Links */}
                   <div className="space-y-2">
                     {[
                       { label: 'Home', path: '/' },
@@ -209,8 +207,8 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                   </div>
 
 
-                  <div className="mt-auto pb-12">
-                    <div className="space-y-4">
+                  <div className="mt-auto pb-6">
+                     <div className="space-y-4">
                       <Button
                         fullWidth
                         onClick={() => handleNav('/auth')}
@@ -449,21 +447,20 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                   </div>
                 </div>
               )}
-
-
-              {/* Logo at Bottom */}
-              <div className="py-8 mt-auto flex justify-center">
-                <img
-                  alt="recolekt_logo"
-                  className="h-10"
-                  src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/frontend/assets/recolekt_logo_black.png"
-                />
-              </div>
-
-
-              <div className="h-20 md:h-0"></div>
+               <div className="h-10"></div>
             </div>
           </div>
+
+          {/* Fixed Logo - Moved OUTSIDE the scrollable div */}
+          <div className="py-6 flex-shrink-0 flex justify-center border-t border-gray-50 bg-[#f8fafc]">
+             <img
+               alt="recolekt_logo"
+               className="h-10 transform-gpu"
+               src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/frontend/assets/recolekt_logo_black.png"
+               style={{ backfaceVisibility: 'hidden', transform: 'translateZ(0)' }}
+             />
+          </div>
+
         </div>
       </div>
 

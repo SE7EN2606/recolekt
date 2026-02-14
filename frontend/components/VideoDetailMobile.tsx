@@ -81,23 +81,30 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
   onDeleteClick,
 }) => {
 
-  // Prevent rubber-banding / overscroll on mount
+  // Prevent rubber-banding / overscroll
   useEffect(() => {
     document.body.style.overscrollBehaviorY = 'none';
+    document.documentElement.style.overscrollBehaviorY = 'none';
+    
     return () => {
-      document.body.style.overscrollBehaviorY = 'auto';
+      document.body.style.overscrollBehaviorY = '';
+      document.documentElement.style.overscrollBehaviorY = '';
     };
   }, []);
 
   return (
     <div className="md:hidden w-full min-h-screen bg-white" style={{ overscrollBehaviorY: 'none' }}>
       <div className="relative w-full aspect-[9/8] bg-black">
-        {/* Added transform-gpu to prevent image twitching during scroll */}
+        {/* Added object-cover with transform-gpu to prevent image twitching during scroll */}
         <img 
           src={viewModel.preview} 
           alt={viewModel.title} 
-          className="w-full h-full object-cover opacity-90 transform-gpu translate-z-0" 
-          style={{ willChange: 'transform' }}
+          className="w-full h-full object-cover opacity-90" 
+          style={{ 
+            willChange: 'transform',
+            transform: 'translateZ(0)',
+            backfaceVisibility: 'hidden'
+          }}
         />
 
 
@@ -132,7 +139,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
       </div>
 
 
-      <div className="px-4 pt-5 pb-24"> {/* Added padding-bottom to clear fixed nav */}
+      <div className="px-4 pt-5 pb-24"> 
         <div className="mb-3">
           <EditableTitle
             title={viewModel.title}
