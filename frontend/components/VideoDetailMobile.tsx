@@ -1,20 +1,20 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   ArrowLeft,
+  ChevronDown,
   ExternalLink,
   Pencil,
   CircleAlert,
   Trash2,
   Layers,
   Tags,
-  ChevronDown,
 } from 'lucide-react';
 import { RecipeMeta, Ingredients, Steps } from './RecipeComponents';
 import { MobileBottomNav } from './MobileBottomNav';
 import { EditableTitle, EditableBullets, EditableHashtags } from './VideoDetailComponents';
 import { parseQuantity, convertToMetric, scaleQuantity } from '../utils/videoUtils';
 import { LinkifiedText } from './LinkifiedText';
-import { IOSShareIcon } from './VideoIcons';
+import { IOSShareIcon, HashtagIcon } from './VideoIcons';
 import { AISummaryCard } from './AISummaryCard';
 
 
@@ -81,14 +81,15 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
   onDeleteClick,
 }) => {
 
-
-  // REMOVED the useEffect that locked body scroll/overscroll.
-  // This restores the natural "pull" feeling on mobile.
-
+  // Force caption closed on mount
+  useEffect(() => {
+    setCaptionOpen(false);
+  }, []);
 
   return (
-    // Added pt-[85px] to match your Header height so the poster isn't cropped behind it.
-    <div className="md:hidden w-full min-h-screen bg-white pt-[85px]">
+    // ADJUST GAP HERE: Changed from pt-[85px] to pt-[60px]. 
+    // Decrease this number (e.g. 50px, 40px) to reduce the gap further.
+    <div className="md:hidden w-full min-h-screen bg-white pt-[60px]">
       <div className="relative w-full aspect-[9/8] bg-black">
         {/* Added transform-gpu to keep image stable during scroll */}
         <img 
