@@ -1,20 +1,20 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
   ArrowLeft,
-  ChevronDown,
   ExternalLink,
   Pencil,
   CircleAlert,
   Trash2,
   Layers,
   Tags,
+  ChevronDown,
 } from 'lucide-react';
 import { RecipeMeta, Ingredients, Steps } from './RecipeComponents';
 import { MobileBottomNav } from './MobileBottomNav';
 import { EditableTitle, EditableBullets, EditableHashtags } from './VideoDetailComponents';
 import { parseQuantity, convertToMetric, scaleQuantity } from '../utils/videoUtils';
 import { LinkifiedText } from './LinkifiedText';
-import { IOSShareIcon, HashtagIcon } from './VideoIcons';
+import { IOSShareIcon } from './VideoIcons';
 import { AISummaryCard } from './AISummaryCard';
 
 
@@ -81,25 +81,20 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
   onDeleteClick,
 }) => {
 
-  // Prevent rubber-banding / overscroll
-  useEffect(() => {
-    document.body.style.overscrollBehaviorY = 'none';
-    document.documentElement.style.overscrollBehaviorY = 'none';
-    
-    return () => {
-      document.body.style.overscrollBehaviorY = '';
-      document.documentElement.style.overscrollBehaviorY = '';
-    };
-  }, []);
+
+  // REMOVED the useEffect that locked body scroll/overscroll.
+  // This restores the natural "pull" feeling on mobile.
+
 
   return (
-    <div className="md:hidden w-full min-h-screen bg-white" style={{ overscrollBehaviorY: 'none' }}>
+    // Added pt-[85px] to match your Header height so the poster isn't cropped behind it.
+    <div className="md:hidden w-full min-h-screen bg-white pt-[85px]">
       <div className="relative w-full aspect-[9/8] bg-black">
-        {/* Added object-cover with transform-gpu to prevent image twitching during scroll */}
+        {/* Added transform-gpu to keep image stable during scroll */}
         <img 
           src={viewModel.preview} 
           alt={viewModel.title} 
-          className="w-full h-full object-cover opacity-90" 
+          className="w-full h-full object-cover opacity-90"
           style={{ 
             willChange: 'transform',
             transform: 'translateZ(0)',
