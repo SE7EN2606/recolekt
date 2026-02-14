@@ -5,11 +5,11 @@ import { Button } from './Button';
 interface InputModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (value: string, parentId?: string) => void; // ✅ Updated signature
+  onSubmit: (value: string, parentId?: string) => void;
   title: string;
   placeholder?: string;
   confirmLabel?: string;
-  parentOptions?: { id: string; name: string }[]; // ✅ New Prop
+  parentOptions?: { id: string; name: string }[];
 }
 
 export const InputModal: React.FC<InputModalProps> = ({
@@ -19,7 +19,7 @@ export const InputModal: React.FC<InputModalProps> = ({
   title,
   placeholder = "Enter text...",
   confirmLabel = "Create",
-  parentOptions = [] // Default to empty array
+  parentOptions = []
 }) => {
   const [value, setValue] = useState('');
   const [parentId, setParentId] = useState('');
@@ -29,7 +29,7 @@ export const InputModal: React.FC<InputModalProps> = ({
     if (isOpen) {
       setIsVisible(true);
       setValue('');
-      setParentId(''); // Reset parent selection
+      setParentId('');
       document.body.style.overflow = 'hidden';
       // Focus input after animation
       setTimeout(() => document.getElementById('modal-input')?.focus(), 100);
@@ -75,7 +75,7 @@ export const InputModal: React.FC<InputModalProps> = ({
           <form onSubmit={handleSubmit}>
             <div className="space-y-4 mb-6">
               
-              {/* ✅ Location Selector (Only show if options exist) */}
+              {/* Location Selector */}
               {parentOptions.length > 0 && (
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
@@ -85,7 +85,9 @@ export const InputModal: React.FC<InputModalProps> = ({
                     <select 
                       value={parentId}
                       onChange={(e) => setParentId(e.target.value)}
-                      className="w-full appearance-none px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-gray-900 font-medium cursor-pointer"
+                      // 16px font size prevents iOS zoom
+                      className="w-full appearance-none px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-gray-900 font-medium cursor-pointer text-[16px]"
+                      style={{ fontSize: '16px' }} 
                     >
                       <option value="">New Main Collection</option>
                       {parentOptions.map(option => (
@@ -97,7 +99,7 @@ export const InputModal: React.FC<InputModalProps> = ({
                 </div>
               )}
 
-              {/* ✅ Name Input */}
+              {/* Name Input */}
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
                   Name
@@ -108,7 +110,9 @@ export const InputModal: React.FC<InputModalProps> = ({
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
                   placeholder={placeholder}
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-gray-900 placeholder-gray-400"
+                  // 16px font size prevents iOS zoom
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-gray-900 placeholder-gray-400 text-[16px]"
+                  style={{ fontSize: '16px' }}
                 />
               </div>
             </div>
