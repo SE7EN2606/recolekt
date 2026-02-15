@@ -28,15 +28,15 @@ const lowerFirst = (s: string) => {
 const extractOptionalText = (s: string): { main: string; optional: string } => {
   const t = (s || '').trim();
   if (!t) return { main: '', optional: '' };
-  
+
   const parenMatch = t.match(/^(.*?)\s*(\([^)]*\))\s*$/);
   if (parenMatch) {
-    return { 
-      main: parenMatch[1].trim(), 
-      optional: parenMatch[2].trim() 
+    return {
+      main: parenMatch[1].trim(),
+      optional: parenMatch[2].trim(),
     };
   }
-  
+
   return { main: t, optional: '' };
 };
 
@@ -82,12 +82,19 @@ export const RecipeMeta: React.FC<RecipeMetaProps> = ({
   servingScale,
   setServingScale,
   mobile = false,
-  showOriginal = false
+  showOriginal = false,
 }) => {
   const { t } = useLanguage();
 
-  // ✅ Handle new bilingual structure
-  const selectedRecipe = recipe?.english || recipe?.original || recipe || t(recipe);
+  // If we get a bilingual recipe, choose block by showOriginal.
+  let selectedRecipe: any;
+  if (recipe && (recipe.english || recipe.original)) {
+    selectedRecipe = showOriginal
+      ? (recipe.original || recipe.english)
+      : (recipe.english || recipe.original);
+  } else {
+    selectedRecipe = recipe || t(recipe);
+  }
 
   console.log('🔍 RecipeMeta selectedRecipe:', selectedRecipe);
 
@@ -96,7 +103,7 @@ export const RecipeMeta: React.FC<RecipeMetaProps> = ({
   const prepTime = selectedRecipe.prep_time || selectedRecipe.prepTime || '25 min';
   const cookTime = selectedRecipe.cook_time || selectedRecipe.cookTime || '2h';
   const servingsRaw = selectedRecipe.servings || selectedRecipe.yield || '12';
-  
+
   const numericServings = parseInt(String(servingsRaw).match(/\d+/)?.[0] || '12', 10);
   const scaledServings = Math.round(numericServings * servingScale);
 
@@ -129,7 +136,11 @@ export const RecipeMeta: React.FC<RecipeMetaProps> = ({
               <Minus size={mobile ? 10 : 14} />
             </button>
 
-            <p className={`font-bold text-gray-900 text-center ${mobile ? 'text-base min-w-[28px]' : 'text-2xl min-w-[40px]'}`}>
+            <p
+              className={`font-bold text-gray-900 text-center ${
+                mobile ? 'text-base min-w-[28px]' : 'text-2xl min-w-[40px]'
+              }`}
+            >
               {scaledServings}
             </p>
 
@@ -190,8 +201,15 @@ export const Ingredients: React.FC<IngredientsProps> = ({
 }) => {
   const { t } = useLanguage();
 
-  // ✅ Handle new bilingual structure
-  const selectedRecipe = recipe?.english || recipe?.original || recipe || t(recipe);
+  // If we get a bilingual recipe, choose block by showOriginal.
+  let selectedRecipe: any;
+  if (recipe && (recipe.english || recipe.original)) {
+    selectedRecipe = showOriginal
+      ? (recipe.original || recipe.english)
+      : (recipe.english || recipe.original);
+  } else {
+    selectedRecipe = recipe || t(recipe);
+  }
 
   console.log('🔍 Ingredients selectedRecipe:', selectedRecipe);
   console.log('🔍 Ingredients selectedRecipe.ingredients:', selectedRecipe?.ingredients);
@@ -209,28 +227,30 @@ export const Ingredients: React.FC<IngredientsProps> = ({
       const unit = safeStr(ing.unit).trim();
       const itemRaw = safeStr(ing.item).trim() || safeStr(ing.name).trim();
       const notesRaw = safeStr(ing.notes).trim();
-      
-      const isShortUnit = unit.length <= 2 || ['cup', 'cups', 'tsp', 'tbsp', 'oz', 'lb', 'lbs'].includes(unit.toLowerCase());
-      const fullQuantity = (unit && !isShortUnit) ? `${quantity} ${unit}` : quantity;
-      
+
+      // Always include unit when present so "50 g farine" is clear
+      const fullQuantity = (quantity && unit ? `${quantity} ${unit}` : quantity).trim();
+
       const { main: itemMain, optional: itemOptional } = extractOptionalText(itemRaw);
       const { main: notesMain, optional: notesOptional } = extractOptionalText(notesRaw);
-      
+
       const allOptional = [itemOptional, notesOptional].filter(Boolean).join(' ');
-      
-      return { 
-        emoji, 
-        quantity: fullQuantity, 
-        item: itemMain, 
+
+      return {
+        emoji,
+        quantity: fullQuantity,
+        item: itemMain,
         notes: notesMain,
-        optional: allOptional
+        optional: allOptional,
       };
     }
 
     return { emoji: '🔸', quantity: '', item: '', notes: '', optional: '' };
   };
 
-  const rawIngredients = Array.isArray(selectedRecipe?.ingredients) ? selectedRecipe.ingredients : [];
+  const rawIngredients = Array.isArray(selectedRecipe?.ingredients)
+    ? selectedRecipe.ingredients
+    : [];
 
   const looksGrouped =
     rawIngredients.length > 0 &&
@@ -251,7 +271,7 @@ export const Ingredients: React.FC<IngredientsProps> = ({
 
         return { groupName, items };
       })
-      .filter((g) => (g.groupName || g.items.length > 0));
+      .filter((g) => g.groupName || g.items.length > 0);
   } else {
     const items = rawIngredients
       .map(normalizeIngredientItem)
@@ -273,8 +293,8 @@ export const Ingredients: React.FC<IngredientsProps> = ({
         <button
           onClick={() => setUseMetric(!useMetric)}
           className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition border ${
-            useMetric 
-              ? 'bg-primary-100 text-primary-700 border-primary-300' 
+            useMetric
+              ? 'bg-primary-100 text-primary-700 border-primary-300'
               : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
           }`}
         >
@@ -289,7 +309,11 @@ export const Ingredients: React.FC<IngredientsProps> = ({
           <div key={gIdx}>
             {group.groupName && (
               <div className={mobile ? 'mb-3' : 'mb-4'}>
-                <div className={`font-bold text-gray-900 ${mobile ? 'text-sm' : 'text-lg'} leading-tight`}>
+                <div
+                  className={`font-bold text-gray-900 ${
+                    mobile ? 'text-sm' : 'text-lg'
+                  } leading-tight`}
+                >
                   {group.groupName}
                 </div>
                 <div className="h-px bg-gray-100 mt-2" />
@@ -317,7 +341,12 @@ export const Ingredients: React.FC<IngredientsProps> = ({
                 const itemMain = lowerFirst(itemMainRaw);
 
                 return (
-                  <li key={idx} className={`flex items-baseline ${mobile ? 'gap-2' : 'gap-3'} flex-wrap`}>
+                  <li
+                    key={idx}
+                    className={`flex items-baseline ${
+                      mobile ? 'gap-2' : 'gap-3'
+                    } flex-wrap`}
+                  >
                     <span className={`${mobile ? 'text-base' : 'text-lg'} leading-none`}>
                       {ing.emoji || '🔸'}
                     </span>
@@ -382,26 +411,35 @@ interface StepsProps {
 export const Steps: React.FC<StepsProps> = ({
   recipe,
   mobile = false,
-  showOriginal = false
+  showOriginal = false,
 }) => {
   const { t } = useLanguage();
 
-  // ✅ Handle new bilingual structure
-  const selectedRecipe = recipe?.english || recipe?.original || recipe || t(recipe);
+  // If we get a bilingual recipe, choose block by showOriginal.
+  let selectedRecipe: any;
+  if (recipe && (recipe.english || recipe.original)) {
+    selectedRecipe = showOriginal
+      ? (recipe.original || recipe.english)
+      : (recipe.english || recipe.original);
+  } else {
+    selectedRecipe = recipe || t(recipe);
+  }
 
   console.log('🔍 Steps selectedRecipe:', selectedRecipe);
 
   const steps = Array.isArray(selectedRecipe?.steps)
     ? selectedRecipe.steps
     : Array.isArray(selectedRecipe?.instructions)
-      ? selectedRecipe.instructions
-      : [];
+    ? selectedRecipe.instructions
+    : [];
 
   if (!steps.length) return null;
 
   return (
     <div className={`bg-white border border-gray-200 rounded-xl ${mobile ? 'p-3' : 'p-6'}`}>
-      <h2 className={`font-bold text-gray-900 mb-4 ${mobile ? 'text-sm' : 'text-xl'}`}>Directions</h2>
+      <h2 className={`font-bold text-gray-900 mb-4 ${mobile ? 'text-sm' : 'text-xl'}`}>
+        Directions
+      </h2>
       <ol className={mobile ? 'space-y-2' : 'space-y-4'}>
         {steps.map((step: string, idx: number) => {
           const stepText = typeof step === 'string' ? step : String(step ?? '');
@@ -416,7 +454,11 @@ export const Steps: React.FC<StepsProps> = ({
               >
                 {idx + 1}
               </span>
-              <p className={`text-gray-700 leading-relaxed flex-1 ${mobile ? 'text-xs' : 'text-base'}`}>
+              <p
+                className={`text-gray-700 leading-relaxed flex-1 ${
+                  mobile ? 'text-xs' : 'text-base'
+                }`}
+              >
                 {stepText}
               </p>
             </li>

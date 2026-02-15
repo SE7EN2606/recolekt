@@ -1,5 +1,3 @@
-# fetcher_api/api/helpers/formatters.py
-
 """
 Data formatting and recipe repair helpers
 """
@@ -29,6 +27,22 @@ def json_loads_maybe(v, default=None):
     return default
 
 
+def tokenize_words(text: str):
+    """
+    Simple tokenization for ingredient / caption strings:
+    - lowercase
+    - keep only alphabetic chars
+    - split on non-letters
+    - drop very short tokens (length < 3)
+    """
+    if not isinstance(text, str):
+        return set()
+    low = text.lower()
+    cleaned = re.sub(r"[^a-zA-Zàâäéèêëîïôöùûüçœæ]+", " ", low)
+    tokens = [t for t in cleaned.split() if len(t) >= 3]
+    return set(tokens)
+
+
 # ==================== CAPTION / RECIPE REPAIR FUNCTIONS ====================
 
 def first_nonempty_line(text: str) -> str:
@@ -55,7 +69,6 @@ def extract_original_title_from_caption(caption: str) -> str:
     if not line:
         return ""
     
-    # Keep text before hashtags section markers
     low = line.lower()
     if low.startswith("commente") or low.startswith("abonne") or low.startswith("comment"):
         return ""
@@ -76,13 +89,11 @@ def extract_intro_from_caption(caption: str, max_chars: int = 360) -> str:
     for ln in caption.splitlines():
         s = ln.strip()
         if not s:
-            # keep one blank to separate paragraphs
             if outlines and outlines[-1] != "":
                 outlines.append("")
             continue
         
         low = s.lower()
-        # Avoid CTA-only lines a bit
         if any(m in low for m in stop_markers):
             break
         outlines.append(s)
@@ -94,10 +105,80 @@ def extract_intro_from_caption(caption: str, max_chars: int = 360) -> str:
     return text
 
 
+def extract_servings_from_caption(caption: str):
+    """
+    Try to extract servings / yield from lines like:
+    'Ingrédients pour 4 pâtes feuilletées inversées de 24 cm de diamètre (donc 2 galettes) :'
+    or
+    'Ingrédients pour une bûche roulée chocolat caramel de 10 personnes :'
+    Returns an integer or None.
+    """
+    if not isinstance(caption, str):
+        return None
+    
+    for ln in caption.splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        low = s.lower()
+        if "ingr" in low and (
+            "personne" in low or "people" in low or "pers" in low or "galette" in low
+        ):
+            m = re.search(r"(\d+)\s*(personnes?|people|pers?\.?|galettes?)", low)
+            if m:
+                try:
+                    return int(m.group(1))
+                except Exception:
+                    continue
+    return None
+
+
+def _is_caption_cta_line(low: str) -> bool:
+    """
+    Heuristic to detect 'where to find full recipe', subscribe/comment, greetings, etc.
+    These lines should NOT end up as ingredients.
+    """
+    if not low:
+        return False
+    
+    if "abonne" in low or "subscribe" in low or "follow" in low:
+        return True
+    if "commente" in low or "comment" in low or "like" in low:
+        return True
+    if "où trouver la recette" in low or "ou trouver la recette" in low:
+        return True
+    if "recette complète" in low or "full recipe" in low:
+        return True
+    if "en story" in low or "story pendant" in low:
+        return True
+    if "lien en bio" in low or "link in bio" in low:
+        return True
+    if "message privé" in low or "message prive" in low or "direct message" in low or "dm" in low:
+        return True
+    if "bonnes recettes à tous" in low or "bonnes recettes a tous" in low:
+        return True
+    if "bonne et heureuse année" in low or "bonne annee" in low:
+        return True
+    if "recette" in low and ("abonne" in low or "commente" in low or "lien" in low or "story" in low):
+        return True
+    if "http://" in low or "https://" in low or "www." in low or "@" in low:
+        return True
+    if low.lstrip().startswith("- "):
+        return True
+    return False
+
+
 def extract_ingredients_from_caption(caption: str):
     """
-    Parse ingredient-looking lines after an 'Ingrédients' marker until steps/hashtags.
-    Returns list of {"item":..., "name":..., "quantity":"", "unit":"", "emoji":""}.
+    Parse ingredient-looking lines after an 'Ingrédients' marker until steps/hashtags/CTA.
+    Returns EITHER:
+      - a flat list of ingredient dicts [{item, name, quantity, unit, emoji, notes}], OR
+      - a grouped structure:
+        [
+          {"name": "Biscuit cacao", "items": [ ... ]},
+          {"name": "Compotée de myrtille", "items": [ ... ]},
+          ...
+        ]
     """
     if not isinstance(caption, str) or not caption.strip():
         return []
@@ -106,19 +187,96 @@ def extract_ingredients_from_caption(caption: str):
     if not lines:
         return []
     
-    # Find ingredients section
+    # Find ingredients section start
     start = None
     for i, ln in enumerate(lines):
         low = ln.lower()
-        if "ingr dient" in low or "ingredient" in low:
+        if "ingr dient" in low or "ingrédients" in low or "ingredients" in low:
             start = i + 1
             break
     
     if start is None:
         return []
     
-    ingredients = []
-    qty_line_re = re.compile(r"^\d+\.?\d*\s")
+    group_header_re = re.compile(
+        r"^(pour\s+la\s+.+|pour\s+le\s+.+|biscuit\s+.+|garniture|dorage|dorure|pâte\s+.+|pate\s+.+)\s*:?\s*$",
+        re.IGNORECASE,
+    )
+    qty_line_re = re.compile(
+        r"^(\d+[.,]?\d*)\s*([a-zA-Zµéèêàùïîôûç]+)?\s*(?:de\s+|d'|d’)?\s*(.*)$"
+    )
+    
+    groups = []
+    flat_items = []
+    current_group = None
+    seen_any_ingredient = False
+    
+    def is_potential_header_line(ln: str) -> bool:
+        """
+        Treat short, non-numeric lines ending with ':' as headers,
+        unless they look like CTA.
+        """
+        if not ln:
+            return False
+        low = ln.lower()
+        if _is_caption_cta_line(low):
+            return False
+        if any(ch.isdigit() for ch in ln):
+            return False
+        if not ln.rstrip().endswith(":"):
+            return False
+        if len(ln) > 80:
+            return False
+        return True
+    
+    def add_ingredient_to_current(name_line: str):
+        nonlocal current_group, groups, flat_items, seen_any_ingredient
+        
+        if not name_line:
+            return
+        
+        ln = name_line.strip()
+        low = ln.lower()
+        
+        if low.startswith("#"):
+            return "STOP"
+        if re.match(r"^\d+\.", ln):
+            return "STOP"
+        if _is_caption_cta_line(low):
+            return "STOP"
+        
+        if "?" in ln and not re.match(r"^\d", ln):
+            return None
+        
+        m = qty_line_re.match(ln)
+        if m:
+            qty_raw = (m.group(1) or "").replace(",", ".").strip()
+            unit_raw = (m.group(2) or "").strip()
+            item_raw = (m.group(3) or "").strip()
+        else:
+            qty_raw = ""
+            unit_raw = ""
+            item_raw = ln
+        
+        low_item = item_raw.lower()
+        if _is_caption_cta_line(low_item):
+            return "STOP"
+        
+        ing = {
+            "item": item_raw,
+            "name": item_raw,
+            "quantity": qty_raw,
+            "unit": unit_raw,
+            "emoji": "",
+            "notes": "",
+        }
+        
+        if current_group is not None:
+            current_group.setdefault("items", []).append(ing)
+        else:
+            flat_items.append(ing)
+        seen_any_ingredient = True
+        return "OK"
     
     for ln in lines[start:]:
         if not ln:
@@ -126,34 +284,39 @@ def extract_ingredients_from_caption(caption: str):
         
         low = ln.lower()
         
-        # Stop if we hit steps, hashtags, or obvious outro
         if low.startswith("#"):
             break
+        if _is_caption_cta_line(low):
+            if seen_any_ingredient:
+                break
+            else:
+                continue
+        
         if re.match(r"^\d+\.", ln):
             break
-        if low.startswith("abonne") or low.startswith("commente") or low.startswith("r ussite") or low.startswith("reussite"):
-            break
         
-        # Keep only quantity-leading lines (matches your caption structure)
-        if qty_line_re.match(ln):
-            ingredients.append({
-                "item": ln,
-                "name": ln,
-                "quantity": "",
-                "unit": "",
-                "emoji": ""
-            })
-        # Also allow single-word items like "Sucre" + "Perl..."
-        elif len(ln.split()) <= 4 and not ln.endswith("!") and not low.startswith("ingr"):
-            ingredients.append({
-                "item": ln,
-                "name": ln,
-                "quantity": "",
-                "unit": "",
-                "emoji": ""
-            })
+        if group_header_re.match(ln):
+            group_name = ln.rstrip(":").strip()
+            current_group = {"name": group_name, "items": []}
+            groups.append(current_group)
+            continue
+        
+        if is_potential_header_line(ln):
+            group_name = ln.rstrip(":").strip()
+            current_group = {"name": group_name, "items": []}
+            groups.append(current_group)
+            continue
+        
+        res = add_ingredient_to_current(ln)
+        if res == "STOP":
+            break
     
-    return ingredients
+    total_group_items = sum(len(g.get("items", [])) for g in groups)
+    if groups and total_group_items > 0:
+        groups = [g for g in groups if g.get("items")]
+        return groups
+    
+    return flat_items
 
 
 def extract_numbered_steps_from_caption(caption: str):
@@ -173,7 +336,6 @@ def extract_numbered_steps_from_caption(caption: str):
     for raw in lines:
         ln = raw.strip()
         if not ln:
-            # paragraph separation inside a step
             if current and not current.endswith(" "):
                 current += " "
             continue
@@ -183,16 +345,14 @@ def extract_numbered_steps_from_caption(caption: str):
         
         m = step_re.match(ln)
         if m:
-            # finalize previous step
             if current is not None:
                 steps.append(current.strip())
             current = m.group(2) or "".strip()
             continue
         
-        # continuation line
         if current is not None:
             low = ln.lower()
-            if low.startswith("abonne") or low.startswith("commente"):
+            if _is_caption_cta_line(low):
                 continue
             if current.endswith(" "):
                 current += ln
@@ -202,16 +362,13 @@ def extract_numbered_steps_from_caption(caption: str):
     if current:
         steps.append(current.strip())
     
-    # Avoid adding big CTA blocks at end
-    # sanity: remove ultra-short junk
     steps = [s for s in steps if isinstance(s, str) and len(s.strip()) > 8]
     return steps
 
 
 def instructions_look_unknown(instructions):
     """
-    Detect the exact failure mode: translated into "unknown language" lots of "unknown".
-    If a significant portion is "unknown", treat as broken.
+    Detect clear failure mode: lots of 'unknown'.
     """
     if not isinstance(instructions, list) or not instructions:
         return True
@@ -220,12 +377,112 @@ def instructions_look_unknown(instructions):
     return blob.count("unknown") >= 6
 
 
+def _iter_all_ingredients_for_lang(lang_dict):
+    """
+    Yield all ingredient dicts for a given language section (handles flat and grouped).
+    """
+    if not isinstance(lang_dict, dict):
+        return []
+    ings = lang_dict.get("ingredients")
+    if not isinstance(ings, list):
+        return []
+    result = []
+    if ings and isinstance(ings[0], dict) and "items" in ings[0]:
+        for g in ings:
+            for it in g.get("items", []):
+                if isinstance(it, dict):
+                    result.append(it)
+    else:
+        for it in ings:
+            if isinstance(it, dict):
+                result.append(it)
+    return result
+
+
+def adjust_spoon_units_from_caption(recipe_obj, caption: str):
+    """
+    Post-process small ml quantities (5 ml, 15 ml) back into spoons when the caption
+    clearly uses 'cuillère à café' or 'cuillère à soupe'.
+
+    - 5 ml  -> 1 tsp / 1 cuillère à café
+    - 15 ml -> 1 tbsp / 1 cuillère à soupe
+    """
+    if not isinstance(recipe_obj, dict) or not isinstance(caption, str):
+        return
+    
+    low_cap = caption.lower()
+    has_tsp = any(
+        phrase in low_cap
+        for phrase in [
+            "cuillère à café",
+            "cuillerée à café",
+            "cuillere a cafe",
+            "cuil. à café",
+            "c. à c.",
+            "c a c",
+        ]
+    )
+    has_tbsp = any(
+        phrase in low_cap
+        for phrase in [
+            "cuillère à soupe",
+            "cuillerée à soupe",
+            "cuillere a soupe",
+            "cuil. à soupe",
+            "c. à s.",
+            "c a s",
+        ]
+    )
+    
+    if not (has_tsp or has_tbsp):
+        return
+    
+    eng = recipe_obj.get("english")
+    orig = recipe_obj.get("original")
+    
+    for lang_name, lang_dict in (("english", eng), ("original", orig)):
+        if not isinstance(lang_dict, dict):
+            continue
+        
+        for ing in _iter_all_ingredients_for_lang(lang_dict):
+            qty = str(ing.get("quantity") or "").strip()
+            unit = str(ing.get("unit") or "").strip().lower()
+            if unit != "ml" or not qty:
+                continue
+            
+            # Normalize numeric string
+            try:
+                val = float(qty.replace(",", "."))
+            except Exception:
+                continue
+            
+            # Teaspoon: ~5 ml
+            if has_tsp and abs(val - 5.0) < 0.01:
+                ing["quantity"] = "1"
+                if lang_name == "english":
+                    ing["unit"] = "tsp"
+                else:
+                    ing["unit"] = "cuillère à café"
+            # Tablespoon: ~15 ml
+            elif has_tbsp and abs(val - 15.0) < 0.01:
+                ing["quantity"] = "1"
+                if lang_name == "english":
+                    ing["unit"] = "tbsp"
+                else:
+                    ing["unit"] = "cuillère à soupe"
+
+
 def repair_recipe_from_caption(recipe_obj, caption: str):
     """
     Mutates recipe_obj in-place:
     - If original.instructions are missing/unknown, replace with numbered steps from caption.
-    - If original.ingredients are missing, replace with ingredients parsed from caption.
+    - If caption has grouped ingredients (sections), assign each existing ingredient
+      to the best-matching section by text similarity (keeps emojis/metadata) and
+      mirror that grouping to english.ingredients where possible.
+    - Else, if original.ingredients are missing, fill with flat ingredients parsed from caption.
+    - Convert 5 ml / 15 ml back to spoon units when caption uses cuillères.
     - If original.title looks junk, prefer first caption line.
+    - If servings/yield missing, extract from caption.
     """
     if not isinstance(recipe_obj, dict):
         return recipe_obj
@@ -248,12 +505,119 @@ def repair_recipe_from_caption(recipe_obj, caption: str):
         if steps:
             orig["instructions"] = steps
     
-    # Fix ingredients (prefer caption in original language if available)
+    # Parse ingredients from caption (may be grouped)
+    parsed_ings = extract_ingredients_from_caption(caption)
+    has_parsed = isinstance(parsed_ings, list) and len(parsed_ings) > 0
+    looks_grouped = has_parsed and isinstance(parsed_ings[0], dict) and "items" in parsed_ings[0]
+    
     orig_ingredients = orig.get("ingredients")
-    if not isinstance(orig_ingredients, list) or not orig_ingredients:
-        ings = extract_ingredients_from_caption(caption)
-        if ings:
-            orig["ingredients"] = ings
+    
+    if has_parsed:
+        if looks_grouped:
+            # If we already have a flat ingredient list with emojis from the extractor,
+            # map each ingredient into the caption groups by similarity.
+            if (
+                isinstance(orig_ingredients, list)
+                and orig_ingredients
+                and not (isinstance(orig_ingredients[0], dict) and "items" in orig_ingredients[0])
+            ):
+                # Build flattened list of caption items with group indices
+                parsed_flat = []
+                flat_idx = 0
+                for g_idx, g in enumerate(parsed_ings):
+                    for it in g.get("items", []):
+                        text = it.get("item") or it.get("name") or ""
+                        parsed_flat.append({
+                            "group": g_idx,
+                            "text": text,
+                            "flat_index": flat_idx,
+                            "tokens": tokenize_words(text),
+                        })
+                        flat_idx += 1
+                
+                if parsed_flat:
+                    group_assignments = [0] * len(orig_ingredients)
+                    
+                    for i, ing in enumerate(orig_ingredients):
+                        name_text = ing.get("item") or ing.get("name") or ""
+                        t1 = tokenize_words(name_text)
+                        if not t1:
+                            continue
+                        
+                        best_group = 0
+                        best_score = 0.0
+                        
+                        for pf in parsed_flat:
+                            inter = t1 & pf["tokens"]
+                            if not inter:
+                                continue
+                            base = float(len(inter))
+                            distance_penalty = 0.1 * abs(pf["flat_index"] - i)
+                            score = base - distance_penalty
+                            if score > best_score:
+                                best_score = score
+                                best_group = pf["group"]
+                        
+                        group_assignments[i] = best_group
+                    
+                    # Build grouped structure for ORIGINAL ingredients
+                    new_groups = []
+                    for g_idx, g in enumerate(parsed_ings):
+                        group_indices = [i for i, assigned in enumerate(group_assignments) if assigned == g_idx]
+                        if not group_indices:
+                            continue
+                        group_items = [orig_ingredients[i] for i in group_indices]
+                        new_groups.append({
+                            "name": g.get("name", ""),
+                            "items": group_items,
+                        })
+                    
+                    if new_groups:
+                        orig["ingredients"] = new_groups
+                    
+                    # Mirror the same grouping onto ENGLISH ingredients when they match in length
+                    eng_ingredients = eng.get("ingredients")
+                    if (
+                        isinstance(eng_ingredients, list)
+                        and eng_ingredients
+                        and not (isinstance(eng_ingredients[0], dict) and "items" in eng_ingredients[0])
+                        and len(eng_ingredients) == len(orig_ingredients)
+                    ):
+                        eng_groups = []
+                        for g_idx, g in enumerate(parsed_ings):
+                            group_indices = [i for i, assigned in enumerate(group_assignments) if assigned == g_idx]
+                            if not group_indices:
+                                continue
+                            eng_items = [eng_ingredients[i] for i in group_indices]
+                            eng_groups.append({
+                                "name": g.get("name", ""),
+                                "items": eng_items,
+                            })
+                        if eng_groups:
+                            eng["ingredients"] = eng_groups
+                else:
+                    # No caption items somehow; if we also have no original ingredients, at least use parsed groups
+                    if not isinstance(orig_ingredients, list) or not orig_ingredients:
+                        orig["ingredients"] = parsed_ings
+            else:
+                # No original ingredients: use parsed groups as-is
+                if not isinstance(orig_ingredients, list) or not orig_ingredients:
+                    orig["ingredients"] = parsed_ings
+        else:
+            # Flat list from caption: only use if original.ingredients is missing/empty
+            if not isinstance(orig_ingredients, list) or not orig_ingredients:
+                orig["ingredients"] = parsed_ings
+    
+    # Re-map 5 ml / 15 ml back to spoons when the caption uses cuillères
+    adjust_spoon_units_from_caption(recipe_obj, caption)
+    
+    # Fix servings/yield if missing
+    if not orig.get("servings") and not orig.get("yield"):
+        sv = extract_servings_from_caption(caption)
+        if sv:
+            orig["servings"] = sv
+            if not eng.get("servings") and not eng.get("yield"):
+                eng["servings"] = sv
     
     # Fix original title when it's empty or clearly nonsense
     orig_title = orig.get("title")
@@ -263,7 +627,6 @@ def repair_recipe_from_caption(recipe_obj, caption: str):
     
     caption_title = extract_original_title_from_caption(caption)
     
-    # Replace if empty OR looks like generic "mystery" junk
     if not orig_title or "mystery" in orig_title.lower() or orig_title.lower() == "untitled":
         if caption_title:
             orig["title"] = caption_title
@@ -278,7 +641,6 @@ def coerce_title_to_str(current_title):
     if isinstance(current_title, str):
         return current_title.strip()
     
-    # If someone accidentally stored bilingual JSON in summary_title
     if isinstance(current_title, dict):
         eng = current_title.get("english")
         if isinstance(eng, dict):
@@ -344,14 +706,7 @@ def extract_english_preview_and_title(summary_text, current_title=None):
 
 def build_bilingual_summary_object(summary_title, summary_text, bullets, hashtags, emojis, caption: str):
     """
-    Build the bilingual summary object your UI expects:
-    { 
-      "english": {"title": ..., "summary": ..., "headlines": [], "hashtags": [], "emojis": []}, 
-      "original": {...}
-    }
-    
-    If we don't have a true original-language summary, we at least provide a stable structure,
-    and we use caption intro/title as original best-effort.
+    Build the bilingual summary object your UI expects.
     """
     title_str = coerce_title_to_str(summary_title)
     summary_str = summary_text.strip() if isinstance(summary_text, str) else ""
@@ -390,15 +745,12 @@ def format_reel_response(row_dict):
     """
     caption = row_dict.get("caption") or ""
     
-    # Parse recipe/workout JSON if string
     row_dict["recipe"] = json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe"))
     row_dict["workout"] = json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout"))
     
-    # Repair recipe bilingual blocks from caption when needed
     if isinstance(row_dict.get("recipe"), dict):
         row_dict["recipe"] = repair_recipe_from_caption(row_dict["recipe"], caption)
     
-    # Normalize JSON-ish DB columns
     summary_text_raw = row_dict.get("summary_text")
     summary_text = json_loads_maybe(summary_text_raw, default=summary_text_raw)
     
@@ -415,7 +767,6 @@ def format_reel_response(row_dict):
     
     summary_title = row_dict.get("summary_title")
     
-    # If summarytext is already bilingual dict, keep it; else build stable bilingual shape
     if not isinstance(summary_text, dict):
         bilingual = build_bilingual_summary_object(
             summary_title=summary_title,
@@ -427,19 +778,16 @@ def format_reel_response(row_dict):
         )
         summary_text = bilingual
     
-    # Extract english preview + title for list cards
     english_preview, summary_title_str = extract_english_preview_and_title(summary_text, summary_title)
     if not summary_title_str and caption:
         summary_title_str = caption[:50]
     
-    # Keep normalized values in row
     row_dict["summary_title"] = summary_title_str
     row_dict["summary_text"] = summary_text
     row_dict["summary_bullets"] = bullets
     row_dict["summary_hashtags"] = hashtags
     row_dict["summary_emojis"] = emojis
     
-    # Backward compatible summary wrapper
     row_dict["summary"] = {
         "category": row_dict.get("summary_category", "General"),
         "title": summary_title_str,
@@ -451,7 +799,6 @@ def format_reel_response(row_dict):
         "bilingual": summary_text if isinstance(summary_text, dict) else None,
     }
     
-    # GCS URLs
     thumb = row_dict.get("preview_thumbnail")
     row_dict["gcs_urls"] = {
         "preview_thumbnail": thumb if thumb else None
@@ -470,7 +817,6 @@ def format_reels_list(db_rows):
     transformed_rows = []
     
     for row in db_rows:
-        # Convert to dict
         if hasattr(row, "keys"):
             row_dict = dict(row)
         elif hasattr(row, "as_dict"):

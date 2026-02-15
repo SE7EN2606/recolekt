@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
   ArrowLeft,
   ChevronDown,
@@ -8,14 +8,24 @@ import {
   Trash2,
   Layers,
   Tags,
+  Globe,
 } from 'lucide-react';
 import { RecipeMeta, Ingredients, Steps } from './RecipeComponents';
 import { MobileBottomNav } from './MobileBottomNav';
-import { EditableTitle, EditableBullets, EditableHashtags } from './VideoDetailComponents';
-import { parseQuantity, convertToMetric, scaleQuantity } from '../utils/videoUtils';
+import {
+  EditableTitle,
+  EditableBullets,
+  EditableHashtags,
+} from './VideoDetailComponents';
+import {
+  parseQuantity,
+  convertToMetric,
+  scaleQuantity,
+} from '../utils/videoUtils';
 import { LinkifiedText } from './LinkifiedText';
 import { IOSShareIcon } from './VideoIcons';
 import { AISummaryCard } from './AISummaryCard';
+import { useLanguage } from '../context/LanguageContext';
 
 interface VideoDetailMobileProps {
   viewModel: any;
@@ -38,7 +48,9 @@ interface VideoDetailMobileProps {
   setTempCategory: (value: string) => void;
   setTempTopic: (value: string) => void;
   setTempDescription: (value: string) => void;
-  setTempBullets: (value: Array<{ headline: string; text: string; emoji?: string }>) => void;
+  setTempBullets: (
+    value: Array<{ headline: string; text: string; emoji?: string }>
+  ) => void;
   setTempHashtags: (value: string[]) => void;
   setServingScale: (value: number) => void;
   setUseMetric: (value: boolean) => void;
@@ -78,25 +90,96 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
   onReportClick,
   onDeleteClick,
 }) => {
-  // Ensure caption is closed by default when opening the page
+  const { showOriginal, toggleLanguage } = useLanguage();
+
+  // Close caption by default when opening the page
   useEffect(() => {
     setCaptionOpen(false);
   }, [setCaptionOpen]);
 
+  // Mirror desktop logic for title, activeRecipe, languageCode, hasTranslation
+  const {
+    displayTitle,
+    activeRecipe,
+    hasTranslation,
+    languageCode,
+  } = useMemo(() => {
+    const summary = viewModel?.summary || {};
+    const recipeData = viewModel?.recipe || {};
+
+    const titleData = summary?.title;
+    const isDualLanguageTitle =
+      typeof titleData === 'object' && titleData?.english && titleData?.original;
+
+    const hasRecipeTranslation =
+      !!(viewModel.isRecipe && recipeData?.english && recipeData?.original);
+
+    const hasSummaryTranslation = !!(summary?.english && summary?.original);
+
+    const hasTranslationComputed =
+      hasRecipeTranslation || isDualLanguageTitle || hasSummaryTranslation;
+
+    const rawLangCode = recipeData?.language_code || 'en';
+    const languageCodeComputed =
+      rawLangCode.toLowerCase() === 'en' && hasTranslationComputed
+        ? 'OG'
+        : rawLangCode.toUpperCase();
+
+    let displayTitleComputed = viewModel?.title || '';
+
+    if (showOriginal) {
+      if (hasRecipeTranslation && recipeData?.original?.title) {
+        displayTitleComputed = recipeData.original.title;
+      } else if (summary?.original?.title) {
+        displayTitleComputed = summary.original.title;
+      } else if (
+        isDualLanguageTitle &&
+        typeof titleData === 'object' &&
+        titleData.original
+      ) {
+        displayTitleComputed = titleData.original;
+      }
+    } else {
+      if (hasRecipeTranslation && recipeData?.english?.title) {
+        displayTitleComputed = recipeData.english.title;
+      } else if (summary?.english?.title) {
+        displayTitleComputed = summary.english.title;
+      }
+    }
+
+    const activeRecipeComputed =
+      showOriginal && hasRecipeTranslation
+        ? recipeData.original
+        : recipeData.english || recipeData;
+
+    return {
+      displayTitle: displayTitleComputed,
+      activeRecipe: activeRecipeComputed,
+      hasTranslation: hasTranslationComputed,
+      languageCode: languageCodeComputed,
+    };
+  }, [viewModel, showOriginal]);
+
+  // Use same source as desktop for AI summary + highlights
+  const summaryTextObj =
+    viewModel?.summary_text || viewModel?.summary || null;
+
+  const authorName = viewModel.author_name || viewModel.author || '';
+
   return (
     <div className="md:hidden -mx-4 sm:mx-0">
-      {/* 
-        Poster container.
-        To adjust the gap between header and poster, change the marginTop below.
-        Example: '0.5rem' for a smaller gap, '0rem' for no gap.
-      */}
+      {/* Poster: adjust marginTop to tune the gap under the header */}
       <div
         className="relative w-full aspect-[9/8] bg-black"
-        style={{ marginTop: '1rem' }}
+        style={{ marginTop: '0.5rem' }}
       >
         <img
-          src={viewModel.preview}
-          alt={viewModel.title}
+          src={
+            viewModel.preview ||
+            viewModel.gcs_urls?.preview_thumbnail ||
+            ''
+          }
+          alt={displayTitle}
           className="w-full h-full object-cover opacity-90"
           style={{
             willChange: 'transform',
@@ -126,6 +209,19 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           </button>
         </div>
 
+        {/* Language toggle pill – purple background */}
+        {hasTranslation && !isEditMode && (
+          <button
+            onClick={toggleLanguage}
+            className="absolute bottom-3 left-3 px-2 py-1 rounded-lg flex items-center gap-1.5 transition-all z-30 shadow-lg bg-[#7c3aed] text-white"
+          >
+            <Globe size={12} className="text-white" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">
+              {showOriginal ? languageCode : 'EN'}
+            </span>
+          </button>
+        )}
+
         {viewModel.duration && viewModel.duration !== '0:00' && (
           <div className="absolute bottom-3 right-3 bg-black/80 text-white text-xs px-2 py-1 rounded">
             {viewModel.duration}
@@ -133,11 +229,11 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
         )}
       </div>
 
-      {/* Main content */}
-      <div className="px-4 pt-5 pb-24">
+      {/* Content */}
+      <div className="px-4 pt-5 pb-16">
         <div className="mb-3">
           <EditableTitle
-            title={viewModel.title}
+            title={displayTitle}
             isEditMode={isEditMode}
             value={tempTitle}
             onChange={setTempTitle}
@@ -146,23 +242,30 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
         </div>
 
         <div className="flex items-center justify-between mb-4">
-          <a
-            href={`https://www.instagram.com/${String(viewModel.author || '').replace('@', '')}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 group/author"
-          >
-            <svg
-              className="w-3 h-3 text-pink-500 flex-shrink-0"
-              fill="currentColor"
-              viewBox="0 0 24 24"
+          {authorName ? (
+            <a
+              href={`https://www.instagram.com/${String(authorName).replace(
+                '@',
+                '',
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 group/author"
             >
-              <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"></path>
-            </svg>
-            <span className="text-sm font-medium text-gray-500 truncate group-hover/author:text-gray-900 transition-colors">
-              {String(viewModel.author || '').replace('@', '')}
-            </span>
-          </a>
+              <svg
+                className="w-3 h-3 text-pink-500 flex-shrink-0"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+              </svg>
+              <span className="text-sm font-medium text-gray-500 truncate group-hover/author:text-gray-900 transition-colors">
+                {String(authorName).replace('@', '')}
+              </span>
+            </a>
+          ) : (
+            <span />
+          )}
           {viewModel.savedAt && (
             <span className="text-xs text-gray-500">{viewModel.savedAt}</span>
           )}
@@ -263,20 +366,27 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
                 width="16"
                 height="16"
                 viewBox="0 0 512 512"
-                fill="#7c3aed"
+                fill="#DC5204"
                 className="flex-shrink-0"
               >
-                <path fillRule="nonzero" d="M300.02 161.657l.047-.187c3.542-14.981 23.176-18.148 31.458-5.532a17.27 17.27 0 012.463 13.038c-2.328 10.088-4.271 20.55-6.386 30.72h12.177c22.801 0 22.804 34.849 0 34.849h-19.383l-8.664 43.645h30.453c22.935 0 22.926 34.846 0 34.846h-37.597l-7.847 37.682c-5.447 21.855-38.479 14.339-33.876-7.694 2.271-9.85 4.177-20.06 6.245-29.988h-45.112c-2.556 12.304-4.897 25.01-7.741 37.203-5.282 22.331-38.129 14.224-33.971-7.243l6.239-29.991-16.242.003c-22.9.135-22.956-34.818 0-34.818h23.404l8.614-43.645h-34.49c-22.521 0-23.232-34.849 0-34.849h41.693l7.731-37.144c.051-.403.138-.797.26-1.176 5.329-21.289 38.485-14.721 33.877 7.672l-6.39 30.648h45.113c2.635-12.65 5.447-25.37 7.925-38.039zM256 0c70.688 0 134.689 28.658 181.016 74.984C483.342 121.311 512 185.312 512 256c0 70.688-28.658 134.689-74.984 181.016C390.689 483.342 326.688 512 256 512c-70.688 0-134.689-28.658-181.016-74.984C28.658 390.689 0 326.688 0 256c0-70.688 28.658-134.689 74.984-181.016C121.311 28.658 185.312 0 256 0zm159.946 96.054C375.017 55.125 318.465 29.806 256 29.806S136.983 55.125 96.054 96.054 29.806 193.535 29.806 256s25.319 119.017 66.248 159.946S193.535 482.194 256 482.194s119.017-25.319 159.946-66.248S482.194 318.465 482.194 256s-25.319-119.017-66.248-159.946zM276.256 278.19l8.661-43.645h-45.115l-8.664 43.645h45.118z" />
+                <path
+                  fillRule="nonzero"
+                  d="M300.02 161.657l.047-.187c3.542-14.981 23.176-18.148 31.458-5.532a17.27 17.27 0 012.463 13.038c-2.328 10.088-4.271 20.55-6.386 30.72h12.177c22.801 0 22.804 34.849 0 34.849h-19.383l-8.664 43.645h30.453c22.935 0 22.926 34.846 0 34.846h-37.597l-7.847 37.682c-5.447 21.855-38.479 14.339-33.876-7.694 2.271-9.85 4.177-20.06 6.245-29.988h-45.112c-2.556 12.304-4.897 25.01-7.741 37.203-5.282 22.331-38.129 14.224-33.971-7.243l6.239-29.991-16.242.003c-22.9.135-22.956-34.818 0-34.818h23.404l8.614-43.645h-34.49c-22.521 0-23.232-34.849 0-34.849h41.693l7.731-37.144c.051-.403.138-.797.26-1.176 5.329-21.289 38.485-14.721 33.877 7.672l-6.39 30.648h45.113c2.635-12.65 5.447-25.37 7.925-38.039zM256 0c70.688 0 134.689 28.658 181.016 74.984C483.342 121.311 512 185.312 512 256c0 70.688-28.658 134.689-74.984 181.016C390.689 483.342 326.688 512 256 512c-70.688 0-134.689-28.658-181.016-74.984C28.658 390.689 0 326.688 0 256c0-70.688 28.658-134.689 74.984-181.016C121.311 28.658 185.312 0 256 0zm159.946 96.054C375.017 55.125 318.465 29.806 256 29.806S136.983 55.125 96.054 96.054 29.806 193.535 29.806 256s25.319 119.017 66.248 159.946S193.535 482.194 256 482.194s119.017-25.319 159.946-66.248S482.194 318.465 482.194 256s-25.319-119.017-66.248-159.946zM276.256 278.19l8.661-43.645h-45.115l-8.664 43.645h45.118z"
+                />
               </svg>
 
               <div className="flex-1 min-w-0">
                 <style>{`
                   .hashtag-links a {
-                    background-color: #ede9fe !important;
-                    color: #7c3aed !important;
+                    background-color: #FFFFFF !important;
+                    color: #FB6A18 !important;
+                    border-radius: 9999px !important;
+                    padding: 0.15rem 0.6rem !important;
+                    border: 1px solid #FB6A18 !important;
                   }
                   .hashtag-links a:hover {
-                    background-color: #ddd6fe !important;
+                    background-color: #FB6A18 !important;
+                    color: #FFFFFF !important;
                   }
                 `}</style>
                 <div className="hashtag-links">
@@ -293,18 +403,18 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           )}
         </div>
 
-        {/* AI Summary Card */}
-        {viewModel.summary && (
+        {/* AI Summary Card – summary text + highlights track language like desktop */}
+        {summaryTextObj && (
           <AISummaryCard
             isEditMode={isEditMode}
             value={tempDescription}
             onChange={setTempDescription}
-            summaryData={viewModel.summary}
-            showOriginal={false}
+            summaryData={summaryTextObj?.summary || summaryTextObj}
+            showOriginal={showOriginal}
           />
         )}
 
-        {/* Bullets (edit mode only) */}
+        {/* Bullets (edit mode only; these are your manual bullets, not AI highlights) */}
         {isEditMode && (
           <div className="mb-5">
             <EditableBullets
@@ -317,17 +427,17 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           </div>
         )}
 
-        {/* Recipe Section */}
-        {viewModel.isRecipe && viewModel.recipe && (
-          <div className="space-y-3 mb-5">
+        {/* Recipe Section – uses activeRecipe so it follows the language toggle */}
+        {viewModel.isRecipe && activeRecipe && (
+          <div className="space-y-3 mb-5" key={`recipe-${showOriginal}`}>
             <RecipeMeta
-              recipe={viewModel.recipe}
+              recipe={activeRecipe}
               servingScale={servingScale}
               setServingScale={setServingScale}
               mobile
             />
             <Ingredients
-              recipe={viewModel.recipe}
+              recipe={activeRecipe}
               servingScale={servingScale}
               useMetric={useMetric}
               setUseMetric={setUseMetric}
@@ -336,14 +446,19 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               parseQuantity={parseQuantity}
               mobile
             />
-            <Steps recipe={viewModel.recipe} mobile />
+            <Steps recipe={activeRecipe} mobile />
 
-            {viewModel.recipe.tips?.length > 0 && (
+            {activeRecipe.tips?.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <h3 className="text-xs font-bold text-amber-900 mb-1.5">💡 Tips</h3>
+                <h3 className="text-xs font-bold text-amber-900 mb-1.5">
+                  💡 Tips
+                </h3>
                 <ul className="space-y-1">
-                  {viewModel.recipe.tips.map((tip: string, idx: number) => (
-                    <li key={idx} className="text-xs text-amber-900 leading-relaxed">
+                  {activeRecipe.tips.map((tip: string, idx: number) => (
+                    <li
+                      key={idx}
+                      className="text-xs text-amber-900 leading-relaxed"
+                    >
                       • {tip}
                     </li>
                   ))}
@@ -353,7 +468,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           </div>
         )}
 
-        {/* Original Caption (closed by default via useEffect) */}
+        {/* Original Caption */}
         {viewModel.caption && (
           <div className="mb-4 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
             <button
