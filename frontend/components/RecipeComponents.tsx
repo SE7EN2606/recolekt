@@ -1,469 +1,455 @@
 import React from 'react';
-import { Plus, Minus } from 'lucide-react';
-import { useLanguage } from '../context/LanguageContext';
-
-const formatTime = (time: string): string => {
-  if (!time) return '';
-
-  return time
-    .replace(/\s*hours?\s*/gi, 'h ')
-    .replace(/\s*heures?\s*/gi, 'h ')
-    .replace(/\s*minutes?\s*/gi, 'min')
-    .replace(/\s*min\s*/gi, 'min')
-    .trim();
-};
-
-const safeStr = (v: any): string => {
-  if (typeof v === 'string') return v;
-  if (v == null) return '';
-  return String(v);
-};
-
-const lowerFirst = (s: string) => {
-  const t = (s || '').trim();
-  if (!t) return '';
-  return t.charAt(0).toLowerCase() + t.slice(1);
-};
-
-const extractOptionalText = (s: string): { main: string; optional: string } => {
-  const t = (s || '').trim();
-  if (!t) return { main: '', optional: '' };
-
-  const parenMatch = t.match(/^(.*?)\s*(\([^)]*\))\s*$/);
-  if (parenMatch) {
-    return {
-      main: parenMatch[1].trim(),
-      optional: parenMatch[2].trim(),
-    };
-  }
-
-  return { main: t, optional: '' };
-};
-
-const splitParen = (s: string): { main: string; paren: string } => {
-  const t = (s || '').trim();
-  if (!t) return { main: '', paren: '' };
-  const m = t.match(/^(.*?)(\s*\(.*\)\s*)$/);
-  if (!m) return { main: t, paren: '' };
-  return { main: (m[1] || '').trim(), paren: (m[2] || '').trim() };
-};
-
-const tokenizeQty = (qty: string): Array<{ type: 'num' | 'unit'; text: string }> => {
-  const q = (qty || '').trim();
-  if (!q) return [];
-
-  const parts = q.split(/\s+/).filter(Boolean);
-
-  const isNumericLike = (tok: string) => {
-    return (
-      /^[0-9]+([.,][0-9]+)?$/.test(tok) ||
-      /^[0-9]+\/[0-9]+$/.test(tok) ||
-      /^[0-9]+(\-|–)[0-9]+$/.test(tok) ||
-      /[¼½¾⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]/.test(tok)
-    );
-  };
-
-  return parts.map((p) => ({
-    type: isNumericLike(p) ? 'num' : 'unit',
-    text: p,
-  }));
-};
 
 interface RecipeMetaProps {
   recipe: any;
   servingScale: number;
-  setServingScale: (scale: number) => void;
-  mobile?: boolean;
-  showOriginal?: boolean;
+  setServingScale: (v: number) => void;
+  showOriginal: boolean;
 }
 
+interface IngredientsProps {
+  recipe: any;
+  servingScale: number;
+  useMetric: boolean;
+  setUseMetric: (v: boolean) => void;
+  scaleQuantity: (qty: string, scale: number) => string;
+  convertToMetric: (qty: string) => string;
+  convertToImperial: (qty: string) => string;
+  parseQuantity: (qty: string) => { val: string; unit: string };
+  showOriginal: boolean;
+  caption?: string;
+  mobile?: boolean;
+}
+
+interface StepsProps {
+  recipe: any;
+  showOriginal: boolean;
+  mobile?: boolean;
+}
+
+/**
+ * Simple recipe meta panel: title + notes/tips counts + serving scale.
+ */
 export const RecipeMeta: React.FC<RecipeMetaProps> = ({
   recipe,
   servingScale,
   setServingScale,
-  mobile = false,
-  showOriginal = false,
 }) => {
-  const { t } = useLanguage();
+  const title = recipe?.title || '';
+  const notes = Array.isArray(recipe?.notes) ? recipe.notes : [];
+  const tips = Array.isArray(recipe?.tips) ? recipe.tips : [];
 
-  // If we get a bilingual recipe, choose block by showOriginal.
-  let selectedRecipe: any;
-  if (recipe && (recipe.english || recipe.original)) {
-    selectedRecipe = showOriginal
-      ? (recipe.original || recipe.english)
-      : (recipe.english || recipe.original);
-  } else {
-    selectedRecipe = recipe || t(recipe);
-  }
+  console.log('🔍 RecipeMeta selectedRecipe:', recipe);
 
-  console.log('🔍 RecipeMeta selectedRecipe:', selectedRecipe);
-
-  if (!selectedRecipe) return null;
-
-  const prepTime = selectedRecipe.prep_time || selectedRecipe.prepTime || '25 min';
-  const cookTime = selectedRecipe.cook_time || selectedRecipe.cookTime || '2h';
-  const servingsRaw = selectedRecipe.servings || selectedRecipe.yield || '12';
-
-  const numericServings = parseInt(String(servingsRaw).match(/\d+/)?.[0] || '12', 10);
-  const scaledServings = Math.round(numericServings * servingScale);
+  const decrease = () => setServingScale(Math.max(0.25, servingScale - 0.25));
+  const increase = () => setServingScale(Math.min(8, servingScale + 0.25));
 
   return (
-    <div className={`bg-white border border-gray-200 rounded-xl ${mobile ? 'p-3' : 'p-6'}`}>
-      <div className="grid grid-cols-3 gap-4 text-center">
-        <div>
-          <p className={`font-bold text-gray-900 ${mobile ? 'text-base' : 'text-2xl'}`}>
-            {formatTime(prepTime)}
-          </p>
-          <p className={`text-gray-600 mt-1 ${mobile ? 'text-xs' : 'text-sm'}`}>Prep</p>
-        </div>
+    <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+      {title && (
+        <h2 className="text-lg font-bold text-gray-900">
+          {title}
+        </h2>
+      )}
 
-        <div>
-          <p className={`font-bold text-gray-900 ${mobile ? 'text-base' : 'text-2xl'}`}>
-            {formatTime(cookTime)}
-          </p>
-          <p className={`text-gray-600 mt-1 ${mobile ? 'text-xs' : 'text-sm'}`}>Cook</p>
-        </div>
+      <div className="flex items-center gap-4 text-xs text-gray-600">
+        <span>
+          📝 Notes: <strong>{notes.length}</strong>
+        </span>
+        <span>
+          💡 Tips: <strong>{tips.length}</strong>
+        </span>
+      </div>
 
-        <div>
-          <div className="flex items-center justify-center gap-2">
-            <button
-              onClick={() => setServingScale(Math.max(0.5, servingScale - 0.5))}
-              className={`bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition ${
-                mobile ? 'w-5 h-5' : 'w-7 h-7'
-              }`}
-              disabled={servingScale <= 0.5}
-            >
-              <Minus size={mobile ? 10 : 14} />
-            </button>
-
-            <p
-              className={`font-bold text-gray-900 text-center ${
-                mobile ? 'text-base min-w-[28px]' : 'text-2xl min-w-[40px]'
-              }`}
-            >
-              {scaledServings}
-            </p>
-
-            <button
-              onClick={() => setServingScale(servingScale + 0.5)}
-              className={`bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition ${
-                mobile ? 'w-5 h-5' : 'w-7 h-7'
-              }`}
-            >
-              <Plus size={mobile ? 10 : 14} />
-            </button>
-          </div>
-
-          <p className={`text-gray-600 mt-1 ${mobile ? 'text-xs' : 'text-sm'}`}>Servings</p>
+      <div className="flex items-center justify-between mt-2">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          Servings
+        </span>
+        <div className="inline-flex items-center gap-2">
+          <button
+            type="button"
+            onClick={decrease}
+            className="w-7 h-7 flex items-center justify-center rounded-full border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm"
+          >
+            −
+          </button>
+          <span className="min-w-[3rem] text-center text-sm font-medium text-gray-900">
+            ×{servingScale.toFixed(2).replace(/\.00$/, '')}
+          </span>
+          <button
+            type="button"
+            onClick={increase}
+            className="w-7 h-7 flex items-center justify-center rounded-full border border-gray-300 text-gray-700 hover:bg-gray-100 text-sm"
+          >
+            +
+          </button>
         </div>
       </div>
     </div>
   );
 };
 
-interface IngredientsProps {
-  recipe: any;
-  servingScale: number;
-  useMetric: boolean;
-  setUseMetric: (value: boolean) => void;
-  scaleQuantity: (qty: string, scale: number) => string;
-  convertToMetric: (qty: string) => string;
-  convertToImperial?: (qty: string) => string;
-  parseQuantity: (qty: string) => { val: string; unit: string };
-  mobile?: boolean;
-  showOriginal?: boolean;
-}
+/**
+ * Build ingredient sections from caption lines as a *fallback* when
+ * the backend did not provide structured groups.
+ */
+const buildSectionsFromCaption = (
+  caption: string | undefined,
+): { title: string; lines: string[] }[] => {
+  if (!caption) return [];
 
-type NormalizedIngredientItem = {
-  emoji: string;
-  quantity: string;
-  item: string;
-  notes: string;
-  optional: string;
+  const rawLines = caption
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  const sections: { title: string; lines: string[] }[] = [];
+
+  const isSectionHeader = (line: string) => {
+    if (!/:$/.test(line)) return false;
+
+    const clean = line.replace(/:\s*$/, '').trim();
+    if (!clean) return false;
+
+    const lower = clean.toLowerCase();
+
+    // Skip generic "Ingrédients :" / "Ingredients :" headings
+    if (
+      lower.startsWith('ingrédient') ||
+      lower.startsWith('ingrédients') ||
+      lower.startsWith('ingredient') ||
+      lower.startsWith('ingredients')
+    ) {
+      return false;
+    }
+
+    // Require at least two words so we don't pick up stray short labels.
+    if (clean.split(/\s+/).length < 2) return false;
+
+    return true;
+  };
+
+  const isIngredientLine = (line: string) =>
+    /\d/.test(line) ||
+    /(?:^|\s)(g|kg|mg|ml|cl|l)\b/i.test(line) ||
+    /cuillère|cas\b|càs\b|tsp\b|tbsp\b|cup\b/i.test(line);
+
+  let current: { title: string; lines: string[] } | null = null;
+
+  for (const line of rawLines) {
+    if (isSectionHeader(line)) {
+      if (current && current.lines.length) {
+        sections.push(current);
+      }
+      current = {
+        title: line.replace(/:\s*$/, ''),
+        lines: [],
+      };
+      continue;
+    }
+
+    if (current && isIngredientLine(line)) {
+      current.lines.push(line);
+      continue;
+    }
+  }
+
+  if (current && current.lines.length) {
+    sections.push(current);
+  }
+
+  return sections;
 };
 
-type NormalizedIngredientGroup = {
-  groupName: string;
-  items: NormalizedIngredientItem[];
-};
-
+/**
+ * Ingredients with:
+ *  - FIRST priority: recipe.ingredients_groups from backend (authoritative).
+ *  - SECOND priority: groups derived from caption (fallback for old data).
+ */
 export const Ingredients: React.FC<IngredientsProps> = ({
   recipe,
   servingScale,
   useMetric,
   setUseMetric,
   scaleQuantity,
-  convertToMetric,
-  convertToImperial,
-  parseQuantity,
-  mobile = false,
-  showOriginal = false,
+  // convertToMetric,
+  // convertToImperial,
+  // parseQuantity,
+  showOriginal,
+  caption,
 }) => {
-  const { t } = useLanguage();
-
-  // If we get a bilingual recipe, choose block by showOriginal.
-  let selectedRecipe: any;
-  if (recipe && (recipe.english || recipe.original)) {
-    selectedRecipe = showOriginal
-      ? (recipe.original || recipe.english)
-      : (recipe.english || recipe.original);
-  } else {
-    selectedRecipe = recipe || t(recipe);
-  }
-
-  console.log('🔍 Ingredients selectedRecipe:', selectedRecipe);
-  console.log('🔍 Ingredients selectedRecipe.ingredients:', selectedRecipe?.ingredients);
-
-  const normalizeIngredientItem = (ing: any): NormalizedIngredientItem => {
-    if (typeof ing === 'string') {
-      const text = ing.trim();
-      const { main, optional } = extractOptionalText(text);
-      return { emoji: '🔸', quantity: '', item: main, notes: '', optional };
-    }
-
-    if (ing && typeof ing === 'object') {
-      const emoji = safeStr(ing.emoji).trim() || '🔸';
-      const quantity = safeStr(ing.quantity).trim();
-      const unit = safeStr(ing.unit).trim();
-      const itemRaw = safeStr(ing.item).trim() || safeStr(ing.name).trim();
-      const notesRaw = safeStr(ing.notes).trim();
-
-      // Always include unit when present so "50 g farine" is clear
-      const fullQuantity = (quantity && unit ? `${quantity} ${unit}` : quantity).trim();
-
-      const { main: itemMain, optional: itemOptional } = extractOptionalText(itemRaw);
-      const { main: notesMain, optional: notesOptional } = extractOptionalText(notesRaw);
-
-      const allOptional = [itemOptional, notesOptional].filter(Boolean).join(' ');
-
-      return {
-        emoji,
-        quantity: fullQuantity,
-        item: itemMain,
-        notes: notesMain,
-        optional: allOptional,
-      };
-    }
-
-    return { emoji: '🔸', quantity: '', item: '', notes: '', optional: '' };
-  };
-
-  const rawIngredients = Array.isArray(selectedRecipe?.ingredients)
-    ? selectedRecipe.ingredients
+  const ingredients: any[] = Array.isArray(recipe?.ingredients)
+    ? recipe.ingredients
     : [];
 
-  const looksGrouped =
-    rawIngredients.length > 0 &&
-    typeof rawIngredients[0] === 'object' &&
-    rawIngredients[0] !== null &&
-    Array.isArray((rawIngredients[0] as any).items);
+  const captionLines = (caption || '')
+    .split(/\r?\n/)
+    .slice(0, 6)
+    .map((l) => l.trim());
 
-  let groups: NormalizedIngredientGroup[] = [];
+  const rawGroups = Array.isArray((recipe as any)?.ingredients_groups)
+    ? (recipe as any).ingredients_groups
+    : [];
 
-  if (looksGrouped) {
-    groups = rawIngredients
-      .map((g: any) => {
-        const groupName = safeStr(g?.name).trim();
-        const itemsRaw = Array.isArray(g?.items) ? g.items : [];
-        const items = itemsRaw
-          .map(normalizeIngredientItem)
-          .filter((it) => (it.item || it.quantity || it.notes || it.optional).trim().length > 0);
+  console.log('🔍 ING selectedRecipe:', recipe);
+  console.log('🔍 ING.ingredients length:', ingredients.length);
+  console.log('🔍 ING.ingredients_groups:', rawGroups);
+  console.log('🔍 ING.caption (first lines):', captionLines);
 
-        return { groupName, items };
-      })
-      .filter((g) => g.groupName || g.items.length > 0);
-  } else {
-    const items = rawIngredients
-      .map(normalizeIngredientItem)
-      .filter((it) => (it.item || it.quantity || it.notes || it.optional).trim().length > 0);
+  const sectionsFromCaption = React.useMemo(
+    () => buildSectionsFromCaption(caption),
+    [caption],
+  );
 
-    groups = items.length ? [{ groupName: '', items }] : [];
-  }
+  /**
+   * Map backend-provided groups (if any) to {title, items[]} shape.
+   * Supports:
+   *  - { title, items: [ingredient, ...] }
+   *  - { title, indices: [0,1,...] } referencing the flat ingredients array.
+   */
+  const mappedFromBackend = React.useMemo(() => {
+    if (!rawGroups.length) return [] as { title: string; items: any[] }[];
+    if (!ingredients.length) {
+      // If backend sends full items inside groups, we can still use them.
+      return rawGroups.map((g: any) => ({
+        title: g.title || 'Ingredients',
+        items: Array.isArray(g.items) ? g.items : [],
+      }));
+    }
 
-  const totalItemsCount = groups.reduce((acc, g) => acc + g.items.length, 0);
-  if (totalItemsCount === 0) return null;
+    const groups: { title: string; items: any[] }[] = [];
 
-  const rowTextSize = mobile ? 'text-xs' : 'text-base';
+    for (const g of rawGroups) {
+      const title = g.title || 'Ingredients';
+
+      if (Array.isArray(g.items) && g.items.length) {
+        groups.push({ title, items: g.items });
+      } else if (Array.isArray(g.indices) && g.indices.length) {
+        const items = g.indices
+          .map((i: number) =>
+            i >= 0 && i < ingredients.length ? ingredients[i] : null,
+          )
+          .filter(Boolean);
+        groups.push({ title, items });
+      }
+    }
+
+    return groups;
+  }, [rawGroups, ingredients]);
+
+  /**
+   * If backend groups exist, trust them. Otherwise, fall back to
+   * coarse caption-based grouping for old data.
+   */
+  const mappedGroups = React.useMemo(() => {
+    if (mappedFromBackend.length) {
+      const countBackend = mappedFromBackend.reduce(
+        (sum, g) => sum + g.items.length,
+        0,
+      );
+      console.log('ℹ️ ING: using BACKEND groups', {
+        groupTitles: mappedFromBackend.map((g) => g.title),
+        groupSizes: mappedFromBackend.map((g) => g.items.length),
+        ingredientCount: ingredients.length,
+      });
+      return mappedFromBackend;
+    }
+
+    if (!sectionsFromCaption.length || !ingredients.length) {
+      console.log('ℹ️ ING: no groups; using flat list', {
+        ingredientCount: ingredients.length,
+      });
+      return [] as { title: string; items: any[] }[];
+    }
+
+    let idx = 0;
+    const groups: { title: string; items: any[] }[] = [];
+
+    for (const sec of sectionsFromCaption) {
+      const count = Math.min(
+        sec.lines.length || 0,
+        ingredients.length - idx,
+      );
+      if (count <= 0) continue;
+      const items = ingredients.slice(idx, idx + count);
+      idx += count;
+      groups.push({ title: sec.title, items });
+    }
+
+    // Leftovers go to last group to avoid dropping anything
+    if (idx < ingredients.length) {
+      if (groups.length) {
+        groups[groups.length - 1].items = [
+          ...groups[groups.length - 1].items,
+          ...ingredients.slice(idx),
+        ];
+      } else {
+        groups.push({
+          title: 'Ingredients',
+          items: ingredients.slice(idx),
+        });
+      }
+    }
+
+    console.log('ℹ️ ING: built groups from CAPTION', {
+      sectionTitles: sectionsFromCaption.map((s) => s.title),
+      groupSizes: groups.map((g) => g.items.length),
+      ingredientCount: ingredients.length,
+    });
+
+    return groups;
+  }, [mappedFromBackend, sectionsFromCaption, ingredients]);
+
+  const hasGroups = mappedGroups.length > 0;
+  const groupedCount = hasGroups
+    ? mappedGroups.reduce((sum, g) => sum + g.items.length, 0)
+    : 0;
+
+  const formatQuantity = (ing: any) => {
+    const qty = String(ing.quantity ?? '').trim();
+    const unit = String(ing.unit ?? '').trim();
+
+    if (!qty && !unit) return { main: '', rest: '' };
+
+    const base = unit ? `${qty} ${unit}` : qty;
+    const scaled = servingScale !== 1 ? scaleQuantity(base, servingScale) : base;
+
+    const parts = scaled.split(/\s+/);
+    const main = parts[0] || '';
+    const rest = parts.slice(1).join(' ');
+
+    return { main, rest };
+  };
+
+  const renderIngredient = (ing: any, key: React.Key) => {
+    const emoji = ing.emoji || '';
+    const name =
+      ing.item || ing.name || ing.description || 'Ingredient';
+    const { main, rest } = formatQuantity(ing);
+
+    return (
+      <li
+        key={key}
+        className="flex items-baseline gap-3 flex-wrap"
+      >
+        {emoji && (
+          <span className="text-lg leading-none select-none">
+            {emoji}
+          </span>
+        )}
+
+        {(main || rest) && (
+          <span className="text-base whitespace-nowrap">
+            {main && (
+              <span className="text-purple-600 font-extrabold">
+                {main}
+              </span>
+            )}
+            {rest && (
+              <span className="text-gray-900 font-extrabold">
+                {' '}
+                {rest}
+              </span>
+            )}
+          </span>
+        )}
+
+        <span className="text-base text-gray-900 font-normal">
+          {name}
+        </span>
+      </li>
+    );
+  };
+
+  console.log('ℹ️ ING DEBUG STATE', {
+    flatCount: ingredients.length,
+    groupedCount,
+    showOriginal,
+    backendGroups: mappedFromBackend.length,
+  });
 
   return (
-    <div className={`bg-white border border-gray-200 rounded-xl ${mobile ? 'p-3' : 'p-6'}`}>
+    <div className="bg-white border border-gray-200 rounded-xl p-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className={`font-bold text-gray-900 ${mobile ? 'text-sm' : 'text-xl'}`}>Ingredients</h2>
-
+        <div>
+          <h2 className="font-bold text-gray-900 text-xl">
+            Ingredients
+          </h2>
+          <div className="mt-1 text-[10px] text-gray-500 bg-gray-50 px-2 py-1 rounded">
+            ING DEBUG · flat={ingredients.length} · groups=
+            {groupedCount} · showOriginal={String(showOriginal)}
+          </div>
+        </div>
         <button
+          type="button"
           onClick={() => setUseMetric(!useMetric)}
           className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition border ${
             useMetric
               ? 'bg-primary-100 text-primary-700 border-primary-300'
-              : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+              : 'bg-white text-gray-700 border-gray-300'
           }`}
         >
-          <span className={mobile ? 'text-xs font-medium' : 'text-sm font-medium'}>
+          <span className="text-sm font-medium">
             {useMetric ? 'Metric' : 'Imperial'}
           </span>
         </button>
       </div>
 
-      <div className={mobile ? 'space-y-5' : 'space-y-6'}>
-        {groups.map((group, gIdx) => (
-          <div key={gIdx}>
-            {group.groupName && (
-              <div className={mobile ? 'mb-3' : 'mb-4'}>
-                <div
-                  className={`font-bold text-gray-900 ${
-                    mobile ? 'text-sm' : 'text-lg'
-                  } leading-tight`}
-                >
-                  {group.groupName}
-                </div>
-                <div className="h-px bg-gray-100 mt-2" />
-              </div>
-            )}
-
-            <ul className={mobile ? 'space-y-2' : 'space-y-3'}>
-              {group.items.map((ing, idx) => {
-                let displayQty = ing.quantity;
-
-                if (displayQty && servingScale !== 1) {
-                  displayQty = scaleQuantity(displayQty, servingScale);
-                }
-
-                if (displayQty) {
-                  if (useMetric) {
-                    displayQty = convertToMetric(displayQty);
-                  } else if (convertToImperial) {
-                    displayQty = convertToImperial(displayQty);
-                  }
-                }
-
-                const qtyTokens = tokenizeQty(displayQty || '');
-                const { main: itemMainRaw, paren } = splitParen(ing.item || '');
-                const itemMain = lowerFirst(itemMainRaw);
-
-                return (
-                  <li
-                    key={idx}
-                    className={`flex items-baseline ${
-                      mobile ? 'gap-2' : 'gap-3'
-                    } flex-wrap`}
-                  >
-                    <span className={`${mobile ? 'text-base' : 'text-lg'} leading-none`}>
-                      {ing.emoji || '🔸'}
-                    </span>
-
-                    {qtyTokens.length > 0 && (
-                      <span className={`${rowTextSize} whitespace-nowrap`}>
-                        {qtyTokens.map((tok, i) => (
-                          <span
-                            key={i}
-                            className={
-                              tok.type === 'num'
-                                ? 'text-purple-600 font-extrabold'
-                                : 'text-gray-900 font-extrabold'
-                            }
-                          >
-                            {i === 0 ? tok.text : ` ${tok.text}`}
-                          </span>
-                        ))}
-                      </span>
-                    )}
-
-                    {itemMain && (
-                      <span className={`${rowTextSize} text-gray-900 font-normal`}>
-                        {itemMain}
-                      </span>
-                    )}
-
-                    {paren && (
-                      <span className={`${rowTextSize} text-gray-400 italic font-normal`}>
-                        {paren}
-                      </span>
-                    )}
-
-                    {ing.notes && (
-                      <span className={`${rowTextSize} text-gray-400 italic font-normal`}>
-                        {ing.notes}
-                      </span>
-                    )}
-
-                    {ing.optional && (
-                      <span className={`${rowTextSize} text-gray-400 italic font-normal`}>
-                        {ing.optional}
-                      </span>
-                    )}
-                  </li>
-                );
-              })}
+      <div className="space-y-6">
+        {hasGroups ? (
+          mappedGroups.map((group, idx) => (
+            <div key={idx}>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                {group.title}
+              </h3>
+              <ul className="space-y-3">
+                {group.items.map((ing, i) =>
+                  renderIngredient(ing, `${idx}-${i}`),
+                )}
+              </ul>
+            </div>
+          ))
+        ) : (
+          <div>
+            <ul className="space-y-3">
+              {ingredients.map((ing, idx) =>
+                renderIngredient(ing, idx),
+              )}
             </ul>
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
 };
 
-interface StepsProps {
-  recipe: any;
-  mobile?: boolean;
-  showOriginal?: boolean;
-}
-
+/**
+ * Simple ordered list of instructions.
+ */
 export const Steps: React.FC<StepsProps> = ({
   recipe,
-  mobile = false,
-  showOriginal = false,
 }) => {
-  const { t } = useLanguage();
-
-  // If we get a bilingual recipe, choose block by showOriginal.
-  let selectedRecipe: any;
-  if (recipe && (recipe.english || recipe.original)) {
-    selectedRecipe = showOriginal
-      ? (recipe.original || recipe.english)
-      : (recipe.english || recipe.original);
-  } else {
-    selectedRecipe = recipe || t(recipe);
-  }
-
-  console.log('🔍 Steps selectedRecipe:', selectedRecipe);
-
-  const steps = Array.isArray(selectedRecipe?.steps)
-    ? selectedRecipe.steps
-    : Array.isArray(selectedRecipe?.instructions)
-    ? selectedRecipe.instructions
+  const instructions: string[] = Array.isArray(
+    recipe?.instructions,
+  )
+    ? recipe.instructions
     : [];
 
-  if (!steps.length) return null;
+  console.log('🔍 Steps selectedRecipe:', recipe);
+
+  if (!instructions.length) return null;
 
   return (
-    <div className={`bg-white border border-gray-200 rounded-xl ${mobile ? 'p-3' : 'p-6'}`}>
-      <h2 className={`font-bold text-gray-900 mb-4 ${mobile ? 'text-sm' : 'text-xl'}`}>
-        Directions
+    <div className="bg-white border border-gray-200 rounded-xl p-6">
+      <h2 className="text-bold text-gray-900 text-xl mb-4">
+        Steps
       </h2>
-      <ol className={mobile ? 'space-y-2' : 'space-y-4'}>
-        {steps.map((step: string, idx: number) => {
-          const stepText = typeof step === 'string' ? step : String(step ?? '');
-          if (!stepText.trim()) return null;
-
-          return (
-            <li key={idx} className={`flex items-start ${mobile ? 'gap-2' : 'gap-4'}`}>
-              <span
-                className={`flex-shrink-0 bg-primary-600 text-white rounded-full flex items-center justify-center font-bold ${
-                  mobile ? 'w-5 h-5 text-xs' : 'w-7 h-7 text-xs mt-1'
-                }`}
-              >
-                {idx + 1}
-              </span>
-              <p
-                className={`text-gray-700 leading-relaxed flex-1 ${
-                  mobile ? 'text-xs' : 'text-base'
-                }`}
-              >
-                {stepText}
-              </p>
-            </li>
-          );
-        })}
+      <ol className="space-y-3 list-decimal list-inside text-gray-800 text-sm">
+        {instructions.map((step, index) => (
+          <li key={index} className="leading-relaxed">
+            {step}
+          </li>
+        ))}
       </ol>
     </div>
   );

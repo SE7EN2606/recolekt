@@ -366,7 +366,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
                 width="16"
                 height="16"
                 viewBox="0 0 512 512"
-                fill="#DC5204"
+                fill="#35595a"
                 className="flex-shrink-0"
               >
                 <path
@@ -378,15 +378,16 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               <div className="flex-1 min-w-0">
                 <style>{`
                   .hashtag-links a {
-                    background-color: #FFFFFF !important;
-                    color: #FB6A18 !important;
+                    background-color: rgba(72, 121, 122, 0.10) !important;
+                    color: #35595a !important;
                     border-radius: 9999px !important;
                     padding: 0.15rem 0.6rem !important;
-                    border: 1px solid #FB6A18 !important;
+                    border: 1px solid rgba(72, 121, 122, 0.5) !important;
+                    font-weight: 500 !important;
                   }
                   .hashtag-links a:hover {
-                    background-color: #FB6A18 !important;
-                    color: #FFFFFF !important;
+                    background-color: rgba(72, 121, 122, 0.18) !important;
+                    color: #35595a !important;
                   }
                 `}</style>
                 <div className="hashtag-links">
@@ -444,6 +445,8 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               scaleQuantity={scaleQuantity}
               convertToMetric={convertToMetric}
               parseQuantity={parseQuantity}
+              showOriginal={showOriginal}
+              caption={viewModel.caption}
               mobile
             />
             <Steps recipe={activeRecipe} mobile />

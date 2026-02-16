@@ -9,47 +9,70 @@ interface VideoCardProps {
   selectionMode?: boolean;
 }
 
-export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleSelect, selectionMode }) => {
+const VideoCardComponent: React.FC<VideoCardProps> = ({
+  video,
+  selected,
+  onToggleSelect,
+  selectionMode,
+}) => {
   const navigate = useNavigate();
-  const [isFavorite, setIsFavorite] = useState(video.is_favorite || video.isFavorite || false);
+  const [isFavorite, setIsFavorite] = useState(
+    video.is_favorite || video.isFavorite || false,
+  );
   const [showOriginal, setShowOriginal] = useState(false);
 
   const isProcessing = video.status === 'processing';
   const isFailed = video.status === 'failed';
   const isDisabled = isProcessing || isFailed;
 
-  // --- 1. TITLE & LANGUAGE LOGIC (FIXED) ---
-  
-  const defaultTitle = "Untitled Video";
-  
+  // --- 1. TITLE & LANGUAGE LOGIC ---
+
+  const defaultTitle = 'Untitled Video';
+
   const recipe = video.recipe;
   const summaryText = video.summary_text;
   const summaryTitle = video.summary_title;
 
-  const hasSummaryTextTranslation = summaryText && typeof summaryText === 'object' && summaryText.english && summaryText.original;
-  const hasRecipeTranslation = recipe && typeof recipe === 'object' && recipe.english && recipe.original;
-  const hasSummaryTitleTranslation = summaryTitle && typeof summaryTitle === 'object' && summaryTitle.english && summaryTitle.original;
-  
-  const hasTranslation = hasSummaryTextTranslation || hasRecipeTranslation || hasSummaryTitleTranslation;
+  const hasSummaryTextTranslation =
+    summaryText &&
+    typeof summaryText === 'object' &&
+    summaryText.english &&
+    summaryText.original;
+  const hasRecipeTranslation =
+    recipe &&
+    typeof recipe === 'object' &&
+    recipe.english &&
+    recipe.original;
+  const hasSummaryTitleTranslation =
+    summaryTitle &&
+    typeof summaryTitle === 'object' &&
+    summaryTitle.english &&
+    summaryTitle.original;
+
+  const hasTranslation =
+    hasSummaryTextTranslation ||
+    hasRecipeTranslation ||
+    hasSummaryTitleTranslation;
 
   let originalTitle = defaultTitle;
   let englishTitle = defaultTitle;
 
-  // ✅ FIXED: Properly extract title from bilingual objects
   if (hasSummaryTextTranslation) {
-    // First priority: summary_text object with title field
-    englishTitle = summaryText.english?.title || summaryText.english?.summary || defaultTitle;
-    originalTitle = summaryText.original?.title || summaryText.original?.summary || defaultTitle;
+    englishTitle =
+      summaryText.english?.title ||
+      summaryText.english?.summary ||
+      defaultTitle;
+    originalTitle =
+      summaryText.original?.title ||
+      summaryText.original?.summary ||
+      defaultTitle;
   } else if (hasRecipeTranslation) {
-    // Second priority: recipe object
     englishTitle = recipe.english?.title || defaultTitle;
     originalTitle = recipe.original?.title || defaultTitle;
   } else if (video.title) {
-    // Fallback to top-level title field
     englishTitle = video.title;
     originalTitle = video.title;
   } else if (typeof summaryTitle === 'string') {
-    // Legacy string title
     englishTitle = summaryTitle;
     originalTitle = summaryTitle;
   }
@@ -68,7 +91,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
     e.preventDefault();
     e.stopPropagation();
     if (isDisabled) return;
-    
+
     setIsFavorite(!isFavorite);
     // TODO: Update favorite in backend
   };
@@ -77,7 +100,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
     e.preventDefault();
     e.stopPropagation();
     if (isDisabled) return;
-    
+
     setShowOriginal(!showOriginal);
   };
 
@@ -87,7 +110,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
       e.stopPropagation();
       return;
     }
-    
+
     if (selectionMode) {
       e.preventDefault();
       e.stopPropagation();
@@ -99,10 +122,14 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
 
   // --- DISPLAY HELPERS ---
 
-  const thumbnailUrl = video.gcs_urls?.preview_thumbnail || video.preview_thumbnail || video.thumbnailUrl || '';
+  const thumbnailUrl =
+    video.gcs_urls?.preview_thumbnail ||
+    video.preview_thumbnail ||
+    video.thumbnailUrl ||
+    '';
   const author = video.author_name || video.author || 'Unknown';
   const duration = video.duration;
-  
+
   const detectPlatform = () => {
     const url = (video.source_url || '').toLowerCase();
     if (url.includes('instagram.com')) return 'instagram';
@@ -116,22 +143,25 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
   const profileUrl = `https://www.instagram.com/${author.replace('@', '')}/`;
 
   return (
-    <div 
-      className="group relative flex flex-col gap-3 transition-transform duration-300"
-    >
-      <div 
+    <div className="group relative flex flex-col gap-3 transition-transform duration-300">
+      <div
         onClick={handleCardClick}
         className={`relative rounded-2xl overflow-hidden aspect-[9/16] bg-gray-100 shadow-sm transition-shadow duration-300 ${
           isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'
-        } ${selected ? 'ring-4 ring-primary-500 ring-offset-2' : 'hover:shadow-lg'}`}
+        } ${
+          selected
+            ? 'ring-4 ring-primary-500 ring-offset-2'
+            : 'hover:shadow-lg'
+        }`}
         style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}
       >
         {thumbnailUrl ? (
-          <img 
-            src={thumbnailUrl} 
+          <img
+            src={thumbnailUrl}
             alt={displayTitle}
             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
             loading="lazy"
+            decoding="async"
             onError={(e) => {
               e.currentTarget.style.display = 'none';
             }}
@@ -141,7 +171,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
             <span className="text-gray-400 text-sm">No preview</span>
           </div>
         )}
-        
+
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
 
         {/* Processing Overlay */}
@@ -149,7 +179,9 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-40 flex items-center justify-center pointer-events-none">
             <div className="flex flex-col items-center gap-3">
               <Loader2 className="w-10 h-10 text-white animate-spin" />
-              <span className="text-white text-sm font-medium">Processing...</span>
+              <span className="text-white text-sm font-medium">
+                Processing...
+              </span>
             </div>
           </div>
         )}
@@ -160,9 +192,12 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
             <div className="flex flex-col items-center gap-3 px-4 text-center">
               <AlertCircle className="w-10 h-10 text-white" />
               <div>
-                <p className="text-white text-sm font-semibold mb-1">Processing Failed</p>
+                <p className="text-white text-sm font-semibold mb-1">
+                  Processing Failed
+                </p>
                 <p className="text-white/90 text-xs">
-                  {video.errorMessage || 'Something went wrong. Please try again.'}
+                  {video.errorMessage ||
+                    'Something went wrong. Please try again.'}
                 </p>
               </div>
             </div>
@@ -204,19 +239,44 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
           <div className="absolute top-3 right-3 z-20">
             <div className="w-7 h-7 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white shadow-sm">
               {platform === 'instagram' && (
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" className="w-5 h-5">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  className="w-5 h-5"
+                >
                   <defs>
-                    <linearGradient id="instagram-gradient" x1="0%" y1="100%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#FED373"/>
-                      <stop offset="25%" stopColor="#F15245"/>
-                      <stop offset="50%" stopColor="#D92E7F"/>
-                      <stop offset="75%" stopColor="#9B36B7"/>
-                      <stop offset="100%" stopColor="#515ECF"/>
+                    <linearGradient
+                      id="instagram-gradient"
+                      x1="0%"
+                      y1="100%"
+                      x2="100%"
+                      y2="0%"
+                    >
+                      <stop offset="0%" stopColor="#FED373" />
+                      <stop offset="25%" stopColor="#F15245" />
+                      <stop offset="50%" stopColor="#D92E7F" />
+                      <stop offset="75%" stopColor="#9B36B7" />
+                      <stop offset="100%" stopColor="#515ECF" />
                     </linearGradient>
                   </defs>
-                  <rect x="2" y="2" width="20" height="20" rx="5" fill="url(#instagram-gradient)"/>
-                  <circle cx="12" cy="12" r="4" stroke="white" strokeWidth="2" fill="none"/>
-                  <circle cx="17.5" cy="6.5" r="1.5" fill="white"/>
+                  <rect
+                    x="2"
+                    y="2"
+                    width="20"
+                    height="20"
+                    rx="5"
+                    fill="url(#instagram-gradient)"
+                  />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="4"
+                    stroke="white"
+                    strokeWidth="2"
+                    fill="none"
+                  />
+                  <circle cx="17.5" cy="6.5" r="1.5" fill="white" />
                 </svg>
               )}
             </div>
@@ -226,27 +286,28 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
         {!selectionMode && (
           <div className="absolute inset-0 p-4 flex flex-col justify-start z-30 pointer-events-none">
             <div className="flex justify-start pointer-events-auto">
-              <button 
+              <button
                 onClick={handleHeartClick}
                 disabled={isDisabled}
                 className={`
                   absolute top-3 left-3 flex-shrink-0 z-30
                   w-7 h-7 rounded-full flex items-center justify-center transition-all duration-200
-                  ${isDisabled
-                    ? 'bg-transparent opacity-30 cursor-not-allowed'
-                    : 'bg-white/20 backdrop-blur-md hover:bg-white/60 hover:scale-100 shadow-sm'
+                  ${
+                    isDisabled
+                      ? 'bg-transparent opacity-30 cursor-not-allowed'
+                      : 'bg-white/20 backdrop-blur-md hover:bg-white/60 hover:scale-100 shadow-sm'
                   }
                 `}
               >
-                <Heart 
-                    size={18}
-                    color="#FF2C00"
-                    fill={isFavorite ? "#e63946" : "transparent"} 
-                    strokeWidth={2}
-                    style={{
-                      transition: 'all 250ms ease-out',
-                      opacity: isFavorite ? 1 : 0.6
-                    }}
+                <Heart
+                  size={18}
+                  color="#FF2C00"
+                  fill={isFavorite ? '#e63946' : 'transparent'}
+                  strokeWidth={2}
+                  style={{
+                    transition: 'all 250ms ease-out',
+                    opacity: isFavorite ? 1 : 0.6,
+                  }}
                 />
               </button>
             </div>
@@ -255,16 +316,18 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
       </div>
 
       <div className="px-1">
-        <h3 
+        <h3
           onClick={handleCardClick}
           className={`font-semibold text-gray-900 leading-tight line-clamp-2 transition-colors ${
-            isDisabled ? 'cursor-not-allowed opacity-50' : 'hover:text-primary-600 cursor-pointer'
+            isDisabled
+              ? 'cursor-not-allowed opacity-50'
+              : 'hover:text-primary-600 cursor-pointer'
           }`}
           title={displayTitle}
         >
           {displayTitle}
         </h3>
-        
+
         <a
           href={profileUrl}
           target="_blank"
@@ -275,13 +338,19 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
             if (isDisabled) e.preventDefault();
           }}
         >
-          <svg className="w-3 h-3 text-pink-500 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+          <svg
+            className="w-3 h-3 text-pink-500 flex-shrink-0"
+            fill="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
           </svg>
-          
-          <span className={`text-xs font-medium text-gray-500 truncate group-hover/author:text-gray-900 transition-colors ${
-            isDisabled ? 'opacity-50' : ''
-          }`}>
+
+          <span
+            className={`text-xs font-medium text-gray-500 truncate group-hover/author:text-gray-900 transition-colors ${
+              isDisabled ? 'opacity-50' : ''
+            }`}
+          >
             {author}
           </span>
         </a>
@@ -289,3 +358,5 @@ export const VideoCard: React.FC<VideoCardProps> = ({ video, selected, onToggleS
     </div>
   );
 };
+
+export const VideoCard = React.memo(VideoCardComponent);
