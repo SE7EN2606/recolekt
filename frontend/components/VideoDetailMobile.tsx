@@ -1,6 +1,6 @@
 // src/components/VideoDetailMobile.tsx
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   ArrowLeft,
   ChevronDown,
@@ -11,6 +11,7 @@ import {
   Layers,
   Tags,
   Globe,
+  EllipsisVertical,
 } from 'lucide-react';
 import { MobileBottomNav } from './MobileBottomNav';
 import {
@@ -20,10 +21,13 @@ import {
 } from './VideoDetailComponents';
 import { scaleQuantity } from '../utils/videoUtils';
 import { LinkifiedText } from './LinkifiedText';
-import { IOSShareIcon } from './VideoIcons';
 import { AISummaryCard } from './AISummaryCard';
 import { useLanguage } from '../context/LanguageContext';
 import { RecipeDetailsCard } from './RecipeDetailsCard';
+import { ManageCollectionsModal } from './ManageCollectionsModal';
+import { InputModal } from './InputModal';
+import { useData } from '../context/DataContext';
+import { MobileReelActions } from './MobileReelAction';
 
 interface VideoDetailMobileProps {
   viewModel: any;
@@ -56,6 +60,11 @@ interface VideoDetailMobileProps {
   setTranscriptOpen: (value: boolean) => void;
   onReportClick: () => void;
   onDeleteClick: () => void;
+
+  // Hooks for favorite/archive/move (optional overrides)
+  onToggleFavorite?: () => void;
+  onArchiveToggle?: () => void;
+  onMoveToCollection?: () => void;
 }
 
 export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
@@ -87,15 +96,53 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
   setTranscriptOpen,
   onReportClick,
   onDeleteClick,
+  onToggleFavorite,
+  onArchiveToggle,
+  onMoveToCollection,
 }) => {
   const { showOriginal, toggleLanguage } = useLanguage();
+  const { folders, addFolder, moveVideos } = useData(); // moveVideos is our core primitive for archive/move [file:4]
 
-  // Close caption by default when opening the page
+  const [isManageOpen, setIsManageOpen] = useState(false);
+  const [isReelMenuOpen, setIsReelMenuOpen] = useState(false);
+  const [isNewCollectionOpen, setIsNewCollectionOpen] = useState(false);
+  const [isMoveCollectionOpen, setIsMoveCollectionOpen] = useState(false);
+
+  const systemIds = ['all', 'favorites', 'shared', 'archive'];
+  const customFolders = folders.filter((f: any) => !systemIds.includes(f.id));
+  const parentOptions =
+    customFolders.map((f: any) => ({ id: f.id, name: f.name })) || [];
+
+  const handleNewCollection = (name: string, parentId?: string) => {
+    if (!name.trim()) return;
+    addFolder(name.trim(), parentId);
+    setIsNewCollectionOpen(false);
+  };
+
+  // ARCHIVE: if parent did not provide onArchiveToggle, use DataContext.moveVideos to move to "archive"
+  const handleArchive = () => {
+    if (onArchiveToggle) {
+      onArchiveToggle();
+      return;
+    }
+    const videoId = viewModel?.id;
+    if (!videoId) return;
+    moveVideos([videoId], 'archive'); // treat "archive" as special system folder id [file:4]
+  };
+
+  // MOVE TO COLLECTION: if parent overrides, call it; otherwise show local sheet and use moveVideos
+  const handleMoveToCollection = () => {
+    if (onMoveToCollection) {
+      onMoveToCollection();
+      return;
+    }
+    setIsMoveCollectionOpen(true);
+  };
+
   useEffect(() => {
     setCaptionOpen(false);
   }, [setCaptionOpen]);
 
-  // Mirror desktop logic for title, activeRecipe, languageCode, hasTranslation
   const { displayTitle, activeRecipe, hasTranslation, languageCode } =
     useMemo(() => {
       const summary = viewModel?.summary || {};
@@ -164,12 +211,9 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
       };
     }, [viewModel, showOriginal]);
 
-  // Use same source as desktop for AI summary + highlights
   const summaryTextObj = viewModel?.summary_text || null;
-
   const authorName = viewModel.author_name || viewModel.author || '';
 
-  // Transcript handling: string or { transcript: string }
   const transcriptionRaw = viewModel?.transcription;
   const transcriptionText =
     typeof transcriptionRaw === 'string'
@@ -213,14 +257,19 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             </span>
           </button>
 
-          <button
-            onClick={onShare}
-            className="group w-9 h-9 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-2xl hover:bg-white/40 transition-colors"
-          >
-            <span className="inline-flex transform transition-transform duration-200 ease-out">
-              <IOSShareIcon size={18} />
-            </span>
-          </button>
+          {/* Manage button opens reel actions */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsReelMenuOpen(true)}
+              className="p-2 bg-white/40 backdrop-blur-md rounded-full text-white shadow-sm transition-transform active:scale-95"
+            >
+              <EllipsisVertical
+                size={20}
+                className="lucide lucide-ellipsis-vertical text-white"
+                aria-hidden="true"
+              />
+            </button>
+          </div>
         </div>
 
         {/* Language toggle pill */}
@@ -287,7 +336,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           )}
         </div>
 
-        {/* Edit mode: Cancel/Save buttons at top */}
+        {/* Edit mode: Cancel/Save buttons */}
         {isEditMode && (
           <div className="mb-4 flex gap-2">
             <button
@@ -350,7 +399,6 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  {/* Topic icon + label in rose #e11d48 */}
                   <Tags
                     size={14}
                     className="flex-shrink-0"
@@ -379,18 +427,17 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           {((viewModel.hashtags || []) as string[]).length > 0 && (
             <div>
               <h4 className="flex items-center gap-2 text-xs font-bold text-cyan-800 uppercase tracking-wider mb-3">
-                {/* original circular hashtags icon */}
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="16"
                   height="16"
                   viewBox="0 0 512 512"
-                  className="flex-shrink-0"
+                  className="flex-shrink-0 text-cyan-600"
                   aria-hidden="true"
                 >
                   <path
                     fillRule="nonzero"
-                    d="M300.02 161.657l.047-.187c3.542-14.981 23.176-18.148 31.458-5.532a17.27 17.27 0 012.463 13.038c-2.328 10.088-4.271 20.55-6.386 30.72h12.177c22.801 0 22.804 34.849 0 34.849h-19.383l-8.664 43.645h30.453c22.935 0 22.926 34.846 0 34.846h-37.597l-7.847 37.682c-5.447 21.855-38.479 14.339-33.876-7.694 2.271-9.85 4.177-20.06 6.245-29.988h-45.112c-2.556 12.304-4.897 25.01-7.741 37.203-5.282 22.331-38.129 14.224-33.971-7.243l6.239-29.991-16.242.003c-22.9.135-22.956-34.818 0-34.818h23.404l8.614-43.645h-34.49c-22.521 0-23.232-34.849 0-34.849h41.693l7.731-37.144c.051-.403.138-.797.26-1.176 5.329-21.289 38.485-14.721 33.877 7.672l-6.39 30.648h45.113c2.635-12.65 5.447-25.37 7.925-38.039zM256 0c70.688 0 134.689 28.658 181.016 74.984C483.342 121.311 512 185.312 512 256c0 70.688-28.658 134.689-74.984 181.016C390.689 483.342 326.688 512 256 512c-70.688 0-134.689-28.658-181.016-74.984C28.658 390.689 0 326.688 0 256c0-70.688 28.658-134.689 74.984-181.016C121.311 28.658 185.312 0 256 0zm159.946 96.054C375.017 55.125 318.465 29.806 256 29.806S136.983 55.125 96.054 96.054 29.806 193.535 29.806 256s25.319 119.017 66.248 159.946S193.535 482.194 256 482.194s119.017-25.319 159.946-66.248S482.194 318.465 482.194 256s-25.319-119.017-66.248-159.946zM276.256 278.19l8.661-43.645h-45.115l-8.664 43.645h45.118z"
+                    d="M300.02 161.657l.047-.187c3.542-14.981 23.176-18.148 31.458-5.532a17.27 17.27 0 012.463 13.038c-2.328 10.088-4.271 20.55-6.386 30.72h12.177c22.801 0 22.804 34.849 0 34.849h-19.383l-5.492 5.313a2 2 0 01-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"
                   />
                 </svg>
                 Hashtags
@@ -454,7 +501,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           </div>
         )}
 
-        {/* Recipe Section – now uses RecipeDetailsCard like desktop */}
+        {/* Recipe Section */}
         {viewModel.isRecipe && activeRecipe && (
           <div className="mb-5" key={`recipe-${showOriginal}`}>
             <RecipeDetailsCard
@@ -547,6 +594,89 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           </a>
         )}
       </div>
+
+      {/* Mobile reel actions bottom sheet */}
+      <MobileReelActions
+        isOpen={isReelMenuOpen}
+        onClose={() => setIsReelMenuOpen(false)}
+        onShare={onShare}
+        onAddToFavorites={onToggleFavorite ?? (() => {})}
+        onMoveToCollection={handleMoveToCollection}
+        onArchive={handleArchive}
+        onManageCollections={() => {
+          setIsManageOpen(true);
+        }}
+        onReport={onReportClick}
+        onDelete={onDeleteClick}
+      />
+
+      {/* Move to Collection bottom sheet (local implementation) */}
+      {isMoveCollectionOpen && (
+        <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 backdrop-blur-sm">
+          <div
+            className="absolute inset-0"
+            onClick={() => setIsMoveCollectionOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="relative z-10 w-full max-w-[450px] px-4 pb-[env(safe-area-inset-bottom,16px)]">
+            <div className="bg-white w-full rounded-t-[32px] md:rounded-2xl shadow-2xl overflow-hidden">
+              <div className="px-6 pt-4 pb-3 border-b border-gray-100">
+                <h3 className="text-sm font-black text-gray-500 uppercase tracking-[0.2em]">
+                  Move to Collection
+                </h3>
+              </div>
+              <div className="max-h-[60vh] overflow-y-auto px-4 py-3 space-y-1">
+                {customFolders.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4">
+                    You do not have any collections yet. Create one first from
+                    the menu.
+                  </p>
+                ) : (
+                  customFolders.map((folder: any) => (
+                    <button
+                      key={folder.id}
+                      onClick={() => {
+                        const videoId = viewModel?.id;
+                        if (videoId) {
+                          moveVideos([videoId], folder.id);
+                        }
+                        setIsMoveCollectionOpen(false);
+                      }}
+                      className="w-full flex items-center justify-between px-4 py-3 rounded-2xl hover:bg-gray-50 text-sm transition-colors"
+                    >
+                      <span className="font-medium text-gray-900">
+                        {folder.name}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+              <button
+                onClick={() => setIsMoveCollectionOpen(false)}
+                className="w-full p-4 border-t border-gray-100 text-sm font-bold text-gray-500 hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Collection input */}
+      <InputModal
+        isOpen={isNewCollectionOpen}
+        onClose={() => setIsNewCollectionOpen(false)}
+        onSubmit={handleNewCollection}
+        title="New Collection"
+        placeholder="Name your collection..."
+        parentOptions={parentOptions}
+      />
+
+      {/* Manage Collections modal (tree view) */}
+      <ManageCollectionsModal
+        isOpen={isManageOpen}
+        onClose={() => setIsManageOpen(false)}
+      />
 
       <MobileBottomNav onAddClick={() => {}} />
     </div>

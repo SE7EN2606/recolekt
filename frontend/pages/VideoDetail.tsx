@@ -82,6 +82,8 @@ export const VideoDetail: React.FC = () => {
 
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
+  const [isFavorite, setIsFavorite] = useState(false);
+
   const fetchJsonNoStore = useCallback(async (url: string) => {
     const u = url.includes('?')
       ? `${url}&_=${Date.now()}`
@@ -224,6 +226,9 @@ export const VideoDetail: React.FC = () => {
           merged.transcription = transcriptionText;
         }
 
+        // Favorite flag from backend
+        setIsFavorite(Boolean(merged.is_favorite ?? merged.isFavorite));
+
         console.log('🎯 Final merged video object:', merged);
         setVideo(merged);
       } catch (err) {
@@ -303,6 +308,58 @@ export const VideoDetail: React.FC = () => {
       alert('Link copied to clipboard!');
     } catch (err) {
       console.error('Share failed:', err);
+    }
+  };
+
+  const handleToggleFavorite = async () => {
+    if (!video) return;
+
+    const raw = (video as any).__raw || {};
+    const updateId =
+      (video as any).id ||
+      (video as any).process_id ||
+      raw.id ||
+      raw.process_id;
+
+    if (!updateId) {
+      console.warn('Cannot toggle favorite: missing video identifier');
+      return;
+    }
+
+    const next = !isFavorite;
+    setIsFavorite(next);
+
+    try {
+      const encodedId = encodeURIComponent(String(updateId));
+      const url = `${API_BASE}/api/update/${encodedId}`;
+
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        credentials: 'include',
+        body: JSON.stringify({ is_favorite: next }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to update favorite: ${res.status}`);
+      }
+
+      // Keep local video object in sync
+      setVideo((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              is_favorite: next,
+              isFavorite: next,
+            }
+          : prev,
+      );
+    } catch (err) {
+      console.error('❌ Failed to update favorite status', err);
+      setIsFavorite((prev) => !prev);
     }
   };
 
@@ -552,6 +609,8 @@ export const VideoDetail: React.FC = () => {
     useMetric,
     captionOpen,
     transcriptOpen,
+    isFavorite,
+    onToggleFavorite: handleToggleFavorite,
     onNavigateBack: () => navigate(-1),
     onShare: handleShare,
     onModifyToggle: handleModifyToggle,

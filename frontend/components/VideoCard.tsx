@@ -1,12 +1,26 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Heart, Globe, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { getAuthHeaders } from '../context/AuthContext';
 
 interface VideoCardProps {
   video: any;
   selected?: boolean;
   onToggleSelect?: () => void;
   selectionMode?: boolean;
+}
+
+const RAW_API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  import.meta.env.VITE_API_URL ||
+  'http://localhost:5001';
+
+const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
+
+function joinUrl(base: string, path: string) {
+  const b = String(base || '').replace(/\/+$/, '');
+  const p = String(path || '').replace(/^\/+/, '');
+  return `${b}/${p}`;
 }
 
 const VideoCardComponent: React.FC<VideoCardProps> = ({
@@ -87,13 +101,42 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
 
   // --- EVENT HANDLERS ---
 
-  const handleHeartClick = (e: React.MouseEvent) => {
+  const handleHeartClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (isDisabled) return;
 
-    setIsFavorite(!isFavorite);
-    // TODO: Update favorite in backend
+    const next = !isFavorite;
+    setIsFavorite(next);
+
+    const rawId = video.id || video.process_id;
+    if (!rawId) {
+      console.warn('Cannot toggle favorite: missing video id');
+      return;
+    }
+
+    try {
+      const encodedId = encodeURIComponent(String(rawId));
+      const url = joinUrl(API_BASE, `/api/update/${encodedId}`);
+
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        credentials: 'include',
+        body: JSON.stringify({ is_favorite: next }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to update favorite: ${res.status}`);
+      }
+    } catch (err) {
+      console.error('❌ Failed to update favorite status', err);
+      // Revert optimistic update on error
+      setIsFavorite((prev) => !prev);
+    }
   };
 
   const handleLanguageToggle = (e: React.MouseEvent) => {
