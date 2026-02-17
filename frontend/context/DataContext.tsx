@@ -121,7 +121,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsLoading(true);
 
     try {
-      // You can tune per_page down if needed (e.g. 50)
       const url = joinUrl(
         API_BASE,
         `/api/saved_reels?page=1&per_page=100&view=list&t=${Date.now()}`
@@ -264,7 +263,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             );
           }
 
-          // Write a trimmed version to per-user cache
           try {
             const cacheKey = makeCacheKey(user as any);
             if (cacheKey) {
@@ -294,7 +292,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Cleanup stuck reels, then optionally trigger a refresh (non-blocking)
   const cleanupStuckReels = async () => {
     if (!user) return;
 
@@ -371,7 +368,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // On login/logout
   useEffect(() => {
     if (user) {
       if (isDev) {
@@ -385,7 +381,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user]);
 
-  // Auto-refresh while there are processing videos (but never overlap requests)
   useEffect(() => {
     if (!user) return;
 
@@ -475,7 +470,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const filtered = prev.filter((v) => v.originalUrl !== cleanUrl);
         const merged = [newVideo, ...filtered];
 
-        // Update cache optimistically
         try {
           const cacheKey = makeCacheKey(user as any);
           if (cacheKey) {
@@ -515,7 +509,30 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.log('🗑️ Deleting videos:', videoIds);
       }
 
-      setVideos((prev) => prev.filter((v) => !videoIds.includes(v.id)));
+      // Optimistic removal from state + cache
+      setVideos((prev) => {
+        const idsToDelete = new Set(videoIds);
+
+        const filtered = prev.filter((v: any) => {
+          const raw = v.__raw || {};
+          const processId = raw.process_id;
+          const matchById = idsToDelete.has(v.id);
+          const matchByProcessId = processId && idsToDelete.has(processId);
+          return !(matchById || matchByProcessId);
+        });
+
+        try {
+          const cacheKey = makeCacheKey(user as any);
+          if (cacheKey) {
+            const cachePayload = stripRawForCache(filtered as any[]);
+            localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
+          }
+        } catch (e) {
+          console.error('❌ Failed to update reels cache on delete:', e);
+        }
+
+        return filtered;
+      });
 
       const deletePromises = videoIds.map(async (videoId) => {
         const encodedId = encodeURIComponent(videoId);
@@ -531,6 +548,16 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           if (response.status === 401) {
             localStorage.removeItem('auth_token');
             throw new Error('Not authenticated');
+          }
+
+          // ✅ Treat "Reel not found" as already-deleted: do NOT throw, just log and continue
+          if (response.status === 404) {
+            const text = await response.text().catch(() => '');
+            console.warn(
+              `⚠️ Delete ${videoId} returned 404 (already gone):`,
+              text,
+            );
+            return;
           }
 
           if (!response.ok) {
@@ -555,21 +582,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await Promise.all(deletePromises);
 
       if (isDev) {
-        console.log('✅ All videos deleted');
+        console.log('✅ All videos deleted (or already missing), refreshing');
       }
 
-      // Update cache after delete
-      try {
-        const cacheKey = makeCacheKey(user as any);
-        if (cacheKey) {
-          const cachePayload = stripRawForCache(
-            videos.filter((v) => !videoIds.includes(v.id)) as any[],
-          );
-          localStorage.setItem(cacheKey, JSON.stringify(cachePayload));
-        }
-      } catch (e) {
-        console.error('❌ Failed to update reels cache on delete:', e);
-      }
+      await fetchVideos();
     } catch (error) {
       console.error('❌ Failed to delete videos (restoring):', error);
       setVideos(before);

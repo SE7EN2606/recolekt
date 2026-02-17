@@ -147,11 +147,11 @@
 
   background: linear-gradient(
     120deg,
-    rgba(255, 255, 255, 0.10) 0%,
-    rgba(255, 255, 255, 0.20) 20%,
-    rgba(255, 255, 255, 0.10) 40%,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.2) 20%,
+    rgba(255, 255, 255, 0.1) 40%,
     rgba(255, 255, 255, 0.05) 60%,
-    rgba(255, 255, 255, 0.10) 80%
+    rgba(255, 255, 255, 0.1) 80%
   );
 
   background-size: 200% 100%;
@@ -166,11 +166,11 @@
 
   background: linear-gradient(
     120deg,
-    rgba(255, 255, 255, 0.10) 0%,
-    rgba(255, 255, 255, 0.20) 20%,
-    rgba(255, 255, 255, 0.10) 40%,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.2) 20%,
+    rgba(255, 255, 255, 0.1) 40%,
     rgba(255, 255, 255, 0.05) 60%,
-    rgba(255, 255, 255, 0.10) 80%
+    rgba(255, 255, 255, 0.1) 80%
   );
 
   background-size: 200% 100%;
@@ -190,7 +190,7 @@
   justify-content: center;
 
   backdrop-filter: blur(2px);
-  background: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.1);
 
   border-radius: 12px;
   pointer-events: none;
@@ -234,7 +234,7 @@
   width: 24px;
   height: 24px;
   stroke-width: 2;
-  stroke: #FF2C00;
+  stroke: #ff2c00;
   fill: transparent;
   opacity: 0.5;
   transition: all 0.25s ease;
@@ -245,15 +245,21 @@
 }
 
 .favorite-heart svg.favorited {
-  stroke: #FF2C00 !important;
+  stroke: #ff2c00 !important;
   fill: #e63946 !important;
   opacity: 1 !important;
 }
 
 @keyframes heartBeatOnce {
-  0% { transform: scale(1); }
-  45% { transform: scale(1.28); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.28);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .heart-animate {
@@ -362,7 +368,7 @@
 .header-default {
   border-bottom: 1px solid rgba(0, 0, 0, 0.12);
   box-shadow:
-    0 6px 12px rgba(0, 0, 0, 0.10),
+    0 6px 12px rgba(0, 0, 0, 0.1),
     0 18px 36px rgba(0, 0, 0, 0.12);
 }
 
@@ -371,4 +377,165 @@
   box-shadow:
     0 2px 4px rgba(0, 0, 0, 0.05),
     0 6px 12px rgba(0, 0, 0, 0.06);
+}
+
+/* =========================================================
+   RECIPE CARD COLORS & HOVER (bypass Tailwind)
+   ========================================================= */
+
+/* Pink icons for recipe header + meta row */
+.recipe-header-icon {
+  color: #f43f5e !important; /* usual pink */
+}
+
+.recipe-meta-icon {
+  color: #f43f5e !important; /* same pink for clock/flame/users */
+}
+
+/* Ingredient bullet */
+.recipe-ingredient-bullet {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid #d4d4d8; /* gray-300-ish */
+  background-color: transparent;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+/* Hover state for whole row -> bullet highlight */
+.recipe-ingredient-row:hover .recipe-ingredient-bullet {
+  border-color: #a78bfa;       /* subtle violet highlight */
+  background-color: #ede9fe;   /* subtle violet bg */
+}
+
+/* Checked (ticked) ingredient row */
+.recipe-ingredient-row--checked .recipe-ingredient-bullet {
+  border-color: #7c3aed;
+  background-color: #7c3aed;
+}
+
+/* Strikethrough for checked row */
+.recipe-ingredient-row--checked .recipe-ingredient-qty,
+.recipe-ingredient-row--checked .recipe-ingredient-unit,
+.recipe-ingredient-row--checked .recipe-ingredient-text,
+.recipe-ingredient-row--checked .recipe-ingredient-note {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
+/* Quantity: colored and bold */
+.recipe-ingredient-qty {
+  color: #7c3aed !important;   /* primary-600-like */
+  font-weight: 700;
+}
+
+/* Unit: bold dark text */
+.recipe-ingredient-unit {
+  color: #111827 !important;   /* gray-900 */
+  font-weight: 700;
+}
+
+/* Main ingredient text */
+.recipe-ingredient-text {
+  color: #374151 !important;   /* gray-700 */
+}
+
+/* Note in parentheses */
+.recipe-ingredient-note {
+  color: #9ca3af !important;   /* gray-400 */
+  font-style: italic;
+}
+
+/* Step number circle + alignment */
+.recipe-step-number-circle {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb; /* gray-200 */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Step number: cyan */
+.recipe-step-number {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #06b6d4; /* cyan */
+}
+
+/* =========================================================
+   MANUAL UTILITY COLORS FOR PRIMARY / TERTIARY CLASSES
+   ========================================================= */
+
+/* Header background: bg-tertiary-50/50 -> light rose */
+.bg-tertiary-50\/50 {
+  background-color: #fff1f2 !important; /* rose-50 style */
+}
+
+/* Tertiary text colors (if used elsewhere) */
+.text-tertiary-500 {
+  color: #8b5cf6 !important;
+}
+
+.text-tertiary-600 {
+  color: #7c3aed !important;
+}
+
+/* Primary background + text utilities used by buttons/badges */
+.bg-primary-50 {
+  background-color: #f5f3ff !important;
+}
+
+.bg-primary-600 {
+  background-color: #7c3aed !important;
+}
+
+.hover\:bg-primary-700:hover {
+  background-color: #6d28d9 !important;
+}
+
+.text-primary-500 {
+  color: #8b5cf6 !important;
+}
+
+.text-primary-600 {
+  color: #7c3aed !important;
+}
+
+/* =========================================================
+   HASHTAGS CARD (white bg, cyan pills)
+   ========================================================= */
+
+/* Keep card background white, subtle border */
+.hashtags-card {
+  background-color: #ffffff !important;
+  border-color: #e5e7eb !important; /* gray-200 */
+}
+
+/* Cyan icon */
+.hashtags-card svg {
+  color: #06b6d4 !important;   /* cyan-500/600 */
+  fill: #06b6d4 !important;
+}
+
+/* Hashtag pills: cyan with hover */
+.hashtags-card a {
+  background-color: #e0f2fe !important; /* cyan-100-ish */
+  color: #075985 !important;            /* cyan-800-ish */
+  border-radius: 9999px !important;
+  padding: 0.25rem 0.75rem !important;  /* slightly taller than before */
+  font-size: 0.75rem !important;
+  font-weight: 500 !important;
+  display: inline-flex !important;
+  align-items: center;
+  text-decoration: none;
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+.hashtags-card a:hover {
+  background-color: #bae6fd !important; /* darker cyan-200 */
+  transform: translateY(-1px);
 }

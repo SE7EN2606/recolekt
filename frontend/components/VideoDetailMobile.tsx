@@ -1,3 +1,5 @@
+// src/components/VideoDetailMobile.tsx
+
 import React, { useEffect, useMemo } from 'react';
 import {
   ArrowLeft,
@@ -10,22 +12,18 @@ import {
   Tags,
   Globe,
 } from 'lucide-react';
-import { RecipeMeta, Ingredients, Steps } from './RecipeComponents';
 import { MobileBottomNav } from './MobileBottomNav';
 import {
   EditableTitle,
   EditableBullets,
   EditableHashtags,
 } from './VideoDetailComponents';
-import {
-  parseQuantity,
-  convertToMetric,
-  scaleQuantity,
-} from '../utils/videoUtils';
+import { scaleQuantity } from '../utils/videoUtils';
 import { LinkifiedText } from './LinkifiedText';
 import { IOSShareIcon } from './VideoIcons';
 import { AISummaryCard } from './AISummaryCard';
 import { useLanguage } from '../context/LanguageContext';
+import { RecipeDetailsCard } from './RecipeDetailsCard';
 
 interface VideoDetailMobileProps {
   viewModel: any;
@@ -98,80 +96,96 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
   }, [setCaptionOpen]);
 
   // Mirror desktop logic for title, activeRecipe, languageCode, hasTranslation
-  const {
-    displayTitle,
-    activeRecipe,
-    hasTranslation,
-    languageCode,
-  } = useMemo(() => {
-    const summary = viewModel?.summary || {};
-    const recipeData = viewModel?.recipe || {};
+  const { displayTitle, activeRecipe, hasTranslation, languageCode } =
+    useMemo(() => {
+      const summary = viewModel?.summary || {};
+      const recipeData = viewModel?.recipe || {};
 
-    const titleData = summary?.title;
-    const isDualLanguageTitle =
-      typeof titleData === 'object' && titleData?.english && titleData?.original;
-
-    const hasRecipeTranslation =
-      !!(viewModel.isRecipe && recipeData?.english && recipeData?.original);
-
-    const hasSummaryTranslation = !!(summary?.english && summary?.original);
-
-    const hasTranslationComputed =
-      hasRecipeTranslation || isDualLanguageTitle || hasSummaryTranslation;
-
-    const rawLangCode = recipeData?.language_code || 'en';
-    const languageCodeComputed =
-      rawLangCode.toLowerCase() === 'en' && hasTranslationComputed
-        ? 'OG'
-        : rawLangCode.toUpperCase();
-
-    let displayTitleComputed = viewModel?.title || '';
-
-    if (showOriginal) {
-      if (hasRecipeTranslation && recipeData?.original?.title) {
-        displayTitleComputed = recipeData.original.title;
-      } else if (summary?.original?.title) {
-        displayTitleComputed = summary.original.title;
-      } else if (
-        isDualLanguageTitle &&
+      const titleData = summary?.title;
+      const isDualLanguageTitle =
         typeof titleData === 'object' &&
-        titleData.original
-      ) {
-        displayTitleComputed = titleData.original;
-      }
-    } else {
-      if (hasRecipeTranslation && recipeData?.english?.title) {
-        displayTitleComputed = recipeData.english.title;
-      } else if (summary?.english?.title) {
-        displayTitleComputed = summary.english.title;
-      }
-    }
+        titleData?.english &&
+        titleData?.original;
 
-    const activeRecipeComputed =
-      showOriginal && hasRecipeTranslation
-        ? recipeData.original
-        : recipeData.english || recipeData;
+      const hasRecipeTranslation =
+        !!(
+          viewModel.isRecipe &&
+          recipeData?.english &&
+          recipeData?.original
+        );
 
-    return {
-      displayTitle: displayTitleComputed,
-      activeRecipe: activeRecipeComputed,
-      hasTranslation: hasTranslationComputed,
-      languageCode: languageCodeComputed,
-    };
-  }, [viewModel, showOriginal]);
+      const hasSummaryTranslation = !!(
+        summary?.english && summary?.original
+      );
+
+      const hasTranslationComputed =
+        hasRecipeTranslation ||
+        isDualLanguageTitle ||
+        hasSummaryTranslation;
+
+      const rawLangCode = recipeData?.language_code || 'en';
+      const languageCodeComputed =
+        rawLangCode.toLowerCase() === 'en' && hasTranslationComputed
+          ? 'OG'
+          : rawLangCode.toUpperCase();
+
+      let displayTitleComputed = viewModel?.title || '';
+
+      if (showOriginal) {
+        if (hasRecipeTranslation && recipeData?.original?.title) {
+          displayTitleComputed = recipeData.original.title;
+        } else if (summary?.original?.title) {
+          displayTitleComputed = summary.original.title;
+        } else if (
+          isDualLanguageTitle &&
+          typeof titleData === 'object' &&
+          titleData.original
+        ) {
+          displayTitleComputed = titleData.original;
+        }
+      } else {
+        if (hasRecipeTranslation && recipeData?.english?.title) {
+          displayTitleComputed = recipeData.english.title;
+        } else if (summary?.english?.title) {
+          displayTitleComputed = summary.english.title;
+        }
+      }
+
+      const activeRecipeComputed =
+        showOriginal && hasRecipeTranslation
+          ? recipeData.original
+          : recipeData.english || recipeData;
+
+      return {
+        displayTitle: displayTitleComputed,
+        activeRecipe: activeRecipeComputed,
+        hasTranslation: hasTranslationComputed,
+        languageCode: languageCodeComputed,
+      };
+    }, [viewModel, showOriginal]);
 
   // Use same source as desktop for AI summary + highlights
-  const summaryTextObj =
-    viewModel?.summary_text || viewModel?.summary || null;
+  const summaryTextObj = viewModel?.summary_text || null;
 
   const authorName = viewModel.author_name || viewModel.author || '';
 
+  // Transcript handling: string or { transcript: string }
+  const transcriptionRaw = viewModel?.transcription;
+  const transcriptionText =
+    typeof transcriptionRaw === 'string'
+      ? transcriptionRaw.trim()
+      : (transcriptionRaw?.transcript || '').trim();
+  const hasTranscriptField =
+    transcriptionRaw !== undefined && transcriptionRaw !== null;
+
   return (
     <div className="md:hidden -mx-4 sm:mx-0">
-      {/* Poster: adjust marginTop to tune the gap under the header */}
+      {/* Poster */}
       <div
         className="relative w-full aspect-[9/8] bg-black"
-        style={{ marginTop: '0.5rem' }}
+        style={{
+          marginTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+        }}
       >
         <img
           src={
@@ -209,7 +223,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           </button>
         </div>
 
-        {/* Language toggle pill – purple background */}
+        {/* Language toggle pill */}
         {hasTranslation && !isEditMode && (
           <button
             onClick={toggleLanguage}
@@ -267,7 +281,9 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             <span />
           )}
           {viewModel.savedAt && (
-            <span className="text-xs text-gray-500">{viewModel.savedAt}</span>
+            <span className="text-xs text-gray-500">
+              {viewModel.savedAt}
+            </span>
           )}
         </div>
 
@@ -334,14 +350,15 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* Topic icon + label in rose #e11d48 */}
                   <Tags
                     size={14}
                     className="flex-shrink-0"
-                    style={{ color: '#f43f5e' }}
+                    style={{ color: '#e11d48' }}
                   />
                   <span
                     className="text-xs font-bold uppercase tracking-wide truncate"
-                    style={{ color: '#f43f5e' }}
+                    style={{ color: '#e11d48' }}
                   >
                     {viewModel.topic}
                   </span>
@@ -358,64 +375,73 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             </div>
           )}
 
-          {/* Hashtags */}
+          {/* Hashtags Block */}
           {((viewModel.hashtags || []) as string[]).length > 0 && (
-            <div className="flex items-center gap-1">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 512 512"
-                fill="#35595a"
-                className="flex-shrink-0"
-              >
-                <path
-                  fillRule="nonzero"
-                  d="M300.02 161.657l.047-.187c3.542-14.981 23.176-18.148 31.458-5.532a17.27 17.27 0 012.463 13.038c-2.328 10.088-4.271 20.55-6.386 30.72h12.177c22.801 0 22.804 34.849 0 34.849h-19.383l-8.664 43.645h30.453c22.935 0 22.926 34.846 0 34.846h-37.597l-7.847 37.682c-5.447 21.855-38.479 14.339-33.876-7.694 2.271-9.85 4.177-20.06 6.245-29.988h-45.112c-2.556 12.304-4.897 25.01-7.741 37.203-5.282 22.331-38.129 14.224-33.971-7.243l6.239-29.991-16.242.003c-22.9.135-22.956-34.818 0-34.818h23.404l8.614-43.645h-34.49c-22.521 0-23.232-34.849 0-34.849h41.693l7.731-37.144c.051-.403.138-.797.26-1.176 5.329-21.289 38.485-14.721 33.877 7.672l-6.39 30.648h45.113c2.635-12.65 5.447-25.37 7.925-38.039zM256 0c70.688 0 134.689 28.658 181.016 74.984C483.342 121.311 512 185.312 512 256c0 70.688-28.658 134.689-74.984 181.016C390.689 483.342 326.688 512 256 512c-70.688 0-134.689-28.658-181.016-74.984C28.658 390.689 0 326.688 0 256c0-70.688 28.658-134.689 74.984-181.016C121.311 28.658 185.312 0 256 0zm159.946 96.054C375.017 55.125 318.465 29.806 256 29.806S136.983 55.125 96.054 96.054 29.806 193.535 29.806 256s25.319 119.017 66.248 159.946S193.535 482.194 256 482.194s119.017-25.319 159.946-66.248S482.194 318.465 482.194 256s-25.319-119.017-66.248-159.946zM276.256 278.19l8.661-43.645h-45.115l-8.664 43.645h45.118z"
-                />
-              </svg>
-
-              <div className="flex-1 min-w-0">
-                <style>{`
-                  .hashtag-links a {
-                    background-color: rgba(72, 121, 122, 0.10) !important;
-                    color: #35595a !important;
-                    border-radius: 9999px !important;
-                    padding: 0.15rem 0.6rem !important;
-                    border: 1px solid rgba(72, 121, 122, 0.5) !important;
-                    font-weight: 500 !important;
-                  }
-                  .hashtag-links a:hover {
-                    background-color: rgba(72, 121, 122, 0.18) !important;
-                    color: #35595a !important;
-                  }
-                `}</style>
-                <div className="hashtag-links">
-                  <EditableHashtags
-                    hashtags={viewModel.hashtags || []}
-                    isEditMode={isEditMode}
-                    value={tempHashtags}
-                    onChange={setTempHashtags}
-                    mobile
+            <div>
+              <h4 className="flex items-center gap-2 text-xs font-bold text-cyan-800 uppercase tracking-wider mb-3">
+                {/* original circular hashtags icon */}
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 512 512"
+                  className="flex-shrink-0"
+                  aria-hidden="true"
+                >
+                  <path
+                    fillRule="nonzero"
+                    d="M300.02 161.657l.047-.187c3.542-14.981 23.176-18.148 31.458-5.532a17.27 17.27 0 012.463 13.038c-2.328 10.088-4.271 20.55-6.386 30.72h12.177c22.801 0 22.804 34.849 0 34.849h-19.383l-8.664 43.645h30.453c22.935 0 22.926 34.846 0 34.846h-37.597l-7.847 37.682c-5.447 21.855-38.479 14.339-33.876-7.694 2.271-9.85 4.177-20.06 6.245-29.988h-45.112c-2.556 12.304-4.897 25.01-7.741 37.203-5.282 22.331-38.129 14.224-33.971-7.243l6.239-29.991-16.242.003c-22.9.135-22.956-34.818 0-34.818h23.404l8.614-43.645h-34.49c-22.521 0-23.232-34.849 0-34.849h41.693l7.731-37.144c.051-.403.138-.797.26-1.176 5.329-21.289 38.485-14.721 33.877 7.672l-6.39 30.648h45.113c2.635-12.65 5.447-25.37 7.925-38.039zM256 0c70.688 0 134.689 28.658 181.016 74.984C483.342 121.311 512 185.312 512 256c0 70.688-28.658 134.689-74.984 181.016C390.689 483.342 326.688 512 256 512c-70.688 0-134.689-28.658-181.016-74.984C28.658 390.689 0 326.688 0 256c0-70.688 28.658-134.689 74.984-181.016C121.311 28.658 185.312 0 256 0zm159.946 96.054C375.017 55.125 318.465 29.806 256 29.806S136.983 55.125 96.054 96.054 29.806 193.535 29.806 256s25.319 119.017 66.248 159.946S193.535 482.194 256 482.194s119.017-25.319 159.946-66.248S482.194 318.465 482.194 256s-25.319-119.017-66.248-159.946zM276.256 278.19l8.661-43.645h-45.115l-8.664 43.645h45.118z"
                   />
-                </div>
+                </svg>
+                Hashtags
+              </h4>
+              <style>{`
+                .hashtag-links a {
+                  display: inline-flex !important;
+                  align-items: center !important;
+                  justify-content: center !important;
+                  padding: 0.375rem 0.9rem !important;
+                  border-radius: 9999px !important;
+                  background-color: #e0f2fe !important;
+                  color: #075985 !important;
+                  border: 1px solid #7dd3fc !important;
+                  font-size: 0.75rem !important;
+                  font-weight: 700 !important;
+                  box-shadow: 0 1px 2px rgba(8, 145, 178, 0.15) !important;
+                  text-decoration: none !important;
+                }
+                .hashtag-links a:hover {
+                  background-color: #bae6fd !important;
+                  border-color: #38bdf8 !important;
+                  box-shadow: 0 2px 6px rgba(8, 145, 178, 0.25) !important;
+                  transform: translateY(-1px);
+                }
+              `}</style>
+              <div className="hashtag-links flex flex-wrap gap-2">
+                <EditableHashtags
+                  hashtags={viewModel.hashtags || []}
+                  isEditMode={isEditMode}
+                  value={tempHashtags}
+                  onChange={setTempHashtags}
+                  mobile
+                />
               </div>
             </div>
           )}
         </div>
 
-        {/* AI Summary Card – summary text + highlights track language like desktop */}
+        {/* AI Summary Card */}
         {summaryTextObj && (
           <AISummaryCard
             isEditMode={isEditMode}
             value={tempDescription}
             onChange={setTempDescription}
-            summaryData={summaryTextObj?.summary || summaryTextObj}
+            summaryData={summaryTextObj}
             showOriginal={showOriginal}
           />
         )}
 
-        {/* Bullets (edit mode only; these are your manual bullets, not AI highlights) */}
+        {/* Bullets (edit mode only) */}
         {isEditMode && (
           <div className="mb-5">
             <EditableBullets
@@ -428,46 +454,15 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
           </div>
         )}
 
-        {/* Recipe Section – uses activeRecipe so it follows the language toggle */}
+        {/* Recipe Section – now uses RecipeDetailsCard like desktop */}
         {viewModel.isRecipe && activeRecipe && (
-          <div className="space-y-3 mb-5" key={`recipe-${showOriginal}`}>
-            <RecipeMeta
+          <div className="mb-5" key={`recipe-${showOriginal}`}>
+            <RecipeDetailsCard
               recipe={activeRecipe}
               servingScale={servingScale}
-              setServingScale={setServingScale}
-              mobile
-            />
-            <Ingredients
-              recipe={activeRecipe}
-              servingScale={servingScale}
-              useMetric={useMetric}
-              setUseMetric={setUseMetric}
               scaleQuantity={scaleQuantity}
-              convertToMetric={convertToMetric}
-              parseQuantity={parseQuantity}
-              showOriginal={showOriginal}
-              caption={viewModel.caption}
-              mobile
+              onServingScaleChange={setServingScale}
             />
-            <Steps recipe={activeRecipe} mobile />
-
-            {activeRecipe.tips?.length > 0 && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <h3 className="text-xs font-bold text-amber-900 mb-1.5">
-                  💡 Tips
-                </h3>
-                <ul className="space-y-1">
-                  {activeRecipe.tips.map((tip: string, idx: number) => (
-                    <li
-                      key={idx}
-                      className="text-xs text-amber-900 leading-relaxed"
-                    >
-                      • {tip}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
           </div>
         )}
 
@@ -495,7 +490,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
         )}
 
         {/* Transcript */}
-        {viewModel.transcription && (
+        {hasTranscriptField && (
           <div className="mb-6 bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
             <button
               onClick={() => setTranscriptOpen(!transcriptOpen)}
@@ -511,7 +506,8 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             </button>
             {transcriptOpen && (
               <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                {viewModel.transcription}
+                {transcriptionText ||
+                  'Transcript not available for this reel yet.'}
               </div>
             )}
           </div>

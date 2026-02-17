@@ -124,5 +124,15 @@
   "passion fruit": "FRUIT",
   "praline": "NUT_SEED",
   "crispy wafer cooky": "GRAIN",
-  "blueberry": "FRUIT"
+  "blueberry": "FRUIT",
+  "semi-skimmed milk": "PROTEIN_DAIRY",
+  "eau": "LIQUID",
+  "poitrine fumee": "PROTEIN_MEAT",
+  "oignons blanc": "ALLIUM",
+  "creme fraiche epaisse": "PROTEIN_DAIRY",
+  "fromage blanc": "PROTEIN_DAIRY",
+  "muscade": "SPICE",
+  "cocoa powder": "SWEETENER_CHOCOLATE",
+  "sweetened condensed milk": "SWEETENER_LIQUID",
+  "sugar syrup": "SWEETENER_LIQUID"
 }
