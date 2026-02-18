@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { VideoCard } from '../components/VideoCard';
 import { Button } from '../components/Button';
 import { Search, X, FolderOpen, Folders, CheckCircle2 } from 'lucide-react';
@@ -49,16 +49,19 @@ const CalendarArrowDown = ({ size = 20 }) => (
   </svg>
 );
 
+// IMPORTANT: use ?? so empty string is allowed (for same-origin /api via Netlify proxy)
 const RAW_API_BASE =
-  import.meta.env.VITE_API_BASE ||
-  import.meta.env.VITE_API_URL ||
-  'http://localhost:5001';
+  (import.meta.env.VITE_API_BASE ?? import.meta.env.VITE_API_URL ?? '') as string;
 
 const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
 
 function joinUrl(base: string, path: string) {
-  const b = String(base || '').replace(/\/+$/, '');
   const p = String(path || '').replace(/^\/+/, '');
+
+  // If base is empty => same-origin
+  if (!base) return `/${p}`;
+
+  const b = String(base || '').replace(/\/+$/, '');
   return `${b}/${p}`;
 }
 
@@ -67,16 +70,9 @@ const isDev = Boolean((import.meta as any).env?.DEV);
 export const Gallery: React.FC = () => {
   const { folderId } = useParams<{ folderId?: string }>();
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
 
   const { user, loading: authLoading, signInWithGoogle } = useAuth();
-  const {
-    videos,
-    folders,
-    isLoading: dataLoading,
-    refreshVideos,
-    deleteVideos,
-  } = useData();
+  const { videos, folders, isLoading: dataLoading, refreshVideos } = useData();
 
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -85,43 +81,16 @@ export const Gallery: React.FC = () => {
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [targetFolderId, setTargetFolderId] = useState<string>('');
   const [showSkeleton, setShowSkeleton] = useState(true);
-  const [hasTriggeredInitialFetch, setHasTriggeredInitialFetch] =
-    useState(false);
 
   // Count videos per folder (used in move modal)
-  const getVideoCount = (folderId: string) => {
-    return videos.filter((v) => v.folderId === folderId).length;
-  };
+  const getVideoCount = (fid: string) => videos.filter((v) => v.folderId === fid).length;
 
   if (isDev) {
-    // Very lightweight debug logging in dev only
-    console.log(
-      '🎯 Gallery render',
-      'authLoading=',
-      authLoading,
-      'user=',
-      !!user,
-      'videos=',
-      videos.length,
-    );
+    console.log('🎯 Gallery render', 'authLoading=', authLoading, 'user=', !!user, 'videos=', videos.length);
   }
 
-  useEffect(() => {
-    if (
-      user &&
-      videos.length === 0 &&
-      !dataLoading &&
-      !hasTriggeredInitialFetch
-    ) {
-      if (isDev) {
-        console.log(
-          '🔄 Triggering refreshVideos: videos empty after login, one-time',
-        );
-      }
-      setHasTriggeredInitialFetch(true);
-      refreshVideos();
-    }
-  }, [user, dataLoading, hasTriggeredInitialFetch, videos.length, refreshVideos]);
+  // Removed: the “videos empty after login -> refreshVideos()” effect
+  // DataContext already fetches on login; this effect caused extra duplicate calls. [file:4]
 
   useEffect(() => {
     const newTempId = searchParams.get('new');
@@ -154,8 +123,9 @@ export const Gallery: React.FC = () => {
       const q = searchQuery.toLowerCase();
       list = list.filter(
         (v) =>
-          v.title?.toLowerCase().includes(q) ||
-          (v.author_name || v.author)?.toLowerCase().includes(q),
+          (v.title || '').toLowerCase().includes(q) ||
+          // FIX: Video has "author" (set in DataContext), not "author_name" [file:4]
+          (v.author || '').toLowerCase().includes(q),
       );
     }
 
@@ -164,15 +134,13 @@ export const Gallery: React.FC = () => {
       const bProcessing = b.category === 'Processing';
       if (aProcessing && !bProcessing) return -1;
       if (!aProcessing && bProcessing) return 1;
+
       const dateA = new Date(a.savedAt || 0).getTime();
       const dateB = new Date(b.savedAt || 0).getTime();
       return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
     });
 
-    if (isDev) {
-      console.log('🎯 displayedVideos count:', list.length);
-    }
-
+    if (isDev) console.log('🎯 displayedVideos count:', list.length);
     return list;
   }, [videos, folderId, isFavoritesView, isAllView, searchQuery, sortOrder]);
 
@@ -186,25 +154,12 @@ export const Gallery: React.FC = () => {
   const handleMoveSubmit = async () => {
     if (!targetFolderId) return;
 
-    if (isDev) {
-      console.log('🔄 Moving videos to folder:', targetFolderId);
-    }
-
     try {
       const idsArray = Array.from(selectedIds);
 
       for (const id of idsArray) {
         const encodedId = encodeURIComponent(String(id));
         const url = joinUrl(API_BASE, `/api/update/${encodedId}`);
-
-        if (isDev) {
-          console.log(
-            '📤 Updating video:',
-            encodedId,
-            'to folder:',
-            targetFolderId,
-          );
-        }
 
         const response = await fetch(url, {
           method: 'PUT',
@@ -232,24 +187,24 @@ export const Gallery: React.FC = () => {
     }
   };
 
-  const getProcessingMessage = (video: any) =>
-    video.title || 'Processing…';
+  const getProcessingMessage = (video: any) => video.title || 'Processing…';
 
   const getFolderTitle = () => {
     if (isFavoritesView) return 'Favorites';
     if (isAllView) return 'All my videos';
+
     const topLevelFolder = folders.find((f) => f.id === folderId);
     if (topLevelFolder) return topLevelFolder.name;
+
     for (const folder of folders) {
       const sub = folder.subFolders?.find((s: any) => s.id === folderId);
       if (sub) return sub.name;
     }
+
     return folderId
       ? folderId
           .split('-')
-          .map(
-            (word) => word.charAt(0).toUpperCase() + word.slice(1),
-          )
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
           .join(' ')
       : 'Gallery';
   };
@@ -259,10 +214,7 @@ export const Gallery: React.FC = () => {
       <div className="w-full pt-8 md:pt-0">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div
-              key={i}
-              className="aspect-[9/16] rounded-2xl bg-gray-200 animate-pulse"
-            />
+            <div key={i} className="aspect-[9/16] rounded-2xl bg-gray-200 animate-pulse" />
           ))}
         </div>
       </div>
@@ -273,12 +225,8 @@ export const Gallery: React.FC = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Welcome to Recolekt
-          </h2>
-          <p className="text-gray-600 mb-6">
-            Sign in to save and organize your favorite reels
-          </p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome to Recolekt</h2>
+          <p className="text-gray-600 mb-6">Sign in to save and organize your favorite reels</p>
           <Button variant="primary" onClick={signInWithGoogle}>
             Sign in with Google
           </Button>
@@ -292,12 +240,8 @@ export const Gallery: React.FC = () => {
       <div className="flex flex-col gap-6 mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
-              {getFolderTitle()}
-            </h1>
-            <p className="text-gray-500 text-sm mt-1">
-              {displayedVideos.length} items
-            </p>
+            <h1 className="text-2xl font-bold text-gray-900">{getFolderTitle()}</h1>
+            <p className="text-gray-500 text-sm mt-1">{displayedVideos.length} items</p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -322,9 +266,7 @@ export const Gallery: React.FC = () => {
                   disabled={selectedIds.size === 0}
                   onClick={() => setIsMoveModalOpen(true)}
                 >
-                  Move
-                  {selectedIds.size > 0 &&
-                    ` (${selectedIds.size})`}
+                  Move{selectedIds.size > 0 && ` (${selectedIds.size})`}
                 </Button>
               </>
             ) : (
@@ -349,24 +291,14 @@ export const Gallery: React.FC = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none shadow-sm transition-shadow hover:border-gray-300"
             />
-            <Search
-              size={18}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-            />
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           </div>
+
           <button
-            onClick={() =>
-              setSortOrder((prev) =>
-                prev === 'desc' ? 'asc' : 'desc',
-              )
-            }
+            onClick={() => setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
             className="p-3 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors text-gray-600 shadow-sm h-[46px] w-[46px] flex items-center justify-center"
           >
-            {sortOrder === 'desc' ? (
-              <CalendarArrowUp size={20} />
-            ) : (
-              <CalendarArrowDown size={20} />
-            )}
+            {sortOrder === 'desc' ? <CalendarArrowUp size={20} /> : <CalendarArrowDown size={20} />}
           </button>
         </div>
       </div>
@@ -374,10 +306,7 @@ export const Gallery: React.FC = () => {
       {(showSkeleton || (dataLoading && videos.length === 0)) && (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-3 mb-24 md:mb-12">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div
-              key={i}
-              className="relative aspect-[9/16] rounded-2xl bg-gray-200 overflow-hidden"
-            >
+            <div key={i} className="relative aspect-[9/16] rounded-2xl bg-gray-200 overflow-hidden">
               <div className="w-full h-full bg-gray-200 animate-pulse" />
             </div>
           ))}
@@ -395,7 +324,6 @@ export const Gallery: React.FC = () => {
                       src={video.thumbnailUrl}
                       alt="Processing"
                       loading="lazy"
-                      crossOrigin="anonymous"
                       className="absolute inset-0 w-full h-full object-cover blur-sm opacity-80"
                       onError={(e) => {
                         const img = e.currentTarget;
@@ -406,6 +334,7 @@ export const Gallery: React.FC = () => {
                   ) : (
                     <div className="w-full h-full bg-gray-200 animate-pulse" />
                   )}
+
                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm z-10 gap-3 px-3">
                     <div className="w-8 h-8 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                     <span className="text-white text-xs font-semibold text-center leading-snug">
@@ -431,13 +360,9 @@ export const Gallery: React.FC = () => {
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <Search className="text-gray-400" size={24} />
           </div>
-          <h3 className="text-gray-900 font-medium">
-            No videos found
-          </h3>
+          <h3 className="text-gray-900 font-medium">No videos found</h3>
           <p className="text-gray-500 text-sm mt-1">
-            {searchQuery
-              ? 'Try a different search term'
-              : 'No videos in this folder yet'}
+            {searchQuery ? 'Try a different search term' : 'No videos in this folder yet'}
           </p>
         </div>
       )}
@@ -446,16 +371,12 @@ export const Gallery: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-gray-900">
-                Move to Folder
-              </h3>
-              <button
-                onClick={() => setIsMoveModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
+              <h3 className="text-lg font-bold text-gray-900">Move to Folder</h3>
+              <button onClick={() => setIsMoveModalOpen(false)} className="text-gray-400 hover:text-gray-600">
                 <X size={20} />
               </button>
             </div>
+
             <div className="p-4 max-h-[60vh] overflow-y-auto">
               <div className="space-y-2">
                 <button
@@ -468,31 +389,23 @@ export const Gallery: React.FC = () => {
                 >
                   <div
                     className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                      targetFolderId === 'default'
-                        ? 'bg-white'
-                        : 'bg-gray-100'
+                      targetFolderId === 'default' ? 'bg-white' : 'bg-gray-100'
                     }`}
                   >
                     <Folders
                       size={20}
-                      className={
-                        targetFolderId === 'default'
-                          ? 'text-primary-600'
-                          : 'text-gray-600'
-                      }
+                      className={targetFolderId === 'default' ? 'text-primary-600' : 'text-gray-600'}
                     />
                   </div>
+
                   <div className="flex-1 text-left">
                     <p className="font-semibold">All my videos</p>
                     <p className="text-xs opacity-70">Default folder</p>
                   </div>
-                  {targetFolderId === 'default' && (
-                    <CheckCircle2
-                      size={20}
-                      className="text-primary-600"
-                    />
-                  )}
+
+                  {targetFolderId === 'default' && <CheckCircle2 size={20} className="text-primary-600" />}
                 </button>
+
                 {folders.map((f: any) => {
                   const folId = String(f?.id || '');
                   const folderName = String(f?.name || 'Untitled');
@@ -509,48 +422,32 @@ export const Gallery: React.FC = () => {
                       >
                         <div
                           className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                            targetFolderId === folId
-                              ? 'bg-white'
-                              : 'bg-gray-100'
+                            targetFolderId === folId ? 'bg-white' : 'bg-gray-100'
                           }`}
                         >
                           <FolderOpen
                             size={20}
-                            className={
-                              targetFolderId === folId
-                                ? 'text-primary-600'
-                                : 'text-gray-600'
-                            }
+                            className={targetFolderId === folId ? 'text-primary-600' : 'text-gray-600'}
                           />
                         </div>
+
                         <div className="flex-1 text-left">
-                          <p className="font-semibold">
-                            {folderName}
-                          </p>
-                          <p className="text-xs opacity-70">
-                            {getVideoCount(folId)} videos
-                          </p>
+                          <p className="font-semibold">{folderName}</p>
+                          <p className="text-xs opacity-70">{getVideoCount(folId)} videos</p>
                         </div>
-                        {targetFolderId === folId && (
-                          <CheckCircle2
-                            size={20}
-                            className="text-primary-600"
-                          />
-                        )}
+
+                        {targetFolderId === folId && <CheckCircle2 size={20} className="text-primary-600" />}
                       </button>
+
                       {Array.isArray(f?.subFolders) &&
                         f.subFolders.map((sub: any) => {
                           const subId = String(sub?.id || '');
-                          const subName = String(
-                            sub?.name || 'Untitled',
-                          );
+                          const subName = String(sub?.name || 'Untitled');
 
                           return (
                             <button
                               key={subId}
-                              onClick={() =>
-                                setTargetFolderId(subId)
-                              }
+                              onClick={() => setTargetFolderId(subId)}
                               className={`w-full flex items-center gap-3 p-3 pl-8 rounded-xl transition-all ${
                                 targetFolderId === subId
                                   ? 'bg-primary-50 text-primary-700 ring-2 ring-primary-500 ring-inset'
@@ -559,31 +456,20 @@ export const Gallery: React.FC = () => {
                             >
                               <div
                                 className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                                  targetFolderId === subId
-                                    ? 'bg-white'
-                                    : 'bg-gray-100'
+                                  targetFolderId === subId ? 'bg-white' : 'bg-gray-100'
                                 }`}
                               >
                                 <FolderOpen
                                   size={18}
-                                  className={
-                                    targetFolderId === subId
-                                      ? 'text-primary-600'
-                                      : 'text-gray-600'
-                                  }
+                                  className={targetFolderId === subId ? 'text-primary-600' : 'text-gray-600'}
                                 />
                               </div>
+
                               <div className="flex-1 text-left">
-                                <p className="font-semibold text-sm">
-                                  {subName}
-                                </p>
+                                <p className="font-semibold text-sm">{subName}</p>
                               </div>
-                              {targetFolderId === subId && (
-                                <CheckCircle2
-                                  size={18}
-                                  className="text-primary-600"
-                                />
-                              )}
+
+                              {targetFolderId === subId && <CheckCircle2 size={18} className="text-primary-600" />}
                             </button>
                           );
                         })}
@@ -592,18 +478,12 @@ export const Gallery: React.FC = () => {
                 })}
               </div>
             </div>
+
             <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setIsMoveModalOpen(false)}
-              >
+              <Button variant="outline" onClick={() => setIsMoveModalOpen(false)}>
                 Cancel
               </Button>
-              <Button
-                variant="primary"
-                disabled={!targetFolderId}
-                onClick={handleMoveSubmit}
-              >
+              <Button variant="primary" disabled={!targetFolderId} onClick={handleMoveSubmit}>
                 Move Videos
               </Button>
             </div>
