@@ -27,7 +27,6 @@ const RAW_API_BASE =
 
 const API_BASE = (() => {
   const s = String(RAW_API_BASE ?? '').trim();
-  // If env is "/" we want same-origin, not scheme-relative "//api..."
   if (s === '/' || s === '') return '';
   return s.replace(/\/+$/, '');
 })();
@@ -106,41 +105,36 @@ export const VideoDetail: React.FC = () => {
     return res.json();
   }, []);
 
-  const fetchReelById = useCallback(
-    async (reelId: string) => {
-      const encoded = encodeURIComponent(String(reelId));
-      // DataContext uses /api/reel/:id for DELETE; we use same path for GET
-      const url = apiUrl(`api/reel/${encoded}`);
-      try {
-        const data = await fetchJsonNoStore(url);
-        // backend might return { reel: {...} } or just the reel object
-        return data?.reel ?? data;
-      } catch (err) {
-        return null;
-      }
-    },
-    [fetchJsonNoStore],
-  );
+  const normalizeId = (v: any) => (v == null ? '' : String(v));
+  const getShortcode = (fullId: string) => normalizeId(fullId).split('--')[0];
 
-  const findInSavedReelsList = useCallback(
-    async (reelId: string) => {
-      const data = await fetchJsonNoStore(apiUrl('api/saved_reels?page=1&per_page=200&view=list'));
+  const findReelInList = useCallback(
+    async (targetId: string) => {
+      const data = await fetchJsonNoStore(
+        apiUrl('api/saved_reels?page=1&per_page=200&view=list'),
+      );
       const reels = Array.isArray(data?.reels) ? data.reels : [];
 
-      const target = String(reelId);
+      const target = normalizeId(targetId);
+      const targetShort = getShortcode(target);
 
       const found = reels.find((r: any) => {
-        const candidates = [
-          r?.id,
-          r?.process_id,
-          r?.reel_id,
-          r?.processId,
-          r?.reelId,
-        ]
-          .filter(Boolean)
-          .map((x: any) => String(x));
+        const rid = normalizeId(r?.id);
+        const pid = normalizeId(r?.process_id);
+        const reelId = normalizeId(r?.reel_id);
 
-        return candidates.includes(target);
+        if (rid === target || pid === target || reelId === target) return true;
+
+        // If route param is shortcode-only or differs by suffix, match shortcode prefix.
+        const ridShort = getShortcode(rid);
+        const pidShort = getShortcode(pid);
+        const reelShort = getShortcode(reelId);
+
+        return (
+          (targetShort && ridShort === targetShort) ||
+          (targetShort && pidShort === targetShort) ||
+          (targetShort && reelShort === targetShort)
+        );
       });
 
       return found || null;
@@ -148,8 +142,6 @@ export const VideoDetail: React.FC = () => {
     [fetchJsonNoStore],
   );
 
-  // Single loader used by both initial load and background refresh,
-  // with a flag to decide whether to show the spinner.
   const loadVideo = useCallback(
     async (options?: { useSpinner?: boolean }) => {
       const useSpinner = options?.useSpinner ?? false;
@@ -158,13 +150,7 @@ export const VideoDetail: React.FC = () => {
       if (useSpinner) setLoading(true);
 
       try {
-        // 1) Try direct endpoint first (most reliable)
-        let found: any = await fetchReelById(id);
-
-        // 2) Fallback to list+search
-        if (!found) {
-          found = await findInSavedReelsList(id);
-        }
+        const found = await findReelInList(id);
 
         if (!found) {
           if (useSpinner) {
@@ -175,7 +161,7 @@ export const VideoDetail: React.FC = () => {
         }
 
         const foundId = found.id || found.reel_id || found.process_id || id;
-        const shortcode = String(foundId).split('--')[0];
+        const shortcode = getShortcode(foundId);
 
         // 1) Transcription from GCS (with backend fallback)
         let transcriptionText = '';
@@ -190,9 +176,7 @@ export const VideoDetail: React.FC = () => {
             transcriptionText = safeStr((transcriptData as any).transcript);
           }
         } catch (err) {
-          console.log(
-            '⚠️ Could not fetch transcription.json, will use API field if present',
-          );
+          // In prod this can fail due to GCS CORS; ignore and fallback to API field.
         }
 
         if (!transcriptionText) {
@@ -226,37 +210,28 @@ export const VideoDetail: React.FC = () => {
             resultRecipe = (resultData as any).recipe ?? null;
             resultSummary = (resultData as any).summary ?? null;
             resultSummaryText = (resultData as any).summary_text ?? null;
-          } else {
-            console.log('⚠️ result.json not found, status', resultRes.status);
           }
         } catch (err) {
-          console.log('⚠️ Error fetching result.json from GCS', err);
+          // ignore; CORS can block this
         }
 
-        // 3) Build merged object (single pass)
         const merged: any = {
           ...found,
           __raw: found,
         };
 
-        // Caption priority
         if (resultCaption) merged.caption = resultCaption;
         else if (found.caption) merged.caption = safeStr(found.caption);
 
-        // Recipe priority
         if (resultRecipe) merged.recipe = resultRecipe;
         else if (found.recipe) merged.recipe = found.recipe;
 
-        // Summary from result.json if present
         if (resultSummary) merged.summary = resultSummary;
         if (resultSummaryText) merged.summary_text = resultSummaryText;
 
-        // Transcript
         if (transcriptionText) merged.transcription = transcriptionText;
 
-        // Favorite flag from backend
         setIsFavorite(Boolean(merged.is_favorite ?? merged.isFavorite));
-
         setVideo(merged);
       } catch (err) {
         console.error('Error fetching video:', err);
@@ -264,17 +239,15 @@ export const VideoDetail: React.FC = () => {
         if (useSpinner) setLoading(false);
       }
     },
-    [id, fetchReelById, findInSavedReelsList],
+    [id, findReelInList],
   );
 
-  // Initial load for a given id: show spinner, then render once with final data.
   useEffect(() => {
     if (!id) return;
     setVideo(null);
     loadVideo({ useSpinner: true });
   }, [id, loadVideo]);
 
-  // Background refresh while status is not "done": no spinner, no flicker.
   useEffect(() => {
     if (!id) return;
     if (!video || !video.status || video.status === 'done') return;
@@ -366,7 +339,6 @@ export const VideoDetail: React.FC = () => {
         throw new Error(`Failed to update favorite: ${res.status}`);
       }
 
-      // Keep local video object in sync
       setVideo((prev: any) =>
         prev
           ? {
@@ -401,12 +373,8 @@ export const VideoDetail: React.FC = () => {
     }
 
     const author =
-      pickFirstString(
-        v?.author_name,
-        raw?.author_name,
-        v?.author,
-        raw?.author,
-      ) || 'Unknown';
+      pickFirstString(v?.author_name, raw?.author_name, v?.author, raw?.author) ||
+      'Unknown';
 
     const category = getCategory(v) || getCategory(raw);
     const topic = getTopic(v) || getTopic(raw);
@@ -414,15 +382,9 @@ export const VideoDetail: React.FC = () => {
     const captionLike = safeStr(v?.caption) || safeStr(raw?.caption) || '';
 
     const englishBlock =
-      (summaryObj as any)?.english ||
-      (summaryObj as any)?.EN ||
-      (summaryObj as any)?.en ||
-      {};
+      (summaryObj as any)?.english || (summaryObj as any)?.EN || (summaryObj as any)?.en || {};
     const originalBlock =
-      (summaryObj as any)?.original ||
-      (summaryObj as any)?.OG ||
-      (summaryObj as any)?.og ||
-      {};
+      (summaryObj as any)?.original || (summaryObj as any)?.OG || (summaryObj as any)?.og || {};
 
     const titleFromEnglish = safeStr((englishBlock as any)?.title);
     const titleFromOriginal = safeStr((originalBlock as any)?.title);
@@ -437,9 +399,7 @@ export const VideoDetail: React.FC = () => {
       'Saved Reel';
 
     const description =
-      safeStr((englishBlock as any)?.summary) ||
-      safeStr((originalBlock as any)?.summary) ||
-      '';
+      safeStr((englishBlock as any)?.summary) || safeStr((originalBlock as any)?.summary) || '';
 
     const bulletsRaw =
       (englishBlock as any)?.headlines ||
