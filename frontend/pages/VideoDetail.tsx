@@ -1,9 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { getAuthHeaders } from '../context/AuthContext';
@@ -25,7 +20,22 @@ import {
   scaleQuantity,
 } from '../utils/conversionUtils';
 
-const API_BASE = import.meta.env.VITE_API_BASE;
+const RAW_API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  import.meta.env.VITE_API_URL ||
+  'http://localhost:5001';
+
+const API_BASE = (() => {
+  const s = String(RAW_API_BASE ?? '').trim();
+  // IMPORTANT: if env is "/" we want same-origin, not scheme-relative "//api..."
+  if (s === '/' || s === '') return '';
+  return s.replace(/\/+$/, '');
+})();
+
+function apiUrl(path: string) {
+  const p = String(path || '').replace(/^\/+/, '');
+  return API_BASE ? `${API_BASE}/${p}` : `/${p}`;
+}
 
 const safeStr = (v: any): string => {
   if (typeof v === 'string') return v;
@@ -36,10 +46,7 @@ const safeStr = (v: any): string => {
 const stripLeadingEmoji = (s: string) => {
   const text = (s || '').trim();
   return text
-    .replace(
-      /^[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+\s*/u,
-      '',
-    )
+    .replace(/^[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+\s*/u, '')
     .trim();
 };
 
@@ -85,17 +92,12 @@ export const VideoDetail: React.FC = () => {
   const [isFavorite, setIsFavorite] = useState(false);
 
   const fetchJsonNoStore = useCallback(async (url: string) => {
-    const u = url.includes('?')
-      ? `${url}&_=${Date.now()}`
-      : `${url}?_=${Date.now()}`;
-    const res = await fetch(u, {
+    const res = await fetch(url, {
       method: 'GET',
       cache: 'no-store',
       credentials: 'include',
       headers: {
         ...getAuthHeaders(),
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        Pragma: 'no-cache',
       },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -114,11 +116,9 @@ export const VideoDetail: React.FC = () => {
       }
 
       try {
-        const data = await fetchJsonNoStore(`${API_BASE}/api/saved_reels`);
+        const data = await fetchJsonNoStore(apiUrl('api/saved_reels'));
         const reels = Array.isArray(data?.reels) ? data.reels : [];
-        const found = reels.find(
-          (r: any) => r?.id === id || r?.process_id === id,
-        );
+        const found = reels.find((r: any) => r?.id === id || r?.process_id === id);
 
         if (!found) {
           // If we're doing an initial load, keep the spinner.
@@ -145,9 +145,7 @@ export const VideoDetail: React.FC = () => {
             transcriptionText = safeStr((transcriptData as any).transcript);
           }
         } catch (err) {
-          console.log(
-            '⚠️ Could not fetch transcription.json, will use API field if present',
-          );
+          console.log('⚠️ Could not fetch transcription.json, will use API field if present');
         }
 
         if (!transcriptionText) {
@@ -158,9 +156,7 @@ export const VideoDetail: React.FC = () => {
               typeof found.transcription === 'object' &&
               (found.transcription as any).transcript
             ) {
-              transcriptionText = safeStr(
-                (found.transcription as any).transcript,
-              );
+              transcriptionText = safeStr((found.transcription as any).transcript);
             }
           }
         }
@@ -184,10 +180,7 @@ export const VideoDetail: React.FC = () => {
             resultSummary = (resultData as any).summary ?? null;
             resultSummaryText = (resultData as any).summary_text ?? null;
           } else {
-            console.log(
-              '⚠️ result.json not found, status',
-              resultRes.status,
-            );
+            console.log('⚠️ result.json not found, status', resultRes.status);
           }
         } catch (err) {
           console.log('⚠️ Error fetching result.json from GCS', err);
@@ -270,10 +263,7 @@ export const VideoDetail: React.FC = () => {
 
     const raw = (video as any).__raw || {};
     const deleteId =
-      (video as any).process_id ||
-      (video as any).id ||
-      raw.process_id ||
-      raw.id;
+      (video as any).process_id || (video as any).id || raw.process_id || raw.id;
 
     if (!deleteId) {
       alert('Cannot delete: missing video identifier');
@@ -315,11 +305,7 @@ export const VideoDetail: React.FC = () => {
     if (!video) return;
 
     const raw = (video as any).__raw || {};
-    const updateId =
-      (video as any).id ||
-      (video as any).process_id ||
-      raw.id ||
-      raw.process_id;
+    const updateId = (video as any).id || (video as any).process_id || raw.id || raw.process_id;
 
     if (!updateId) {
       console.warn('Cannot toggle favorite: missing video identifier');
@@ -331,7 +317,7 @@ export const VideoDetail: React.FC = () => {
 
     try {
       const encodedId = encodeURIComponent(String(updateId));
-      const url = `${API_BASE}/api/update/${encodedId}`;
+      const url = apiUrl(`api/update/${encodedId}`);
 
       const res = await fetch(url, {
         method: 'PUT',
@@ -369,11 +355,7 @@ export const VideoDetail: React.FC = () => {
 
     let summaryObj = v?.summary ?? raw?.summary ?? {};
     const summaryTextObj =
-      v?.summary_text ??
-      v?.summary ??
-      raw?.summary_text ??
-      raw?.summary ??
-      null;
+      v?.summary_text ?? v?.summary ?? raw?.summary_text ?? raw?.summary ?? null;
 
     if (
       summaryObj &&
@@ -386,29 +368,17 @@ export const VideoDetail: React.FC = () => {
     }
 
     const author =
-      pickFirstString(
-        v?.author_name,
-        raw?.author_name,
-        v?.author,
-        raw?.author,
-      ) || 'Unknown';
+      pickFirstString(v?.author_name, raw?.author_name, v?.author, raw?.author) || 'Unknown';
 
     const category = getCategory(v) || getCategory(raw);
     const topic = getTopic(v) || getTopic(raw);
 
-    const captionLike =
-      safeStr(v?.caption) || safeStr(raw?.caption) || '';
+    const captionLike = safeStr(v?.caption) || safeStr(raw?.caption) || '';
 
     const englishBlock =
-      (summaryObj as any)?.english ||
-      (summaryObj as any)?.EN ||
-      (summaryObj as any)?.en ||
-      {};
+      (summaryObj as any)?.english || (summaryObj as any)?.EN || (summaryObj as any)?.en || {};
     const originalBlock =
-      (summaryObj as any)?.original ||
-      (summaryObj as any)?.OG ||
-      (summaryObj as any)?.og ||
-      {};
+      (summaryObj as any)?.original || (summaryObj as any)?.OG || (summaryObj as any)?.og || {};
 
     const titleFromEnglish = safeStr((englishBlock as any)?.title);
     const titleFromOriginal = safeStr((originalBlock as any)?.title);
@@ -423,9 +393,7 @@ export const VideoDetail: React.FC = () => {
       'Saved Reel';
 
     const description =
-      safeStr((englishBlock as any)?.summary) ||
-      safeStr((originalBlock as any)?.summary) ||
-      '';
+      safeStr((englishBlock as any)?.summary) || safeStr((originalBlock as any)?.summary) || '';
 
     const bulletsRaw =
       (englishBlock as any)?.headlines ||
@@ -434,22 +402,16 @@ export const VideoDetail: React.FC = () => {
       (originalBlock as any)?.bullets ||
       [];
 
-    const bullets = (Array.isArray(bulletsRaw) ? bulletsRaw : []).map(
-      (b: any) => {
-        if (typeof b === 'string') return stripLeadingEmoji(b);
-        if (b && typeof b === 'object') {
-          const headline = stripLeadingEmoji(
-            String(b.headline ?? b.text ?? ''),
-          );
-          const text = stripLeadingEmoji(
-            String(b.text ?? b.description ?? ''),
-          );
-          const emoji = String(b.emoji || '');
-          return { headline, text, emoji };
-        }
-        return b;
-      },
-    );
+    const bullets = (Array.isArray(bulletsRaw) ? bulletsRaw : []).map((b: any) => {
+      if (typeof b === 'string') return stripLeadingEmoji(b);
+      if (b && typeof b === 'object') {
+        const headline = stripLeadingEmoji(String(b.headline ?? b.text ?? ''));
+        const text = stripLeadingEmoji(String(b.text ?? b.description ?? ''));
+        const emoji = String(b.emoji || '');
+        return { headline, text, emoji };
+      }
+      return b;
+    });
 
     const hashtags =
       (englishBlock as any)?.hashtags ||
@@ -551,34 +513,17 @@ export const VideoDetail: React.FC = () => {
     const { val, unit } = parseQuantity(qtyRaw);
 
     return (
-      <li
-        key={index}
-        className="flex flex-wrap items-baseline gap-2 py-1"
-      >
-        {emoji ? (
-          <span className="text-lg leading-none select-none">
-            {emoji}
-          </span>
-        ) : null}
+      <li key={index} className="flex flex-wrap items-baseline gap-2 py-1">
+        {emoji ? <span className="text-lg leading-none select-none">{emoji}</span> : null}
 
         {(val || unit) && (
           <div className="flex items-baseline gap-1">
-            {val && (
-              <span className="font-bold text-purple-600 text-base">
-                {val}
-              </span>
-            )}
-            {unit && (
-              <span className="font-bold text-gray-900 text-base">
-                {unit}
-              </span>
-            )}
+            {val && <span className="font-bold text-purple-600 text-base">{val}</span>}
+            {unit && <span className="font-bold text-gray-900 text-base">{unit}</span>}
           </div>
         )}
 
-        <span className="font-normal text-gray-900 text-base flex-1">
-          {item}
-        </span>
+        <span className="font-normal text-gray-900 text-base flex-1">{item}</span>
       </li>
     );
   };
@@ -642,12 +587,8 @@ export const VideoDetail: React.FC = () => {
       {confirmDelete && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-[90%] max-w-sm p-6 text-center">
-            <h2 className="text-lg font-bold text-gray-900 mb-3">
-              Delete this reel?
-            </h2>
-            <p className="text-sm text-gray-600 mb-6">
-              This action cannot be undone.
-            </p>
+            <h2 className="text-lg font-bold text-gray-900 mb-3">Delete this reel?</h2>
+            <p className="text-sm text-gray-600 mb-6">This action cannot be undone.</p>
             <div className="flex justify-center gap-3">
               <button
                 onClick={() => setConfirmDelete(false)}
