@@ -12,6 +12,13 @@ for = "/assets/*.css"
 [headers.values]
 Content-Type = "text/css; charset=utf-8"
 
+# Proxy API calls through Netlify (removes CORS + fixes cookie issues)
+[[redirects]]
+from = "/api/*"
+to = "https://YOUR-RAILWAY-APP.up.railway.app/api/:splat"
+status = 200
+force = true
+
 # Redirect Netlify subdomain to your custom domain (keep path/query)
 [[redirects]]
 from = "https://recolekt-front.netlify.app/*"
