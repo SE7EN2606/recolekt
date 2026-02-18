@@ -12,22 +12,14 @@ for = "/assets/*.css"
 [headers.values]
 Content-Type = "text/css; charset=utf-8"
 
-# 1) Proxy API through the SAME Netlify site (recolekt.app)
-# Browser calls https://recolekt.app/api/*, Netlify forwards to your API host.
-[[redirects]]
-from = "/api/*"
-to = "https://api.recolekt.app/api/:splat"
-status = 200
-force = true
-
-# 2) Redirect Netlify subdomain to your custom domain (keep path/query)
+# Redirect Netlify subdomain to custom domain (optional)
 [[redirects]]
 from = "https://recolekt-front.netlify.app/*"
 to = "https://recolekt.app/:splat"
 status = 301
 force = true
 
-# 3) SPA fallback for React Router (deep links like /gallery)
+# SPA fallback for React Router
 [[redirects]]
 from = "/*"
 to = "/index.html"
