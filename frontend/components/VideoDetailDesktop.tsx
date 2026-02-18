@@ -64,8 +64,7 @@ const asArray = (v: any) => (Array.isArray(v) ? v : []);
 const coerceText = (v: any): string => {
   if (typeof v === 'string') return v;
   if (!v) return '';
-  if (Array.isArray(v))
-    return v.map(coerceText).filter(Boolean).join(' ').trim();
+  if (Array.isArray(v)) return v.map(coerceText).filter(Boolean).join(' ').trim();
 
   if (typeof v === 'object') {
     if ((v as any).english !== undefined || (v as any).original !== undefined) {
@@ -84,6 +83,38 @@ const coerceText = (v: any): string => {
   return '';
 };
 
+const isBilingualSummaryObject = (v: any) => {
+  if (!v || typeof v !== 'object') return false;
+  return Boolean((v as any).english || (v as any).original || (v as any).EN || (v as any).OG);
+};
+
+const normalizeBullets = (raw: any): Array<{ headline: string; text: string; emoji?: string }> => {
+  const arr = asArray(raw);
+
+  return arr
+    .map((b: any) => {
+      if (typeof b === 'string') {
+        const idx = b.indexOf(':');
+        if (idx > -1) {
+          const headline = b.slice(0, idx).trim();
+          const text = b.slice(idx + 1).trim();
+          return { headline: headline || b.trim(), text };
+        }
+        return { headline: b.trim(), text: '' };
+      }
+
+      if (b && typeof b === 'object') {
+        const headline = asString(b.headline || '');
+        const text = asString(b.text || b.description || '');
+        const emoji = asString(b.emoji || '');
+        return { ...b, headline, text, emoji: emoji || b.emoji };
+      }
+
+      return null;
+    })
+    .filter(Boolean) as Array<{ headline: string; text: string; emoji?: string }>;
+};
+
 export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
   viewModel,
   isEditMode,
@@ -94,7 +125,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
   tempBullets,
   tempHashtags,
   servingScale,
-  useMetric,
+  useMetric, // kept for props compatibility
   captionOpen,
   transcriptOpen,
   onNavigateBack,
@@ -108,34 +139,53 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
   setTempBullets,
   setTempHashtags,
   setServingScale,
-  setUseMetric,
+  setUseMetric, // kept for props compatibility
   setCaptionOpen,
   setTranscriptOpen,
   onReportClick,
   onDeleteClick,
-  parseQuantity,
+  parseQuantity, // kept for props compatibility
   scaleQuantity,
-  convertToMetric,
-  convertToImperial,
+  convertToMetric, // kept for props compatibility
+  convertToImperial, // kept for props compatibility
 }) => {
   const { showOriginal, toggleLanguage } = useLanguage();
 
   const summary = viewModel?.summary || {};
   const recipeData = viewModel?.recipe || {};
 
-  const hashtags = asArray(viewModel?.hashtags).length
-    ? asArray(viewModel?.hashtags)
-    : asArray(summary?.hashtags);
+  const summaryDataForCard =
+    (isBilingualSummaryObject(viewModel?.summary_text) ? viewModel.summary_text : null) ||
+    (isBilingualSummaryObject(summary) ? summary : null) ||
+    null;
+
+  const activeSummaryObj = summaryDataForCard || summary || {};
+  const activeSummaryText = showOriginal
+    ? coerceText(activeSummaryObj?.original?.summary) || coerceText(activeSummaryObj?.summary)
+    : coerceText(activeSummaryObj?.english?.summary) || coerceText(activeSummaryObj?.summary);
+
+  const rawHashtags = (() => {
+    const vmTags = asArray(viewModel?.hashtags);
+    if (vmTags.length) return vmTags;
+
+    if (showOriginal) {
+      const og = asArray(activeSummaryObj?.original?.hashtags);
+      if (og.length) return og;
+    } else {
+      const en = asArray(activeSummaryObj?.english?.hashtags);
+      if (en.length) return en;
+    }
+
+    return asArray(activeSummaryObj?.hashtags) || asArray(summary?.hashtags);
+  })();
+
+  const hashtags = rawHashtags;
 
   const titleData = summary?.title;
   const isDualLanguageTitle =
     typeof titleData === 'object' && titleData?.english && titleData?.original;
 
-  const hasRecipeTranslation = !!(
-    viewModel.isRecipe &&
-    recipeData?.english &&
-    recipeData?.original
-  );
+  const hasRecipeTranslation = !!(viewModel.isRecipe && recipeData?.english && recipeData?.original);
 
   const hasTranslation =
     hasRecipeTranslation ||
@@ -144,9 +194,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
 
   const rawLangCode = recipeData?.language_code || 'en';
   const languageCode =
-    rawLangCode.toLowerCase() === 'en' && hasTranslation
-      ? 'OG'
-      : rawLangCode.toUpperCase();
+    rawLangCode.toLowerCase() === 'en' && hasTranslation ? 'OG' : rawLangCode.toUpperCase();
 
   let displayTitle = viewModel?.title || '';
 
@@ -167,9 +215,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
   }
 
   const activeRecipe =
-    showOriginal && hasRecipeTranslation
-      ? recipeData.original
-      : recipeData.english || recipeData;
+    showOriginal && hasRecipeTranslation ? recipeData.original : recipeData.english || recipeData;
 
   const getProfileUrl = () =>
     `https://www.instagram.com/${(viewModel.author || '').replace('@', '')}/`;
@@ -201,58 +247,47 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
     );
   };
 
-  const nestedSummaryText = showOriginal
-    ? coerceText(summary?.original?.summary) || coerceText(summary?.summary)
-    : coerceText(summary?.english?.summary) || coerceText(summary?.summary);
+  const rawBullets = (() => {
+    if (showOriginal) {
+      return (
+        activeSummaryObj?.original?.headlines ||
+        activeSummaryObj?.original?.highlights ||
+        activeSummaryObj?.original?.bullets ||
+        summary?.original?.headlines ||
+        summary?.original?.highlights ||
+        summary?.original?.bullets ||
+        activeSummaryObj?.headlines ||
+        activeSummaryObj?.highlights ||
+        activeSummaryObj?.bullets ||
+        summary?.headlines ||
+        summary?.highlights ||
+        summary?.bullets ||
+        viewModel?.bullets ||
+        []
+      );
+    }
 
-  const summaryText =
-    asString(viewModel?.description) || nestedSummaryText;
-  const summaryTextForCard =
-    typeof summaryText === 'string'
-      ? summaryText
-      : coerceText(summaryText);
-
-  const summaryTextObj = viewModel?.summary_text || null;
-
-  const rawBullets = showOriginal
-    ? summaryTextObj?.original?.headlines ||
-      summaryTextObj?.original?.highlights ||
-      summary?.original?.headlines ||
-      summary?.headlines ||
-      viewModel?.bullets
-    : summaryTextObj?.english?.headlines ||
-      summaryTextObj?.english?.highlights ||
+    return (
+      activeSummaryObj?.english?.headlines ||
+      activeSummaryObj?.english?.highlights ||
+      activeSummaryObj?.english?.bullets ||
       summary?.english?.headlines ||
+      summary?.english?.highlights ||
+      summary?.english?.bullets ||
+      activeSummaryObj?.headlines ||
+      activeSummaryObj?.highlights ||
+      activeSummaryObj?.bullets ||
       summary?.headlines ||
-      viewModel?.bullets;
+      summary?.highlights ||
+      summary?.bullets ||
+      viewModel?.bullets ||
+      []
+    );
+  })();
 
-  const bulletsForCard = asArray(rawBullets).map((b: any) => {
-    if (typeof b === 'string') {
-      const parts = b.split(':', 1);
-      if (parts.length === 2) {
-        return {
-          headline: parts[0].trim(),
-          text: parts[1].trim(),
-        };
-      }
-      return { headline: b, text: '' };
-    }
+  const bulletsForCard = normalizeBullets(rawBullets);
 
-    if (b && typeof b === 'object') {
-      const headline = asString(b.headline || b.text || '');
-      const text = asString(b.text || b.description || '');
-      return { ...b, headline, text };
-    }
-
-    return b;
-  });
-
-  const hasSummaryContent = !!(
-    summaryTextObj?.english?.summary ||
-    summaryTextObj?.english?.headlines?.length ||
-    summaryTextObj?.original?.summary ||
-    summaryTextObj?.original?.headlines?.length
-  );
+  const hasSummaryContent = Boolean((activeSummaryText && activeSummaryText.trim()) || bulletsForCard.length);
 
   const transcriptionRaw = viewModel?.transcription;
   const transcriptionText =
@@ -261,14 +296,16 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
       : (transcriptionRaw?.transcript || '').trim();
 
   const hasTranscriptField =
-    viewModel.transcription !== undefined &&
-    viewModel.transcription !== null;
+    viewModel.transcription !== undefined && viewModel.transcription !== null;
 
   const thumbnailSrc: string | undefined =
     viewModel.preview ||
     viewModel.gcs_urls?.preview_thumbnail ||
     viewModel.thumbnailUrl ||
     undefined;
+
+  const displayCategory = viewModel.category || '';
+  const displayTopic = viewModel.topic || '';
 
   return (
     <div className="hidden md:grid md:grid-cols-[1.5fr_1fr] gap-8 items-start">
@@ -312,12 +349,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
                   : 'bg-black/60 text-white backdrop-blur-sm'
               }`}
             >
-              <Globe
-                size={12}
-                className={
-                  showOriginal ? 'text-white' : 'text-gray-200'
-                }
-              />
+              <Globe size={12} className={showOriginal ? 'text-white' : 'text-gray-200'} />
               <span className="text-[10px] font-bold uppercase tracking-wider">
                 {showOriginal ? languageCode : 'EN'}
               </span>
@@ -349,32 +381,24 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 group/author"
           >
-            <svg
-              className="w-3 h-3 text-pink-500"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="w-3 h-3 text-pink-500" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
             </svg>
             <span className="text-xs font-medium text-gray-500 truncate group-hover/author:text-gray-900 transition-colors">
               {viewModel.author}
             </span>
           </a>
-          {viewModel.savedAt && (
-            <div className="text-xs text-gray-400">
-              Saved {viewModel.savedAt}
-            </div>
-          )}
+          {viewModel.savedAt && <div className="text-xs text-gray-400">Saved {viewModel.savedAt}</div>}
         </div>
 
-        {/* AI summary card */}
+        {/* AI summary card (single render, no duplicate highlights below) */}
         {hasSummaryContent && (
           <div className="mb-8">
             <AISummaryCard
               isEditMode={isEditMode}
               value={tempDescription}
               onChange={setTempDescription}
-              summaryData={viewModel.summary_text}
+              summaryData={summaryDataForCard || summary}
               showOriginal={showOriginal}
             />
           </div>
@@ -384,7 +408,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
         {isEditMode && (
           <div className="mb-8">
             <EditableBullets
-              bullets={viewModel.bullets}
+              bullets={bulletsForCard}
               isEditMode={isEditMode}
               value={tempBullets}
               onChange={setTempBullets}
@@ -413,9 +437,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
             >
               <span>Original Caption</span>
               <ChevronDown
-                className={`w-5 h-5 transition-transform ${
-                  captionOpen ? 'rotate-180' : ''
-                }`}
+                className={`w-5 h-5 transition-transform ${captionOpen ? 'rotate-180' : ''}`}
               />
             </button>
             {captionOpen && (
@@ -435,11 +457,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
             <div className="text-xs uppercase tracking-wide text-violet-900 font-semibold mb-3">
               See original
             </div>
-            <a
-              href={viewModel.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
+            <a href={viewModel.sourceUrl} target="_blank" rel="noopener noreferrer">
               <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-white text-sm font-medium shadow-md bg-gradient-to-r from-[#F58529] via-[#DD2A7B] to-[#8134AF] hover:opacity-90 transition-all active:scale-[0.98]">
                 <ExternalLink className="w-4 h-4" />
                 View on Instagram
@@ -463,13 +481,13 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
             />
           ) : (
             <span className="inline-block px-3 py-1 text-xs font-bold uppercase tracking-wide bg-primary-50 text-primary-600 rounded-lg">
-              {viewModel.category}
+              {displayCategory}
             </span>
           )}
         </div>
 
-        {/* Topic – icon now rose #e11d48 */}
-        {(viewModel.topic || isEditMode) && (
+        {/* Topic */}
+        {(displayTopic || isEditMode) && (
           <div className="bg-white border border-gray-200 p-6 rounded-lg">
             <div className="flex items-center gap-2 text-xs uppercase text-gray-500 font-semibold mb-3">
               <svg
@@ -498,7 +516,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
               />
             ) : (
               <span className="inline-block px-3 py-1 text-xs font-bold uppercase tracking-wide bg-rose-50 text-rose-600 rounded-lg">
-                {viewModel.topic}
+                {displayTopic}
               </span>
             )}
           </div>
@@ -537,26 +555,22 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
             <button
               onClick={() => setTranscriptOpen(!transcriptOpen)}
-              className="w-full px-6 py-4 flex items
-              center justify-between hover:bg-gray-50 font-medium text-gray-900"
+              className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 font-medium text-gray-900"
             >
               <span>Transcript</span>
               <ChevronDown
-                className={`w-5 h-5 transition-transform ${
-                  transcriptOpen ? 'rotate-180' : ''
-                }`}
+                className={`w-5 h-5 transition-transform ${transcriptOpen ? 'rotate-180' : ''}`}
               />
             </button>
             {transcriptOpen && (
               <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 text-sm text-gray-700 whitespace-pre-line leading-relaxed">
-                {transcriptionText ||
-                  'Transcript not available for this reel yet.'}
+                {transcriptionText || 'This video does not contain any transcript'}
               </div>
             )}
           </div>
         )}
 
-        {/* Settings / Edit / Delete – white background */}
+        {/* Settings */}
         <div className="bg-white p-6 border border-gray-200 rounded-lg">
           <div className="text-xs uppercase tracking-wide text-gray-700 font-semibold mb-3">
             Settings

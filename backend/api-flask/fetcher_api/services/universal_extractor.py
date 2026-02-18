@@ -234,7 +234,7 @@ class UniversalExtractor:
             logger.error(
                 "🚨 RECIPE EXTRACTION FAILED: content_type='recipe' but no ingredients extracted. "
                 "Falling back to empty recipe structure. Title: %s",
-                title_en
+                title_en,
             )
             # Provide minimal structure so UI doesn't see recipe=null
             ingredients_en = []
@@ -353,8 +353,7 @@ class UniversalExtractor:
         }
 
         recipe_data = None
-        # ✅ FIXED: Always create recipe_data when content_type is "recipe",
-        # even if ingredients are missing (prevents recipe=null inconsistency)
+        # ✅ Always create recipe_data when content_type is "recipe"
         if content_type == "recipe":
             recipe_data = {
                 "english": {
@@ -363,9 +362,9 @@ class UniversalExtractor:
                     "prep_time": prep_time or None,
                     "cook_time": cook_time or None,
                     "total_time": total_time or None,
-                    "ingredients": ingredients_en,  # may be empty, but structure exists
+                    "ingredients": ingredients_en,
                     "ingredients_groups": ingredients_groups or None,
-                    "instructions": instructions_en,  # may be empty
+                    "instructions": instructions_en,
                     "tips": tips_en,
                     "notes": notes_en,
                 },
@@ -376,7 +375,6 @@ class UniversalExtractor:
                     "cook_time": cook_time or None,
                     "total_time": total_time or None,
                     "ingredients": ingredients_og,
-                    # We keep group titles/items as‑is; they usually come from caption in original language.
                     "ingredients_groups": ingredients_groups or None,
                     "instructions": instructions_og,
                     "tips": tips_og,
@@ -384,23 +382,18 @@ class UniversalExtractor:
                 },
             }
 
-        headlines_flat = [f"{h['headline']}: {h['text']}" for h in headlines_en]
-
         logger.info("✅ Content extracted with %d API calls", self.api_call_count)
 
+        # NOTE: We intentionally return a *minimal* set of fields here.
+        # AIService._normalize_ui_output will add summary_text/summary_title
+        # derived from this canonical bilingual summary.
         return {
             "content_type": content_type,
             "extractor_version": EXTRACTOR_VERSION,
             "category": category,
             "topic": topic,
             "title": title_en,
-            "summary_title": title_en,
-            "summary_text": bilingual_summary,
-            "summary_bullets": json.dumps(headlines_flat, ensure_ascii=False),
-            "summary_hashtags": hashtags,
-            "summary_emojis": emojis,
             "summary": bilingual_summary,
-            "headlines": headlines_en,
             "hashtags": hashtags,
             "emojis": emojis,
             "recipe": json.dumps(recipe_data, ensure_ascii=False)
@@ -651,7 +644,7 @@ Output ONLY valid JSON with three fields:
                 '"headlines": ["translated headline 1", "translated headline 2", ...]'
             )
 
-        expected_structure = "{\n  " + ",\n  ".join(fields_to_translate) + "\n}"
+        expected_structure = "{\\n  " + ",\\n  ".join(fields_to_translate) + "\\n}"
 
         prompt = f"""Translate ALL fields into {target_lang}. Keep exact structure and order. Output ONLY valid JSON.
 
@@ -721,7 +714,6 @@ RULES:
             }
             for b in fallback_bullets
         ]
-        headlines_flat = [f"{h['headline']}: {h['text']}" for h in headlines]
 
         bilingual_summary = {
             "english": {
@@ -746,15 +738,7 @@ RULES:
             "category": "General",
             "topic": "",
             "title": title,
-            "summary_title": title,
-            "summary_text": bilingual_summary,
-            "summary_bullets": json.dumps(
-                headlines_flat, ensure_ascii=False
-            ),
-            "summary_hashtags": [],
-            "summary_emojis": [],
             "summary": bilingual_summary,
-            "headlines": headlines,
             "hashtags": [],
             "emojis": [],
             "recipe": None,

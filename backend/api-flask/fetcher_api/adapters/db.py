@@ -1,5 +1,4 @@
 # fetcher_api/adapters/db.py
-
 import os
 import psycopg2
 import psycopg2.extras
@@ -16,7 +15,6 @@ ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
 if ROOT_ENV.exists():
     load_dotenv(ROOT_ENV, override=True)
 
-# Also try .env.local
 LOCAL_ENV = Path(__file__).resolve().parents[2] / ".env.local"
 if LOCAL_ENV.exists():
     load_dotenv(LOCAL_ENV, override=True)
@@ -27,39 +25,50 @@ if LOCAL_ENV.exists():
 _conn = None
 
 
+def _new_conn():
+    DATABASE_URL = os.environ.get("DATABASE_URL")
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not set. Check your .env.local file.")
+    conn = psycopg2.connect(DATABASE_URL, sslmode="require")
+    return conn
+
+
 def get_conn():
     """
     Returns a valid PostgreSQL connection.
     Reconnects automatically if Neon closes idle sessions.
+    Also clears aborted transactions by rolling back if needed.
     """
     global _conn
-    
-    # Check for DATABASE_URL here, not at module import time
-    DATABASE_URL = os.environ.get("DATABASE_URL")
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not set. Check your .env.local file.")
 
     if _conn is None:
         logger.info("📡 Creating initial PostgreSQL connection...")
-        _conn = psycopg2.connect(DATABASE_URL, sslmode="require")
+        _conn = _new_conn()
         return _conn
 
+    # First: try to clear any aborted transaction state
     try:
-        # Test connection
+        _conn.rollback()
+    except Exception:
+        pass
+
+    # Then: test the connection
+    try:
         with _conn.cursor() as cur:
             cur.execute("SELECT 1;")
         return _conn
-
     except Exception:
-        logger.warning("🔌 PostgreSQL connection dropped. Reconnecting...")
-        _conn = psycopg2.connect(DATABASE_URL, sslmode="require")
+        logger.warning("🔌 PostgreSQL connection dropped or invalid. Reconnecting...")
+        try:
+            _conn.close()
+        except Exception:
+            pass
+        _conn = _new_conn()
         return _conn
 
 
 def get_connection():
-    """
-    Alias for get_conn() - used for explicit transaction management.
-    """
+    """Alias for get_conn() - used for explicit transaction management."""
     return get_conn()
 
 
@@ -68,34 +77,58 @@ def get_connection():
 # -------------------------------------------------
 def fetch_one(sql, params=None):
     conn = get_conn()
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(sql, params)
-        # Auto-commit for SELECT queries
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params)
+            row = cur.fetchone()
         conn.commit()
-        return cur.fetchone()
+        return row
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logger.error("❌ fetch_one failed: %s", e, exc_info=True)
+        raise
 
 
 def fetch_all(sql, params=None):
     conn = get_conn()
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(sql, params)
-        # Auto-commit for SELECT queries
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
         conn.commit()
-        return cur.fetchall()
+        return rows
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logger.error("❌ fetch_all failed: %s", e, exc_info=True)
+        raise
 
 
 def execute(sql, params=None, commit=False):
     """
     Executes SQL (INSERT/UPDATE/DELETE).
-    
+
     Args:
         sql: SQL query string
         params: Query parameters
         commit: If True, commits immediately. If False, caller must commit manually.
     """
     conn = get_conn()
-    with conn.cursor() as cur:
-        cur.execute(sql, params)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
         if commit:
             conn.commit()
             logger.debug("✅ Transaction auto-committed")
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logger.error("❌ execute failed: %s", e, exc_info=True)
+        raise
