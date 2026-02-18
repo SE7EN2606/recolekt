@@ -27,7 +27,7 @@ const RAW_API_BASE =
 
 const API_BASE = (() => {
   const s = String(RAW_API_BASE ?? '').trim();
-  // IMPORTANT: if env is "/" we want same-origin, not scheme-relative "//api..."
+  // If env is "/" we want same-origin, not scheme-relative "//api..."
   if (s === '/' || s === '') return '';
   return s.replace(/\/+$/, '');
 })();
@@ -88,7 +88,6 @@ export const VideoDetail: React.FC = () => {
   const [tempHashtags, setTempHashtags] = useState<string[]>([]);
 
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-
   const [isFavorite, setIsFavorite] = useState(false);
 
   const fetchJsonNoStore = useCallback(async (url: string) => {
@@ -100,9 +99,54 @@ export const VideoDetail: React.FC = () => {
         ...getAuthHeaders(),
       },
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status} ${text}`);
+    }
     return res.json();
   }, []);
+
+  const fetchReelById = useCallback(
+    async (reelId: string) => {
+      const encoded = encodeURIComponent(String(reelId));
+      // DataContext uses /api/reel/:id for DELETE; we use same path for GET
+      const url = apiUrl(`api/reel/${encoded}`);
+      try {
+        const data = await fetchJsonNoStore(url);
+        // backend might return { reel: {...} } or just the reel object
+        return data?.reel ?? data;
+      } catch (err) {
+        return null;
+      }
+    },
+    [fetchJsonNoStore],
+  );
+
+  const findInSavedReelsList = useCallback(
+    async (reelId: string) => {
+      const data = await fetchJsonNoStore(apiUrl('api/saved_reels?page=1&per_page=200&view=list'));
+      const reels = Array.isArray(data?.reels) ? data.reels : [];
+
+      const target = String(reelId);
+
+      const found = reels.find((r: any) => {
+        const candidates = [
+          r?.id,
+          r?.process_id,
+          r?.reel_id,
+          r?.processId,
+          r?.reelId,
+        ]
+          .filter(Boolean)
+          .map((x: any) => String(x));
+
+        return candidates.includes(target);
+      });
+
+      return found || null;
+    },
+    [fetchJsonNoStore],
+  );
 
   // Single loader used by both initial load and background refresh,
   // with a flag to decide whether to show the spinner.
@@ -111,18 +155,18 @@ export const VideoDetail: React.FC = () => {
       const useSpinner = options?.useSpinner ?? false;
       if (!id) return;
 
-      if (useSpinner) {
-        setLoading(true);
-      }
+      if (useSpinner) setLoading(true);
 
       try {
-        const data = await fetchJsonNoStore(apiUrl('api/saved_reels'));
-        const reels = Array.isArray(data?.reels) ? data.reels : [];
-        const found = reels.find((r: any) => r?.id === id || r?.process_id === id);
+        // 1) Try direct endpoint first (most reliable)
+        let found: any = await fetchReelById(id);
+
+        // 2) Fallback to list+search
+        if (!found) {
+          found = await findInSavedReelsList(id);
+        }
 
         if (!found) {
-          // If we're doing an initial load, keep the spinner.
-          // For background refresh, just keep showing whatever we had.
           if (useSpinner) {
             setVideo(null);
             setLoading(false);
@@ -130,7 +174,8 @@ export const VideoDetail: React.FC = () => {
           return;
         }
 
-        const shortcode = found.id.split('--')[0];
+        const foundId = found.id || found.reel_id || found.process_id || id;
+        const shortcode = String(foundId).split('--')[0];
 
         // 1) Transcription from GCS (with backend fallback)
         let transcriptionText = '';
@@ -145,7 +190,9 @@ export const VideoDetail: React.FC = () => {
             transcriptionText = safeStr((transcriptData as any).transcript);
           }
         } catch (err) {
-          console.log('⚠️ Could not fetch transcription.json, will use API field if present');
+          console.log(
+            '⚠️ Could not fetch transcription.json, will use API field if present',
+          );
         }
 
         if (!transcriptionText) {
@@ -193,46 +240,31 @@ export const VideoDetail: React.FC = () => {
         };
 
         // Caption priority
-        if (resultCaption) {
-          merged.caption = resultCaption;
-        } else if (found.caption) {
-          merged.caption = safeStr(found.caption);
-        }
+        if (resultCaption) merged.caption = resultCaption;
+        else if (found.caption) merged.caption = safeStr(found.caption);
 
         // Recipe priority
-        if (resultRecipe) {
-          merged.recipe = resultRecipe;
-        } else if (found.recipe) {
-          merged.recipe = found.recipe;
-        }
+        if (resultRecipe) merged.recipe = resultRecipe;
+        else if (found.recipe) merged.recipe = found.recipe;
 
         // Summary from result.json if present
-        if (resultSummary) {
-          merged.summary = resultSummary;
-        }
-        if (resultSummaryText) {
-          merged.summary_text = resultSummaryText;
-        }
+        if (resultSummary) merged.summary = resultSummary;
+        if (resultSummaryText) merged.summary_text = resultSummaryText;
 
         // Transcript
-        if (transcriptionText) {
-          merged.transcription = transcriptionText;
-        }
+        if (transcriptionText) merged.transcription = transcriptionText;
 
         // Favorite flag from backend
         setIsFavorite(Boolean(merged.is_favorite ?? merged.isFavorite));
 
-        console.log('🎯 Final merged video object:', merged);
         setVideo(merged);
       } catch (err) {
         console.error('Error fetching video:', err);
       } finally {
-        if (useSpinner) {
-          setLoading(false);
-        }
+        if (useSpinner) setLoading(false);
       }
     },
-    [id, fetchJsonNoStore],
+    [id, fetchReelById, findInSavedReelsList],
   );
 
   // Initial load for a given id: show spinner, then render once with final data.
@@ -305,7 +337,8 @@ export const VideoDetail: React.FC = () => {
     if (!video) return;
 
     const raw = (video as any).__raw || {};
-    const updateId = (video as any).id || (video as any).process_id || raw.id || raw.process_id;
+    const updateId =
+      (video as any).id || (video as any).process_id || raw.id || raw.process_id;
 
     if (!updateId) {
       console.warn('Cannot toggle favorite: missing video identifier');
@@ -368,7 +401,12 @@ export const VideoDetail: React.FC = () => {
     }
 
     const author =
-      pickFirstString(v?.author_name, raw?.author_name, v?.author, raw?.author) || 'Unknown';
+      pickFirstString(
+        v?.author_name,
+        raw?.author_name,
+        v?.author,
+        raw?.author,
+      ) || 'Unknown';
 
     const category = getCategory(v) || getCategory(raw);
     const topic = getTopic(v) || getTopic(raw);
@@ -376,9 +414,15 @@ export const VideoDetail: React.FC = () => {
     const captionLike = safeStr(v?.caption) || safeStr(raw?.caption) || '';
 
     const englishBlock =
-      (summaryObj as any)?.english || (summaryObj as any)?.EN || (summaryObj as any)?.en || {};
+      (summaryObj as any)?.english ||
+      (summaryObj as any)?.EN ||
+      (summaryObj as any)?.en ||
+      {};
     const originalBlock =
-      (summaryObj as any)?.original || (summaryObj as any)?.OG || (summaryObj as any)?.og || {};
+      (summaryObj as any)?.original ||
+      (summaryObj as any)?.OG ||
+      (summaryObj as any)?.og ||
+      {};
 
     const titleFromEnglish = safeStr((englishBlock as any)?.title);
     const titleFromOriginal = safeStr((originalBlock as any)?.title);
@@ -393,7 +437,9 @@ export const VideoDetail: React.FC = () => {
       'Saved Reel';
 
     const description =
-      safeStr((englishBlock as any)?.summary) || safeStr((originalBlock as any)?.summary) || '';
+      safeStr((englishBlock as any)?.summary) ||
+      safeStr((originalBlock as any)?.summary) ||
+      '';
 
     const bulletsRaw =
       (englishBlock as any)?.headlines ||
@@ -453,9 +499,6 @@ export const VideoDetail: React.FC = () => {
       raw?.gcs_urls?.preview_thumbnail ??
       v?.gcs_urls?.thumbnail ??
       '';
-
-    console.log('🎯 viewModel.recipe:', recipeData);
-    console.log('🎯 viewModel.transcription:', transcription);
 
     return {
       title: stableTitle,
