@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { getAuthHeaders } from '../context/AuthContext';
 import { ReportModal } from '../components/ReportModal';
 import { VideoDetailDesktop } from '../components/VideoDetailDesktop';
 import { VideoDetailMobile } from '../components/VideoDetailMobile';
 import {
-  getBullets,
   getTitle,
   getTopic,
   getCategory,
@@ -36,6 +35,25 @@ function apiUrl(path: string) {
   return API_BASE ? `${API_BASE}/${p}` : `/${p}`;
 }
 
+// IMPORTANT: GCS fetch must NOT send credentials/cookies or auth headers.
+// Also avoid setting any custom headers (they can trigger preflight).
+async function fetchGcsJson<T = any>(url: string): Promise<T> {
+  const res = await fetch(url, {
+    method: 'GET',
+    mode: 'cors',
+    credentials: 'omit',
+    cache: 'no-store',
+    redirect: 'follow',
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`GCS HTTP ${res.status} ${text}`);
+  }
+
+  return res.json() as Promise<T>;
+}
+
 const safeStr = (v: any): string => {
   if (typeof v === 'string') return v;
   if (v == null) return '';
@@ -53,10 +71,7 @@ const splitTrailingEmoji = (text: string): { body: string; emoji: string } => {
   const emojiRegex = /[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+$/u;
   const match = text.match(emojiRegex);
   if (match) {
-    return {
-      emoji: match[0].trim(),
-      body: text.replace(emojiRegex, '').trim(),
-    };
+    return { emoji: match[0].trim(), body: text.replace(emojiRegex, '').trim() };
   }
   return { body: text.trim(), emoji: '' };
 };
@@ -89,7 +104,7 @@ export const VideoDetail: React.FC = () => {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
 
-  const fetchJsonNoStore = useCallback(async (url: string) => {
+  const fetchBackendJsonNoStore = useCallback(async (url: string) => {
     const res = await fetch(url, {
       method: 'GET',
       cache: 'no-store',
@@ -98,10 +113,12 @@ export const VideoDetail: React.FC = () => {
         ...getAuthHeaders(),
       },
     });
+
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(`HTTP ${res.status} ${text}`);
     }
+
     return res.json();
   }, []);
 
@@ -110,7 +127,7 @@ export const VideoDetail: React.FC = () => {
 
   const findReelInList = useCallback(
     async (targetId: string) => {
-      const data = await fetchJsonNoStore(
+      const data = await fetchBackendJsonNoStore(
         apiUrl('api/saved_reels?page=1&per_page=200&view=list'),
       );
       const reels = Array.isArray(data?.reels) ? data.reels : [];
@@ -125,7 +142,6 @@ export const VideoDetail: React.FC = () => {
 
         if (rid === target || pid === target || reelId === target) return true;
 
-        // If route param is shortcode-only or differs by suffix, match shortcode prefix.
         const ridShort = getShortcode(rid);
         const pidShort = getShortcode(pid);
         const reelShort = getShortcode(reelId);
@@ -139,7 +155,7 @@ export const VideoDetail: React.FC = () => {
 
       return found || null;
     },
-    [fetchJsonNoStore],
+    [fetchBackendJsonNoStore],
   );
 
   const loadVideo = useCallback(
@@ -163,36 +179,31 @@ export const VideoDetail: React.FC = () => {
         const foundId = found.id || found.reel_id || found.process_id || id;
         const shortcode = getShortcode(foundId);
 
-        // 1) Transcription from GCS (with backend fallback)
+        const cacheBust = `v=${encodeURIComponent(String(Date.now()))}`;
+
         let transcriptionText = '';
         try {
           const transcriptionPath =
             found.gcs_paths?.transcription ||
             `media/IG_reels/${shortcode}/${shortcode}_transcription.json`;
-          const transcriptionUrl = `https://storage.googleapis.com/recolekt-storage/${transcriptionPath}`;
-          const transcriptRes = await fetch(transcriptionUrl);
-          if (transcriptRes.ok) {
-            const transcriptData = await transcriptRes.json();
-            transcriptionText = safeStr((transcriptData as any).transcript);
-          }
-        } catch (err) {
-          // In prod this can fail due to GCS CORS; ignore and fallback to API field.
+          const transcriptionUrl = `https://storage.googleapis.com/recolekt-storage/${transcriptionPath}?${cacheBust}`;
+
+          const transcriptData = await fetchGcsJson<any>(transcriptionUrl);
+          transcriptionText = safeStr(transcriptData?.transcript);
+        } catch {
+          // ignore GCS/CORS/network failures (we'll fall back to backend fields)
         }
 
-        if (!transcriptionText) {
-          if (found.transcription) {
-            if (typeof found.transcription === 'string') {
-              transcriptionText = found.transcription;
-            } else if (
-              typeof found.transcription === 'object' &&
-              (found.transcription as any).transcript
-            ) {
-              transcriptionText = safeStr((found.transcription as any).transcript);
-            }
+        if (!transcriptionText && found.transcription) {
+          if (typeof found.transcription === 'string') transcriptionText = found.transcription;
+          else if (
+            typeof found.transcription === 'object' &&
+            (found.transcription as any).transcript
+          ) {
+            transcriptionText = safeStr((found.transcription as any).transcript);
           }
         }
 
-        // 2) *_result.json from GCS for caption + recipe + summary
         let resultCaption = '';
         let resultRecipe: any = null;
         let resultSummary: any = null;
@@ -202,23 +213,18 @@ export const VideoDetail: React.FC = () => {
           const resultPath =
             found.gcs_paths?.result_json ||
             `media/IG_reels/${shortcode}/${shortcode}_result.json`;
-          const resultUrl = `https://storage.googleapis.com/recolekt-storage/${resultPath}`;
-          const resultRes = await fetch(resultUrl);
-          if (resultRes.ok) {
-            const resultData = await resultRes.json();
-            resultCaption = safeStr((resultData as any).caption);
-            resultRecipe = (resultData as any).recipe ?? null;
-            resultSummary = (resultData as any).summary ?? null;
-            resultSummaryText = (resultData as any).summary_text ?? null;
-          }
-        } catch (err) {
-          // ignore; CORS can block this
+          const resultUrl = `https://storage.googleapis.com/recolekt-storage/${resultPath}?${cacheBust}`;
+
+          const resultData = await fetchGcsJson<any>(resultUrl);
+          resultCaption = safeStr(resultData?.caption);
+          resultRecipe = resultData?.recipe ?? null;
+          resultSummary = resultData?.summary ?? null;
+          resultSummaryText = resultData?.summary_text ?? null;
+        } catch {
+          // ignore
         }
 
-        const merged: any = {
-          ...found,
-          __raw: found,
-        };
+        const merged: any = { ...found, __raw: found };
 
         if (resultCaption) merged.caption = resultCaption;
         else if (found.caption) merged.caption = safeStr(found.caption);
@@ -252,10 +258,7 @@ export const VideoDetail: React.FC = () => {
     if (!id) return;
     if (!video || !video.status || video.status === 'done') return;
 
-    const interval = setInterval(() => {
-      loadVideo({ useSpinner: false });
-    }, 2000);
-
+    const interval = setInterval(() => loadVideo({ useSpinner: false }), 2000);
     return () => clearInterval(interval);
   }, [id, video?.status, loadVideo]);
 
@@ -313,10 +316,7 @@ export const VideoDetail: React.FC = () => {
     const updateId =
       (video as any).id || (video as any).process_id || raw.id || raw.process_id;
 
-    if (!updateId) {
-      console.warn('Cannot toggle favorite: missing video identifier');
-      return;
-    }
+    if (!updateId) return;
 
     const next = !isFavorite;
     setIsFavorite(next);
@@ -327,27 +327,14 @@ export const VideoDetail: React.FC = () => {
 
       const res = await fetch(url, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders(),
-        },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         credentials: 'include',
         body: JSON.stringify({ is_favorite: next }),
       });
 
-      if (!res.ok) {
-        throw new Error(`Failed to update favorite: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`Failed to update favorite: ${res.status}`);
 
-      setVideo((prev: any) =>
-        prev
-          ? {
-              ...prev,
-              is_favorite: next,
-              isFavorite: next,
-            }
-          : prev,
-      );
+      setVideo((prev: any) => (prev ? { ...prev, is_favorite: next, isFavorite: next } : prev));
     } catch (err) {
       console.error('❌ Failed to update favorite status', err);
       setIsFavorite((prev) => !prev);
@@ -373,8 +360,7 @@ export const VideoDetail: React.FC = () => {
     }
 
     const author =
-      pickFirstString(v?.author_name, raw?.author_name, v?.author, raw?.author) ||
-      'Unknown';
+      pickFirstString(v?.author_name, raw?.author_name, v?.author, raw?.author) || 'Unknown';
 
     const category = getCategory(v) || getCategory(raw);
     const topic = getTopic(v) || getTopic(raw);
@@ -386,14 +372,11 @@ export const VideoDetail: React.FC = () => {
     const originalBlock =
       (summaryObj as any)?.original || (summaryObj as any)?.OG || (summaryObj as any)?.og || {};
 
-    const titleFromEnglish = safeStr((englishBlock as any)?.title);
-    const titleFromOriginal = safeStr((originalBlock as any)?.title);
-
     const stableTitle =
       v?.display_title ||
       raw?.display_title ||
-      titleFromEnglish ||
-      titleFromOriginal ||
+      safeStr((englishBlock as any)?.title) ||
+      safeStr((originalBlock as any)?.title) ||
       getTitle(v) ||
       getTitle(raw) ||
       'Saved Reel';
@@ -439,8 +422,7 @@ export const VideoDetail: React.FC = () => {
     if (recipeData && typeof recipeData === 'string') {
       try {
         recipeData = JSON.parse(recipeData);
-      } catch (e) {
-        console.error('❌ Failed to parse recipe JSON:', e);
+      } catch {
         recipeData = null;
       }
     }
@@ -518,14 +500,12 @@ export const VideoDetail: React.FC = () => {
     return (
       <li key={index} className="flex flex-wrap items-baseline gap-2 py-1">
         {emoji ? <span className="text-lg leading-none select-none">{emoji}</span> : null}
-
         {(val || unit) && (
           <div className="flex items-baseline gap-1">
             {val && <span className="font-bold text-purple-600 text-base">{val}</span>}
             {unit && <span className="font-bold text-gray-900 text-base">{unit}</span>}
           </div>
         )}
-
         <span className="font-normal text-gray-900 text-base flex-1">{item}</span>
       </li>
     );
