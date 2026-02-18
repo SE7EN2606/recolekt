@@ -1,6 +1,6 @@
 // src/components/VideoDetailMobile.tsx
 
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   ChevronDown,
@@ -12,6 +12,8 @@ import {
   Tags,
   Globe,
   EllipsisVertical,
+  FolderClosed,
+  FolderOpen,
 } from 'lucide-react';
 import { MobileBottomNav } from './MobileBottomNav';
 import {
@@ -61,11 +63,33 @@ interface VideoDetailMobileProps {
   onReportClick: () => void;
   onDeleteClick: () => void;
 
-  // Hooks for favorite/archive/move (optional overrides)
   onToggleFavorite?: () => void;
   onArchiveToggle?: () => void;
   onMoveToCollection?: () => void;
 }
+
+const SYSTEM_FOLDER_IDS = new Set([
+  'all',
+  'favorites',
+  'shared',
+  'archive',
+  'default',
+]);
+
+const isSystemOrAllVideos = (folder: any) => {
+  if (!folder) return true;
+  const id = String(folder.id ?? '');
+  const name = String(folder.name ?? '')
+    .trim()
+    .toLowerCase();
+  const isSystemFlag = Boolean(folder.isSystem);
+  return (
+    SYSTEM_FOLDER_IDS.has(id) ||
+    isSystemFlag ||
+    name === 'all videos' ||
+    name === 'all'
+  );
+};
 
 export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
   viewModel,
@@ -101,17 +125,17 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
   onMoveToCollection,
 }) => {
   const { showOriginal, toggleLanguage } = useLanguage();
-  const { folders, addFolder, moveVideos } = useData(); // moveVideos is our core primitive for archive/move [file:4]
+  const { folders, addFolder, moveVideos } = useData();
 
   const [isManageOpen, setIsManageOpen] = useState(false);
   const [isReelMenuOpen, setIsReelMenuOpen] = useState(false);
   const [isNewCollectionOpen, setIsNewCollectionOpen] = useState(false);
   const [isMoveCollectionOpen, setIsMoveCollectionOpen] = useState(false);
 
-  const systemIds = ['all', 'favorites', 'shared', 'archive'];
-  const customFolders = folders.filter((f: any) => !systemIds.includes(f.id));
   const parentOptions =
-    customFolders.map((f: any) => ({ id: f.id, name: f.name })) || [];
+    (folders || [])
+      .filter((f: any) => f && !isSystemOrAllVideos(f))
+      .map((f: any) => ({ id: f.id, name: f.name })) || [];
 
   const handleNewCollection = (name: string, parentId?: string) => {
     if (!name.trim()) return;
@@ -119,7 +143,6 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
     setIsNewCollectionOpen(false);
   };
 
-  // ARCHIVE: if parent did not provide onArchiveToggle, use DataContext.moveVideos to move to "archive"
   const handleArchive = () => {
     if (onArchiveToggle) {
       onArchiveToggle();
@@ -127,16 +150,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
     }
     const videoId = viewModel?.id;
     if (!videoId) return;
-    moveVideos([videoId], 'archive'); // treat "archive" as special system folder id [file:4]
-  };
-
-  // MOVE TO COLLECTION: if parent overrides, call it; otherwise show local sheet and use moveVideos
-  const handleMoveToCollection = () => {
-    if (onMoveToCollection) {
-      onMoveToCollection();
-      return;
-    }
-    setIsMoveCollectionOpen(true);
+    moveVideos([videoId], 'archive');
   };
 
   useEffect(() => {
@@ -155,20 +169,12 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
         titleData?.original;
 
       const hasRecipeTranslation =
-        !!(
-          viewModel.isRecipe &&
-          recipeData?.english &&
-          recipeData?.original
-        );
+        !!(viewModel.isRecipe && recipeData?.english && recipeData?.original);
 
-      const hasSummaryTranslation = !!(
-        summary?.english && summary?.original
-      );
+      const hasSummaryTranslation = !!(summary?.english && summary?.original);
 
       const hasTranslationComputed =
-        hasRecipeTranslation ||
-        isDualLanguageTitle ||
-        hasSummaryTranslation;
+        hasRecipeTranslation || isDualLanguageTitle || hasSummaryTranslation;
 
       const rawLangCode = recipeData?.language_code || 'en';
       const languageCodeComputed =
@@ -222,6 +228,25 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
   const hasTranscriptField =
     transcriptionRaw !== undefined && transcriptionRaw !== null;
 
+  const moveTargets = useMemo(() => {
+    const acc: { id: string; name: string; depth: number }[] = [];
+
+    const walk = (list: any[], depth: number) => {
+      (Array.isArray(list) ? list : []).forEach((f) => {
+        if (!f || isSystemOrAllVideos(f)) return;
+
+        acc.push({ id: String(f.id), name: String(f.name ?? ''), depth });
+
+        if (Array.isArray(f.subFolders) && f.subFolders.length > 0) {
+          walk(f.subFolders, depth + 1);
+        }
+      });
+    };
+
+    walk(folders as any[], 0);
+    return acc;
+  }, [folders]);
+
   return (
     <div className="md:hidden -mx-4 sm:mx-0">
       {/* Poster */}
@@ -232,11 +257,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
         }}
       >
         <img
-          src={
-            viewModel.preview ||
-            viewModel.gcs_urls?.preview_thumbnail ||
-            ''
-          }
+          src={viewModel.preview || viewModel.gcs_urls?.preview_thumbnail || ''}
           alt={displayTitle}
           className="w-full h-full object-cover opacity-90"
           style={{
@@ -257,17 +278,18 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             </span>
           </button>
 
-          {/* Manage button opens reel actions */}
           <div className="flex gap-2">
             <button
               onClick={() => setIsReelMenuOpen(true)}
-              className="p-2 bg-white/40 backdrop-blur-md rounded-full text-white shadow-sm transition-transform active:scale-95"
+              className="group w-9 h-9 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-2xl hover:bg-white/40 transition-colors active:scale-95"
             >
-              <EllipsisVertical
-                size={20}
-                className="lucide lucide-ellipsis-vertical text-white"
-                aria-hidden="true"
-              />
+              <span className="inline-flex transform transition-transform duration-200 ease-out">
+                <EllipsisVertical
+                  size={20}
+                  className="lucide lucide-ellipsis-vertical text-white"
+                  aria-hidden="true"
+                />
+              </span>
             </button>
           </div>
         </div>
@@ -330,9 +352,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             <span />
           )}
           {viewModel.savedAt && (
-            <span className="text-xs text-gray-500">
-              {viewModel.savedAt}
-            </span>
+            <span className="text-xs text-gray-500">{viewModel.savedAt}</span>
           )}
         </div>
 
@@ -386,11 +406,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             <div className="pb-3 mb-3 border-b border-violet-200/70 relative flex items-center">
               <div className="flex flex-col gap-2 pr-10 flex-1">
                 <div className="flex items-center gap-2">
-                  <Layers
-                    size={14}
-                    className="flex-shrink-0"
-                    style={{ color: '#8b5cf6' }}
-                  />
+                  <Layers size={14} className="flex-shrink-0" style={{ color: '#8b5cf6' }} />
                   <span
                     className="text-xs font-bold uppercase tracking-wide truncate"
                     style={{ color: '#8b5cf6' }}
@@ -399,11 +415,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Tags
-                    size={14}
-                    className="flex-shrink-0"
-                    style={{ color: '#e11d48' }}
-                  />
+                  <Tags size={14} className="flex-shrink-0" style={{ color: '#e11d48' }} />
                   <span
                     className="text-xs font-bold uppercase tracking-wide truncate"
                     style={{ color: '#e11d48' }}
@@ -423,25 +435,28 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             </div>
           )}
 
-          {/* Hashtags Block */}
+          {/* Hashtags Block – header cyan #0891b2 */}
           {((viewModel.hashtags || []) as string[]).length > 0 && (
-            <div>
-              <h4 className="flex items-center gap-2 text-xs font-bold text-cyan-800 uppercase tracking-wider mb-3">
+            <div className="mt-1">
+              <div className="flex items-center gap-2 text-xs uppercase font-semibold mb-3">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="16"
                   height="16"
                   viewBox="0 0 512 512"
-                  className="flex-shrink-0 text-cyan-600"
+                  className="flex-shrink-0"
                   aria-hidden="true"
+                  style={{ color: '#0891b2' }}
                 >
                   <path
                     fillRule="nonzero"
-                    d="M300.02 161.657l.047-.187c3.542-14.981 23.176-18.148 31.458-5.532a17.27 17.27 0 012.463 13.038c-2.328 10.088-4.271 20.55-6.386 30.72h12.177c22.801 0 22.804 34.849 0 34.849h-19.383l-5.492 5.313a2 2 0 01-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"
+                    fill="currentColor"
+                    d="M300.02 161.657l.047-.187c3.542-14.981 23.176-18.148 31.458-5.532a17.27 17.27 0 012.463 13.038c-2.328 10.088-4.271 20.55-6.386 30.72h12.177c22.801 0 22.804 34.849 0 34.849h-19.383l-8.664 43.645h30.453c22.935 0 22.926 34.846 0 34.846h-37.597l-7.847 37.682c-5.447 21.855-38.479 14.339-33.876-7.694 2.271-9.85 4.177-20.06 6.245-29.988h-45.112c-2.556 12.304-4.897 25.01-7.741 37.203-5.282 22.331-38.129 14.224-33.971-7.243l6.239-29.991-16.242.003c-22.9.135-22.956-34.818 0-34.818h23.404l8.614-43.645h-34.49c-22.521 0-23.232-34.849 0-34.849h41.693l7.731-37.144c.051-.403.138-.797.26-1.176 5.329-21.289 38.485-14.721 33.877 7.672l-6.39 30.648h45.113c2.635-12.65 5.447-25.37 7.925-38.039zM256 0c70.688 0 134.689 28.658 181.016 74.984C483.342 121.311 512 185.312 512 256c0 70.688-28.658 134.689-74.984 181.016C390.689 483.342 326.688 512 256 512c-70.688 0-134.689-28.658-181.016-74.984C28.658 390.689 0 326.688 0 256c0-70.688 28.658-134.689 74.984-181.016C121.311 28.658 185.312 0 256 0zm159.946 96.054C375.017 55.125 318.465 29.806 256 29.806S136.983 55.125 96.054 96.054 29.806 193.535 29.806 256s25.319 119.017 66.248 159.946S193.535 482.194 256 482.194s119.017-25.319 159.946-66.248S482.194 318.465 482.194 256s-25.319-119.017-66.248-159.946zM276.256 278.19l8.661-43.645h-45.115l-8.664 43.645h45.118z"
                   />
                 </svg>
-                Hashtags
-              </h4>
+                <span style={{ color: '#0891b2' }}>Hashtags</span>
+              </div>
+
               <style>{`
                 .hashtag-links a {
                   display: inline-flex !important;
@@ -464,6 +479,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
                   transform: translateY(-1px);
                 }
               `}</style>
+
               <div className="hashtag-links flex flex-wrap gap-2">
                 <EditableHashtags
                   hashtags={viewModel.hashtags || []}
@@ -523,9 +539,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               Original Caption
               <ChevronDown
                 size={16}
-                className={`transition-transform ${
-                  captionOpen ? 'rotate-180' : ''
-                }`}
+                className={`transition-transform ${captionOpen ? 'rotate-180' : ''}`}
               />
             </button>
             {captionOpen && (
@@ -546,15 +560,12 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               Transcript
               <ChevronDown
                 size={16}
-                className={`transition-transform ${
-                  transcriptOpen ? 'rotate-180' : ''
-                }`}
+                className={`transition-transform ${transcriptOpen ? 'rotate-180' : ''}`}
               />
             </button>
             {transcriptOpen && (
               <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                {transcriptionText ||
-                  'Transcript not available for this reel yet.'}
+                {transcriptionText || 'Transcript not available for this reel yet.'}
               </div>
             )}
           </div>
@@ -595,13 +606,16 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
         )}
       </div>
 
-      {/* Mobile reel actions bottom sheet */}
+      {/* Reel actions bottom sheet */}
       <MobileReelActions
         isOpen={isReelMenuOpen}
         onClose={() => setIsReelMenuOpen(false)}
         onShare={onShare}
         onAddToFavorites={onToggleFavorite ?? (() => {})}
-        onMoveToCollection={handleMoveToCollection}
+        onMoveToCollection={() => {
+          if (onMoveToCollection) onMoveToCollection();
+          else setIsMoveCollectionOpen(true);
+        }}
         onArchive={handleArchive}
         onManageCollections={() => {
           setIsManageOpen(true);
@@ -610,47 +624,57 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
         onDelete={onDeleteClick}
       />
 
-      {/* Move to Collection bottom sheet (local implementation) */}
+      {/* Move to Collection – centered modal */}
       {isMoveCollectionOpen && (
-        <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div
             className="absolute inset-0"
             onClick={() => setIsMoveCollectionOpen(false)}
             aria-hidden="true"
           />
-          <div className="relative z-10 w-full max-w-[450px] px-4 pb-[env(safe-area-inset-bottom,16px)]">
-            <div className="bg-white w-full rounded-t-[32px] md:rounded-2xl shadow-2xl overflow-hidden">
-              <div className="px-6 pt-4 pb-3 border-b border-gray-100">
-                <h3 className="text-sm font-black text-gray-500 uppercase tracking-[0.2em]">
+          <div className="relative z-10 w-full max-w-md px-4">
+            <div className="bg-white w-full rounded-3xl shadow-2xl overflow-hidden">
+              <div className="px-6 pt-5 pb-3 border-b border-gray-100">
+                <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.25em]">
                   Move to Collection
                 </h3>
               </div>
-              <div className="max-h-[60vh] overflow-y-auto px-4 py-3 space-y-1">
-                {customFolders.length === 0 ? (
-                  <p className="text-sm text-gray-500 py-4">
-                    You do not have any collections yet. Create one first from
-                    the menu.
+
+              <div className="max-h-[60vh] overflow-y-auto p-4 space-y-1">
+                {moveTargets.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4 px-2">
+                    You do not have any collections yet. Create one first from the menu.
                   </p>
                 ) : (
-                  customFolders.map((folder: any) => (
-                    <button
-                      key={folder.id}
-                      onClick={() => {
-                        const videoId = viewModel?.id;
-                        if (videoId) {
-                          moveVideos([videoId], folder.id);
-                        }
-                        setIsMoveCollectionOpen(false);
-                      }}
-                      className="w-full flex items-center justify-between px-4 py-3 rounded-2xl hover:bg-gray-50 text-sm transition-colors"
-                    >
-                      <span className="font-medium text-gray-900">
-                        {folder.name}
-                      </span>
-                    </button>
-                  ))
+                  moveTargets.map((folder) => {
+                    const Icon = folder.depth === 0 ? FolderClosed : FolderOpen;
+
+                    return (
+                      <button
+                        key={folder.id}
+                        onClick={() => {
+                          const videoId = viewModel?.id;
+                          if (videoId) {
+                            moveVideos([videoId], folder.id);
+                          }
+                          setIsMoveCollectionOpen(false);
+                        }}
+                        className={`w-full flex items-center group py-2 px-2 rounded-lg hover:bg-gray-50 text-left ${
+                          folder.depth > 0 ? 'ml-6 border-l border-gray-100' : ''
+                        }`}
+                      >
+                        <div className="flex-1 flex items-center gap-2 min-w-0">
+                          <Icon size={16} className="text-primary-600 flex-shrink-0" />
+                          <span className="text-sm font-medium text-gray-700 truncate">
+                            {folder.name}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })
                 )}
               </div>
+
               <button
                 onClick={() => setIsMoveCollectionOpen(false)}
                 className="w-full p-4 border-t border-gray-100 text-sm font-bold text-gray-500 hover:bg-gray-100 transition-colors"
@@ -672,11 +696,22 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
         parentOptions={parentOptions}
       />
 
-      {/* Manage Collections modal (tree view) */}
-      <ManageCollectionsModal
-        isOpen={isManageOpen}
-        onClose={() => setIsManageOpen(false)}
-      />
+      {/* Manage Collections modal – overlay above sheet */}
+      {isManageOpen && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div
+            className="absolute inset-0"
+            onClick={() => setIsManageOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="relative z-10 w-full max-w-md px-4">
+            <ManageCollectionsModal
+              isOpen={isManageOpen}
+              onClose={() => setIsManageOpen(false)}
+            />
+          </div>
+        </div>
+      )}
 
       <MobileBottomNav onAddClick={() => {}} />
     </div>

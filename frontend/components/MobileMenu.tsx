@@ -1,3 +1,5 @@
+// src/components/MobileMenu.tsx
+
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -23,7 +25,6 @@ import { Button } from './Button';
 import { InputModal } from './InputModal';
 import { ManageCollectionsModal } from './ManageCollectionsModal';
 
-
 // Custom Icon: Folder Open (Sub Folder)
 const FolderIcon = ({ size = 22, className = "" }: { size?: number; className?: string }) => (
   <svg
@@ -41,27 +42,22 @@ const FolderIcon = ({ size = 22, className = "" }: { size?: number; className?: 
   </svg>
 );
 
-
 interface MobileMenuProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   const { folders, addFolder, videos } = useData();
   const { user, signOut, loading, isAuthenticated } = useAuth();
-
 
   const [shouldRender, setShouldRender] = useState(false);
   const [animateOpen, setAnimateOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
 
-
   const navigate = useNavigate();
   const location = useLocation();
-
 
   useEffect(() => {
     if (isOpen) {
@@ -74,6 +70,10 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
       document.body.style.overscrollBehavior = 'none';
     } else {
       setAnimateOpen(false);
+      // 🔹 Close any nested modals when the main menu closes
+      setIsModalOpen(false);
+      setIsManageModalOpen(false);
+
       const timer = setTimeout(() => setShouldRender(false), 500);
       document.body.style.overflow = '';
       document.body.style.overscrollBehavior = '';
@@ -81,37 +81,30 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     }
   }, [isOpen]);
 
-
   const handleNewCollection = (name: string, parentId?: string) => {
     addFolder(name, parentId);
     setIsModalOpen(false);
   };
-
 
   const handleNav = (path: string) => {
     navigate(path);
     onClose();
   };
 
-
   const systemIds = ['all', 'favorites', 'shared', 'archive'];
   const customFolders = (folders || []).filter(f => !systemIds.includes(f.id));
   const parentOptions = customFolders.map(f => ({ id: f.id, name: f.name }));
 
-
-  // ✅ Calculate video count for each folder
+  // Calculate video count for each folder
   const getVideoCount = (folderId: string) => {
     return (videos || []).filter(v => v.folderId === folderId).length;
   };
 
-
   if (!shouldRender) return null;
-
 
   // IMPORTANT: avoid flashing signed-out UI while auth is still resolving.
   const showAuthedUI = !loading && (isAuthenticated || !!user);
   const showSignedOutUI = !loading && !showAuthedUI;
-
 
   return (
     <>
@@ -122,12 +115,10 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
           ${animateOpen ? 'h-[100vh]' : 'h-0'}
         `}
         style={{ 
-          // Hardware acceleration fix
           backfaceVisibility: 'hidden',
           WebkitBackfaceVisibility: 'hidden',
           transform: 'translateZ(0)',
           WebkitTransform: 'translateZ(0)',
-          // Prevent scroll chaining
           overscrollBehavior: 'none'
         }}
       >
@@ -153,7 +144,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
               <div className="flex-1"></div>
             )}
 
-
             <button
               onClick={onClose}
               className="p-2 -mr-2 text-gray-600 bg-transparent hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
@@ -162,8 +152,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
             </button>
           </div>
 
-
-          {/* Scrollable Content - Logo REMOVED from here */}
+          {/* Scrollable Content */}
           <div className="flex-1 overflow-y-auto py-8 overscroll-contain">
             <div
               className={`transition-opacity duration-500 delay-100 ${
@@ -181,7 +170,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                   </div>
                 </div>
               )}
-
 
               {showSignedOutUI && (
                 <div className="flex flex-col h-full space-y-8 px-2">
@@ -206,9 +194,8 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     ))}
                   </div>
 
-
                   <div className="mt-auto pb-6">
-                     <div className="space-y-4">
+                    <div className="space-y-4">
                       <Button
                         fullWidth
                         onClick={() => handleNav('/auth')}
@@ -231,7 +218,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                   </div>
                 </div>
               )}
-
 
               {showAuthedUI && (
                 <div className="flex-1">
@@ -265,11 +251,12 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       </div>
                     </section>
 
-
                     {/* Collections */}
                     <section>
                       <div className="flex items-center justify-between px-4 mb-3">
-                        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Collections</h3>
+                        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
+                          Collections
+                        </h3>
                         <div className="flex items-center gap-3">
                           <button
                             onClick={() => setIsManageModalOpen(true)}
@@ -279,7 +266,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                             <SquarePen size={18} />
                           </button>
 
-
                           <button
                             onClick={() => setIsModalOpen(true)}
                             className="text-primary-600 active:scale-95 transition-transform"
@@ -288,7 +274,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                           </button>
                         </div>
                       </div>
-
 
                       <div className="bg-white rounded-[28px] border border-gray-100 overflow-hidden shadow-sm">
                         {customFolders.length > 0 &&
@@ -329,7 +314,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                             </div>
                           ))}
 
-
                         {customFolders.length === 0 && (
                           <div className="text-center p-8 border-b border-gray-50">
                             <p className="text-gray-400 text-sm font-medium">No collections yet.</p>
@@ -341,7 +325,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                             </button>
                           </div>
                         )}
-
 
                         <div className="border-b border-gray-50 last:border-0">
                           <button
@@ -374,10 +357,11 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       </div>
                     </section>
 
-
                     {/* Resources */}
                     <section>
-                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">Resources</h3>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
+                        Resources
+                      </h3>
                       <div className="bg-white rounded-[28px] border border-gray-100 overflow-hidden shadow-sm">
                         <button
                           onClick={() => handleNav('/help?section=how-to')}
@@ -402,10 +386,11 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       </div>
                     </section>
 
-
                     {/* Account */}
                     <section>
-                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">Account</h3>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
+                        Account
+                      </h3>
                       <div className="bg-white rounded-[28px] border border-gray-100 overflow-hidden shadow-sm">
                         <button
                           onClick={() => handleNav('/settings/app')}
@@ -447,23 +432,21 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                   </div>
                 </div>
               )}
-               <div className="h-10"></div>
+              <div className="h-10"></div>
             </div>
           </div>
 
-          {/* Fixed Logo - Moved OUTSIDE the scrollable div */}
+          {/* Fixed Logo */}
           <div className="py-6 flex-shrink-0 flex justify-center border-t border-gray-50 bg-[#f8fafc]">
-             <img
-               alt="recolekt_logo"
-               className="h-10 transform-gpu"
-               src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/frontend/assets/recolekt_logo_black.png"
-               style={{ backfaceVisibility: 'hidden', transform: 'translateZ(0)' }}
-             />
+            <img
+              alt="recolekt_logo"
+              className="h-10 transform-gpu"
+              src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/frontend/assets/recolekt_logo_black.png"
+              style={{ backfaceVisibility: 'hidden', transform: 'translateZ(0)' }}
+            />
           </div>
-
         </div>
       </div>
-
 
       <InputModal
         isOpen={isModalOpen}
@@ -473,7 +456,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
         placeholder="Name your collection..."
         parentOptions={parentOptions}
       />
-
 
       <ManageCollectionsModal
         isOpen={isManageModalOpen}

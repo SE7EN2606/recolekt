@@ -1,5 +1,6 @@
 // src/components/MobileReelAction.tsx
-import React, { useEffect, useState } from "react";
+
+import React, { useEffect, useState } from 'react';
 
 type MobileReelActionsProps = {
   isOpen: boolean;
@@ -32,6 +33,7 @@ export const MobileReelActions: React.FC<MobileReelActionsProps> = ({
 
     if (isOpen) {
       setShouldRender(true);
+
       // Double rAF to ensure entrance animation runs after mount
       requestAnimationFrame(() => {
         requestAnimationFrame(() => setAnimateOpen(true));
@@ -40,41 +42,32 @@ export const MobileReelActions: React.FC<MobileReelActionsProps> = ({
       // Lock background scroll without shifting layout (compensate scrollbar)
       const scrollBarWidth =
         window.innerWidth - document.documentElement.clientWidth;
-
       if (scrollBarWidth > 0) {
-        // Add padding-right equal to scrollbar width so content doesn't jump
         document.body.style.paddingRight = `${scrollBarWidth}px`;
       }
-
-      document.body.style.overflow = "hidden";
-      document.body.style.overscrollBehavior = "none";
+      document.body.style.overflow = 'hidden';
+      document.body.style.overscrollBehavior = 'none';
     } else {
       setAnimateOpen(false);
       timer = window.setTimeout(() => setShouldRender(false), 300);
 
       // Restore scroll and padding
-      document.body.style.overflow = "";
-      document.body.style.overscrollBehavior = "";
-      document.body.style.paddingRight = "";
+      document.body.style.overflow = '';
+      document.body.style.overscrollBehavior = '';
+      document.body.style.paddingRight = '';
     }
 
     return () => {
       if (timer) {
         window.clearTimeout(timer);
       }
-      document.body.style.overflow = "";
-      document.body.style.overscrollBehavior = "";
-      document.body.style.paddingRight = "";
+      document.body.style.overflow = '';
+      document.body.style.overscrollBehavior = '';
+      document.body.style.paddingRight = '';
     };
   }, [isOpen]);
 
   if (!shouldRender) return null;
-
-  // Helper so every action also closes the sheet
-  const handle = (cb: () => void) => () => {
-    cb();
-    onClose();
-  };
 
   return (
     <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 backdrop-blur-sm">
@@ -88,11 +81,9 @@ export const MobileReelActions: React.FC<MobileReelActionsProps> = ({
       {/* Bottom sheet wrapper – max 450px, centered, gap on large screens */}
       <div className="relative z-10 w-full max-w-[450px] px-4 pb-[env(safe-area-inset-bottom,16px)]">
         <div
-          className={`
-            bg-white w-full rounded-t-[32px] md:rounded-2xl shadow-2xl relative overflow-hidden
-            transform transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]
-            ${animateOpen ? "translate-y-0" : "translate-y-full"}
-          `}
+          className={`bg-white w-full rounded-t-[32px] md:rounded-2xl shadow-2xl relative overflow-hidden transform transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+            animateOpen ? 'translate-y-0' : 'translate-y-full'
+          }`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Drag handle */}
@@ -111,11 +102,11 @@ export const MobileReelActions: React.FC<MobileReelActionsProps> = ({
           <div className="max-h-[70vh] overflow-y-auto px-4 pb-5 pt-2 space-y-2">
             {/* Share Video */}
             <button
-              onClick={handle(onShare)}
-              className="
-                w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-[0.98]
-                bg-white hover:bg-gray-50 text-gray-900 border border-gray-100 shadow-sm
-              "
+              onClick={() => {
+                onShare();
+                onClose();
+              }}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-95 bg-white hover:bg-gray-50 text-gray-900 border border-gray-100 shadow-sm"
             >
               <div className="p-2 rounded-xl bg-gray-50 text-gray-500">
                 <svg
@@ -142,13 +133,12 @@ export const MobileReelActions: React.FC<MobileReelActionsProps> = ({
               </div>
             </button>
 
-            {/* Move to Collection – purple row directly under Share */}
+            {/* Move to Collection – does NOT close sheet (so no slide-out effect) */}
             <button
-              onClick={handle(onMoveToCollection)}
-              className="
-                w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-[0.98]
-                bg-primary-50
-              "
+              onClick={() => {
+                onMoveToCollection();
+              }}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-95 bg-primary-50"
             >
               <div className="p-2 rounded-xl bg-white/60 text-primary-600">
                 <svg
@@ -179,11 +169,11 @@ export const MobileReelActions: React.FC<MobileReelActionsProps> = ({
 
             {/* Add to Favorites */}
             <button
-              onClick={handle(onAddToFavorites)}
-              className="
-                w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-[0.98]
-                bg-white hover:bg-gray-50 text-gray-900 border border-gray-100 shadow-sm
-              "
+              onClick={() => {
+                onAddToFavorites();
+                onClose();
+              }}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-95 bg-white hover:bg-gray-50 text-gray-900 border border-gray-100 shadow-sm"
             >
               <div className="p-2 rounded-xl bg-gray-50 text-gray-500">
                 <svg
@@ -210,11 +200,11 @@ export const MobileReelActions: React.FC<MobileReelActionsProps> = ({
 
             {/* Archive Video */}
             <button
-              onClick={handle(onArchive)}
-              className="
-                w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-[0.98]
-                bg-white hover:bg-gray-50 text-gray-900 border border-gray-100 shadow-sm
-              "
+              onClick={() => {
+                onArchive();
+                onClose();
+              }}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-95 bg-white hover:bg-gray-50 text-gray-900 border border-gray-100 shadow-sm"
             >
               <div className="p-2 rounded-xl bg-gray-50 text-gray-500">
                 <svg
@@ -241,13 +231,12 @@ export const MobileReelActions: React.FC<MobileReelActionsProps> = ({
               </div>
             </button>
 
-            {/* Manage Collections – below Archive */}
+            {/* Manage Collections – does NOT close sheet */}
             <button
-              onClick={handle(onManageCollections)}
-              className="
-                w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-[0.98]
-                bg-white hover:bg-gray-50 text-gray-900 border border-gray-100 shadow-sm
-              "
+              onClick={() => {
+                onManageCollections();
+              }}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-95 bg-white hover:bg-gray-50 text-gray-900 border border-gray-100 shadow-sm"
             >
               <div className="p-2 rounded-xl bg-gray-50 text-gray-500">
                 <svg
@@ -277,11 +266,11 @@ export const MobileReelActions: React.FC<MobileReelActionsProps> = ({
 
             {/* Report Issue */}
             <button
-              onClick={handle(onReport)}
-              className="
-                w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-[0.98]
-                bg-white hover:bg-gray-50 text-gray-900 border border-gray-100 shadow-sm
-              "
+              onClick={() => {
+                onReport();
+                onClose();
+              }}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-95 bg-white hover:bg-gray-50 text-gray-900 border border-gray-100 shadow-sm"
             >
               <div className="p-2 rounded-xl bg-gray-50 text-gray-500">
                 <svg
@@ -296,8 +285,8 @@ export const MobileReelActions: React.FC<MobileReelActionsProps> = ({
                   strokeLinejoin="round"
                 >
                   <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="8" x2="12" y2="12" />
-                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                  <line x1="12" y1="18" x2="12" y2="22" />
+                  <line x1="12" y1="6" x2="12.01" y2="16" />
                 </svg>
               </div>
               <div className="text-left">
@@ -310,11 +299,11 @@ export const MobileReelActions: React.FC<MobileReelActionsProps> = ({
 
             {/* Delete Video */}
             <button
-              onClick={handle(onDelete)}
-              className="
-                w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-[0.98]
-                bg-red-50 text-red-600 hover:bg-red-100
-              "
+              onClick={() => {
+                onDelete();
+                onClose();
+              }}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl transition-all active:scale-95 bg-red-50 text-red-600 hover:bg-red-100"
             >
               <div className="p-2 rounded-xl bg-white/60 text-red-600">
                 <svg
@@ -342,18 +331,15 @@ export const MobileReelActions: React.FC<MobileReelActionsProps> = ({
                 </div>
               </div>
             </button>
-
-            {/* Cancel */}
-            <button
-              onClick={onClose}
-              className="
-                w-full p-4 mt-1 rounded-2xl bg-gray-100 text-gray-500
-                font-bold text-sm hover:bg-gray-200 transition-colors
-              "
-            >
-              Cancel
-            </button>
           </div>
+
+          {/* Cancel */}
+          <button
+            onClick={onClose}
+            className="w-full p-4 mt-1 rounded-2xl bg-gray-100 text-gray-500 font-bold text-sm hover:bg-gray-200 transition-colors"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>
