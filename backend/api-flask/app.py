@@ -51,8 +51,9 @@ from datetime import timedelta
 
 from flask import send_from_directory, request, jsonify
 from flask_cors import CORS
-from flask_session import Session
+# ❌ REMOVED: from flask_session import Session (This was causing the filesystem crash!)
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 import requests
 import numpy as np
 from PIL import Image
@@ -68,15 +69,7 @@ warnings.filterwarnings("ignore")
 os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
-print("Python executable:", sys.executable)
-for p in sys.path[:3]:
-    print("   ", p)
-
 from fetcher_api.services.ai_service import ai_service
-
-print("DEBUG: Using AI Service")
-print("AIService class:", ai_service.__class__)
-print("Has analyze_content:", hasattr(ai_service, "analyze_content"))
 
 # -------------------------------------------------
 # ⚙️ Flask setup
@@ -87,8 +80,11 @@ app = create_app()
 if not app:
     raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
 
+# ✅ Tell Flask it's behind a secure Railway load balancer
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 # -------------------------------------------------
-# 🧾 Logging (define early so CORS handlers can log)
+# 🧾 Logging
 # -------------------------------------------------
 werkzeug_log = logging.getLogger("werkzeug")
 werkzeug_log.setLevel(logging.WARNING)
@@ -101,11 +97,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # -------------------------------------------------
-# Configure session
+# Configure Native Flask Session (No Filesystem Needed!)
 # -------------------------------------------------
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
-app.config["SESSION_TYPE"] = "filesystem"
-app.config["SESSION_FILE_DIR"] = "/tmp/flask_session"
 app.config["SESSION_PERMANENT"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 app.config["SESSION_COOKIE_NAME"] = "recolekt_session"
@@ -114,38 +108,16 @@ app.config["SESSION_COOKIE_SECURE"] = not IS_LOCAL
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_DOMAIN"] = None
 app.config["SESSION_COOKIE_PATH"] = "/"
-app.config["SESSION_REFRESH_EACH_REQUEST"] = False
-
-Session(app)
 
 # -------------------------------------------------
 # 🔍 Environment Variables Check
 # -------------------------------------------------
-print("=" * 50)
-print("🔍 Environment Variables Check:")
 google_client_id = os.getenv("GOOGLE_CLIENT_ID", "NOT SET")
 google_secret = os.getenv("GOOGLE_CLIENT_SECRET", "NOT SET")
 flask_secret = os.getenv("SECRET_KEY", "NOT SET")
 
-print(
-    f"GOOGLE_CLIENT_ID: {google_client_id[:30]}..."
-    if len(google_client_id) > 30
-    else f"GOOGLE_CLIENT_ID: {google_client_id}"
-)
-print(
-    f"GOOGLE_CLIENT_SECRET: {google_secret[:20]}..."
-    if len(google_secret) > 20
-    else f"GOOGLE_CLIENT_SECRET: {google_secret}"
-)
-print(
-    f"SECRET_KEY: {flask_secret[:25]}..."
-    if len(flask_secret) > 25
-    else f"SECRET_KEY: {flask_secret}"
-)
-print("=" * 50)
-
 # -------------------------------------------------
-# 🌐 CORS - Environment-aware (with normalization)
+# 🌐 CORS - Environment-aware
 # -------------------------------------------------
 def _norm_origin(o: str) -> str:
     return (o or "").strip().rstrip("/")
@@ -158,25 +130,18 @@ if IS_LOCAL:
         "http://127.0.0.1:5173",
     ]
 else:
-    # IMPORTANT: never default to the old netlify domain in production.
     env_frontend = _norm_origin(os.getenv("FRONTEND_BASE_URL", ""))
-
-    # Always allow your real production domains:
     cors_origins = [
         "https://recolekt.app",
         "https://www.recolekt.app",
     ]
-
-    # Also allow whatever is configured in Railway (if set and non-empty)
     if env_frontend:
         cors_origins.append(env_frontend)
 
-# Normalize & de-duplicate
 cors_origins = sorted({ _norm_origin(o) for o in cors_origins if _norm_origin(o) })
 
 logger.info(f"🔍 CORS Origins: {cors_origins}")
 
-# ✅ Apply CORS globally
 CORS(
     app,
     origins=cors_origins,
@@ -184,45 +149,11 @@ CORS(
     allow_headers=["Content-Type", "Authorization", "Cache-Control", "Pragma"],
     expose_headers=["Set-Cookie", "Content-Type"],
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    max_age=3600,
-    send_wildcard=False,
-    always_send=True,
+    max_age=3600
 )
 
-# ✅ Global OPTIONS handler (preflight)
-@app.before_request
-def handle_preflight():
-    if request.method != "OPTIONS":
-        return None
-
-    origin = _norm_origin(request.headers.get("Origin", ""))
-
-    if origin in cors_origins:
-        response = jsonify({"status": "ok"})
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Cache-Control, Pragma"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Max-Age"] = "3600"
-        return response, 200
-
-    logger.warning(f"⚠️ CORS: Blocked preflight from unauthorized origin: {origin}")
-    return jsonify({"error": "CORS origin not allowed"}), 403
-
-# ✅ Add CORS headers on all normal responses too
-@app.after_request
-def add_cors_headers_global(response):
-    origin = _norm_origin(request.headers.get("Origin", ""))
-    if origin in cors_origins:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Cache-Control, Pragma"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Max-Age"] = "3600"
-    return response
-
 # -------------------------------------------------
-# 🔐 Initialize OAuth (AFTER logger is created)
+# 🔐 Initialize OAuth
 # -------------------------------------------------
 from authlib.integrations.flask_client import OAuth
 
@@ -239,7 +170,7 @@ app.config["oauth"] = oauth
 logger.info("✅ OAuth initialized with Google provider")
 
 # -------------------------------------------------
-# Register all blueprints (AFTER OAuth initialization)
+# Register all blueprints
 # -------------------------------------------------
 from fetcher_api.api import register_blueprints
 
@@ -260,8 +191,6 @@ else:
 
 if flask_secret != "NOT SET" and flask_secret != "your-secret-key-change-in-production":
     logger.info("✅ Flask SECRET_KEY configured.")
-else:
-    logger.warning("⚠️ Flask SECRET_KEY not configured. Sessions will be insecure!")
 
 # -------------------------------------------------
 # ✅ Global Error Handlers

@@ -6,9 +6,8 @@ import os
 import logging
 import jwt
 from datetime import datetime, timedelta, timezone
-from functools import wraps
 
-from flask import Blueprint, request, jsonify, redirect, url_for, make_response, session, current_app
+from flask import Blueprint, request, jsonify, redirect, url_for, session, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from fetcher_api.api.helpers.auth import get_user_id_from_request
@@ -22,43 +21,6 @@ auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").rstrip("/")
 JWT_SECRET = os.getenv('SECRET_KEY', 'your-secret-key')
-
-# ✅ CORS allowed origins
-ALLOWED_ORIGINS = [
-    'https://recolekt-front.netlify.app',
-    'https://recolekt.app',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-]
-
-# ---------------------------------------------------------
-# CORS DECORATOR
-# ---------------------------------------------------------
-def add_cors_headers(f):
-    """Add CORS headers to response for cross-origin requests"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if request.method == 'OPTIONS':
-            response = make_response('', 200)
-        else:
-            rv = f(*args, **kwargs)
-            if isinstance(rv, tuple):
-                response = make_response(rv[0], rv[1])
-            else:
-                response = make_response(rv)
-        
-        origin = request.headers.get('Origin', '')
-        if origin in ALLOWED_ORIGINS:
-            response.headers['Access-Control-Allow-Origin'] = origin
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Cache-Control, Pragma'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-            response.headers['Access-Control-Max-Age'] = '3600'
-        
-        return response
-    return decorated_function
 
 # ---------------------------------------------------------
 # HELPER FUNCTIONS
@@ -78,7 +40,14 @@ def create_jwt_token(user_id: str, email: str) -> str:
         'exp': datetime.now(timezone.utc) + timedelta(days=7),
         'iat': datetime.now(timezone.utc)
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
+    token = jwt.encode(payload, JWT_SECRET, algorithm='HS256')
+    
+    # ✅ FIX: PyJWT versions can sometimes return a byte string. 
+    # This guarantees it's a string so jsonify() doesn't crash with a 500!
+    if isinstance(token, bytes):
+        return token.decode('utf-8')
+        
+    return token
 
 # ---------------------------------------------------------
 # GOOGLE OAUTH ROUTES
@@ -93,11 +62,10 @@ def google_login():
     if is_local:
         redirect_uri = url_for('auth.google_callback', _external=True, _scheme='http')
     else:
-        # ✅ FIX : On force la redirection vers le frontend proxy
+        # Force redirection to the frontend proxy
         redirect_uri = "https://recolekt.app/api/auth/google/callback"
         
     logger.info(f"🔐 Google OAuth redirect_uri: {redirect_uri}")
-    
     return google.authorize_redirect(redirect_uri)
 
 @auth_bp.route("/google/callback", methods=["GET"])
@@ -119,7 +87,6 @@ def google_callback():
             
         logger.info(f"✅ Google OAuth successful for: {email}")
         
-        # Check if user exists
         existing_user = fetch_one(
             "SELECT user_id FROM users WHERE email = %s OR google_id = %s;",
             (email, google_id)
@@ -147,7 +114,6 @@ def google_callback():
                 commit=True
             )
         
-        # Create tokens
         jwt_token = create_jwt_token(user_id, email)
         session['user_id'] = user_id
         session['email'] = email
@@ -163,7 +129,6 @@ def google_callback():
 # EMAIL / PASSWORD ROUTES
 # ---------------------------------------------------------
 @auth_bp.route("/register", methods=["POST", "OPTIONS"])
-@add_cors_headers
 def register():
     """Handle email/password registration"""
     if request.method == 'OPTIONS':
@@ -196,7 +161,6 @@ def register():
         
         jwt_token = create_jwt_token(user_id, email)
         
-        # Match Google OAuth session perfectly
         session['user_id'] = user_id
         session['email'] = email
         session.permanent = True
@@ -211,9 +175,7 @@ def register():
         logger.error(f"❌ Registration error: {e}")
         return jsonify({'error': 'Registration failed due to server error'}), 500
 
-
 @auth_bp.route("/login", methods=["POST", "OPTIONS"])
-@add_cors_headers
 def login():
     """Handle email/password login"""
     if request.method == 'OPTIONS':
@@ -240,7 +202,6 @@ def login():
         name = user.get('name')
         picture = user.get('picture')
     else:
-        # Tuple fallback
         user_id = user[0]
         stored_hash = user[4]
         name = user[2]
@@ -251,7 +212,6 @@ def login():
 
     jwt_token = create_jwt_token(user_id, email)
     
-    # Match Google OAuth session perfectly
     session['user_id'] = user_id
     session['email'] = email
     session.permanent = True
@@ -263,9 +223,7 @@ def login():
         'user': {'id': user_id, 'email': email, 'name': name, 'picture': picture}
     }), 200
 
-
 @auth_bp.route("/logout", methods=["POST", "OPTIONS"])
-@add_cors_headers
 def logout():
     """Logout user"""
     if request.method == 'OPTIONS':
@@ -274,9 +232,7 @@ def logout():
     session.clear()
     return jsonify({"status": "logged_out"}), 200
 
-
 @auth_bp.route("/me", methods=["GET", "OPTIONS"])
-@add_cors_headers
 def get_current_user():
     """Get current authenticated user data"""
     if request.method == 'OPTIONS':
@@ -313,9 +269,7 @@ def get_current_user():
         logger.error(f"❌ Error fetching user /me: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
-
 @auth_bp.route("/check", methods=["GET", "OPTIONS"])
-@add_cors_headers
 def check_auth():
     """Quick boolean check if token/session is valid"""
     if request.method == 'OPTIONS':
