@@ -1,241 +1,318 @@
 # fetcher_api/api/routes/auth.py
-
+"""
+Authentication routes and helpers for Google OAuth and Email/Password
+"""
 import os
 import logging
-from flask import Blueprint, request, jsonify, session, redirect, url_for, current_app
-from fetcher_api.adapters.db import execute, fetch_one
-from datetime import datetime, timedelta, timezone
 import jwt
+from datetime import datetime, timedelta, timezone
+from functools import wraps
 
-auth_bp = Blueprint('auth', __name__)
-logger = logging.getLogger('auth')
+from flask import Blueprint, request, jsonify, redirect, url_for, make_response, session, current_app
+from werkzeug.security import generate_password_hash, check_password_hash
 
+from fetcher_api.api.helpers.auth import get_user_id_from_request
+from fetcher_api.adapters.db import execute, fetch_one
+from fetcher_api.utils.timestamps import get_unique_id
 
+logger = logging.getLogger("auth")
+
+# If your main.py/init.py already applies url_prefix='/api/auth', leave this as is.
+# If not, change to Blueprint("auth", __name__, url_prefix="/api/auth")
+auth_bp = Blueprint("auth", __name__)
+
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").rstrip("/")
+JWT_SECRET = os.getenv('SECRET_KEY', 'your-secret-key')
+
+# ✅ CORS allowed origins
+ALLOWED_ORIGINS = [
+    'https://recolekt-front.netlify.app',
+    'https://recolekt.app',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+]
+
+# ---------------------------------------------------------
+# CORS DECORATOR
+# ---------------------------------------------------------
+def add_cors_headers(f):
+    """Add CORS headers to response for cross-origin requests"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if request.method == 'OPTIONS':
+            response = make_response('', 200)
+        else:
+            rv = f(*args, **kwargs)
+            if isinstance(rv, tuple):
+                response = make_response(rv[0], rv[1])
+            else:
+                response = make_response(rv)
+        
+        origin = request.headers.get('Origin', '')
+        if origin in ALLOWED_ORIGINS:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Cache-Control, Pragma'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response.headers['Access-Control-Max-Age'] = '3600'
+        
+        return response
+    return decorated_function
+
+# ---------------------------------------------------------
+# HELPER FUNCTIONS
+# ---------------------------------------------------------
 def get_google_client():
-    """Get Google OAuth client from app config"""
+    """Retrieve the Google OAuth client from the main app config"""
     oauth = current_app.config.get('oauth')
     if not oauth:
-        raise RuntimeError('OAuth not initialized')
+        raise RuntimeError("OAuth not initialized in app config")
     return oauth.create_client('google')
 
+def create_jwt_token(user_id: str, email: str) -> str:
+    """Create a JWT token for the user"""
+    payload = {
+        'user_id': user_id,
+        'email': email,
+        'exp': datetime.now(timezone.utc) + timedelta(days=7),
+        'iat': datetime.now(timezone.utc)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
 
-@auth_bp.route('/google', methods=['GET'])
+# ---------------------------------------------------------
+# GOOGLE OAUTH ROUTES
+# ---------------------------------------------------------
+@auth_bp.route("/google", methods=["GET"])
 def google_login():
-    """Initiate Google OAuth login"""
-    try:
-        google = get_google_client()
-        
-        # Determine scheme based on environment
-        is_local = os.getenv('FLASK_ENV') == 'development' or not os.getenv('RAILWAY_ENVIRONMENT')
-        scheme = 'http' if is_local else 'https'
-        
-        # Build callback URL
-        redirect_uri = url_for('auth.google_callback', _external=True, _scheme=scheme)
-        
-        logger.info(f"🔐 Google OAuth redirect_uri: {redirect_uri}")
-        logger.info(f"🔐 Environment: {'LOCAL' if is_local else 'PRODUCTION'}")
-        
-        return google.authorize_redirect(redirect_uri)
-    except Exception as e:
-        logger.error(f"❌ Google login failed: {e}", exc_info=True)
-        return jsonify({'error': 'OAuth initialization failed', 'details': str(e)}), 500
+    """Initiate Google OAuth flow"""
+    google = get_google_client()
+    
+    # ✅ Force HTTPS in production to fix MismatchingStateError
+    is_local = os.getenv('FLASK_ENV') == 'development' or not os.getenv('RAILWAY_ENVIRONMENT')
+    scheme = 'http' if is_local else 'https'
+    
+    redirect_uri = url_for('auth.google_callback', _external=True, _scheme=scheme)
+    logger.info(f"🔐 Google OAuth redirect_uri: {redirect_uri}")
+    
+    return google.authorize_redirect(redirect_uri)
 
 
-@auth_bp.route('/google/callback')
+@auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
     """Handle Google OAuth callback"""
     try:
         google = get_google_client()
-        
-        # Get access token
         token = google.authorize_access_token()
+        user_info = token.get('userinfo') or google.get('https://www.googleapis.com/oauth2/v3/userinfo').json()
         
-        # Get user info
-        resp = google.get('https://www.googleapis.com/oauth2/v3/userinfo')
-        user_info = resp.json()
-        
+        google_id = user_info.get('sub')
         email = user_info.get('email')
         name = user_info.get('name', '')
         picture = user_info.get('picture', '')
-        google_id = user_info.get('sub')
         
         if not email or not google_id:
             logger.error("❌ Missing email or google_id in OAuth response")
-            frontend_url = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000')
-            return redirect(f"{frontend_url}/auth?error=missing_data")
-        
+            return redirect(f'{FRONTEND_BASE_URL}/auth?error=missing_data')
+            
         logger.info(f"✅ Google OAuth successful for: {email}")
         
         # Check if user exists
         existing_user = fetch_one(
-            "SELECT user_id, email, name, picture FROM users WHERE email = %s",
-            (email,)
+            "SELECT user_id FROM users WHERE email = %s OR google_id = %s;",
+            (email, google_id)
         )
         
         if existing_user:
-            # Handle both dict and tuple response
-            if isinstance(existing_user, dict):
-                user_id = existing_user['user_id']
-            else:
-                user_id = existing_user[0]
-            
-            logger.info(f"✅ Existing user logged in: {email} (ID: {user_id})")
-            
-            # Update user info
+            user_id = existing_user['user_id'] if isinstance(existing_user, dict) else existing_user[0]
+            logger.info(f"👤 Existing user found: {user_id}")
             execute(
-                """
-                UPDATE users 
-                SET name = %s, picture = %s, google_id = %s, updated_at = NOW()
-                WHERE email = %s
-                """,
-                (name, picture, google_id, email),
+                "UPDATE users SET google_id = %s, picture = %s, updated_at = NOW() WHERE user_id = %s;",
+                (google_id, picture, user_id),
                 commit=True
             )
         else:
-            # Generate unique user_id
-            from fetcher_api.utils.timestamps import get_unique_id
             user_id = get_unique_id(email)
-            
-            # Create new user
+            logger.info(f"✨ Creating new user: {user_id}")
             execute(
                 """
-                INSERT INTO users (user_id, email, name, picture, google_id, verified, created_at)
+                INSERT INTO users (user_id, email, name, google_id, picture, verified, created_at)
                 VALUES (%s, %s, %s, %s, %s, TRUE, NOW())
+                ON CONFLICT (email) DO UPDATE
+                SET google_id = EXCLUDED.google_id, picture = EXCLUDED.picture, verified = TRUE;
                 """,
-                (user_id, email, name, picture, google_id),
+                (user_id, email, name, google_id, picture),
                 commit=True
             )
-            
-            logger.info(f"✅ New user created: {email} (ID: {user_id})")
         
-        # Create JWT token
-        jwt_secret = os.getenv('SECRET_KEY', 'your-secret-key')
-        jwt_token = jwt.encode(
-            {
-                'user_id': user_id,
-                'email': email,
-                'exp': datetime.now(timezone.utc) + timedelta(days=7),
-                'iat': datetime.now(timezone.utc)
-            },
-            jwt_secret,
-            algorithm='HS256'
-        )
-        
-        # Store in session as backup
+        # Create tokens
+        jwt_token = create_jwt_token(user_id, email)
         session['user_id'] = user_id
         session['email'] = email
         session.permanent = True
         
-        # Redirect to frontend with JWT token
-        frontend_url = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000')
-        return redirect(f"{frontend_url}/gallery?token={jwt_token}")
+        return redirect(f'{FRONTEND_BASE_URL}/gallery?token={jwt_token}')
         
     except Exception as e:
-        logger.error(f"❌ Google callback failed: {e}", exc_info=True)
-        frontend_url = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000')
-        return redirect(f"{frontend_url}/auth?error=auth_failed")
+        logger.error(f"❌ Google OAuth error: {e}", exc_info=True)
+        return redirect(f'{FRONTEND_BASE_URL}/auth?error=oauth_failed')
+
+# ---------------------------------------------------------
+# EMAIL / PASSWORD ROUTES
+# ---------------------------------------------------------
+@auth_bp.route("/register", methods=["POST", "OPTIONS"])
+@add_cors_headers
+def register():
+    """Handle email/password registration"""
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    data = request.get_json() or {}
+    email = data.get('email')
+    password = data.get('password')
+    name = data.get('name', 'User')
+
+    if not email or not password:
+        return jsonify({'error': 'Email and password required'}), 400
+
+    existing = fetch_one("SELECT user_id FROM users WHERE email = %s;", (email,))
+    if existing:
+        return jsonify({'error': 'User already exists with this email'}), 409
+
+    try:
+        user_id = get_unique_id(email)
+        password_hash = generate_password_hash(password)
+        
+        # Ensure your users table has a password_hash column!
+        execute(
+            """
+            INSERT INTO users (user_id, email, name, password_hash, verified, created_at)
+            VALUES (%s, %s, %s, %s, TRUE, NOW());
+            """,
+            (user_id, email, name, password_hash),
+            commit=True
+        )
+        
+        jwt_token = create_jwt_token(user_id, email)
+        session['user_id'] = user_id
+        
+        logger.info(f"✅ User registered via email: {email}")
+        return jsonify({
+            'message': 'Registered successfully',
+            'token': jwt_token,
+            'user': {'id': user_id, 'email': email, 'name': name}
+        }), 201
+    except Exception as e:
+        logger.error(f"❌ Registration error: {e}")
+        return jsonify({'error': 'Registration failed due to server error'}), 500
 
 
-@auth_bp.route('/logout', methods=['POST', 'OPTIONS'])
+@auth_bp.route("/login", methods=["POST", "OPTIONS"])
+@add_cors_headers
+def login():
+    """Handle email/password login"""
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    data = request.get_json() or {}
+    email = data.get('email')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({'error': 'Email and password required'}), 400
+
+    user = fetch_one(
+        "SELECT user_id, email, name, picture, password_hash FROM users WHERE email = %s;", 
+        (email,)
+    )
+
+    if not user:
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    if isinstance(user, dict):
+        user_id = user['user_id']
+        stored_hash = user.get('password_hash')
+        name = user.get('name')
+        picture = user.get('picture')
+    else:
+        # Tuple fallback
+        user_id = user[0]
+        stored_hash = user[4]
+        name = user[2]
+        picture = user[3]
+
+    if not stored_hash or not check_password_hash(stored_hash, password):
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    jwt_token = create_jwt_token(user_id, email)
+    session['user_id'] = user_id
+
+    logger.info(f"✅ User logged in via email: {email}")
+    return jsonify({
+        'message': 'Login successful',
+        'token': jwt_token,
+        'user': {'id': user_id, 'email': email, 'name': name, 'picture': picture}
+    }), 200
+
+
+@auth_bp.route("/logout", methods=["POST", "OPTIONS"])
+@add_cors_headers
 def logout():
     """Logout user"""
     if request.method == 'OPTIONS':
         return '', 200
     
     session.clear()
-    return jsonify({'message': 'Logged out successfully'}), 200
+    return jsonify({"status": "logged_out"}), 200
 
 
-@auth_bp.route('/me', methods=['GET', 'OPTIONS'])
+@auth_bp.route("/me", methods=["GET", "OPTIONS"])
+@add_cors_headers
 def get_current_user():
-    """Get current authenticated user"""
+    """Get current authenticated user data"""
     if request.method == 'OPTIONS':
         return '', 200
     
+    user_id = get_user_id_from_request()
+    
+    if not user_id:
+        return jsonify({'authenticated': False}), 401
+    
     try:
-        user_id = None
-        
-        # Try JWT first
-        auth_header = request.headers.get('Authorization', '')
-        if auth_header.startswith('Bearer '):
-            token = auth_header.replace('Bearer ', '').strip()
-            try:
-                jwt_secret = os.getenv('SECRET_KEY', 'your-secret-key')
-                payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
-                user_id = payload.get('user_id')
-                logger.info(f"✅ JWT auth successful for user_id: {user_id}")
-            except jwt.ExpiredSignatureError:
-                logger.warning("⚠️ JWT token expired")
-            except jwt.InvalidTokenError as e:
-                logger.warning(f"⚠️ Invalid JWT token: {e}")
-        
-        # Fall back to session
-        if not user_id:
-            user_id = session.get('user_id')
-            if user_id:
-                logger.info(f"✅ Session auth successful for user_id: {user_id}")
-        
-        if not user_id:
-            logger.warning("❌ No authentication found")
-            return jsonify({'authenticated': False, 'error': 'Not authenticated'}), 401
-        
-        # Fetch user from database
         user = fetch_one(
             "SELECT user_id, email, name, picture FROM users WHERE user_id = %s",
             (user_id,)
         )
         
         if not user:
-            logger.error(f"❌ User not found in database: {user_id}")
-            return jsonify({'authenticated': False, 'error': 'User not found'}), 404
+            return jsonify({'authenticated': False}), 401
         
-        # Handle both dict and tuple response
-        if isinstance(user, dict):
-            user_data = {
-                'id': user['user_id'],
-                'email': user['email'],
-                'name': user['name'],
-                'picture': user['picture']
-            }
-        else:
-            user_data = {
-                'id': user[0],
-                'email': user[1],
-                'name': user[2],
-                'picture': user[3]
-            }
+        user_dict = dict(user) if isinstance(user, dict) else {
+            'user_id': user[0], 'email': user[1], 'name': user[2], 'picture': user[3]
+        }
         
-        logger.info(f"✅ /me endpoint successful for: {user_data['email']}")
         return jsonify({
             'authenticated': True,
-            'user': user_data
+            'user': {
+                'id': user_dict['user_id'],
+                'email': user_dict.get('email'),
+                'name': user_dict.get('name'),
+                'picture': user_dict.get('picture')
+            }
         }), 200
-        
     except Exception as e:
-        logger.error(f"❌ /me endpoint error: {e}", exc_info=True)
-        return jsonify({'authenticated': False, 'error': 'Internal server error', 'details': str(e)}), 500
+        logger.error(f"❌ Error fetching user /me: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
 
 
-@auth_bp.route('/check', methods=['GET', 'OPTIONS'])
+@auth_bp.route("/check", methods=["GET", "OPTIONS"])
+@add_cors_headers
 def check_auth():
-    """Quick auth check endpoint"""
+    """Quick boolean check if token/session is valid"""
     if request.method == 'OPTIONS':
         return '', 200
     
-    # Try JWT
-    auth_header = request.headers.get('Authorization', '')
-    if auth_header.startswith('Bearer '):
-        token = auth_header.replace('Bearer ', '').strip()
-        try:
-            jwt_secret = os.getenv('SECRET_KEY', 'your-secret-key')
-            payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
-            if payload.get('user_id'):
-                return jsonify({'authenticated': True}), 200
-        except:
-            pass
+    user_id = get_user_id_from_request()
+    return jsonify({'authenticated': user_id is not None}), 200 if user_id else 401
     
-    # Try session
-    if session.get('user_id'):
-        return jsonify({'authenticated': True}), 200
-    
-    return jsonify({'authenticated': False}), 401
