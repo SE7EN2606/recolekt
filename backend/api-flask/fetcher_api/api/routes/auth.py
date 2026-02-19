@@ -89,15 +89,17 @@ def google_login():
     """Initiate Google OAuth flow"""
     google = get_google_client()
     
-    # ✅ Force HTTPS in production to fix MismatchingStateError
     is_local = os.getenv('FLASK_ENV') == 'development' or not os.getenv('RAILWAY_ENVIRONMENT')
-    scheme = 'http' if is_local else 'https'
     
-    redirect_uri = url_for('auth.google_callback', _external=True, _scheme=scheme)
+    if is_local:
+        redirect_uri = url_for('auth.google_callback', _external=True, _scheme='http')
+    else:
+        # ✅ FIX : On force la redirection vers le frontend proxy
+        redirect_uri = "https://recolekt.app/api/auth/google/callback"
+        
     logger.info(f"🔐 Google OAuth redirect_uri: {redirect_uri}")
     
     return google.authorize_redirect(redirect_uri)
-
 
 @auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
