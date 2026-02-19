@@ -312,7 +312,6 @@ def list_saved_reels():
             row_dict["summary_text"] = summary_obj
             row_dict["summary"] = summary_obj
 
-            # Remove redundant fields from response payload
             row_dict.pop("summary_bullets", None)
             row_dict.pop("summary_hashtags", None)
             row_dict.pop("summary_emojis", None)
@@ -397,6 +396,74 @@ def update_reel(process_id):
 
     except Exception as e:
         logger.error(f"Error updating reel {process_id}: {e}", exc_info=True)
+        return jsonify({"error": "Internal error"}), 500
+
+
+@reel_bp.route("/reel/<process_id>", methods=["GET"])
+def get_reel(process_id):
+    """Fetch a single reel by ID — used by VideoDetail for fast direct lookup"""
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        if "--" in process_id:
+            shortcode = process_id.split("--")[0]
+        else:
+            shortcode = process_id.split("-")[0]
+        shortcode = shortcode.rstrip("-")
+
+        row = fetch_one(
+            """
+            SELECT
+                id, source_url, folder_id, is_favorite, status,
+                summary_category, summary_title, summary_topic, summary_text,
+                summary_bullets, summary_hashtags, summary_emojis,
+                content_type, created_at, caption, author_name,
+                is_long_video, duration, recipe, workout, transcription,
+                gcs_urls
+            FROM reels
+            WHERE user_id = %s AND (id = %s OR id LIKE %s OR source_url LIKE %s)
+            LIMIT 1
+            """,
+            (user_id, process_id, f"{shortcode}%", f"%{shortcode}%"),
+        )
+
+        if not row:
+            return jsonify({"error": "Reel not found"}), 404
+
+        row_dict = dict(row) if hasattr(row, "keys") else row._asdict()
+        caption = row_dict.get("caption") or ""
+
+        row_dict["recipe"] = json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe"))
+        row_dict["workout"] = json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout"))
+        row_dict["gcs_urls"] = json_loads_maybe(row_dict.get("gcs_urls"), default=row_dict.get("gcs_urls"))
+        row_dict["transcription"] = parse_transcription(row_dict.get("transcription"))
+
+        if isinstance(row_dict.get("recipe"), dict):
+            row_dict["recipe"] = normalize_recipe(row_dict["recipe"], caption)
+
+        summary_obj, summary_title_str, _english_preview = _build_canonical_summary(row_dict, caption)
+        row_dict["summary_title"] = summary_title_str
+        row_dict["summary_text"] = summary_obj
+        row_dict["summary"] = summary_obj
+
+        row_dict.pop("summary_bullets", None)
+        row_dict.pop("summary_hashtags", None)
+        row_dict.pop("summary_emojis", None)
+
+        row_dict["author_name"] = row_dict.get("author_name") or "Unknown"
+
+        if row_dict.get("created_at"):
+            row_dict["created_at"] = row_dict["created_at"].isoformat()
+
+        logger.info(f"✅ GET /reel/{process_id} -> {row_dict['id']}")
+        response = jsonify(row_dict)
+        return add_no_cache_headers(response)
+
+    except Exception as e:
+        logger.error(f"Error fetching reel {process_id}: {e}", exc_info=True)
         return jsonify({"error": "Internal error"}), 500
 
 
@@ -554,7 +621,6 @@ def search_reels():
             row_dict["summary_text"] = summary_obj
             row_dict["summary"] = summary_obj
 
-            # Remove redundant fields from response payload
             row_dict.pop("summary_bullets", None)
             row_dict.pop("summary_hashtags", None)
             row_dict.pop("summary_emojis", None)

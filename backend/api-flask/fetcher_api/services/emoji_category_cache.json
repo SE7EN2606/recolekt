@@ -134,5 +134,16 @@
   "muscade": "SPICE",
   "cocoa powder": "SWEETENER_CHOCOLATE",
   "sweetened condensed milk": "SWEETENER_LIQUID",
-  "sugar syrup": "SWEETENER_LIQUID"
+  "sugar syrup": "SWEETENER_LIQUID",
+  "hazelnut spread": "SWEETENER_CHOCOLATE",
+  "farine de gruau ou t45": "GRAIN",
+  "levure fraiche": "OTHER",
+  "œuf": "PROTEIN_EGG",
+  "lait entier": "PROTEIN_DAIRY",
+  "chocolate spread or jam": "SWEETENER_CHOCOLATE",
+  "puff pastry sheet": "GRAIN",
+  "rum": "ALCOHOL",
+  "orange blossom water": "LIQUID",
+  "bitter almond extract": "VANILLA",
+  "leeks white part only": "ALLIUM"
 }
