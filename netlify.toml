@@ -13,14 +13,21 @@ for = "/assets/*.css"
 [headers.values]
 Content-Type = "text/css; charset=utf-8"
 
-# Redirect Netlify subdomain to custom domain
+# 1. Redirect Netlify subdomain to custom domain
 [[redirects]]
 from = "https://recolekt-front.netlify.app/*"
 to = "https://recolekt.app/:splat"
 status = 301
 force = true
 
-# SPA fallback for React Router
+# 2. PROXY API TO RAILWAY (MUST be before SPA fallback)
+[[redirects]]
+from = "/api/*"
+to = "https://api.recolekt.app/api/:splat"
+status = 200
+force = true
+
+# 3. SPA fallback for React Router (MUST be last)
 [[redirects]]
 from = "/*"
 to = "/index.html"
