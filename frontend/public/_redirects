@@ -1,6 +1,0 @@
-# Proxy API to Railway (must be FIRST)
-#/api/* https://api.recolekt.app/:splat 200
-/api/*  https://api.recolekt.app/api/:splat  200
-
-# SPA fallback (must be LAST)
- /*      /index.html  200
