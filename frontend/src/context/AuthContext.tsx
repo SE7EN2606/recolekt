@@ -17,17 +17,20 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const RAW_API_BASE =
-  import.meta.env.VITE_API_BASE ||
-  import.meta.env.VITE_API_URL ||
-  'http://localhost:5001';
+// ✅ FIX: Safe API Base resolution. Do NOT fall back to localhost in production!
+const getApiBase = () => {
+  if (import.meta.env.MODE === 'production') {
+    return import.meta.env.VITE_API_BASE || ''; // Safe to be empty for Netlify proxy
+  }
+  return import.meta.env.VITE_API_BASE || 'http://localhost:5001';
+};
 
-const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
+const API_BASE = getApiBase();
 
 function joinUrl(base: string, path: string) {
   const b = String(base || '').replace(/\/+$/, '');
   const p = String(path || '').replace(/^\/+/, '');
-  return `${b}/${p}`;
+  return b ? `${b}/${p}` : `/${p}`;
 }
 
 function getAuthHeaders(): HeadersInit {
@@ -43,8 +46,6 @@ const LS_USER_KEY = 'auth_user';
 const LS_USER_TS_KEY = 'auth_user_updated_at';
 
 function loadCachedUserUnsafeInstant(): User | null {
-  // "Instant" mode: if it looks like a user object, use it for first paint.
-  // We still revalidate immediately in background.
   try {
     const raw = localStorage.getItem(LS_USER_KEY);
     if (!raw) return null;
@@ -93,9 +94,7 @@ function readTokenInUrl(): string | null {
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // IMPORTANT: sync init (no flash). This runs on the first render only (lazy init). [web:139]
   const [user, setUser] = useState<User | null>(() => {
-    // If we're on OAuth callback (token in URL), ignore old cached user to prevent mismatch.
     if (hasTokenInUrl()) return null;
 
     const token = localStorage.getItem('auth_token');
@@ -105,13 +104,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const [loading, setLoading] = useState<boolean>(() => {
-    // If OAuth callback: we must validate /me before showing logged-in UI
     if (hasTokenInUrl()) return true;
 
     const token = localStorage.getItem('auth_token');
     if (!token) return false;
 
-    // If we have cached user, we're done "loading" immediately.
     const cached = loadCachedUserUnsafeInstant();
     return !cached;
   });
@@ -123,6 +120,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearAuthEverywhere = () => {
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('token'); // Also clear the legacy key
     clearCachedUser();
     setUser(null);
   };
@@ -144,14 +142,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     abortRef.current = controller;
 
     try {
-      const response = await fetch(joinUrl(API_BASE, '/api/auth/me'), {
+      const targetUrl = joinUrl(API_BASE, '/api/auth/me');
+      console.log(`📡 Fetching user data from: ${targetUrl}`); // Debug log
+
+      const response = await fetch(targetUrl, {
         credentials: 'include',
         headers: getAuthHeaders(),
         signal: controller.signal,
       });
 
       if (response.status === 401) {
+        console.warn("⚠️ Token rejected by server (401)");
         clearAuthEverywhere();
+        setLoading(false);
         return;
       }
 
@@ -168,8 +171,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error: any) {
       if (error?.name === 'AbortError') return;
 
-      // If we already showed a cached user, keep it (offline-friendly).
-      // If we had no user, fall back to logged out.
+      console.error("❌ fetchMe Error:", error);
+
       if (!userRef.current) {
         clearAuthEverywhere();
       }
@@ -179,15 +182,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    // 1) OAuth callback: token arrives in URL => store + clean URL + validate with loading
     const tokenInUrl = readTokenInUrl();
     if (tokenInUrl) {
+      // Save it under BOTH keys to prevent mismatches across files
       localStorage.setItem('auth_token', tokenInUrl);
+      localStorage.setItem('token', tokenInUrl);
 
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
 
-      // Must validate to get user; keep loading true here.
       void fetchMe({ showLoading: true });
 
       return () => {
@@ -195,7 +198,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    // 2) Normal refresh: if we have token:
     const token = localStorage.getItem('auth_token');
     if (!token) {
       clearCachedUser();
@@ -206,11 +208,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    // If we had cached user, revalidate in background WITHOUT toggling loading (SWR idea). [web:129]
     if (userRef.current) {
       void fetchMe({ showLoading: false });
     } else {
-      // Token but no cached user => show loading until /me
       void fetchMe({ showLoading: true });
     }
 
@@ -220,7 +220,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keep auth in sync across tabs
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === 'auth_token' && !e.newValue) {

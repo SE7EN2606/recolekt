@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { X } from 'lucide-react';
-import { useData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -8,174 +8,141 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { registerUser, loginUser, loading, error, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
-  
-  const { login } = useData();
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
 
-  if (!isOpen) return null;
-
-  const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setErrorMsg('');
-    
-    try {
-      const endpoint = isSignUp ? '/api/auth/register' : '/api/auth/login';
-      const apiUrl = import.meta.env.VITE_API_BASE || '';
-      
-      console.log(`📡 Sending auth request to: ${apiUrl}${endpoint}`);
-
-      // Send real data to the backend
-      const response = await fetch(`${apiUrl}${endpoint}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include', // Tells browser to save the session cookie
-        body: JSON.stringify({ email, password }),
-      });
-
-      console.log(`📥 Received status: ${response.status}`);
-
-      // ✅ FIX: Safely read the response as text first!
-      // If the server crashes and sends an HTML 500 error page, this prevents the frontend from freezing.
-      const textResponse = await response.text();
-      let data;
-      
-      try {
-        data = JSON.parse(textResponse);
-      } catch (parseError) {
-        console.error("❌ Server sent non-JSON response:", textResponse);
-        throw new Error(`Server Error (${response.status}): Check the console or Railway logs.`);
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error || data.message || 'Authentication failed');
-      }
-
-      if (!data.token) {
-        throw new Error('Server did not return an authentication token.');
-      }
-
-      console.log("✅ Auth successful, redirecting...");
-      
-      // Save token to local storage
-      localStorage.setItem('token', data.token);
-      
-      // Force the browser to redirect to the gallery with the token in the URL.
-      window.location.href = `/gallery?token=${data.token}`;
-      
-    } catch (error) {
-      console.error("❌ Auth error caught:", error);
-      // This will now actually print the error on your screen instead of freezing!
-      setErrorMsg(error instanceof Error ? error.message : "Authentication failed");
-      setLoading(false); 
+  const handleLogin = async () => {
+    console.log('🔥 Login:', email);
+    const user = await loginUser(email, password);
+    if (user) {
+      console.log('✅ Login success, nav to gallery');
+      navigate('/gallery');
+      onClose();
     }
   };
 
-  const handleGoogleSignIn = () => {
-     // Redirect the browser to your Flask Google OAuth endpoint
-     const apiUrl = import.meta.env.VITE_API_BASE || '';
-     window.location.href = `${apiUrl}/api/auth/google`;
+  const handleSignup = async () => {
+    console.log('🔥 Signup:', email);
+    const user = await registerUser(email, password);
+    if (user) {
+      console.log('✅ Signup + auto-login success!');
+      navigate('/gallery');
+      onClose();
+    }
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (mode === 'login') {
+      handleLogin();
+    } else {
+      handleSignup();
+    }
+  };
+
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8 relative mx-4 animate-fade-in">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
-        >
-          <X size={24} />
-        </button>
-
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">
-          {isSignUp ? 'Create Account' : 'Sign In'}
-        </h2>
-        
-        {errorMsg && (
-          <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200 break-words">
-            {errorMsg}
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+      <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 max-w-md w-full max-h-[90vh] overflow-hidden">
+        {/* Header */}
+        <div className="p-6 pb-4 border-b border-gray-100">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-2xl font-black text-gray-900">
+              {mode === 'login' ? 'Sign In' : 'Create Account'}
+            </h2>
+            <button
+              onClick={onClose}
+              className="p-2 -m-2 rounded-xl hover:bg-gray-100 transition-all"
+            >
+              <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
-        )}
+          <div className="flex space-x-2 text-sm">
+            <button
+              onClick={() => setMode('login')}
+              className={`px-4 py-1.5 rounded-xl font-semibold transition-all ${
+                mode === 'login'
+                  ? 'bg-primary-600 text-white shadow-lg'
+                  : 'text-gray-600 hover:text-primary-600'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              onClick={() => setMode('signup')}
+              className={`px-4 py-1.5 rounded-xl font-semibold transition-all ${
+                mode === 'signup'
+                  ? 'bg-primary-600 text-white shadow-lg'
+                  : 'text-gray-600 hover:text-primary-600'
+              }`}
+            >
+              Sign Up
+            </button>
+          </div>
+        </div>
 
-        <form onSubmit={handleAuth} className="space-y-4">
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
+              <p className="text-sm text-red-800 font-medium">{error}</p>
+            </div>
+          )}
+          
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email
-            </label>
             <input
               type="email"
+              required
+              placeholder="Email address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-              placeholder="your@email.com"
+              className="w-full px-4 py-3.5 border border-gray-200 rounded-2xl text-lg font-medium focus:ring-4 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm"
+              disabled={loading}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Password
-            </label>
             <input
               type="password"
+              required
+              placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={6}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-              placeholder="••••••••"
+              className="w-full px-4 py-3.5 border border-gray-200 rounded-2xl text-lg font-medium focus:ring-4 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm"
+              disabled={loading}
             />
           </div>
 
           <button
             type="submit"
-            disabled={loading}
-            className="w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-50"
+            disabled={loading || !email || !password}
+            className="w-full bg-gradient-to-r from-primary-600 to-primary-700 text-white py-4 px-6 rounded-2xl font-bold text-lg shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
           >
-            {loading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Sign In')}
+            {loading ? 'Creating Account...' : mode === 'login' ? 'Sign In' : 'Create Account'}
           </button>
         </form>
 
-        <div className="relative my-6">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-300"></div>
-          </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-white text-gray-500">Or continue with</span>
-          </div>
-        </div>
-
-        <button
-          onClick={handleGoogleSignIn}
-          className="w-full flex items-center justify-center gap-3 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-lg transition-colors"
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18">
-            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
-            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/>
-            <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707 0-.593.102-1.17.282-1.709V4.958H.957C.347 6.173 0 7.548 0 9c0 1.452.348 2.827.957 4.042l3.007-2.335z"/>
-            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
-          </svg>
-          Google
-        </button>
-
-        <p className="mt-6 text-center text-sm text-gray-600">
-          {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
+        {/* Footer */}
+        <div className="px-6 pb-6 pt-2">
           <button
-            onClick={() => { 
-              setIsSignUp(!isSignUp); 
-              setErrorMsg(''); // clear errors when toggling modes
+            type="button"
+            onClick={() => {
+              console.log('🔥 TEST REGISTER NOW');
+              handleSignup();
             }}
-            className="text-primary-600 hover:text-primary-700 font-medium"
+            className="w-full bg-orange-500 text-white py-2 px-4 rounded-xl font-bold text-sm shadow-lg hover:bg-orange-600 transition-all"
+            disabled={loading}
           >
-            {isSignUp ? 'Sign In' : 'Sign Up'}
+            🔥 TEST REGISTER (Console Debug)
           </button>
-        </p>
+        </div>
       </div>
     </div>
   );
