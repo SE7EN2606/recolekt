@@ -2,3 +2,5 @@
 
 # macOS
 .DS_Store
+frontend/public/assets/work/
+frontend/src/assets/work/
