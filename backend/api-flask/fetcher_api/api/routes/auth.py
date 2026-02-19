@@ -17,9 +17,8 @@ from fetcher_api.utils.timestamps import get_unique_id
 
 logger = logging.getLogger("auth")
 
-# If your main.py/init.py already applies url_prefix='/api/auth', leave this as is.
-# If not, change to Blueprint("auth", __name__, url_prefix="/api/auth")
-auth_bp = Blueprint("auth", __name__)
+# Force the url_prefix here so we are 100% sure /register maps to /api/auth/register
+auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").rstrip("/")
 JWT_SECRET = os.getenv('SECRET_KEY', 'your-secret-key')
@@ -317,4 +316,3 @@ def check_auth():
     
     user_id = get_user_id_from_request()
     return jsonify({'authenticated': user_id is not None}), 200 if user_id else 401
-    
