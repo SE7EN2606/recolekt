@@ -42,16 +42,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         throw new Error(data.error || 'Authentication failed');
       }
 
-      // Save token and trigger context login
+      // Save token to local storage
       localStorage.setItem('token', data.token);
-      await login(); // Update your app's global state
-      onClose();
+      
+      // ✅ FIX: Force the browser to redirect to the gallery with the token in the URL.
+      // This perfectly mimics the Google OAuth flow, ensuring the app recognizes the login.
+      window.location.href = `/gallery?token=${data.token}`;
       
     } catch (error) {
       console.error("Auth error:", error);
       setErrorMsg(error instanceof Error ? error.message : "Authentication failed");
-    } finally {
-      setLoading(false);
+      setLoading(false); // Only toggle loading off if there's an error. If successful, the page will redirect.
     }
   };
 
