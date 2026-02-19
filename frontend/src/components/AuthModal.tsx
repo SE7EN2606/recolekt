@@ -27,6 +27,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
       const endpoint = isSignUp ? '/api/auth/register' : '/api/auth/login';
       const apiUrl = import.meta.env.VITE_API_BASE || '';
       
+      console.log(`📡 Sending auth request to: ${apiUrl}${endpoint}`);
+
       // Send real data to the backend
       const response = await fetch(`${apiUrl}${endpoint}`, {
         method: 'POST',
@@ -37,23 +39,41 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
+      console.log(`📥 Received status: ${response.status}`);
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Authentication failed');
+      // ✅ FIX: Safely read the response as text first!
+      // If the server crashes and sends an HTML 500 error page, this prevents the frontend from freezing.
+      const textResponse = await response.text();
+      let data;
+      
+      try {
+        data = JSON.parse(textResponse);
+      } catch (parseError) {
+        console.error("❌ Server sent non-JSON response:", textResponse);
+        throw new Error(`Server Error (${response.status}): Check the console or Railway logs.`);
       }
 
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'Authentication failed');
+      }
+
+      if (!data.token) {
+        throw new Error('Server did not return an authentication token.');
+      }
+
+      console.log("✅ Auth successful, redirecting...");
+      
       // Save token to local storage
       localStorage.setItem('token', data.token);
       
       // Force the browser to redirect to the gallery with the token in the URL.
-      // This perfectly mimics the Google OAuth flow, ensuring the app recognizes the login.
       window.location.href = `/gallery?token=${data.token}`;
       
     } catch (error) {
-      console.error("Auth error:", error);
+      console.error("❌ Auth error caught:", error);
+      // This will now actually print the error on your screen instead of freezing!
       setErrorMsg(error instanceof Error ? error.message : "Authentication failed");
-      setLoading(false); // Only toggle loading off if there's an error. If successful, the page will redirect.
+      setLoading(false); 
     }
   };
 
@@ -78,7 +98,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         </h2>
         
         {errorMsg && (
-          <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">
+          <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200 break-words">
             {errorMsg}
           </div>
         )}
