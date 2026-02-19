@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
-import { useData } from '../context/DataContext'; // Changed to DataContext
+import { useData } from '../context/DataContext';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -12,26 +12,53 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   
-  const { login } = useData(); // Use the simplified login
+  const { login } = useData();
 
   if (!isOpen) return null;
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setErrorMsg('');
     
-    // Simulate API delay, then login
-    setTimeout(async () => {
-      await login();
-      setLoading(false);
+    try {
+      const endpoint = isSignUp ? '/api/auth/register' : '/api/auth/login';
+      const apiUrl = import.meta.env.VITE_API_BASE || '';
+      
+      // Send real data to the backend
+      const response = await fetch(`${apiUrl}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Authentication failed');
+      }
+
+      // Save token and trigger context login
+      localStorage.setItem('token', data.token);
+      await login(); // Update your app's global state
       onClose();
-    }, 800);
+      
+    } catch (error) {
+      console.error("Auth error:", error);
+      setErrorMsg(error instanceof Error ? error.message : "Authentication failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleGoogleSignIn = async () => {
-     await login();
-     onClose();
+  const handleGoogleSignIn = () => {
+     // Redirect the browser to your Flask Google OAuth endpoint
+     const apiUrl = import.meta.env.VITE_API_BASE || '';
+     window.location.href = `${apiUrl}/api/auth/google`;
   };
 
   return (
@@ -47,6 +74,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         <h2 className="text-2xl font-bold text-gray-900 mb-6">
           {isSignUp ? 'Create Account' : 'Sign In'}
         </h2>
+        
+        {errorMsg && (
+          <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">
+            {errorMsg}
+          </div>
+        )}
 
         <form onSubmit={handleAuth} className="space-y-4">
           <div>
@@ -112,7 +145,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         <p className="mt-6 text-center text-sm text-gray-600">
           {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
           <button
-            onClick={() => { setIsSignUp(!isSignUp); }}
+            onClick={() => { 
+              setIsSignUp(!isSignUp); 
+              setErrorMsg(''); // clear errors when toggling modes
+            }}
             className="text-primary-600 hover:text-primary-700 font-medium"
           >
             {isSignUp ? 'Sign In' : 'Sign Up'}
