@@ -185,7 +185,6 @@ def register():
         user_id = get_unique_id(email)
         password_hash = generate_password_hash(password)
         
-        # Ensure your users table has a password_hash column!
         execute(
             """
             INSERT INTO users (user_id, email, name, password_hash, verified, created_at)
@@ -196,7 +195,11 @@ def register():
         )
         
         jwt_token = create_jwt_token(user_id, email)
+        
+        # Match Google OAuth session perfectly
         session['user_id'] = user_id
+        session['email'] = email
+        session.permanent = True
         
         logger.info(f"✅ User registered via email: {email}")
         return jsonify({
@@ -247,7 +250,11 @@ def login():
         return jsonify({'error': 'Invalid credentials'}), 401
 
     jwt_token = create_jwt_token(user_id, email)
+    
+    # Match Google OAuth session perfectly
     session['user_id'] = user_id
+    session['email'] = email
+    session.permanent = True
 
     logger.info(f"✅ User logged in via email: {email}")
     return jsonify({

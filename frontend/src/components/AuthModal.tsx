@@ -33,6 +33,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Tells browser to save the session cookie
         body: JSON.stringify({ email, password }),
       });
 
@@ -45,7 +46,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
       // Save token to local storage
       localStorage.setItem('token', data.token);
       
-      // ✅ FIX: Force the browser to redirect to the gallery with the token in the URL.
+      // Force the browser to redirect to the gallery with the token in the URL.
       // This perfectly mimics the Google OAuth flow, ensuring the app recognizes the login.
       window.location.href = `/gallery?token=${data.token}`;
       
