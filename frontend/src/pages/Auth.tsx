@@ -4,23 +4,7 @@ import { Mail, Lock, User, ArrowLeft, AlertCircle } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth } from '../context/AuthContext';
 
-/*
-✅ FIXED SAFE BASE URL - same pattern as other files
-*/
-const RAW_API_BASE =
-  import.meta.env.VITE_API_BASE ||
-  import.meta.env.VITE_API_URL ||
-  'http://localhost:5001';
-
-const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
-
-function joinUrl(base: string, path: string) {
-  const b = String(base || '').replace(/\/+$/, '');
-  const p = String(path || '').replace(/^\/+/, '');
-  return `${b}/${p}`;
-}
-
-// Custom Download Icon (from your SVG data)
+// Custom Download Icon
 const DownloadIcon = ({ color }: { color: string }) => (
   <svg 
     xmlns="http://www.w3.org/2000/svg" 
@@ -45,7 +29,9 @@ export const Auth: React.FC = () => {
   const [loading, setLoading] = useState(false);
   
   const navigate = useNavigate();
-  const { user, signInWithGoogle } = useAuth();
+  
+  // ✅ FIX: Pull in our bulletproof functions from the context!
+  const { user, signInWithGoogle, loginUser, registerUser } = useAuth();
 
   useEffect(() => {
     const pending = localStorage.getItem('pendingVideoUrl');
@@ -66,41 +52,30 @@ export const Auth: React.FC = () => {
 
     try {
       const formData = new FormData(e.currentTarget);
-      const email = formData.get('email');
-      const password = formData.get('password');
-      const name = formData.get('name');
+      const email = (formData.get('email') as string) || 'demo@demo.com';
+      const password = (formData.get('password') as string) || 'demo';
       
-      const payload: any = {
-        email: email || 'demo@demo.com',
-        password: password || 'demo'
-      };
-
-      if (!isLogin && name) {
-        payload.name = name;
+      let resultUser;
+      
+      // ✅ FIX: Route the request through the AuthContext instead of manual fetch
+      if (isLogin) {
+        resultUser = await loginUser(email, password);
+      } else {
+        resultUser = await registerUser(email, password);
       }
 
-      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-      const url = joinUrl(API_BASE, endpoint);
-
-      console.log('🔐 Auth request to:', url);
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        credentials: 'include'
-      });
-
-      if (response.ok) {
-        window.location.reload();
+      if (resultUser) {
+        // ✅ FIX: Safe timeout to guarantee localStorage is synced before redirect
+        setTimeout(() => {
+          window.location.href = '/gallery';
+        }, 100);
       } else {
-        const errorData = await response.json().catch(() => ({ message: 'Authentication failed' }));
-        alert(errorData.message || "Authentication failed. Please try again.");
+        alert("Authentication failed. Please check your credentials.");
         setLoading(false);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Auth error:", error);
-      alert("Network error. Please check your connection.");
+      alert(error.message || "Network error. Please check your connection.");
       setLoading(false);
     }
   };

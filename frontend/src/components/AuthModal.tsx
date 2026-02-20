@@ -1,328 +1,144 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useState } from 'react';
+import { X } from 'lucide-react';
+import { useAuth } from '../context/AuthContext'; // ✅ Corrected import
 
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  picture?: string;
+interface AuthModalProps {
+  isOpen: boolean;
+  onClose: () => void;
 }
 
-interface AuthContextType {
-  user: User | null;
-  loading: boolean;
-  error: string | null;
-  signInWithGoogle: () => void;
-  signOut: () => Promise<void>;
-  isAuthenticated: boolean;
-  registerUser: (email: string, password: string) => Promise<User | null>;
-  loginUser: (email: string, password: string) => Promise<User | null>;
-}
+export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  
+  // ✅ Extract the exact functions from the AuthContext we just fixed
+  const { loginUser, registerUser, signInWithGoogle, loading, error } = useAuth();
+  
+  const [localError, setLocalError] = useState('');
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+  if (!isOpen) return null;
 
-const RAW_API_BASE =
-  import.meta.env.VITE_API_BASE ||
-  import.meta.env.VITE_API_URL ||
-  'http://localhost:5001';
-
-const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
-
-function joinUrl(base: string, path: string) {
-  const b = String(base || '').replace(/\/+$/, '');
-  const p = String(path || '').replace(/^\/+/, '');
-  return `${b}/${p}`;
-}
-
-function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('auth_token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-const LS_USER_KEY = 'auth_user';
-const LS_USER_TS_KEY = 'auth_user_updated_at';
-
-function loadCachedUserUnsafeInstant(): User | null {
-  try {
-    const raw = localStorage.getItem(LS_USER_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed?.id || !parsed?.email || !parsed?.name) return null;
-    return parsed as User;
-  } catch {
-    return null;
-  }
-}
-
-function saveCachedUser(user: User) {
-  try {
-    localStorage.setItem(LS_USER_KEY, JSON.stringify(user));
-    localStorage.setItem(LS_USER_TS_KEY, String(Date.now()));
-  } catch {}
-}
-
-function clearCachedUser() {
-  try {
-    localStorage.removeItem(LS_USER_KEY);
-    localStorage.removeItem(LS_USER_TS_KEY);
-  } catch {}
-}
-
-function hasTokenInUrl(): boolean {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    return !!params.get('token');
-  } catch {
-    return false;
-  }
-}
-
-function readTokenInUrl(): string | null {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('token');
-  } catch {
-    return null;
-  }
-}
-
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => {
-    if (hasTokenInUrl()) return null;
-    const token = localStorage.getItem('auth_token');
-    if (!token) return null;
-    return loadCachedUserUnsafeInstant();
-  });
-
-  const [loading, setLoading] = useState<boolean>(() => {
-    if (hasTokenInUrl()) return true;
-    const token = localStorage.getItem('auth_token');
-    if (!token) return false;
-    const cached = loadCachedUserUnsafeInstant();
-    return !cached;
-  });
-
-  // 🔥 FIXES
-  const [error, setError] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [token, setToken] = useState<string | null>(null);
-
-  const userRef = useRef<User | null>(user);
-  userRef.current = user;
-
-  const abortRef = useRef<AbortController | null>(null);
-
-  const clearAuthEverywhere = () => {
-    localStorage.removeItem('auth_token');
-    clearCachedUser();
-    setUser(null);
-    setError(null);
-    setIsAuthenticated(false);
-    setToken(null);
-  };
-
-  const fetchMe = async (opts?: { showLoading?: boolean }) => {
-    const showLoading = opts?.showLoading ?? false;
-
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
-      clearAuthEverywhere();
-      setLoading(false);
-      return;
-    }
-
-    if (showLoading) setLoading(true);
-
-    if (abortRef.current) abortRef.current.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLocalError('');
+    
     try {
-      const response = await fetch(joinUrl(API_BASE, '/api/auth/me'), {
-        credentials: 'include',
-        headers: getAuthHeaders(),
-        signal: controller.signal,
-      });
-
-      if (response.status === 401) {
-        clearAuthEverywhere();
-        return;
-      }
-
-      if (!response.ok) throw new Error(`Auth failed: ${response.status}`);
-
-      const data = await response.json();
-
-      if (data?.authenticated && data?.user) {
-        const authUser = data.user as User;
-        setUser(authUser);
-        setIsAuthenticated(true);
-        saveCachedUser(authUser);
+      let resultUser;
+      
+      if (isSignUp) {
+        resultUser = await registerUser(email, password);
       } else {
-        clearAuthEverywhere();
-      }
-    } catch (error: any) {
-      if (error?.name === 'AbortError') return;
-      if (!userRef.current) {
-        clearAuthEverywhere();
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loginUser = async (email: string, password: string): Promise<User | null> => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      console.log('🔗 Calling /api/login...');
-      const response = await fetch(`${API_BASE}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Login failed');
+        resultUser = await loginUser(email, password);
       }
 
-      const data = await response.json();
-      console.log('✅ Login response:', data);
+      // If the context successfully returned a user object, we are securely logged in!
+      if (resultUser) {
+        const token = localStorage.getItem('auth_token');
+        // Force navigate to the gallery with the token
+        window.location.href = `/gallery?token=${token}`;
+      } else {
+        // If it returns null, the context failed to log in.
+        setLocalError('Authentication failed. Please check your credentials.');
+      }
       
-      localStorage.setItem('auth_token', data.token);
-      setToken(data.token);
-      setUser(data.user);
-      setIsAuthenticated(true);
-      saveCachedUser(data.user);
-      
-      return data.user;
-    } catch (error: any) {
-      console.error('❌ Login error:', error);
-      setError(error.message);
-      return null;
-    } finally {
-      setLoading(false);
+    } catch (err: any) {
+      setLocalError(err.message || "An unexpected error occurred.");
     }
   };
 
-  const registerUser = async (email: string, password: string): Promise<User | null> => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      console.log('📝 Calling /api/register...');
-      const registerResponse = await fetch(`${API_BASE}/api/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-        credentials: 'include',
-      });
+  return (
+    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8 relative mx-4 animate-fade-in">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <X size={24} />
+        </button>
 
-      if (!registerResponse.ok) {
-        const errorData = await registerResponse.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Registration failed');
-      }
+        <h2 className="text-2xl font-bold text-gray-900 mb-6">
+          {isSignUp ? 'Create Account' : 'Sign In'}
+        </h2>
+        
+        {/* Show either local error or the error passed from the AuthContext */}
+        {(localError || error) && (
+          <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200 break-words">
+            {localError || error}
+          </div>
+        )}
 
-      console.log('✅ User registered:', email);
+        <form onSubmit={handleAuth} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+              placeholder="your@email.com"
+            />
+          </div>
 
-      // Auto-login after register
-      return await loginUser(email, password);
-      
-    } catch (error: any) {
-      console.error('❌ Register error:', error);
-      setError(error.message);
-      return null;
-    }
-  };
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+              placeholder="••••••••"
+            />
+          </div>
 
-  useEffect(() => {
-    const tokenInUrl = readTokenInUrl();
-    if (tokenInUrl) {
-      localStorage.setItem('auth_token', tokenInUrl);
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, '', newUrl);
-      void fetchMe({ showLoading: true });
-      return () => {
-        if (abortRef.current) abortRef.current.abort();
-      };
-    }
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-2.5 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {loading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Sign In')}
+          </button>
+        </form>
 
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
-      clearCachedUser();
-      setUser(null);
-      setLoading(false);
-      return () => {
-        if (abortRef.current) abortRef.current.abort();
-      };
-    }
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-white text-gray-500">Or continue with</span>
+          </div>
+        </div>
 
-    if (userRef.current) {
-      void fetchMe({ showLoading: false });
-    } else {
-      void fetchMe({ showLoading: true });
-    }
+        <button
+          onClick={signInWithGoogle}
+          className="w-full flex items-center justify-center gap-3 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-lg transition-colors"
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18">
+            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
+            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/>
+            <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707 0-.593.102-1.17.282-1.709V4.958H.957C.347 6.173 0 7.548 0 9c0 1.452.348 2.827.957 4.042l3.007-2.335z"/>
+            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+          </svg>
+          Google
+        </button>
 
-    return () => {
-      if (abortRef.current) abortRef.current.abort();
-    };
-  }, []);
-
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === 'auth_token' && !e.newValue) {
-        clearAuthEverywhere();
-      }
-      if (e.key === LS_USER_KEY && !e.newValue) {
-        setUser(null);
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
-
-  const signInWithGoogle = () => {
-    window.location.href = joinUrl(API_BASE, '/api/auth/google');
-  };
-
-  const signOut = async () => {
-    try {
-      await fetch(joinUrl(API_BASE, '/api/auth/logout'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: getAuthHeaders(),
-      });
-    } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
-      clearAuthEverywhere();
-      setLoading(false);
-    }
-  };
-
-  const value = useMemo<AuthContextType>(
-    () => ({
-      user,
-      loading,
-      error,
-      signInWithGoogle,
-      signOut,
-      isAuthenticated,
-      registerUser,
-      loginUser,
-    }),
-    [user, loading, error, isAuthenticated]
+        <p className="mt-6 text-center text-sm text-gray-600">
+          {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
+          <button
+            type="button"
+            onClick={() => { 
+              setIsSignUp(!isSignUp); 
+              setLocalError('');
+            }}
+            className="text-primary-600 hover:text-primary-700 font-medium"
+          >
+            {isSignUp ? 'Sign In' : 'Sign Up'}
+          </button>
+        </p>
+      </div>
+    </div>
   );
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within AuthProvider');
-  return context;
-};
-
-export { getAuthHeaders };

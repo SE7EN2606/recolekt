@@ -51,15 +51,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     <div className="min-h-screen flex flex-col bg-[#f8fafc]">
       <Header />
 
-      {/* 🔥 RED EMERGENCY AUTH BUTTON */}
-      <button 
-        onClick={() => setGlobalAuthOpen(true)}
-        className="fixed top-4 left-4 z-[99999] bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-2xl font-bold shadow-2xl border-4 border-white text-lg"
-        style={{ textShadow: '0 0 10px rgba(255,0,0,0.5)', boxShadow: '0 4px 20px rgba(220,38,38,0.4)' }}
-      >
-        🔴 AUTH DEBUG
-      </button>
-
       <main className="flex-1 w-full max-w-[1100px] mx-auto px-4 md:px-6 lg:px-8 pb-24 md:pb-0 pt-[70px] md:pt-[110px]">
         <div className="flex gap-6 lg:gap-8">
           {showSidebar && (

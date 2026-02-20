@@ -10,17 +10,20 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  error: string | null;
   signInWithGoogle: () => void;
   signOut: () => Promise<void>;
   isAuthenticated: boolean;
+  registerUser: (email: string, password: string) => Promise<User | null>;
+  loginUser: (email: string, password: string) => Promise<User | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// ✅ FIX: Safe API Base resolution. Do NOT fall back to localhost in production!
+// Safe resolution for production
 const getApiBase = () => {
   if (import.meta.env.MODE === 'production') {
-    return import.meta.env.VITE_API_BASE || ''; // Safe to be empty for Netlify proxy
+    return import.meta.env.VITE_API_BASE || '';
   }
   return import.meta.env.VITE_API_BASE || 'http://localhost:5001';
 };
@@ -34,14 +37,10 @@ function joinUrl(base: string, path: string) {
 }
 
 function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem('auth_token');
+  const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-/**
- * Non-secret local cache ONLY to avoid refresh flash.
- * Backend /me remains the source of truth.
- */
 const LS_USER_KEY = 'auth_user';
 const LS_USER_TS_KEY = 'auth_user_updated_at';
 
@@ -61,18 +60,14 @@ function saveCachedUser(user: User) {
   try {
     localStorage.setItem(LS_USER_KEY, JSON.stringify(user));
     localStorage.setItem(LS_USER_TS_KEY, String(Date.now()));
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
 function clearCachedUser() {
   try {
     localStorage.removeItem(LS_USER_KEY);
     localStorage.removeItem(LS_USER_TS_KEY);
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
 function hasTokenInUrl(): boolean {
@@ -96,22 +91,22 @@ function readTokenInUrl(): string | null {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
     if (hasTokenInUrl()) return null;
-
-    const token = localStorage.getItem('auth_token');
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
     if (!token) return null;
-
     return loadCachedUserUnsafeInstant();
   });
 
   const [loading, setLoading] = useState<boolean>(() => {
     if (hasTokenInUrl()) return true;
-
-    const token = localStorage.getItem('auth_token');
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
     if (!token) return false;
-
     const cached = loadCachedUserUnsafeInstant();
     return !cached;
   });
+
+  const [error, setError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(!!user);
+  const [token, setToken] = useState<string | null>(localStorage.getItem('auth_token') || localStorage.getItem('token'));
 
   const userRef = useRef<User | null>(user);
   userRef.current = user;
@@ -120,16 +115,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearAuthEverywhere = () => {
     localStorage.removeItem('auth_token');
-    localStorage.removeItem('token'); // Also clear the legacy key
+    localStorage.removeItem('token'); // Clear legacy token too
     clearCachedUser();
     setUser(null);
+    setError(null);
+    setIsAuthenticated(false);
+    setToken(null);
   };
 
   const fetchMe = async (opts?: { showLoading?: boolean }) => {
     const showLoading = opts?.showLoading ?? false;
 
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
+    const currentToken = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    if (!currentToken) {
       clearAuthEverywhere();
       setLoading(false);
       return;
@@ -142,19 +140,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     abortRef.current = controller;
 
     try {
-      const targetUrl = joinUrl(API_BASE, '/api/auth/me');
-      console.log(`📡 Fetching user data from: ${targetUrl}`); // Debug log
-
-      const response = await fetch(targetUrl, {
+      const response = await fetch(joinUrl(API_BASE, '/api/auth/me'), {
         credentials: 'include',
         headers: getAuthHeaders(),
         signal: controller.signal,
       });
 
       if (response.status === 401) {
-        console.warn("⚠️ Token rejected by server (401)");
         clearAuthEverywhere();
-        setLoading(false);
         return;
       }
 
@@ -163,16 +156,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const data = await response.json();
 
       if (data?.authenticated && data?.user) {
-        setUser(data.user as User);
-        saveCachedUser(data.user as User);
+        const authUser = data.user as User;
+        setUser(authUser);
+        setIsAuthenticated(true);
+        saveCachedUser(authUser);
       } else {
         clearAuthEverywhere();
       }
     } catch (error: any) {
       if (error?.name === 'AbortError') return;
-
-      console.error("❌ fetchMe Error:", error);
-
       if (!userRef.current) {
         clearAuthEverywhere();
       }
@@ -181,25 +173,94 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginUser = async (email: string, password: string): Promise<User | null> => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch(joinUrl(API_BASE, '/api/auth/login'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.message || 'Login failed');
+      }
+
+      const data = await response.json();
+      
+      localStorage.setItem('auth_token', data.token);
+      localStorage.setItem('token', data.token); // Keep legacy key in sync
+      setToken(data.token);
+      setUser(data.user);
+      setIsAuthenticated(true);
+      saveCachedUser(data.user);
+      
+      return data.user;
+    } catch (error: any) {
+      console.error('❌ Login error:', error);
+      setError(error.message);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const registerUser = async (email: string, password: string): Promise<User | null> => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch(joinUrl(API_BASE, '/api/auth/register'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.message || 'Registration failed');
+      }
+
+      const data = await response.json();
+
+      // The backend returns the token and user on register, so we don't need to call loginUser!
+      localStorage.setItem('auth_token', data.token);
+      localStorage.setItem('token', data.token); // Keep legacy key in sync
+      setToken(data.token);
+      setUser(data.user);
+      setIsAuthenticated(true);
+      saveCachedUser(data.user);
+      
+      return data.user;
+    } catch (error: any) {
+      console.error('❌ Register error:', error);
+      setError(error.message);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const tokenInUrl = readTokenInUrl();
     if (tokenInUrl) {
-      // Save it under BOTH keys to prevent mismatches across files
       localStorage.setItem('auth_token', tokenInUrl);
       localStorage.setItem('token', tokenInUrl);
-
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
-
       void fetchMe({ showLoading: true });
-
       return () => {
         if (abortRef.current) abortRef.current.abort();
       };
     }
 
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
+    const currentToken = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    if (!currentToken) {
       clearCachedUser();
       setUser(null);
       setLoading(false);
@@ -217,21 +278,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       if (abortRef.current) abortRef.current.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === 'auth_token' && !e.newValue) {
-        clearCachedUser();
-        setUser(null);
-        setLoading(false);
+      if ((e.key === 'auth_token' || e.key === 'token') && !e.newValue) {
+        clearAuthEverywhere();
       }
       if (e.key === LS_USER_KEY && !e.newValue) {
         setUser(null);
       }
     };
-
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
@@ -252,6 +309,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       clearAuthEverywhere();
       setLoading(false);
+      window.location.href = '/auth'; // Redirect to auth page after logout
     }
   };
 
@@ -259,11 +317,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     () => ({
       user,
       loading,
+      error,
       signInWithGoogle,
       signOut,
-      isAuthenticated: !!user,
+      isAuthenticated,
+      registerUser,
+      loginUser,
     }),
-    [user, loading]
+    [user, loading, error, isAuthenticated]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
