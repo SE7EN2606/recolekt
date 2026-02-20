@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { I18nextProvider, useTranslation } from 'react-i18next';
+import i18n from './i18n'; // 🔥 IMPORT i18n
 
 import { LanguageProvider } from './context/LanguageContext';
 import { Header } from './components/Header';
@@ -18,34 +20,28 @@ import { Auth } from './pages/Auth';
 import { AccountSettings } from './pages/AccountSettings';
 import { AppSettings } from './pages/AppSettings';
 import { useAuth } from './context/AuthContext';
-import { AuthModal } from './components/AuthModal'; // 🔥 ADDED
+import { AuthModal } from './components/AuthModal'; 
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const { user, loading } = useAuth();
+  const { t } = useTranslation(['common']); // 🔥 TRANSLATION HOOK
+  
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [globalAuthOpen, setGlobalAuthOpen] = useState(false); // 🔥 GLOBAL DEBUG
-
+  const [globalAuthOpen, setGlobalAuthOpen] = useState(false); 
 
   const isHomePage = location.pathname === '/';
   const isFeaturesPage = location.pathname === '/features';
   const isAuthPage = location.pathname === '/auth';
 
-
-  // If authed, send "/" to "/gallery"
   if (!isAuthPage && !loading && user && isHomePage) {
     return <Navigate to="/gallery" replace />;
   }
 
-
   const showSidebar = !isHomePage && !isFeaturesPage && !isAuthPage && !!user;
   const showMobileNav = !!user && !isHomePage && !isFeaturesPage && !isAuthPage;
 
-
-  if (isAuthPage) {
-    return <>{children}</>;
-  }
-
+  if (isAuthPage) return <>{children}</>;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f8fafc]">
@@ -62,13 +58,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </div>
       </main>
 
-      {/* Mobile Bottom Navigation */}
       {showMobileNav && <MobileBottomNav onAddClick={() => setIsAddModalOpen(true)} />}
-
-      {/* Add Video Modal */}
       {user && <AddVideoModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />}
-
-      {/* 🔥 GLOBAL AUTH MODAL */}
       <AuthModal isOpen={globalAuthOpen} onClose={() => setGlobalAuthOpen(false)} />
 
       {!isAuthPage && (
@@ -77,44 +68,40 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12 mb-12">
               <div className="col-span-2 md:col-span-1">
                 <div className="flex items-center gap-2 mb-4">
-                  <img
-                    src="https://raw.githubusercontent.com/SE7EN2606/recolekt/81dfd0ba97241d903f74e94e9e795b09ed6ab48d/recolekt_logo_white_bg.svg"
-                    alt="recolekt"
-                    className="h-8 md:h-9"
-                  />
+                  <img src="https://raw.githubusercontent.com/SE7EN2606/recolekt/81dfd0ba97241d903f74e94e9e795b09ed6ab48d/recolekt_logo_white_bg.svg" alt="recolekt" className="h-8 md:h-9" />
                 </div>
-                <p className="text-gray-500 text-sm leading-relaxed">Save and organize your favorite reels.</p>
+                <p className="text-gray-500 text-sm leading-relaxed">{t('footerSlogan')}</p>
               </div>
 
               <div>
-                <h4 className="font-bold text-white mb-4">Product</h4>
+                <h4 className="font-bold text-white mb-4">{t('product')}</h4>
                 <ul className="space-y-3 text-sm text-gray-400">
-                  <li><a href="#" className="hover:text-white transition-colors">Features</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">Pricing</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">Security</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('features')}</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('pricing')}</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('security')}</a></li>
                 </ul>
               </div>
 
               <div>
-                <h4 className="font-bold text-white mb-4">Company</h4>
+                <h4 className="font-bold text-white mb-4">{t('company')}</h4>
                 <ul className="space-y-3 text-sm text-gray-400">
-                  <li><a href="#" className="hover:text-white transition-colors">About</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">Blog</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">Contact</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('about')}</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('blog')}</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('contact')}</a></li>
                 </ul>
               </div>
 
               <div>
-                <h4 className="font-bold text-white mb-4">Legal</h4>
+                <h4 className="font-bold text-white mb-4">{t('legal')}</h4>
                 <ul className="space-y-3 text-sm text-gray-400">
-                  <li><a href="#" className="hover:text-white transition-colors">Privacy</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">Terms</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('privacy')}</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('terms')}</a></li>
                 </ul>
               </div>
             </div>
 
             <div className="pt-8 border-t border-gray-800 text-center md:text-left">
-              <p className="text-gray-500 text-sm">© 2025 recolekt. Respecting privacy and platform terms of service.</p>
+              <p className="text-gray-500 text-sm">{t('footerCopyright')}</p>
             </div>
           </div>
         </footer>
@@ -125,28 +112,30 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 function App() {
   return (
-    <LanguageProvider>
-      <Router>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/features" element={<Features />} />
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/gallery" element={<Gallery />} />
-            <Route path="/gallery/:folderId" element={<Gallery />} />
-            <Route path="/video/:id" element={<VideoDetail />} />
-            <Route path="/reel/:id" element={<VideoDetail />} />
-            <Route path="/settings/app" element={<AppSettings />} />
-            <Route path="/settings/account" element={<AccountSettings />} />
-            <Route path="/settings" element={<Navigate to="/settings/app" replace />} />
-            <Route path="/subscribe" element={<SubscribePage />} />
-            <Route path="/billing" element={<BillingPage />} />
-            <Route path="/billing/success" element={<BillingSuccess />} />
-            <Route path="/billing/cancel" element={<BillingCancel />} />
-          </Routes>
-        </Layout>
-      </Router>
-    </LanguageProvider>
+    <I18nextProvider i18n={i18n}> {/* 🔥 WRAP APP IN i18n */}
+      <LanguageProvider>
+        <Router>
+          <Layout>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/features" element={<Features />} />
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/gallery" element={<Gallery />} />
+              <Route path="/gallery/:folderId" element={<Gallery />} />
+              <Route path="/video/:id" element={<VideoDetail />} />
+              <Route path="/reel/:id" element={<VideoDetail />} />
+              <Route path="/settings/app" element={<AppSettings />} />
+              <Route path="/settings/account" element={<AccountSettings />} />
+              <Route path="/settings" element={<Navigate to="/settings/app" replace />} />
+              <Route path="/subscribe" element={<SubscribePage />} />
+              <Route path="/billing" element={<BillingPage />} />
+              <Route path="/billing/success" element={<BillingSuccess />} />
+              <Route path="/billing/cancel" element={<BillingCancel />} />
+            </Routes>
+          </Layout>
+        </Router>
+      </LanguageProvider>
+    </I18nextProvider>
   );
 }
 

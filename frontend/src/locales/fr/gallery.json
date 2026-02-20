@@ -1,0 +1,16 @@
+{
+  "favorites": "Favoris",
+  "allVideos": "Toutes mes vidéos",
+  "gallery": "Galerie",
+  "items": "éléments",
+  "manage": "Gérer",
+  "move": "Déplacer",
+  "moveToFolder": "Déplacer vers un dossier",
+  "defaultFolder": "Dossier par défaut",
+  "videoCount": "vidéos",
+  "moveVideos": "Déplacer les vidéos",
+  "noVideosFound": "Aucune vidéo trouvée",
+  "tryDifferentSearch": "Essayez un autre terme de recherche",
+  "noVideosInFolder": "Aucune vidéo dans ce dossier pour le moment",
+  "processing": "Traitement en cours..."
+}

@@ -5,6 +5,7 @@ import { Button } from '../components/Button';
 import { Search, X, FolderInput, CheckCircle2 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth, getAuthHeaders } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT HOOK
 
 const RAW_API_BASE = (import.meta.env.VITE_API_BASE ?? import.meta.env.VITE_API_URL ?? '') as string;
 const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
@@ -32,6 +33,7 @@ export const Gallery: React.FC = () => {
 
   const { user, loading: authLoading } = useAuth();
   const { videos, folders, isLoading: dataLoading, refreshVideos } = useData();
+  const { t } = useTranslation(['gallery', 'common']); // 🔥 INITIALIZE HOOK
 
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -132,9 +134,10 @@ export const Gallery: React.FC = () => {
     } catch (err) { alert('Failed to delete videos'); }
   };
 
+  // 🔥 DYNAMIC FOLDER TITLE TRANSLATION
   const getFolderTitle = () => {
-    if (isFavoritesView) return 'Favorites';
-    if (isAllView) return 'All my videos';
+    if (isFavoritesView) return t('gallery:favorites');
+    if (isAllView) return t('gallery:allVideos');
     const topLevelFolder = folders.find(f => f.id === folderId);
     if (topLevelFolder) return topLevelFolder.name;
     for (const folder of folders) {
@@ -143,10 +146,9 @@ export const Gallery: React.FC = () => {
     }
     return folderId
       ? folderId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-      : 'Gallery';
+      : t('gallery:gallery');
   };
 
-  // Resolve thumbnail URL from any shape the video object might have
   const getThumbnail = (video: any): string =>
     video?.thumbnailUrl ||
     video?.thumbnail_url ||
@@ -168,33 +170,32 @@ export const Gallery: React.FC = () => {
 
   return (
     <div className="w-full pt-8 md:pt-0 pb-0 md:pb-6">
-
       <div className="flex flex-col gap-6 mb-8">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{getFolderTitle()}</h1>
-            <p className="text-gray-500 text-sm mt-1">{displayedVideos.length} items</p>
+            <p className="text-gray-500 text-sm mt-1">{displayedVideos.length} {t('gallery:items')}</p>
           </div>
           <div className="flex items-center gap-2">
             {selectionMode ? (
               <>
                 <Button variant="outline" size="sm" className="h-9 px-5"
                   onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}>
-                  Cancel
+                  {t('common:cancel')}
                 </Button>
                 <Button variant="primary" size="sm" className="h-9 px-5"
                   disabled={selectedIds.size === 0} onClick={() => setIsMoveModalOpen(true)}>
-                  Move {selectedIds.size > 0 && `(${selectedIds.size})`}
+                  {t('gallery:move')} {selectedIds.size > 0 && `(${selectedIds.size})`}
                 </Button>
                 <Button variant="danger" size="sm" className="h-9 px-5"
                   disabled={selectedIds.size === 0} onClick={handleDelete}>
-                  Delete {selectedIds.size > 0 && `(${selectedIds.size})`}
+                  {t('common:delete')} {selectedIds.size > 0 && `(${selectedIds.size})`}
                 </Button>
               </>
             ) : (
               <Button variant="outline" size="sm" className="h-9 px-5"
                 onClick={() => setSelectionMode(true)}>
-                Manage
+                {t('gallery:manage')}
               </Button>
             )}
           </div>
@@ -204,7 +205,7 @@ export const Gallery: React.FC = () => {
           <div className="relative flex-1 w-full md:w-3/4">
             <input
               type="text"
-              placeholder="Search..."
+              placeholder={t('common:search')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none shadow-sm transition-shadow hover:border-gray-300"
@@ -239,9 +240,6 @@ export const Gallery: React.FC = () => {
               <div key={videoId} className="relative">
                 {video.category === 'Processing' ? (
                   <div className="relative aspect-[9/16] rounded-2xl bg-black overflow-hidden processing-card cursor-default">
-
-                    {/* Blurred poster — shown as soon as thumbnail is available,
-                        stays blurry throughout processing */}
                     {thumb ? (
                       <img
                         src={thumb}
@@ -253,16 +251,13 @@ export const Gallery: React.FC = () => {
                     ) : (
                       <div className="absolute inset-0 bg-black" />
                     )}
-
-                    {/* Scan overlay on top of poster */}
                     <div className="processing-overlay">
                       <div className="scan-grid" />
                       <div className="scan-line-seq-h" />
                       <div className="scan-line-seq-v" />
                       <div className="spinner" />
-                      <span>Processing...</span>
+                      <span>{t('gallery:processing')}</span>
                     </div>
-
                   </div>
                 ) : (
                   <VideoCard
@@ -283,9 +278,9 @@ export const Gallery: React.FC = () => {
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <Search className="text-gray-400" size={24} />
           </div>
-          <h3 className="text-gray-900 font-medium">No videos found</h3>
+          <h3 className="text-gray-900 font-medium">{t('gallery:noVideosFound')}</h3>
           <p className="text-gray-500 text-sm mt-1">
-            {searchQuery ? 'Try a different search term' : 'No videos in this folder yet'}
+            {searchQuery ? t('gallery:tryDifferentSearch') : t('gallery:noVideosInFolder')}
           </p>
         </div>
       )}
@@ -294,7 +289,7 @@ export const Gallery: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-gray-900">Move to Folder</h3>
+              <h3 className="text-lg font-bold text-gray-900">{t('gallery:moveToFolder')}</h3>
               <button onClick={() => setIsMoveModalOpen(false)} className="text-gray-400 hover:text-gray-600">
                 <X size={20} />
               </button>
@@ -309,8 +304,8 @@ export const Gallery: React.FC = () => {
                     <FolderInput size={20} />
                   </div>
                   <div className="flex-1 text-left">
-                    <p className="font-semibold">All my videos</p>
-                    <p className="text-xs opacity-70">Default folder</p>
+                    <p className="font-semibold">{t('gallery:allVideos')}</p>
+                    <p className="text-xs opacity-70">{t('gallery:defaultFolder')}</p>
                   </div>
                   {targetFolderId === 'default' && <CheckCircle2 size={20} className="text-primary-600" />}
                 </button>
@@ -326,7 +321,7 @@ export const Gallery: React.FC = () => {
                       </div>
                       <div className="flex-1 text-left">
                         <p className="font-semibold">{f.name}</p>
-                        <p className="text-xs opacity-70">{f.videoCount || 0} videos</p>
+                        <p className="text-xs opacity-70">{f.videoCount || 0} {t('gallery:videoCount')}</p>
                       </div>
                       {targetFolderId === f.id && <CheckCircle2 size={20} className="text-primary-600" />}
                     </button>
@@ -350,8 +345,8 @@ export const Gallery: React.FC = () => {
               </div>
             </div>
             <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
-              <Button variant="outline" onClick={() => setIsMoveModalOpen(false)}>Cancel</Button>
-              <Button variant="primary" disabled={!targetFolderId} onClick={handleMoveSubmit}>Move Videos</Button>
+              <Button variant="outline" onClick={() => setIsMoveModalOpen(false)}>{t('common:cancel')}</Button>
+              <Button variant="primary" disabled={!targetFolderId} onClick={handleMoveSubmit}>{t('gallery:moveVideos')}</Button>
             </div>
           </div>
         </div>
