@@ -1,11 +1,9 @@
-# fetcher_api/adapters/db.py
 import os
 import logging
 import psycopg2
 import psycopg2.extras
-from psycopg2.pool import SimpleConnectionPool
+from psycopg2.pool import ThreadedConnectionPool
 from contextlib import contextmanager
-import threading
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -23,27 +21,25 @@ if LOCAL_ENV.exists():
     load_dotenv(LOCAL_ENV, override=True)
 
 # -------------------------------------------------
-# Thread-safe Connection Pool (Greenlet Safe)
+# Thread-safe Connection Pool
 # -------------------------------------------------
 _pool = None
-_pool_lock = threading.Lock()
 
 def init_pool():
     """Initializes the database connection pool."""
     global _pool
-    with _pool_lock:
-        if _pool is None:
-            DATABASE_URL = os.environ.get("DATABASE_URL")
-            if not DATABASE_URL:
-                raise RuntimeError("DATABASE_URL is not set. Check your environment variables.")
-            
-            try:
-                # SimpleConnectionPool + Lock is universally safe (threads, gevent, gunicorn, etc)
-                _pool = SimpleConnectionPool(1, 20, DATABASE_URL, sslmode="require")
-                logger.info("📡 PostgreSQL SimpleConnectionPool created (min=1, max=20)")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize database pool: {e}")
-                raise
+    if _pool is None:
+        DATABASE_URL = os.environ.get("DATABASE_URL")
+        if not DATABASE_URL:
+            raise RuntimeError("DATABASE_URL is not set. Check your environment variables.")
+        
+        try:
+            # ✅ FIX: ThreadedConnectionPool is natively safe for Flask's multi-threading
+            _pool = ThreadedConnectionPool(1, 20, DATABASE_URL, sslmode="require")
+            logger.info("📡 PostgreSQL ThreadedConnectionPool created (min=1, max=20)")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize database pool: {e}")
+            raise
 
 @contextmanager
 def get_db_connection():
@@ -54,43 +50,39 @@ def get_db_connection():
     if _pool is None:
         init_pool()
         
-    with _pool_lock:
-        conn = _pool.getconn()
+    conn = _pool.getconn()
         
-    # ✅ FIX: Ping the database. If Neon closed the connection, reconnect!
+    # ✅ FIX: Ping the database. If Neon closed the connection, gracefully throw it away!
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT 1")
-    except psycopg2.OperationalError:
-        logger.warning("🔌 NeonDB closed idle connection. Reconnecting...")
-        # Close the dead connection and manually create a fresh one to inject into the pool
-        try:
-            conn.close()
-        except Exception:
-            pass
-        conn = psycopg2.connect(os.environ.get("DATABASE_URL"), sslmode="require")
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        logger.warning("🔌 NeonDB closed idle connection. Replacing gracefully...")
+        # Tell the pool to close and discard this specific dead connection
+        _pool.putconn(conn, close=True)
+        # Grab a fresh one
+        conn = _pool.getconn()
         
     try:
+        # Try to rollback any stuck transactions from a previous checkout
         try:
             conn.rollback()
         except Exception:
             pass
         yield conn
     finally:
-        with _pool_lock:
-            _pool.putconn(conn)
+        # Safely return the valid connection to the pool
+        _pool.putconn(conn)
 
 # Legacy support
 def get_conn():
     if _pool is None:
         init_pool()
-    with _pool_lock:
-        return _pool.getconn()
+    return _pool.getconn()
 
 def release_conn(conn):
     if _pool and conn:
-        with _pool_lock:
-            _pool.putconn(conn)
+        _pool.putconn(conn)
 
 get_connection = get_conn
 

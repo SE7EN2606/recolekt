@@ -6,6 +6,8 @@ import traceback
 import os
 import logging
 import jwt
+import random
+import resend
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, request, jsonify, redirect, url_for, session, current_app
@@ -17,24 +19,24 @@ from fetcher_api.utils.timestamps import get_unique_id
 
 logger = logging.getLogger("auth")
 
-# Force the url_prefix here so we are 100% sure /register maps to /api/auth/register
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").rstrip("/")
 JWT_SECRET = os.getenv('SECRET_KEY', 'your-secret-key')
 
+# Initialize Resend
+resend.api_key = os.getenv("RESEND_API_KEY")
+
 # ---------------------------------------------------------
 # HELPER FUNCTIONS
 # ---------------------------------------------------------
 def get_google_client():
-    """Retrieve the Google OAuth client from the main app config"""
     oauth = current_app.config.get('oauth')
     if not oauth:
         raise RuntimeError("OAuth not initialized in app config")
     return oauth.create_client('google')
 
 def create_jwt_token(user_id: str, email: str) -> str:
-    """Create a JWT token for the user"""
     payload = {
         'user_id': user_id,
         'email': email,
@@ -42,12 +44,8 @@ def create_jwt_token(user_id: str, email: str) -> str:
         'iat': datetime.now(timezone.utc)
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm='HS256')
-    
-    # ✅ FIX: PyJWT versions can sometimes return a byte string. 
-    # This guarantees it's a string so jsonify() doesn't crash with a 500!
     if isinstance(token, bytes):
         return token.decode('utf-8')
-        
     return token
 
 # ---------------------------------------------------------
@@ -55,23 +53,18 @@ def create_jwt_token(user_id: str, email: str) -> str:
 # ---------------------------------------------------------
 @auth_bp.route("/google", methods=["GET"])
 def google_login():
-    """Initiate Google OAuth flow"""
     google = get_google_client()
-    
     is_local = os.getenv('FLASK_ENV') == 'development' or not os.getenv('RAILWAY_ENVIRONMENT')
     
     if is_local:
         redirect_uri = url_for('auth.google_callback', _external=True, _scheme='http')
     else:
-        # Force redirection to the frontend proxy
         redirect_uri = "https://recolekt.app/api/auth/google/callback"
         
-    logger.info(f"🔐 Google OAuth redirect_uri: {redirect_uri}")
     return google.authorize_redirect(redirect_uri)
 
 @auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
-    """Handle Google OAuth callback"""
     try:
         google = get_google_client()
         token = google.authorize_access_token()
@@ -83,11 +76,8 @@ def google_callback():
         picture = user_info.get('picture', '')
         
         if not email or not google_id:
-            logger.error("❌ Missing email or google_id in OAuth response")
             return redirect(f'{FRONTEND_BASE_URL}/auth?error=missing_data')
             
-        logger.info(f"✅ Google OAuth successful for: {email}")
-        
         existing_user = fetch_one(
             "SELECT user_id FROM users WHERE email = %s OR google_id = %s;",
             (email, google_id)
@@ -95,7 +85,6 @@ def google_callback():
         
         if existing_user:
             user_id = existing_user['user_id'] if isinstance(existing_user, dict) else existing_user[0]
-            logger.info(f"👤 Existing user found: {user_id}")
             execute(
                 "UPDATE users SET google_id = %s, picture = %s, updated_at = NOW() WHERE user_id = %s;",
                 (google_id, picture, user_id),
@@ -103,7 +92,6 @@ def google_callback():
             )
         else:
             user_id = get_unique_id(email)
-            logger.info(f"✨ Creating new user: {user_id}")
             execute(
                 """
                 INSERT INTO users (user_id, email, name, google_id, picture, verified, created_at)
@@ -131,12 +119,10 @@ def google_callback():
 # ---------------------------------------------------------
 @auth_bp.route("/register", methods=["POST", "OPTIONS"])
 def register():
-    """Handle email/password registration"""
     if request.method == 'OPTIONS':
         return '', 200
 
     data = request.get_json() or {}
-    # ✅ FIX: Strip invisible spaces and force lowercase to prevent typos!
     email = (data.get('email') or '').strip().lower()
     password = data.get('password') or ''
     name = data.get('name', 'User')
@@ -147,7 +133,7 @@ def register():
     try:
         existing = fetch_one("SELECT user_id FROM users WHERE email = %s;", (email,))
         if existing:
-            return jsonify({'error': 'User already exists with this email'}), 409
+            return jsonify({'error': 'An account with this email already exists.'}), 409
 
         user_id = get_unique_id(email)
         password_hash = generate_password_hash(password)
@@ -155,40 +141,54 @@ def register():
         execute(
             """
             INSERT INTO users (user_id, email, name, password_hash, verified, created_at)
-            VALUES (%s, %s, %s, %s, TRUE, NOW());
+            VALUES (%s, %s, %s, %s, FALSE, NOW());
             """,
             (user_id, email, name, password_hash),
             commit=True
         )
         
         jwt_token = create_jwt_token(user_id, email)
+        code = ''.join(random.choices('0123456789', k=6))
+        expires = datetime.now(timezone.utc) + timedelta(minutes=10)
         
-        session['user_id'] = user_id
-        session['email'] = email
-        session.permanent = True
+        execute(
+            """
+            INSERT INTO verification_codes (user_id, code, expires_at) VALUES (%s, %s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at;
+            """,
+            (user_id, code, expires),
+            commit=True
+        )
         
-        logger.info(f"✅ User registered via email: {email}")
+        if resend.api_key:
+            try:
+                resend.Emails.send({
+                    "from": "onboarding@resend.dev",
+                    "to": email,
+                    "subject": "Verify your Recolekt account",
+                    "html": f"<h1>Welcome to Recolekt!</h1><p>Your verification code is:</p><p style='font-size:48px;font-weight:bold;letter-spacing:4px;'>{code}</p><p>Valid for 10 minutes.</p>"
+                })
+            except Exception as e:
+                # 🛠️ DEV BYPASS: Print code to terminal and continue without crashing the UI!
+                print(f"\n{'='*50}")
+                print(f"🚨 RESEND SANDBOX BLOCKED EMAIL TO: {email}")
+                print(f"🛠️ DEV BYPASS VERIFICATION CODE: {code}")
+                print(f"{'='*50}\n")
+
         return jsonify({
-            'message': 'Registered successfully',
+            'message': 'Registered successfully. Please verify your email.',
             'token': jwt_token,
             'user': {'id': user_id, 'email': email, 'name': name}
         }), 201
     except Exception as e:
-        error_trace = traceback.format_exc()
-        logger.error(f"❌ Registration error: \n{error_trace}")
-        return jsonify({
-            'error': f"Backend Crash: {str(e)}", 
-            'traceback': error_trace
-        }), 500
+        return jsonify({'error': f"Backend Crash: {str(e)}"}), 500
 
 @auth_bp.route("/login", methods=["POST", "OPTIONS"])
 def login():
-    """Handle email/password login"""
     if request.method == 'OPTIONS':
         return '', 200
 
     data = request.get_json() or {}
-    # ✅ FIX: Strip invisible spaces and force lowercase to match the DB
     email = (data.get('email') or '').strip().lower()
     password = data.get('password') or ''
 
@@ -196,19 +196,14 @@ def login():
         return jsonify({'error': 'Email and password required'}), 400
 
     try:
-        logger.info(f"🔎 Login Attempt for: '{email}'")
-        
         user = fetch_one(
             "SELECT user_id, email, name, picture, password_hash FROM users WHERE email = %s;", 
             (email,)
         )
 
-        # 🛑 DIAGNOSTIC CHECK 1: Did we find the email?
         if not user:
-            logger.warning(f"❌ Login Failed: Email '{email}' not found in database.")
-            return jsonify({'error': 'Invalid credentials (Email not found)'}), 401
+            return jsonify({'error': 'No account found with this email address.'}), 401
 
-        # Safely extract data whether it's a Dictionary or a Tuple
         if isinstance(user, dict):
             user_id = user['user_id']
             stored_hash = user.get('password_hash')
@@ -220,64 +215,148 @@ def login():
             name = user[2]
             picture = user[3]
 
-        # 🛑 DIAGNOSTIC CHECK 2: Does this user have a password?
         if not stored_hash:
-            logger.warning(f"❌ Login Failed: User '{email}' exists but has no password (Did they use Google?)")
             return jsonify({'error': 'Please sign in with Google.'}), 401
 
-        # 🛑 DIAGNOSTIC CHECK 3: Does the password match?
-        is_valid = check_password_hash(stored_hash, password)
-        if not is_valid:
-            logger.warning(f"❌ Login Failed: Incorrect password provided for '{email}'.")
-            return jsonify({'error': 'Invalid credentials (Wrong password)'}), 401
+        if not check_password_hash(stored_hash, password):
+            return jsonify({'error': 'Invalid password.'}), 401
 
         jwt_token = create_jwt_token(user_id, email)
-        
         session['user_id'] = user_id
         session['email'] = email
         session.permanent = True
 
-        logger.info(f"✅ User logged in successfully: {email}")
         return jsonify({
             'message': 'Login successful',
             'token': jwt_token,
             'user': {'id': user_id, 'email': email, 'name': name, 'picture': picture}
         }), 200
-        
     except Exception as e:
-        error_trace = traceback.format_exc()
-        logger.error(f"❌ Login error: \n{error_trace}")
-        return jsonify({
-            'error': f"Backend Crash: {str(e)}", 
-            'traceback': error_trace
-        }), 500
+        return jsonify({'error': f"Backend Crash: {str(e)}"}), 500
+
+# ---------------------------------------------------------
+# PASSWORD RESET & VERIFICATION ROUTES
+# ---------------------------------------------------------
+@auth_bp.route('/forgot-password', methods=['POST', 'OPTIONS'])
+def forgot_password():
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip().lower()
+    
+    user = fetch_one("SELECT user_id FROM users WHERE email = %s", (email,))
+    
+    if not user:
+        return jsonify({"error": "No account found with that email address."}), 404
+        
+    user_id = user['user_id'] if isinstance(user, dict) else user[0]
+    
+    code = ''.join(random.choices('0123456789', k=6))
+    expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+    
+    execute(
+        """
+        INSERT INTO reset_codes (user_id, code, expires_at) VALUES (%s, %s, %s)
+        ON CONFLICT (user_id) DO UPDATE SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at;
+        """,
+        (user_id, code, expires),
+        commit=True
+    )
+    
+    if resend.api_key:
+        try:
+            resend.Emails.send({
+                "from": "onboarding@resend.dev",
+                "to": email,
+                "subject": "Reset your Recolekt password",
+                "html": f"<h1>Password reset request</h1><p>Your 6-digit reset code is:</p><p style='font-size:48px;font-weight:bold;letter-spacing:4px;'>{code}</p><p>Valid for 15 minutes.</p>"
+            })
+        except Exception as e:
+            # 🛠️ DEV BYPASS: Print code to terminal and continue without crashing the UI!
+            print(f"\n{'='*50}")
+            print(f"🚨 RESEND SANDBOX BLOCKED EMAIL TO: {email}")
+            print(f"🛠️ DEV BYPASS RESET CODE: {code}")
+            print(f"{'='*50}\n")
+            
+    return jsonify({"message": "Code sent successfully"}), 200
+
+@auth_bp.route('/reset-password', methods=['POST', 'OPTIONS'])
+def reset_password():
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip().lower()
+    code = data.get('code', '').strip()
+    new_password = data.get('password', '')
+    
+    user = fetch_one("SELECT user_id FROM users WHERE email = %s", (email,))
+    if not user:
+        return jsonify({"error": "User not found"}), 400
+        
+    user_id = user['user_id'] if isinstance(user, dict) else user[0]
+    
+    code_row = fetch_one(
+        "SELECT user_id FROM reset_codes WHERE user_id = %s AND code = %s AND expires_at > NOW()",
+        (user_id, code)
+    )
+    
+    if not code_row:
+        return jsonify({"error": "Invalid or expired 6-digit code."}), 400
+        
+    hashed_pw = generate_password_hash(new_password)
+    
+    execute("UPDATE users SET password_hash = %s WHERE user_id = %s", (hashed_pw, user_id), commit=True)
+    execute("DELETE FROM reset_codes WHERE user_id = %s", (user_id,), commit=True)
+    
+    return jsonify({"message": "Password reset successfully!"}), 200
+
+@auth_bp.route('/verify-email', methods=['POST', 'OPTIONS'])
+def verify_email():
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip().lower()
+    code = data.get('code', '').strip()
+    
+    user = fetch_one("SELECT user_id, verified FROM users WHERE email = %s", (email,))
+    if not user:
+        return jsonify({"error": "Account not found."}), 400
+        
+    user_id = user['user_id'] if isinstance(user, dict) else user[0]
+    
+    code_row = fetch_one(
+        "SELECT user_id FROM verification_codes WHERE user_id = %s AND code = %s AND expires_at > NOW()",
+        (user_id, code)
+    )
+    
+    if not code_row:
+        return jsonify({"error": "Invalid or expired verification code."}), 400
+        
+    execute("UPDATE users SET verified = TRUE WHERE user_id = %s", (user_id,), commit=True)
+    execute("DELETE FROM verification_codes WHERE user_id = %s", (user_id,), commit=True)
+    
+    return jsonify({"message": "Email verified successfully!"}), 200
 
 @auth_bp.route("/logout", methods=["POST", "OPTIONS"])
 def logout():
-    """Logout user"""
     if request.method == 'OPTIONS':
         return '', 200
-    
     session.clear()
     return jsonify({"status": "logged_out"}), 200
 
 @auth_bp.route("/me", methods=["GET", "OPTIONS"])
 def get_current_user():
-    """Get current authenticated user data"""
     if request.method == 'OPTIONS':
         return '', 200
-    
     try:
         user_id = get_user_id_from_request()
-        
         if not user_id:
             return jsonify({'authenticated': False}), 401
         
-        user = fetch_one(
-            "SELECT user_id, email, name, picture FROM users WHERE user_id = %s",
-            (user_id,)
-        )
-        
+        user = fetch_one("SELECT user_id, email, name, picture FROM users WHERE user_id = %s", (user_id,))
         if not user:
             return jsonify({'authenticated': False}), 401
         
@@ -294,20 +373,13 @@ def get_current_user():
                 'picture': user_dict.get('picture')
             }
         }), 200
-    except Exception as e:
-        error_trace = traceback.format_exc()
-        logger.error(f"❌ Error fetching user /me: \n{error_trace}")
-        return jsonify({
-            'error': f"Backend Crash: {str(e)}", 
-            'traceback': error_trace
-        }), 500
+    except Exception:
+        return jsonify({'error': "Backend error"}), 500
 
 @auth_bp.route("/check", methods=["GET", "OPTIONS"])
 def check_auth():
-    """Quick boolean check if token/session is valid"""
     if request.method == 'OPTIONS':
         return '', 200
-    
     try:
         user_id = get_user_id_from_request()
         return jsonify({'authenticated': user_id is not None}), 200 if user_id else 401
