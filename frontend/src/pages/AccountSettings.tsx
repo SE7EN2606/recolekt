@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ExternalLink, Trash2, TriangleAlert, Smartphone, Loader2 } from 'lucide-react';
-import { Button } from '../components/Button';
+import { ExternalLink, Trash2, TriangleAlert, Loader2 } from 'lucide-react';
 import { useAuth, getAuthHeaders } from '../context/AuthContext';
 import { InstallShortcutModal } from '../components/InstallShortcutModal';
-import shortcutsIcon from '/assets/shortcuts_icon.png';  // ← ADD THIS
+import shortcutsIcon from '/assets/shortcuts_icon.png';
 
 const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
@@ -30,6 +29,9 @@ export const AccountSettings: React.FC = () => {
   const [shortcutData, setShortcutData] = useState<any>(null);
   const [isLoadingShortcut, setIsLoadingShortcut] = useState(false);
 
+  // Geolocation state (removed ALL CAPS default)
+  const [country, setCountry] = useState('Detecting...');
+
   useEffect(() => {
     if (user?.email) {
       setEmail(user.email);
@@ -48,6 +50,21 @@ export const AccountSettings: React.FC = () => {
       fetchTokenInfo();
     }
   }, [user]);
+
+  // Fetch user location on mount
+  useEffect(() => {
+    fetch('https://ipapi.co/json/')
+      .then(res => res.json())
+      .then(data => {
+        if (data.country_name) {
+          // Removed .toUpperCase()
+          setCountry(data.country_name);
+        } else {
+          setCountry('Unknown');
+        }
+      })
+      .catch(() => setCountry('Unknown'));
+  }, []);
 
   const fetchTokenInfo = async () => {
     setIsLoadingToken(true);
@@ -129,10 +146,8 @@ export const AccountSettings: React.FC = () => {
     }
   };
 
-  // Auto-save email when editing is complete
   const handleEmailBlur = async () => {
     if (isEditingEmail && email !== user?.email) {
-      // TODO: Add actual save API call here
       console.log('Auto-saving email:', email);
       setIsEditingEmail(false);
     }
@@ -148,6 +163,7 @@ export const AccountSettings: React.FC = () => {
 
   const displayName = user.name || 'User';
 
+  // Removed `uppercase` class from the input
   const InputField = ({ label, value, readOnly = false, onChange, onBlur, action }: any) => (
     <div className="border-b border-gray-100 py-6 last:border-0 relative">
       <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">
@@ -186,7 +202,7 @@ export const AccountSettings: React.FC = () => {
               {user.picture ? (
                  <img 
                     src={user.picture} 
-                    alt={displayName.toUpperCase()} 
+                    alt={displayName} 
                     className="w-full h-full object-cover" 
                  />
               ) : (
@@ -194,7 +210,8 @@ export const AccountSettings: React.FC = () => {
               )}
             </div>
             <div>
-              <h2 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight uppercase">
+              {/* Removed uppercase class from name rendering */}
+              <h2 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight">
                 {displayName}
               </h2>
               <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">Personal Account</p>
@@ -203,7 +220,8 @@ export const AccountSettings: React.FC = () => {
 
           {/* Form Fields */}
           <div className="space-y-2">
-            <InputField label="Full Name" value={displayName.toUpperCase()} readOnly />
+            {/* Removed .toUpperCase() from displayName */}
+            <InputField label="Full Name" value={displayName} readOnly />
             
             <InputField 
               label="Email Address" 
@@ -225,14 +243,13 @@ export const AccountSettings: React.FC = () => {
               }
             />
 
-            <InputField label="Country" value="FRANCE" readOnly />
+            <InputField label="Country" value={country} readOnly />
           </div>
         </div>
 
         {/* iOS/macOS Shortcuts Section */}
         <div className="bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 md:rounded-3xl border border-purple-100/50 p-6 md:p-8 shadow-sm">
           <div className="flex items-start gap-4 mb-6">
-            {/* Custom Shortcuts Icon */}
             <img 
               src={shortcutsIcon}
               alt="Recolekt Shortcut" 
@@ -249,7 +266,6 @@ export const AccountSettings: React.FC = () => {
             </div>
           </div>
 
-          {/* Install Button - Purple Style */}
           <button
             onClick={handleInstallShortcut}
             disabled={isLoadingShortcut}
@@ -283,7 +299,6 @@ export const AccountSettings: React.FC = () => {
             )}
           </button>
 
-          {/* Instructions */}
           <div className="bg-white/60 backdrop-blur-sm rounded-xl p-4 border border-white/50">
             <h4 className="font-bold text-gray-900 text-xs uppercase tracking-wider mb-3 flex items-center gap-2">
               <span className="w-1 h-4 bg-gradient-to-b from-[#8b5cf6] to-[#7c3aed] rounded-full"></span>

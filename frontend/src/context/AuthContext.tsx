@@ -14,13 +14,12 @@ interface AuthContextType {
   signInWithGoogle: () => void;
   signOut: () => Promise<void>;
   isAuthenticated: boolean;
-  registerUser: (email: string, password: string) => Promise<User | null>;
+  registerUser: (email: string, password: string, name: string) => Promise<User | null>;
   loginUser: (email: string, password: string) => Promise<User | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Safe resolution for production
 const getApiBase = () => {
   if (import.meta.env.MODE === 'production') {
     return import.meta.env.VITE_API_BASE || '';
@@ -115,7 +114,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearAuthEverywhere = () => {
     localStorage.removeItem('auth_token');
-    localStorage.removeItem('token'); // Clear legacy token too
+    localStorage.removeItem('token');
     clearCachedUser();
     setUser(null);
     setError(null);
@@ -193,7 +192,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const data = await response.json();
       
       localStorage.setItem('auth_token', data.token);
-      localStorage.setItem('token', data.token); // Keep legacy key in sync
+      localStorage.setItem('token', data.token);
       setToken(data.token);
       setUser(data.user);
       setIsAuthenticated(true);
@@ -209,7 +208,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const registerUser = async (email: string, password: string): Promise<User | null> => {
+  // ✅ FIX: Now accepts and passes the `name` parameter
+  const registerUser = async (email: string, password: string, name: string): Promise<User | null> => {
     setLoading(true);
     setError(null);
     
@@ -217,7 +217,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const response = await fetch(joinUrl(API_BASE, '/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, name }), 
         credentials: 'include',
       });
 
@@ -227,14 +227,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const data = await response.json();
-
-      // The backend returns the token and user on register, so we don't need to call loginUser!
-      localStorage.setItem('auth_token', data.token);
-      localStorage.setItem('token', data.token); // Keep legacy key in sync
-      setToken(data.token);
-      setUser(data.user);
-      setIsAuthenticated(true);
-      saveCachedUser(data.user);
       
       return data.user;
     } catch (error: any) {
@@ -309,7 +301,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       clearAuthEverywhere();
       setLoading(false);
-      window.location.href = '/auth'; // Redirect to auth page after logout
+      window.location.href = '/auth';
     }
   };
 
