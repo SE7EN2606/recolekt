@@ -2,6 +2,7 @@
 """
 Authentication routes and helpers for Google OAuth and Email/Password
 """
+import traceback
 import os
 import logging
 import jwt
@@ -135,18 +136,19 @@ def register():
         return '', 200
 
     data = request.get_json() or {}
-    email = data.get('email')
-    password = data.get('password')
+    # ✅ FIX: Strip invisible spaces and force lowercase to prevent typos!
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
     name = data.get('name', 'User')
 
     if not email or not password:
         return jsonify({'error': 'Email and password required'}), 400
 
-    existing = fetch_one("SELECT user_id FROM users WHERE email = %s;", (email,))
-    if existing:
-        return jsonify({'error': 'User already exists with this email'}), 409
-
     try:
+        existing = fetch_one("SELECT user_id FROM users WHERE email = %s;", (email,))
+        if existing:
+            return jsonify({'error': 'User already exists with this email'}), 409
+
         user_id = get_unique_id(email)
         password_hash = generate_password_hash(password)
         
@@ -172,8 +174,12 @@ def register():
             'user': {'id': user_id, 'email': email, 'name': name}
         }), 201
     except Exception as e:
-        logger.error(f"❌ Registration error: {e}")
-        return jsonify({'error': 'Registration failed due to server error'}), 500
+        error_trace = traceback.format_exc()
+        logger.error(f"❌ Registration error: \n{error_trace}")
+        return jsonify({
+            'error': f"Backend Crash: {str(e)}", 
+            'traceback': error_trace
+        }), 500
 
 @auth_bp.route("/login", methods=["POST", "OPTIONS"])
 def login():
@@ -182,46 +188,69 @@ def login():
         return '', 200
 
     data = request.get_json() or {}
-    email = data.get('email')
-    password = data.get('password')
+    # ✅ FIX: Strip invisible spaces and force lowercase to match the DB
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
 
     if not email or not password:
         return jsonify({'error': 'Email and password required'}), 400
 
-    user = fetch_one(
-        "SELECT user_id, email, name, picture, password_hash FROM users WHERE email = %s;", 
-        (email,)
-    )
+    try:
+        logger.info(f"🔎 Login Attempt for: '{email}'")
+        
+        user = fetch_one(
+            "SELECT user_id, email, name, picture, password_hash FROM users WHERE email = %s;", 
+            (email,)
+        )
 
-    if not user:
-        return jsonify({'error': 'Invalid credentials'}), 401
+        # 🛑 DIAGNOSTIC CHECK 1: Did we find the email?
+        if not user:
+            logger.warning(f"❌ Login Failed: Email '{email}' not found in database.")
+            return jsonify({'error': 'Invalid credentials (Email not found)'}), 401
 
-    if isinstance(user, dict):
-        user_id = user['user_id']
-        stored_hash = user.get('password_hash')
-        name = user.get('name')
-        picture = user.get('picture')
-    else:
-        user_id = user[0]
-        stored_hash = user[4]
-        name = user[2]
-        picture = user[3]
+        # Safely extract data whether it's a Dictionary or a Tuple
+        if isinstance(user, dict):
+            user_id = user['user_id']
+            stored_hash = user.get('password_hash')
+            name = user.get('name')
+            picture = user.get('picture')
+        else:
+            user_id = user[0]
+            stored_hash = user[4]
+            name = user[2]
+            picture = user[3]
 
-    if not stored_hash or not check_password_hash(stored_hash, password):
-        return jsonify({'error': 'Invalid credentials'}), 401
+        # 🛑 DIAGNOSTIC CHECK 2: Does this user have a password?
+        if not stored_hash:
+            logger.warning(f"❌ Login Failed: User '{email}' exists but has no password (Did they use Google?)")
+            return jsonify({'error': 'Please sign in with Google.'}), 401
 
-    jwt_token = create_jwt_token(user_id, email)
-    
-    session['user_id'] = user_id
-    session['email'] = email
-    session.permanent = True
+        # 🛑 DIAGNOSTIC CHECK 3: Does the password match?
+        is_valid = check_password_hash(stored_hash, password)
+        if not is_valid:
+            logger.warning(f"❌ Login Failed: Incorrect password provided for '{email}'.")
+            return jsonify({'error': 'Invalid credentials (Wrong password)'}), 401
 
-    logger.info(f"✅ User logged in via email: {email}")
-    return jsonify({
-        'message': 'Login successful',
-        'token': jwt_token,
-        'user': {'id': user_id, 'email': email, 'name': name, 'picture': picture}
-    }), 200
+        jwt_token = create_jwt_token(user_id, email)
+        
+        session['user_id'] = user_id
+        session['email'] = email
+        session.permanent = True
+
+        logger.info(f"✅ User logged in successfully: {email}")
+        return jsonify({
+            'message': 'Login successful',
+            'token': jwt_token,
+            'user': {'id': user_id, 'email': email, 'name': name, 'picture': picture}
+        }), 200
+        
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        logger.error(f"❌ Login error: \n{error_trace}")
+        return jsonify({
+            'error': f"Backend Crash: {str(e)}", 
+            'traceback': error_trace
+        }), 500
 
 @auth_bp.route("/logout", methods=["POST", "OPTIONS"])
 def logout():
@@ -238,12 +267,12 @@ def get_current_user():
     if request.method == 'OPTIONS':
         return '', 200
     
-    user_id = get_user_id_from_request()
-    
-    if not user_id:
-        return jsonify({'authenticated': False}), 401
-    
     try:
+        user_id = get_user_id_from_request()
+        
+        if not user_id:
+            return jsonify({'authenticated': False}), 401
+        
         user = fetch_one(
             "SELECT user_id, email, name, picture FROM users WHERE user_id = %s",
             (user_id,)
@@ -266,8 +295,12 @@ def get_current_user():
             }
         }), 200
     except Exception as e:
-        logger.error(f"❌ Error fetching user /me: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
+        error_trace = traceback.format_exc()
+        logger.error(f"❌ Error fetching user /me: \n{error_trace}")
+        return jsonify({
+            'error': f"Backend Crash: {str(e)}", 
+            'traceback': error_trace
+        }), 500
 
 @auth_bp.route("/check", methods=["GET", "OPTIONS"])
 def check_auth():
@@ -275,5 +308,8 @@ def check_auth():
     if request.method == 'OPTIONS':
         return '', 200
     
-    user_id = get_user_id_from_request()
-    return jsonify({'authenticated': user_id is not None}), 200 if user_id else 401
+    try:
+        user_id = get_user_id_from_request()
+        return jsonify({'authenticated': user_id is not None}), 200 if user_id else 401
+    except Exception:
+        return jsonify({'authenticated': False}), 401

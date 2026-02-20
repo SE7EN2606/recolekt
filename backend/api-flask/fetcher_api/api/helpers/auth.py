@@ -7,13 +7,12 @@ from fetcher_api.adapters.db import execute, fetch_one
 
 logger = logging.getLogger('auth')
 
-
 def get_user_id_from_request():
     """
     Get user_id from:
     1) Flask session (web app)
-    2) Authorization: Bearer <api_token> (Shortcuts / API clients)
-    3) Authorization: Bearer <jwt> (legacy JWT)
+    2) Authorization: Bearer <jwt> (React frontend)
+    3) Authorization: Bearer <api_token> (API clients)
 
     Raises ValueError if not authenticated.
     """
@@ -33,7 +32,24 @@ def get_user_id_from_request():
         token = auth_header.replace('Bearer ', '').strip()
 
         if token:
-            # 2a) FIRST: check api_tokens table (plain text tokens)
+            # 2a) FIRST: Check if it is a JWT (Fast, stateless, no DB query)
+            # JWTs consist of 3 base64url encoded parts separated by dots.
+            if len(token.split('.')) == 3:
+                try:
+                    import jwt
+                    jwt_secret = os.getenv('SECRET_KEY', 'your-secret-key')
+                    payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
+                    jwt_user_id = payload.get('user_id')
+
+                    if jwt_user_id:
+                        logger.info(f"✅ User authenticated via JWT: {jwt_user_id}")
+                        return jwt_user_id
+                except jwt.ExpiredSignatureError:
+                    logger.warning("⚠️ JWT token has expired.")
+                except Exception as e:
+                    logger.warning(f"⚠️ JWT decode error: {e}")
+
+            # 2b) SECOND: check api_tokens table (plain text tokens)
             try:
                 row = fetch_one(
                     """
@@ -47,7 +63,7 @@ def get_user_id_from_request():
                 if row and row.get('user_id'):
                     api_user_id = row['user_id']
 
-                    # Update last_used_at
+                    # Update last_used_at safely
                     try:
                         execute(
                             "UPDATE api_tokens SET last_used_at = NOW() WHERE token = %s",
@@ -62,7 +78,7 @@ def get_user_id_from_request():
             except Exception as e:
                 logger.warning(f"⚠️ API token lookup failed: {e}")
 
-            # 2b) SECOND: check user_api_tokens table (hashed tokens)
+            # 2c) THIRD: check user_api_tokens table (hashed tokens)
             try:
                 from fetcher_api.utils.tokens import hash_token
                 token_hash = hash_token(token)
@@ -79,7 +95,7 @@ def get_user_id_from_request():
                 if row and row.get('user_id'):
                     api_user_id = row['user_id']
 
-                    # Update last_used_at
+                    # Update last_used_at safely
                     try:
                         execute(
                             "UPDATE user_api_tokens SET last_used_at = NOW() WHERE token_hash = %s",
@@ -93,19 +109,6 @@ def get_user_id_from_request():
                     return api_user_id
             except Exception as e:
                 logger.warning(f"⚠️ Hashed API token lookup failed: {e}")
-
-            # 2c) FALLBACK: check if it's a JWT
-            try:
-                import jwt
-                jwt_secret = os.getenv('SECRET_KEY', 'your-secret-key')
-                payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
-                jwt_user_id = payload.get('user_id')
-
-                if jwt_user_id:
-                    logger.debug(f"✅ User authenticated via JWT: {jwt_user_id}")
-                    return jwt_user_id
-            except Exception as e:
-                logger.warning(f"JWT decode error: {e}")
 
     logger.warning("❌ No valid authentication found")
     raise ValueError("User not authenticated")
