@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react'; // 🔥 ADDED Suspense
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { I18nextProvider, useTranslation } from 'react-i18next';
 import i18n from './i18n'; // 🔥 IMPORT i18n
@@ -112,29 +112,32 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 function App() {
   return (
-    <I18nextProvider i18n={i18n}> {/* 🔥 WRAP APP IN i18n */}
-      <LanguageProvider>
-        <Router>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/features" element={<Features />} />
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/gallery" element={<Gallery />} />
-              <Route path="/gallery/:folderId" element={<Gallery />} />
-              <Route path="/video/:id" element={<VideoDetail />} />
-              <Route path="/reel/:id" element={<VideoDetail />} />
-              <Route path="/settings/app" element={<AppSettings />} />
-              <Route path="/settings/account" element={<AccountSettings />} />
-              <Route path="/settings" element={<Navigate to="/settings/app" replace />} />
-              <Route path="/subscribe" element={<SubscribePage />} />
-              <Route path="/billing" element={<BillingPage />} />
-              <Route path="/billing/success" element={<BillingSuccess />} />
-              <Route path="/billing/cancel" element={<BillingCancel />} />
-            </Routes>
-          </Layout>
-        </Router>
-      </LanguageProvider>
+    <I18nextProvider i18n={i18n}>
+      {/* 🔥 ADDED SUSPENSE WRAPPER */}
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#f8fafc]"><div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin"></div></div>}>
+        <LanguageProvider>
+          <Router>
+            <Layout>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/features" element={<Features />} />
+                <Route path="/auth" element={<Auth />} />
+                <Route path="/gallery" element={<Gallery />} />
+                <Route path="/gallery/:folderId" element={<Gallery />} />
+                <Route path="/video/:id" element={<VideoDetail />} />
+                <Route path="/reel/:id" element={<VideoDetail />} />
+                <Route path="/settings/app" element={<AppSettings />} />
+                <Route path="/settings/account" element={<AccountSettings />} />
+                <Route path="/settings" element={<Navigate to="/settings/app" replace />} />
+                <Route path="/subscribe" element={<SubscribePage />} />
+                <Route path="/billing" element={<BillingPage />} />
+                <Route path="/billing/success" element={<BillingSuccess />} />
+                <Route path="/billing/cancel" element={<BillingCancel />} />
+              </Routes>
+            </Layout>
+          </Router>
+        </LanguageProvider>
+      </Suspense>
     </I18nextProvider>
   );
 }

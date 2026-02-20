@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   User, Globe, LogOut, ChevronRight, 
@@ -7,20 +7,26 @@ import {
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useAuth } from '../context/AuthContext';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+import { useData } from '../context/DataContext';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT i18n
 
 export const AppSettings: React.FC = () => {
   const navigate = useNavigate();
   const { signOut, user, loading, isAuthenticated } = useAuth();
-  const [lang, setLang] = useState<'EN' | 'FR'>('EN');
-  const [darkMode, setDarkMode] = useState(false);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const { videos } = useData(); 
+  const { t, i18n } = useTranslation(['settings']); // 🔥 USE settings namespace
 
-  const isPro = user?.isPro || false;
-  const clipsUsed = 4;
+  const [darkMode, setDarkMode] = React.useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
+
+  // Check the current language for the toggle buttons
+  const currentLang = i18n.language.startsWith('fr') ? 'FR' : 'EN';
+
+  const isPro = (user as any)?.isPro || false;
+  const clipsUsed = videos ? videos.length : 0;
   const clipsLimit = 5;
-  const remaining = clipsLimit - clipsUsed;
+  const remaining = Math.max(0, clipsLimit - clipsUsed); 
+  const progressPercent = Math.min(100, (clipsUsed / clipsLimit) * 100); 
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -70,10 +76,8 @@ export const AppSettings: React.FC = () => {
     <div className="w-full pt-8 md:pt-0 pb-0 md:pb-6 animate-fade-in">
       <div className="flex flex-col gap-6 mb-8 px-4 md:px-0">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            {lang === 'EN' ? 'App Settings' : 'Paramètres'}
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">Manage your account and preferences</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('settings:appSettings')}</h1>
+          <p className="text-gray-500 text-sm mt-1">{t('settings:manageAccount')}</p>
         </div>
       </div>
 
@@ -85,14 +89,14 @@ export const AppSettings: React.FC = () => {
               {user.picture ? (
                 <img src={user.picture} alt={user.name} className="w-full h-full object-cover" />
               ) : (
-                user?.name?.charAt(0) || 'U'
+                user?.name?.charAt(0).toUpperCase() || 'U'
               )}
             </div>
             <div>
               <h2 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight uppercase">
                 {user?.name || 'User'}
               </h2>
-              <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">Personal Account</p>
+              <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">{t('settings:personalAccount')}</p>
             </div>
           </div>
 
@@ -102,18 +106,16 @@ export const AppSettings: React.FC = () => {
             className="rounded-xl py-3 border-gray-200 text-gray-900 font-bold text-sm bg-white hover:bg-gray-50 mb-8"
             onClick={() => navigate('/settings/account')}
           >
-            <User size={16} className="mr-2" /> Edit Personal Info
+            <User size={16} className="mr-2" /> {t('settings:editPersonalInfo')}
           </Button>
 
           <div className="pt-8 border-t border-gray-100">
              <div className="flex items-center justify-between mb-6">
-               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Current Plan</span>
+               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{t('settings:currentPlan')}</span>
                <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest text-white shadow-lg ${
-                  isPro 
-                    ? 'bg-[#8b5cf6] shadow-purple-500/20' 
-                    : 'bg-[#f43f5e] shadow-rose-500/20'
+                  isPro ? 'bg-[#8b5cf6] shadow-purple-500/20' : 'bg-[#f43f5e] shadow-rose-500/20'
                 }`}>
-                  {isPro ? 'PRO' : 'FREE'}
+                  {isPro ? t('settings:pro') : t('settings:free')}
                </span>
              </div>
 
@@ -124,24 +126,25 @@ export const AppSettings: React.FC = () => {
                         <Infinity size={24} />
                      </div>
                      <div>
-                        <div className="font-black text-gray-900">Unlimited Clips</div>
-                        <div className="text-xs font-medium text-primary-600">You are unstoppable.</div>
+                        <div className="font-black text-gray-900">{t('settings:unlimitedClips')}</div>
+                        <div className="text-xs font-medium text-primary-600">{t('settings:unstoppable')}</div>
                      </div>
                   </div>
                </div>
              ) : (
                <>
                  <div className="flex items-center justify-between mb-3">
-                   <span className="text-xs font-bold text-gray-900">Usage Limit</span>
+                   <span className="text-xs font-bold text-gray-900">{t('settings:usageLimit')}</span>
+                   {/* Automatically handles singular/plural based on the translation file */}
                    <span className="text-[#f43f5e] text-xs font-black bg-rose-50 px-2 py-1 rounded-lg">
-                     Only {remaining} {remaining === 1 ? 'clip' : 'clips'} left
+                     {t('settings:clipsLeft', { count: remaining })}
                    </span>
                  </div>
 
                  <div className="relative h-4 w-full bg-gray-100 rounded-full overflow-hidden mb-8">
                    <div 
                      className="h-full bg-[#f43f5e] transition-all duration-700 shadow-[0_0_10px_rgba(244,63,94,0.4)]" 
-                     style={{ width: `${(clipsUsed / clipsLimit) * 100}%` }}
+                     style={{ width: `${progressPercent}%` }}
                    />
                  </div>
 
@@ -149,12 +152,12 @@ export const AppSettings: React.FC = () => {
                    <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-center">
                       <Video size={20} className="mx-auto mb-2 text-gray-400" />
                       <div className="text-xl font-black text-gray-900">{clipsUsed}</div>
-                      <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Used</div>
+                      <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{t('settings:used')}</div>
                    </div>
                    <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-center">
                       <PieChart size={20} className="mx-auto mb-2 text-gray-400" />
                       <div className="text-xl font-black text-gray-900">{clipsLimit}</div>
-                      <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Limit</div>
+                      <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{t('settings:limit')}</div>
                    </div>
                  </div>
                </>
@@ -167,9 +170,9 @@ export const AppSettings: React.FC = () => {
           <div className="bg-dark-900 rounded-3xl shadow-xl shadow-dark-900/20 p-6 md:p-8 text-white relative overflow-hidden group">
             <div className="absolute top-0 right-0 w-64 h-64 bg-primary-600/20 blur-[80px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
             <div className="relative z-10">
-              <h3 className="text-2xl md:text-3xl font-black mb-6 tracking-tight">Unlock Unlimited Clips</h3>
+              <h3 className="text-2xl md:text-3xl font-black mb-6 tracking-tight">{t('settings:unlockUnlimited')}</h3>
               <div className="space-y-3 mb-8">
-                {['Unlimited videos & collections', 'AI auto-categorization', 'Priority support'].map((feat, i) => (
+                {[t('settings:feat1'), t('settings:feat2'), t('settings:feat3')].map((feat, i) => (
                   <div key={i} className="flex items-center gap-3 text-sm text-gray-300">
                     <Check size={16} className="text-green-400 flex-shrink-0" />
                     <span>{feat}</span>
@@ -181,7 +184,7 @@ export const AppSettings: React.FC = () => {
                 className="bg-white text-dark-900 hover:bg-[#8b5cf6] hover:text-white font-black border-transparent shadow-lg py-4 transition-all"
                 onClick={() => navigate('/billing')}
               >
-                <Zap size={18} className="text-yellow-500 fill-current mr-2" /> Upgrade to Pro
+                <Zap size={18} className="text-yellow-500 fill-current mr-2" /> {t('settings:upgrade')}
               </Button>
             </div>
           </div>
@@ -190,23 +193,35 @@ export const AppSettings: React.FC = () => {
         {/* Preferences & Resources */}
         <div className="grid md:grid-cols-[1.5fr_1fr] gap-6">
           <section>
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-2 mb-3">Preferences</h3>
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-2 mb-3">{t('settings:preferences')}</h3>
             <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm">
+              
+              {/* 🔥 LANGUAGE TOGGLE WIRED TO i18n */}
               <div className="w-full flex items-center justify-between p-5 border-b border-gray-50">
                 <div className="flex items-center gap-4">
                   <div className="p-2.5 rounded-xl bg-gray-50 text-gray-500"><Globe size={20} /></div>
-                  <span className="font-bold text-sm text-gray-900">Language</span>
+                  <span className="font-bold text-sm text-gray-900">{t('settings:language')}</span>
                 </div>
                 <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-xl">
-                  <button onClick={() => setLang('EN')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${lang === 'EN' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>English</button>
-                  <button onClick={() => setLang('FR')} className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${lang === 'FR' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>Français</button>
+                  <button 
+                    onClick={() => i18n.changeLanguage('en')} 
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${currentLang === 'EN' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                  >
+                    English
+                  </button>
+                  <button 
+                    onClick={() => i18n.changeLanguage('fr')} 
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${currentLang === 'FR' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                  >
+                    Français
+                  </button>
                 </div>
               </div>
 
               <div className="w-full flex items-center justify-between p-5">
                 <div className="flex items-center gap-4">
                   <div className="p-2.5 rounded-xl bg-gray-50 text-gray-500">{darkMode ? <Moon size={20} /> : <Sun size={20} />}</div>
-                  <span className="font-bold text-sm text-gray-900">Dark Mode</span>
+                  <span className="font-bold text-sm text-gray-900">{t('settings:darkMode')}</span>
                 </div>
                 <button
                   onClick={() => setDarkMode(!darkMode)}
@@ -219,10 +234,10 @@ export const AppSettings: React.FC = () => {
           </section>
 
           <section>
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-2 mb-3">Resources</h3>
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-2 mb-3">{t('settings:resources')}</h3>
             <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm">
-              <SettingItem icon={HelpCircle} label="Help & Support" onClick={() => navigate('/help?section=how-to')} />
-              <SettingItem icon={Info} label="About Recolekt" onClick={() => navigate('/help?section=about')} />
+              <SettingItem icon={HelpCircle} label={t('settings:helpSupport')} onClick={() => navigate('/help?section=how-to')} />
+              <SettingItem icon={Info} label={t('settings:about')} onClick={() => navigate('/help?section=about')} />
             </div>
           </section>
         </div>
@@ -232,7 +247,7 @@ export const AppSettings: React.FC = () => {
             onClick={() => setShowLogoutConfirm(true)}
             className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-white border border-red-100 text-red-600 rounded-2xl font-black text-sm hover:bg-red-600 hover:text-white transition-all shadow-sm"
           >
-            <LogOut size={16} /> Sign Out
+            <LogOut size={16} /> {t('settings:signOut')}
           </button>
         </div>
       </div>
@@ -241,9 +256,9 @@ export const AppSettings: React.FC = () => {
         isOpen={showLogoutConfirm} 
         onClose={() => setShowLogoutConfirm(false)} 
         onConfirm={handleLogout} 
-        title="Sign Out" 
-        message="Are you sure you want to log out?" 
-        confirmLabel="Sign Out" 
+        title={t('settings:signOut')}
+        message={t('settings:confirmSignOut')}
+        confirmLabel={t('settings:signOut')}
       />
     </div>
   );
