@@ -75,7 +75,7 @@ function parseIngredientString(text: string) {
 function formatQuantity(q: string): string {
   const n = parseFloat(q.replace(',', '.'));
   if (!Number.isFinite(n)) return q;
-  return String(Math.round(n)); // nearest integer for clean display [web:576]
+  return String(Math.round(n)); // nearest integer for clean display
 }
 
 interface IngredientRowProps {
@@ -242,7 +242,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   };
 
   return (
-    <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mb-6">
+    // ✅ Added mt-4 for extra top spacing above the card
+    <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
       {/* Header */}
       <div className="bg-tertiary-50/50 p-5 border-b border-gray-50 flex items-center gap-3">
         <ChefHat className="recipe-header-icon" size={20} />
@@ -281,21 +282,22 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
             {t('videoDetail:servings')}
           </span>
-          <div className="flex items-center gap-2 mt-0.5">
+          {/* ✅ FIXED: flex-row and whitespace-nowrap to prevent line breaks */}
+          <div className="flex flex-row items-center justify-center gap-2 mt-0.5 whitespace-nowrap w-full">
             <button
               type="button"
               onClick={() => handleServingsDelta(-1)}
-              className="w-7 h-7 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-sm font-bold hover:bg-gray-200 transition"
+              className="w-7 h-7 flex-shrink-0 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-sm font-bold hover:bg-gray-200 transition"
             >
               −
             </button>
-            <span className="text-sm font-extrabold text-gray-900 tabular-nums">
+            <span className="text-sm font-extrabold text-gray-900 tabular-nums text-center min-w-[20px]">
               {currentServings}
             </span>
             <button
               type="button"
               onClick={() => handleServingsDelta(1)}
-              className="w-7 h-7 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-sm font-bold hover:bg-gray-200 transition"
+              className="w-7 h-7 flex-shrink-0 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-sm font-bold hover:bg-gray-200 transition"
             >
               +
             </button>
