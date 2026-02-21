@@ -74,7 +74,8 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder={t('modals:pastePlaceholder')}
-              className="w-full h-[50px] pl-4 pr-16 text-sm bg-white border border-gray-200 rounded-xl focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none text-gray-900 placeholder-gray-500 shadow-sm"
+              /* ✅ FIXED: Changed text-sm to text-base to prevent iOS zooming */
+              className="w-full h-[50px] pl-4 pr-16 text-base bg-white border border-gray-200 rounded-xl focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none text-gray-900 placeholder-gray-500 shadow-sm"
               autoFocus
               disabled={isLoading}
             />
