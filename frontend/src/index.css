@@ -85,21 +85,21 @@
    ========================================================= */
 
 @keyframes sequence-h {
-  0%    { top: 0%;   opacity: 0; } /* iOS Fix: fade in */
-  1%    { top: 0%;   opacity: 1; }
-  25%   { top: 100%; opacity: 1; }
-  49%   { top: 0%;   opacity: 1; }
-  50%   { top: 0%;   opacity: 0; } /* iOS Fix: fade out before snap */
-  100%  { opacity: 0; }
+  0%    { top: 0%; opacity: 0; }
+  2%    { top: 0%; opacity: 1; }
+  25%   { top: calc(100% - 3px); opacity: 1; }
+  48%   { top: 0%; opacity: 1; }
+  50%   { top: 0%; opacity: 0; }
+  100%  { top: 0%; opacity: 0; }
 }
 
 @keyframes sequence-v {
-  0%    { opacity: 0; }
-  50%   { opacity: 0; left: 0%; }
-  51%   { opacity: 1; left: 0%; } /* iOS Fix: fade in */
-  75%   { left: 100%; opacity: 1; }
-  99%   { left: 0%;   opacity: 1; }
-  100%  { left: 0%;   opacity: 0; } /* iOS Fix: fade out before snap */
+  0%    { left: 0%; opacity: 0; }
+  50%   { left: 0%; opacity: 0; }
+  52%   { left: 0%; opacity: 1; }
+  75%   { left: calc(100% - 3px); opacity: 1; }
+  98%   { left: 0%; opacity: 1; }
+  100%  { left: 0%; opacity: 0; }
 }
 
 @keyframes pulse-glow {
@@ -149,22 +149,36 @@
 
 .scan-line-seq-h {
   position: absolute;
+  top: 0;
   left: 0;
   width: 100%;
   height: 3px;
   background: #8b5cf6;
   box-shadow: 0 0 15px 2px rgba(139, 92, 246, 0.8);
   animation: sequence-h 6s ease-in-out infinite;
+  z-index: 2;
+  -webkit-transform: translate3d(0, 0, 0);
+  transform: translate3d(0, 0, 0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: top, opacity;
 }
 
 .scan-line-seq-v {
   position: absolute;
   top: 0;
+  left: 0;
   height: 100%;
   width: 3px;
   background: #8b5cf6;
   box-shadow: 0 0 15px 2px rgba(139, 92, 246, 0.8);
   animation: sequence-v 6s ease-in-out infinite;
+  z-index: 2;
+  -webkit-transform: translate3d(0, 0, 0);
+  transform: translate3d(0, 0, 0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: left, opacity;
 }
 
 .processing-overlay .spinner {
@@ -246,7 +260,6 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  /* ✅ Changed to grey frosted glass (matched to block above) */
   background: rgba(71, 85, 105, 0.45);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
