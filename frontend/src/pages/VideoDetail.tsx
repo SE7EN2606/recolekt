@@ -5,6 +5,7 @@ import { getAuthHeaders } from '../context/AuthContext';
 import { ReportModal } from '../components/ReportModal';
 import { VideoDetailDesktop } from '../components/VideoDetailDesktop';
 import { VideoDetailMobile } from '../components/VideoDetailMobile';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
 import {
   getTitle,
   getTopic,
@@ -105,6 +106,7 @@ export const VideoDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { videos, deleteVideos } = useData();
+  const { t } = useTranslation(['videoDetail']); // 🔥 HOOK
 
   const [video, setVideo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -317,7 +319,7 @@ export const VideoDetail: React.FC = () => {
         return;
       }
       await navigator.clipboard.writeText(window.location.href);
-      alert('Link copied to clipboard!');
+      alert(t('videoDetail:linkCopied')); // 🔥 TRANSLATED
     } catch (err) {
       console.error('Share failed:', err);
     }
@@ -540,13 +542,13 @@ export const VideoDetail: React.FC = () => {
     return (
       <div className="p-10 text-center">
         <div className="inline-block w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
-        <p className="mt-4 text-gray-500">Loading...</p>
+        <p className="mt-4 text-gray-500">{t('videoDetail:loading')}</p> {/* 🔥 TRANSLATED */}
       </div>
     );
   }
 
   if (!video) {
-    return <div className="p-10 text-center">Video not found</div>;
+    return <div className="p-10 text-center">{t('videoDetail:videoNotFound')}</div>; // 🔥 TRANSLATED
   }
 
   const sharedProps = {
@@ -595,20 +597,20 @@ export const VideoDetail: React.FC = () => {
       {confirmDelete && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-[90%] max-w-sm p-6 text-center">
-            <h2 className="text-lg font-bold text-gray-900 mb-3">Delete this reel?</h2>
-            <p className="text-sm text-gray-600 mb-6">This action cannot be undone.</p>
+            <h2 className="text-lg font-bold text-gray-900 mb-3">{t('videoDetail:deleteTitle')}</h2> {/* 🔥 TRANSLATED */}
+            <p className="text-sm text-gray-600 mb-6">{t('videoDetail:deleteWarning')}</p> {/* 🔥 TRANSLATED */}
             <div className="flex justify-center gap-3">
               <button
                 onClick={() => setConfirmDelete(false)}
                 className="px-5 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
               >
-                Cancel
+                {t('videoDetail:cancel')} {/* 🔥 TRANSLATED */}
               </button>
               <button
                 onClick={handleDelete}
                 className="px-5 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
               >
-                Delete
+                {t('videoDetail:delete')} {/* 🔥 TRANSLATED */}
               </button>
             </div>
           </div>

@@ -1,9 +1,11 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
 
 export const SubscribePage: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation(['common']); // 🔥 HOOK
 
   useEffect(() => {
     // Simulate a redirect to Stripe and back after 2.5 seconds
@@ -25,15 +27,15 @@ export const SubscribePage: React.FC = () => {
       </div>
 
       <h1 className="text-2xl font-black text-gray-900 mb-2 tracking-tight">
-        Connecting to Secure Checkout
+        {t('common:connectingCheckout')}
       </h1>
       <p className="text-gray-500 font-medium">
-        Redirecting you to our payment partner...
+        {t('common:redirectingPayment')}
       </p>
 
       <div className="mt-12 flex items-center gap-2 text-gray-400 text-xs font-bold uppercase tracking-widest">
         <span className="w-2 h-2 bg-green-500 rounded-full animate-ping"></span>
-        Encrypted Connection Active
+        {t('common:encryptedActive')}
       </div>
     </div>
   );

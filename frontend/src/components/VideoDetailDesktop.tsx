@@ -1,5 +1,3 @@
-// components/VideoDetailDesktop.tsx
-
 import React from 'react';
 import {
   ArrowLeft,
@@ -20,6 +18,7 @@ import { IOSShareIcon } from './VideoIcons';
 import { AISummaryCard } from './AISummaryCard';
 import { useLanguage } from '../context/LanguageContext';
 import { RecipeDetailsCard } from './RecipeDetailsCard';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
 
 interface VideoDetailDesktopProps {
   viewModel: any;
@@ -150,6 +149,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
   convertToImperial, // kept for props compatibility
 }) => {
   const { showOriginal, toggleLanguage } = useLanguage();
+  const { t } = useTranslation(['videoDetail', 'common']); // 🔥 HOOK
 
   const summary = viewModel?.summary || {};
   const recipeData = viewModel?.recipe || {};
@@ -336,7 +336,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-xs text-gray-400 bg-gray-900">
-              No preview available
+              {t('videoDetail:noPreviewAvailable')}
             </div>
           )}
 
@@ -388,7 +388,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
               {viewModel.author}
             </span>
           </a>
-          {viewModel.savedAt && <div className="text-xs text-gray-400">Saved {viewModel.savedAt}</div>}
+          {viewModel.savedAt && <div className="text-xs text-gray-400">{t('videoDetail:saved', { date: viewModel.savedAt })}</div>}
         </div>
 
         {/* AI summary card (single render, no duplicate highlights below) */}
@@ -435,7 +435,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
               onClick={() => setCaptionOpen(!captionOpen)}
               className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 font-medium text-gray-900"
             >
-              <span>Original Caption</span>
+              <span>{t('videoDetail:originalCaption')}</span>
               <ChevronDown
                 className={`w-5 h-5 transition-transform ${captionOpen ? 'rotate-180' : ''}`}
               />
@@ -455,12 +455,12 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
         {viewModel.sourceUrl && (
           <div className="bg-gradient-to-br from-violet-50 to-indigo-50 p-6 border border-violet-200 rounded-lg">
             <div className="text-xs uppercase tracking-wide text-violet-900 font-semibold mb-3">
-              See original
+              {t('videoDetail:seeOriginal')}
             </div>
             <a href={viewModel.sourceUrl} target="_blank" rel="noopener noreferrer">
               <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-white text-sm font-medium shadow-md bg-gradient-to-r from-[#F58529] via-[#DD2A7B] to-[#8134AF] hover:opacity-90 transition-all active:scale-[0.98]">
                 <ExternalLink className="w-4 h-4" />
-                View on Instagram
+                {t('videoDetail:viewOnInstagram')}
               </button>
             </a>
           </div>
@@ -470,7 +470,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
         <div className="bg-white border border-gray-200 p-6 rounded-lg">
           <div className="flex items-center gap-2 text-xs uppercase text-gray-500 font-semibold mb-3">
             <Layers className="w-4 h-4 text-primary-500" />
-            <span>Category</span>
+            <span>{t('videoDetail:category')}</span>
           </div>
           {isEditMode ? (
             <input
@@ -505,7 +505,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
                 <path d="M2 7v6.172a2 2 0 0 0 .586 1.414l6.71 6.71a2.4 2.4 0 0 0 3.191.193" />
                 <circle cx="10.5" cy="6.5" r=".5" fill="currentColor" />
               </svg>
-              <span>Topic</span>
+              <span>{t('videoDetail:topic')}</span>
             </div>
             {isEditMode ? (
               <input
@@ -539,7 +539,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
                   d="M300.02 161.657l.047-.187c3.542-14.981 23.176-18.148 31.458-5.532a17.27 17.27 0 012.463 13.038c-2.328 10.088-4.271 20.55-6.386 30.72h12.177c22.801 0 22.804 34.849 0 34.849h-19.383l-8.664 43.645h30.453c22.935 0 22.926 34.846 0 34.846h-37.597l-7.847 37.682c-5.447 21.855-38.479 14.339-33.876-7.694 2.271-9.85 4.177-20.06 6.245-29.988h-45.112c-2.556 12.304-4.897 25.01-7.741 37.203-5.282 22.331-38.129 14.224-33.971-7.243l6.239-29.991-16.242.003c-22.9.135-22.956-34.818 0-34.818h23.404l8.614-43.645h-34.49c-22.521 0-23.232-34.849 0-34.849h41.693l7.731-37.144c.051-.403.138-.797.26-1.176 5.329-21.289 38.485-14.721 33.877 7.672l-6.39 30.648h45.113c2.635-12.65 5.447-25.37 7.925-38.039zM256 0c70.688 0 134.689 28.658 181.016 74.984C483.342 121.311 512 185.312 512 256c0 70.688-28.658 134.689-74.984 181.016C390.689 483.342 326.688 512 256 512c-70.688 0-134.689-28.658-181.016-74.984C28.658 390.689 0 326.688 0 256c0-70.688 28.658-134.689 74.984-181.016C121.311 28.658 185.312 0 256 0zm159.946 96.054C375.017 55.125 318.465 29.806 256 29.806S136.983 55.125 96.054 96.054 29.806 193.535 29.806 256s25.319 119.017 66.248 159.946S193.535 482.194 256 482.194s119.017-25.319 159.946-66.248S482.194 318.465 482.194 256s-25.319-119.017-66.248-159.946zM276.256 278.19l8.661-43.645h-45.115l-8.664 43.645h45.118z"
                 />
               </svg>
-              <span>Hashtags</span>
+              <span>{t('videoDetail:hashtags')}</span>
             </div>
             <EditableHashtags
               hashtags={hashtags}
@@ -557,14 +557,14 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
               onClick={() => setTranscriptOpen(!transcriptOpen)}
               className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 font-medium text-gray-900"
             >
-              <span>Transcript</span>
+              <span>{t('videoDetail:transcript')}</span>
               <ChevronDown
                 className={`w-5 h-5 transition-transform ${transcriptOpen ? 'rotate-180' : ''}`}
               />
             </button>
             {transcriptOpen && (
               <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 text-sm text-gray-700 whitespace-pre-line leading-relaxed">
-                {transcriptionText || 'This video does not contain any transcript'}
+                {transcriptionText || t('videoDetail:noTranscript')}
               </div>
             )}
           </div>
@@ -573,7 +573,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
         {/* Settings */}
         <div className="bg-white p-6 border border-gray-200 rounded-lg">
           <div className="text-xs uppercase tracking-wide text-gray-700 font-semibold mb-3">
-            Settings
+            {t('videoDetail:settings')}
           </div>
           {!isEditMode ? (
             <div className="space-y-3">
@@ -589,7 +589,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
                   className="flex-1 inline-flex items-center justify-center rounded-lg font-medium bg-primary-600 text-white hover:bg-primary-700 px-4 py-2.5 text-sm gap-2"
                 >
                   <Pencil size={16} />
-                  <span>Edit Reel</span>
+                  <span>{t('videoDetail:editReel')}</span>
                 </button>
               </div>
               <button
@@ -597,7 +597,7 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
                 className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 text-red-600 bg-red-50 border border-red-200 rounded-lg font-medium text-sm hover:bg-red-100 transition"
               >
                 <Trash2 className="w-4 h-4" />
-                Delete Reel
+                {t('videoDetail:deleteReel')}
               </button>
             </div>
           ) : (
@@ -606,13 +606,13 @@ export const VideoDetailDesktop: React.FC<VideoDetailDesktopProps> = ({
                 onClick={onCancelEdit}
                 className="flex-1 bg-gray-200 text-gray-700 rounded-lg py-2.5 text-sm font-medium hover:bg-gray-300"
               >
-                Cancel
+                {t('common:cancel')}
               </button>
               <button
                 onClick={onModifyToggle}
                 className="flex-1 bg-primary-600 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-primary-700"
               >
-                Save
+                {t('common:save')}
               </button>
             </div>
           )}

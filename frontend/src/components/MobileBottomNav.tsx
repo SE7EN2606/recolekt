@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutGrid, User, Plus } from 'lucide-react';
 import { ProfileMenu } from './ProfileMenu';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
 
 
 
@@ -13,6 +14,7 @@ interface MobileBottomNavProps {
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const { t } = useTranslation(['modals']); // 🔥 HOOK
 
 
 
@@ -28,7 +30,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
             className={({ isActive }) => `flex flex-col items-center gap-1 min-w-[64px] transition-colors ${isActive ? 'text-primary-600' : 'text-gray-400 hover:text-gray-600'}`}
           >
             <LayoutGrid size={24} />
-            <span className="text-[10px] font-medium">Collections</span>
+            <span className="text-[10px] font-medium">{t('modals:collections')}</span>
           </NavLink>
 
 
@@ -51,7 +53,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
             onClick={() => setIsProfileOpen(true)}
           >
             <User size={24} />
-            <span className="text-[10px] font-medium">My Profile</span>
+            <span className="text-[10px] font-medium">{t('modals:myProfile')}</span>
           </button>
 
 

@@ -30,7 +30,7 @@ interface DataContextType {
   toggleFavorite: (videoId: string) => void;
   moveVideos: (videoIds: string[], targetFolderId: string) => void;
   deleteVideos: (videoIds: string[]) => Promise<void>;
-  addVideo: (url: string) => Promise<AddVideoResult>;
+  addVideo: (url: string, forceRetry?: boolean) => Promise<AddVideoResult>; // ✅ Added flag to interface
   refreshVideos: () => Promise<void>;
   refreshFolders: () => Promise<void>;
 }
@@ -140,7 +140,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const summary = r.summary || {};
           const status = String(r.status || '');
           const isDone = status === 'done' || status === 'completed';
-          const isFailed = status === 'failed';
+          
+          // ✅ FIX: Backend sends 'error', map it correctly
+          const isFailed = status === 'failed' || status === 'error';
 
           let finalCategory = summary.category || 'General';
           if (!isDone && !isFailed) finalCategory = 'Processing';
@@ -229,7 +231,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               if (
                 prevVideos[i].id !== result[i].id || 
                 prevVideos[i].status !== result[i].status || 
-                prevVideos[i].category !== result[i].category
+                prevVideos[i].category !== result[i].category ||
+                prevVideos[i].thumbnailUrl !== result[i].thumbnailUrl // Catch early thumbnails
               ) {
                 changed = true;
                 break;
@@ -264,23 +267,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setIsLoading(false);
     }
   }, [user?.id]);
-
-  const cleanupStuckReels = useCallback(async () => {
-    if (!user) return;
-    try {
-      const response = await fetch(joinUrl(API_BASE, '/api/cleanup/stuck-reels'), {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        credentials: 'include',
-      });
-      if (!response.ok) return;
-      const data = await response.json().catch(() => null);
-      if (Number(data?.cleaned || 0) > 0) {
-        globalLastFetchTime = 0; // Temporarily open the gate for cleanup
-        await fetchVideos(); 
-      }
-    } catch (error) {}
-  }, [user?.id, fetchVideos]);
 
   const refreshFolders = useCallback(async () => {
     if (!user) return;
@@ -320,11 +306,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!initRef.current) {
       initRef.current = true;
       refreshFolders();
-      cleanupStuckReels();
       globalLastFetchTime = 0; // Force first load
       fetchVideos();
     }
-  }, [user?.id, refreshFolders, cleanupStuckReels, fetchVideos]);
+  }, [user?.id, refreshFolders, fetchVideos]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -338,12 +323,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => window.clearInterval(interval);
   }, [user?.id, fetchVideos]);
 
-  const addVideo = useCallback(async (url: string): Promise<AddVideoResult> => {
+  const addVideo = useCallback(async (url: string, forceRetry: boolean = false): Promise<AddVideoResult> => {
     const cleanUrl = (url || '').trim().split('?')[0];
 
     const currentVideos = videosRef.current;
     const existing = currentVideos.find((v: any) => v.originalUrl === cleanUrl);
-    if (existing) {
+    
+    // ✅ Only block adding if the reel exists AND is NOT in an error state (unless forced)
+    if (!forceRetry && existing && existing.status !== 'error' && existing.category !== 'Failed') {
       return {
         clientTempId: existing.id,
         processId: existing.id,
@@ -354,14 +341,20 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       };
     }
 
-    const formData = new FormData();
-    formData.append('url', cleanUrl);
+    // 🚀 FIX: Send as a pure JSON payload to prevent multipart header mismatches!
+    const payload = {
+      url: cleanUrl,
+      force_retry: forceRetry ? "true" : "false"
+    };
 
     const response = await fetch(joinUrl(API_BASE, '/api/summarize'), {
       method: 'POST',
-      body: formData,
+      body: JSON.stringify(payload),
       credentials: 'include',
-      headers: getAuthHeaders(),
+      headers: {
+        ...getAuthHeaders(),
+        'Content-Type': 'application/json' // Explicitly declare JSON
+      },
     });
 
     if (response.status === 409) throw new Error('This video has already been saved.');
@@ -401,6 +394,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     setVideos((prev) => {
+      // Remove the old failed version if we are retrying
       const filtered = (prev || []).filter((v: any) => v.originalUrl !== cleanUrl);
       const merged = [newVideo, ...filtered];
       try {

@@ -24,7 +24,6 @@ from fetcher_api.api.helpers.auth import get_user_id_from_request
 
 logger = logging.getLogger("video")
 
-# ✅ FIX: Blueprint definition (this was missing!)
 video_bp = Blueprint("video", __name__)
 
 TEMP_DIR_BASE = os.path.join(tempfile.gettempdir(), "recolekt_processing")
@@ -32,14 +31,11 @@ os.makedirs(TEMP_DIR_BASE, exist_ok=True)
 
 def _extract_url_from_request():
     """Ultra-robust URL extraction with full logging"""
-    
-    # Log everything
     logger.info(f"🔍 Content-Type: {request.content_type}")
     logger.info(f"🔍 Query args: {dict(request.args)}")
     logger.info(f"🔍 Form keys: {list(request.form.keys())}")
     logger.info(f"🔍 Files keys: {list(request.files.keys())}")
     
-    # 1. JSON Body
     if request.is_json or 'application/json' in str(request.content_type):
         try:
             data = request.get_json(force=True, silent=True)
@@ -52,19 +48,16 @@ def _extract_url_from_request():
         except Exception as e:
             logger.warning(f"❌ JSON parse failed: {e}")
 
-    # 2. Query String
     url = request.args.get("url") or request.args.get("link")
     if url:
         logger.info(f"✅ Found URL in query: {url}")
         return url.strip()
 
-    # 3. Form Data
     url = request.form.get("url") or request.form.get("link") or request.form.get("ig_url")
     if url:
         logger.info(f"✅ Found URL in form: {url}")
         return url.strip()
 
-    # 4. Raw body regex search
     try:
         raw_data = request.get_data(as_text=True)
         logger.info(f"🔍 Raw body (first 300 chars): {raw_data[:300]}")
@@ -91,13 +84,17 @@ def summarize():
         return jsonify({"error": "Authentication required"}), 401
 
     save_to_gcs = True
+    force_retry = False
     try:
         if request.is_json and request.get_json():
             save_to_gcs = str(request.get_json().get("save_to_gcs", "true")).lower() == "true"
+            force_retry = str(request.get_json().get("force_retry", "false")).lower() == "true"
         elif request.form:
             save_to_gcs = request.form.get("save_to_gcs", "true").lower() == "true"
+            force_retry = request.form.get("force_retry", "false").lower() == "true"
         elif request.args:
             save_to_gcs = request.args.get("save_to_gcs", "true").lower() == "true"
+            force_retry = request.args.get("force_retry", "false").lower() == "true"
     except:
         pass
 
@@ -108,7 +105,6 @@ def summarize():
         logger.error("❌ No file or URL provided")
         return jsonify({"error": "Provide either file or URL"}), 400
 
-    # ✅ Check for duplicate and handle error status
     if url:
         url = str(url).strip()
         existing_reel = fetch_one(
@@ -123,13 +119,10 @@ def summarize():
         if existing_reel:
             logger.info(f"📌 Reel already exists: {existing_reel['id']}")
             
-            # If the existing reel has error status, allow reprocessing
-            if existing_reel.get('status') == 'error':
-                logger.info(f"⚠️ Existing reel has error status, deleting and reprocessing")
+            if existing_reel.get('status') == 'error' or force_retry:
+                logger.info(f"⚠️ Reprocessing requested! Deleting old record...")
                 execute("DELETE FROM reels WHERE id = %s", (existing_reel['id'],))
-                # Continue with normal processing below (don't return here)
             else:
-                # Reel exists and is OK - return it
                 return jsonify({
                     "reel_id": existing_reel['id'],
                     "status": existing_reel.get('status', 'completed'),
@@ -160,21 +153,16 @@ def summarize():
             video_path = os.path.join(temp_dir, f"{result['process_id']}.mp4")
             logger.info(f"🆔 Process ID: {result['process_id']}")
 
-            # ✅ FIX: Skip metadata fetch here - let background_process handle it
-            # This avoids the 401 error from Instagram when called via iOS Shortcut
             logger.info(f"⏭️ Skipping metadata fetch - will be done in background")
 
         gcs_paths = generate_gcs_paths(shortcode, "IG")
         result["gcs_paths"] = gcs_paths
         
-        # ✅ FIX: Don't try to generate thumbnail here either
-        # Let background_process handle everything
         logger.info(f"⏭️ Skipping thumbnail generation - will be done in background")
 
         result["gcs_urls"] = {"preview_thumbnail": None, "video": None}
         gcs_urls_json = json.dumps(result["gcs_urls"])
 
-        # ✅ FIX: Insert with NULL for caption/author - background will update
         logger.info(f"💾 Inserting into database...")
         logger.info(f"   ID: {result['process_id']}")
         logger.info(f"   User: {user_id}")
@@ -193,7 +181,6 @@ def summarize():
         logger.error(f"❌ Error in main processing: {e}", exc_info=True)
         return jsonify({"error": "Internal error"}), 500
 
-    # Start background processing with error handling
     try:
         logger.info(f"🚀 Starting background processing thread...")
         threading.Thread(

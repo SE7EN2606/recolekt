@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { ChefHat, Clock, Flame, Users, Lightbulb } from 'lucide-react';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
 
 type RawIngredient =
   | string
@@ -182,6 +183,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   scaleQuantity,
   onServingScaleChange,
 }) => {
+  const { t } = useTranslation(['videoDetail']); // 🔥 HOOK
+
   const prep = (recipe.prep_time || '').trim() || '—';
   const cook = (recipe.cook_time || '').trim() || '—';
 
@@ -244,7 +247,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
       <div className="bg-tertiary-50/50 p-5 border-b border-gray-50 flex items-center gap-3">
         <ChefHat className="recipe-header-icon" size={20} />
         <h3 className="font-bold text-gray-900 text-lg">
-          Recipe Details
+          {t('videoDetail:recipeDetails')}
         </h3>
       </div>
 
@@ -254,7 +257,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Clock className="recipe-meta-icon mb-1" size={16} />
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            Prep
+            {t('videoDetail:prep')}
           </span>
           <span className="text-sm font-bold text-gray-900">
             {prep}
@@ -265,7 +268,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Flame className="recipe-meta-icon mb-1" size={16} />
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            Cook
+            {t('videoDetail:cook')}
           </span>
           <span className="text-sm font-bold text-gray-900">
             {cook}
@@ -276,7 +279,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Users className="recipe-meta-icon mb-1" size={16} />
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            Servings
+            {t('videoDetail:servings')}
           </span>
           <div className="flex items-center gap-2 mt-0.5">
             <button
@@ -303,7 +306,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
       {/* Ingredients */}
       <div className="p-6 border-b border-gray-50">
         <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">
-          Ingredients
+          {t('videoDetail:ingredients')}
         </h4>
         <div className="space-y-6">
           {hasGroups &&
@@ -362,7 +365,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         recipe.instructions.length > 0 && (
           <div className="p-6 bg-gray-50/30">
             <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">
-              Directions
+              {t('videoDetail:directions')}
             </h4>
             <div className="space-y-6">
               {recipe.instructions.map((step, i) => {
@@ -402,7 +405,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           <div className="flex items-center gap-2 mb-4">
             <Lightbulb size={18} className="text-yellow-600" />
             <h4 className="text-xs font-black text-yellow-700 uppercase tracking-widest">
-              Chef&apos;s Notes &amp; Tips
+              {t('videoDetail:chefsNotes')}
             </h4>
           </div>
 
@@ -431,7 +434,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                     className="text-sm text-gray-500 leading-relaxed"
                   >
                     <span className="font-bold text-gray-600">
-                      Note:
+                      {t('videoDetail:noteLabel')}
                     </span>{' '}
                     {note}
                   </p>

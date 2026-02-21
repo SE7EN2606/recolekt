@@ -13,13 +13,7 @@ IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT
 IS_DOCKER = os.path.exists("/app/.env") or IS_RAILWAY
 IS_LOCAL = not IS_DOCKER
 
-print(
-    f"🔍 Environment: {'RAILWAY' if IS_RAILWAY else 'DOCKER' if IS_DOCKER else 'LOCAL DEVELOPMENT'}"
-)
-print(f"🔍 RAILWAY_ENVIRONMENT: {os.getenv('RAILWAY_ENVIRONMENT', 'Not set')}")
-print(
-    f"🔍 RAILWAY_PROJECT_ID: {os.getenv('RAILWAY_PROJECT_ID', 'Not set')[:20] if os.getenv('RAILWAY_PROJECT_ID') else 'Not set'}..."
-)
+print(f"🔍 Environment: {'RAILWAY' if IS_RAILWAY else 'DOCKER' if IS_DOCKER else 'LOCAL DEVELOPMENT'}")
 
 if IS_LOCAL:
     env_local = Path(__file__).parent / ".env.local"
@@ -33,12 +27,6 @@ elif IS_DOCKER and not IS_RAILWAY:
     if ROOT_ENV.exists():
         print(f"✅ Loading production environment: {ROOT_ENV}")
         load_dotenv(ROOT_ENV, override=True)
-else:
-    print("✅ Railway detected - using environment variables from Railway dashboard")
-
-print(f"🔍 DATABASE_URL: {'✅ Set' if os.getenv('DATABASE_URL') else '❌ Missing'}")
-print(f"🔍 MISTRAL_API_KEY: {'✅ Set' if os.getenv('MISTRAL_API_KEY') else '❌ Missing'}")
-print(f"🔍 FRONTEND_BASE_URL: {os.getenv('FRONTEND_BASE_URL', 'Not set')}")
 
 # ============================================
 # NOW IMPORT EVERYTHING ELSE
@@ -51,7 +39,6 @@ from datetime import timedelta
 
 from flask import send_from_directory, request, jsonify
 from flask_cors import CORS
-# ❌ REMOVED: from flask_session import Session (This was causing the filesystem crash!)
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 import requests
@@ -97,7 +84,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # -------------------------------------------------
-# Configure Native Flask Session (No Filesystem Needed!)
+# Configure Native Flask Session
 # -------------------------------------------------
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 app.config["SESSION_PERMANENT"] = True
@@ -106,15 +93,7 @@ app.config["SESSION_COOKIE_NAME"] = "recolekt_session"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SECURE"] = not IS_LOCAL
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_DOMAIN"] = None
 app.config["SESSION_COOKIE_PATH"] = "/"
-
-# -------------------------------------------------
-# 🔍 Environment Variables Check
-# -------------------------------------------------
-google_client_id = os.getenv("GOOGLE_CLIENT_ID", "NOT SET")
-google_secret = os.getenv("GOOGLE_CLIENT_SECRET", "NOT SET")
-flask_secret = os.getenv("SECRET_KEY", "NOT SET")
 
 # -------------------------------------------------
 # 🌐 CORS - Environment-aware
@@ -140,8 +119,6 @@ else:
 
 cors_origins = sorted({ _norm_origin(o) for o in cors_origins if _norm_origin(o) })
 
-logger.info(f"🔍 CORS Origins: {cors_origins}")
-
 CORS(
     app,
     origins=cors_origins,
@@ -160,8 +137,8 @@ from authlib.integrations.flask_client import OAuth
 oauth = OAuth(app)
 oauth.register(
     name="google",
-    client_id=google_client_id,
-    client_secret=google_secret,
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={"scope": "openid email profile"},
 )
@@ -173,24 +150,7 @@ logger.info("✅ OAuth initialized with Google provider")
 # Register all blueprints
 # -------------------------------------------------
 from fetcher_api.api import register_blueprints
-
 register_blueprints(app)
-
-# -------------------------------------------------
-# Environment checks
-# -------------------------------------------------
-if os.getenv("MISTRAL_API_KEY"):
-    logger.info("✅ MISTRAL_API_KEY loaded successfully.")
-else:
-    logger.warning("⚠️ MISTRAL_API_KEY not found. AI summaries will not work.")
-
-if google_client_id != "NOT SET" and google_secret != "NOT SET":
-    logger.info("✅ Google OAuth credentials loaded successfully.")
-else:
-    logger.warning("⚠️ Google OAuth credentials missing. Login will not work.")
-
-if flask_secret != "NOT SET" and flask_secret != "your-secret-key-change-in-production":
-    logger.info("✅ Flask SECRET_KEY configured.")
 
 # -------------------------------------------------
 # ✅ Global Error Handlers
@@ -210,21 +170,7 @@ def handle_error(e):
 
 @app.errorhandler(404)
 def not_found(e):
-    logger.warning(f"404 Not Found: {request.url}")
     return jsonify({"error": "Endpoint not found", "code": 404, "path": request.path}), 404
-
-@app.errorhandler(401)
-def unauthorized(e):
-    return jsonify({"error": "Authentication required", "code": 401}), 401
-
-@app.errorhandler(403)
-def forbidden(e):
-    return jsonify({"error": "Forbidden", "code": 403}), 403
-
-@app.errorhandler(500)
-def internal_error(e):
-    logger.error(f"500 Internal Server Error: {e}", exc_info=True)
-    return jsonify({"error": "Internal server error", "code": 500, "message": str(e)}), 500
 
 # -------------------------------------------------
 # 🔎 OCR helpers
@@ -242,19 +188,9 @@ def _run_ffmpeg_extract_frames(video_path: str, out_dir: str, times) -> list:
     for i, t in enumerate(times):
         frame_path = os.path.join(out_dir, f"frame_{i}.jpg")
         cmd = [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-ss",
-            str(t),
-            "-i",
-            video_path,
-            "-frames:v",
-            "1",
-            "-q:v",
-            "2",
-            frame_path,
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-ss", str(t), "-i", video_path,
+            "-frames:v", "1", "-q:v", "2", frame_path,
         ]
         subprocess.run(cmd, check=True)
         frame_paths.append(frame_path)
@@ -272,10 +208,8 @@ def _image_to_gray_array(path: str, max_size: int = 640) -> np.ndarray:
 
 def _mean_abs_diff(a: np.ndarray, b: np.ndarray) -> float:
     if a.shape != b.shape:
-        h = min(a.shape[0], b.shape[0])
-        w = min(a.shape[1], b.shape[1])
-        a = a[:h, :w]
-        b = b[:h, :w]
+        h, w = min(a.shape[0], b.shape[0]), min(a.shape[1], b.shape[1])
+        a, b = a[:h, :w], b[:h, :w]
     return float(np.mean(np.abs(a - b)))
 
 def _is_static_frames(frame_paths: list, diff_threshold: float = 0.01):
@@ -301,7 +235,6 @@ def _vision_ocr_from_bytes(image_bytes: bytes, mode: str = "document") -> str:
 
     if response.error.message:
         raise RuntimeError(response.error.message)
-
     return (ocr_text or "").strip()
 
 # -------------------------------------------------
@@ -328,53 +261,26 @@ def api_ocr():
                 _download_to_file(thumbnail_url, img_path)
                 with open(img_path, "rb") as f:
                     ocr_text = _vision_ocr_from_bytes(f.read(), mode=mode)
-
-                return jsonify(
-                    {
-                        "is_static": True,
-                        "ocr_text": ocr_text,
-                        "used_source": "thumbnail",
-                        "debug": {"note": "OCR ran on thumbnail_url (treated as static)."},
-                    }
-                )
+                return jsonify({"is_static": True, "ocr_text": ocr_text, "used_source": "thumbnail"})
 
             video_path = os.path.join(tmp, "input.mp4")
             _download_to_file(video_url, video_path)
-
             frames_dir = os.path.join(tmp, "frames")
             os.makedirs(frames_dir, exist_ok=True)
 
             times = [0.2, 1.0, 2.0]
             frame_paths = _run_ffmpeg_extract_frames(video_path, frames_dir, times)
-
             is_static, dbg = _is_static_frames(frame_paths, diff_threshold=0.01)
 
             if not is_static and not force_ocr:
-                return jsonify(
-                    {
-                        "is_static": False,
-                        "ocr_text": "",
-                        "used_source": "frame",
-                        "debug": {"note": "Video appears non-static; OCR skipped.", **dbg},
-                    }
-                )
+                return jsonify({"is_static": False, "ocr_text": "", "used_source": "frame", "debug": dbg})
 
             chosen = frame_paths[1]
             with open(chosen, "rb") as f:
                 ocr_text = _vision_ocr_from_bytes(f.read(), mode=mode)
 
-            return jsonify(
-                {
-                    "is_static": is_static,
-                    "ocr_text": ocr_text,
-                    "used_source": "frame",
-                    "debug": {"chosen_frame": os.path.basename(chosen), **dbg},
-                }
-            )
+            return jsonify({"is_static": is_static, "ocr_text": ocr_text, "used_source": "frame", "debug": dbg})
 
-    except subprocess.CalledProcessError as e:
-        logger.exception("ffmpeg failed")
-        return jsonify({"error": f"ffmpeg failed: {e}"}), 500
     except Exception as e:
         logger.exception("OCR failed")
         return jsonify({"error": f"OCR failed: {e}"}), 500
@@ -399,16 +305,4 @@ if not IS_LOCAL:
 # -------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
-    debug_mode = IS_LOCAL
-
-    logger.info("=" * 60)
-    logger.info("🚀 Starting Flask app")
-    logger.info(
-        f"   Environment: {'RAILWAY' if IS_RAILWAY else 'DOCKER' if IS_DOCKER else 'LOCAL DEV'}"
-    )
-    logger.info(f"   Port: {port}")
-    logger.info(f"   Debug: {debug_mode}")
-    logger.info(f"   CORS Origins: {cors_origins}")
-    logger.info("=" * 60)
-
-    app.run(host="0.0.0.0", port=port, debug=debug_mode, threaded=True)
+    app.run(host="0.0.0.0", port=port, debug=IS_LOCAL, threaded=True)

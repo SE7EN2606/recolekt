@@ -1,5 +1,3 @@
-// src/components/VideoDetailMobile.tsx
-
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
@@ -30,6 +28,7 @@ import { ManageCollectionsModal } from './ManageCollectionsModal';
 import { InputModal } from './InputModal';
 import { useData } from '../context/DataContext';
 import { MobileReelActions } from './MobileReelAction';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
 
 interface VideoDetailMobileProps {
   viewModel: any;
@@ -126,6 +125,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
 }) => {
   const { showOriginal, toggleLanguage } = useLanguage();
   const { folders, addFolder, moveVideos } = useData();
+  const { t } = useTranslation(['videoDetail', 'common']); // 🔥 HOOK
 
   const [isManageOpen, setIsManageOpen] = useState(false);
   const [isReelMenuOpen, setIsReelMenuOpen] = useState(false);
@@ -352,7 +352,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             <span />
           )}
           {viewModel.savedAt && (
-            <span className="text-xs text-gray-500">{viewModel.savedAt}</span>
+            <span className="text-xs text-gray-500">{t('videoDetail:saved', { date: viewModel.savedAt })}</span>
           )}
         </div>
 
@@ -363,13 +363,13 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               onClick={onCancelEdit}
               className="flex-1 flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-medium bg-gray-200 text-gray-700 hover:bg-gray-300 transition"
             >
-              Cancel
+              {t('common:cancel')}
             </button>
             <button
               onClick={onModifyToggle}
               className="flex-1 flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-medium bg-primary-600 text-white hover:bg-primary-700 shadow-lg shadow-primary-600/20 transition"
             >
-              Save Changes
+              {t('common:save')}
             </button>
           </div>
         )}
@@ -386,7 +386,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
                     value={tempCategory}
                     onChange={(e) => setTempCategory(e.target.value)}
                     className="min-w-0 flex-1 px-2.5 py-1 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    placeholder="Category"
+                    placeholder={t('videoDetail:category')}
                   />
                 </div>
 
@@ -397,7 +397,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
                     value={tempTopic}
                     onChange={(e) => setTempTopic(e.target.value)}
                     className="min-w-0 flex-1 px-2.5 py-1 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    placeholder="Topic"
+                    placeholder={t('videoDetail:topic')}
                   />
                 </div>
               </div>
@@ -428,7 +428,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               <button
                 onClick={onModifyToggle}
                 className="flex items-center justify-center w-7 h-7 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition"
-                title="Edit Details"
+                title={t('videoDetail:editReel')}
               >
                 <Pencil size={14} />
               </button>
@@ -454,7 +454,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
                     d="M300.02 161.657l.047-.187c3.542-14.981 23.176-18.148 31.458-5.532a17.27 17.27 0 012.463 13.038c-2.328 10.088-4.271 20.55-6.386 30.72h12.177c22.801 0 22.804 34.849 0 34.849h-19.383l-8.664 43.645h30.453c22.935 0 22.926 34.846 0 34.846h-37.597l-7.847 37.682c-5.447 21.855-38.479 14.339-33.876-7.694 2.271-9.85 4.177-20.06 6.245-29.988h-45.112c-2.556 12.304-4.897 25.01-7.741 37.203-5.282 22.331-38.129 14.224-33.971-7.243l6.239-29.991-16.242.003c-22.9.135-22.956-34.818 0-34.818h23.404l8.614-43.645h-34.49c-22.521 0-23.232-34.849 0-34.849h41.693l7.731-37.144c.051-.403.138-.797.26-1.176 5.329-21.289 38.485-14.721 33.877 7.672l-6.39 30.648h45.113c2.635-12.65 5.447-25.37 7.925-38.039zM256 0c70.688 0 134.689 28.658 181.016 74.984C483.342 121.311 512 185.312 512 256c0 70.688-28.658 134.689-74.984 181.016C390.689 483.342 326.688 512 256 512c-70.688 0-134.689-28.658-181.016-74.984C28.658 390.689 0 326.688 0 256c0-70.688 28.658-134.689 74.984-181.016C121.311 28.658 185.312 0 256 0zm159.946 96.054C375.017 55.125 318.465 29.806 256 29.806S136.983 55.125 96.054 96.054 29.806 193.535 29.806 256s25.319 119.017 66.248 159.946S193.535 482.194 256 482.194s119.017-25.319 159.946-66.248S482.194 318.465 482.194 256s-25.319-119.017-66.248-159.946zM276.256 278.19l8.661-43.645h-45.115l-8.664 43.645h45.118z"
                   />
                 </svg>
-                <span style={{ color: '#0891b2' }}>Hashtags</span>
+                <span style={{ color: '#0891b2' }}>{t('videoDetail:hashtags')}</span>
               </div>
 
               <style>{`
@@ -536,7 +536,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               onClick={() => setCaptionOpen(!captionOpen)}
               className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 text-sm font-bold text-gray-900"
             >
-              Original Caption
+              {t('videoDetail:originalCaption')}
               <ChevronDown
                 size={16}
                 className={`transition-transform ${captionOpen ? 'rotate-180' : ''}`}
@@ -557,7 +557,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               onClick={() => setTranscriptOpen(!transcriptOpen)}
               className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 text-sm font-bold text-gray-900"
             >
-              Transcript
+              {t('videoDetail:transcript')}
               <ChevronDown
                 size={16}
                 className={`transition-transform ${transcriptOpen ? 'rotate-180' : ''}`}
@@ -565,7 +565,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             </button>
             {transcriptOpen && (
               <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                {transcriptionText || 'Transcript not available for this reel yet.'}
+                {transcriptionText || t('videoDetail:noTranscript')}
               </div>
             )}
           </div>
@@ -579,7 +579,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-gray-100 text-gray-700 border border-gray-200 rounded-xl font-medium text-xs"
             >
               <CircleAlert size={16} />
-              Report Issue
+              {t('videoDetail:reportIssue')}
             </button>
 
             <button
@@ -587,7 +587,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
               className="flex items-center justify-center gap-1.5 px-3 py-2.5 text-red-600 bg-red-50 border border-red-200 rounded-xl font-medium text-xs"
             >
               <Trash2 size={16} />
-              Delete
+              {t('common:delete')}
             </button>
           </div>
         )}
@@ -601,7 +601,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             className="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-[#F58529] via-[#DD2A7B] to-[#8134AF] text-white rounded-xl text-sm font-bold shadow-md"
           >
             <ExternalLink size={16} className="text-white" />
-            Open on Instagram
+            {t('videoDetail:viewOnInstagram')}
           </a>
         )}
       </div>
@@ -636,14 +636,14 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
             <div className="bg-white w-full rounded-3xl shadow-2xl overflow-hidden">
               <div className="px-6 pt-5 pb-3 border-b border-gray-100">
                 <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.25em]">
-                  Move to Collection
+                  {t('videoDetail:moveToCollection')}
                 </h3>
               </div>
 
               <div className="max-h-[60vh] overflow-y-auto p-4 space-y-1">
                 {moveTargets.length === 0 ? (
                   <p className="text-sm text-gray-500 py-4 px-2">
-                    You do not have any collections yet. Create one first from the menu.
+                    {t('videoDetail:noCollections')}
                   </p>
                 ) : (
                   moveTargets.map((folder) => {
@@ -679,7 +679,7 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
                 onClick={() => setIsMoveCollectionOpen(false)}
                 className="w-full p-4 border-t border-gray-100 text-sm font-bold text-gray-500 hover:bg-gray-100 transition-colors"
               >
-                Cancel
+                {t('common:cancel')}
               </button>
             </div>
           </div>
@@ -691,8 +691,8 @@ export const VideoDetailMobile: React.FC<VideoDetailMobileProps> = ({
         isOpen={isNewCollectionOpen}
         onClose={() => setIsNewCollectionOpen(false)}
         onSubmit={handleNewCollection}
-        title="New Collection"
-        placeholder="Name your collection..."
+        title={t('videoDetail:newCollection')}
+        placeholder={t('videoDetail:nameCollection')}
         parentOptions={parentOptions}
       />
 

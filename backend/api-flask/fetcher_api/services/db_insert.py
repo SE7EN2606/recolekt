@@ -2,7 +2,7 @@
 
 import json
 import logging
-from fetcher_api.adapters.db import execute, fetch_one, get_connection
+from fetcher_api.adapters.db import execute, fetch_one
 
 logger = logging.getLogger("db")
 
@@ -22,20 +22,15 @@ def insert_reel_into_db(reel_data):
     """
     Inserts or updates a reel record in the DB with Dual-Language support.
     """
-    conn = None
+    process_id = reel_data.get("process_id") or reel_data.get("id")
     try:
         # Extract fields
-        process_id = reel_data.get("process_id") or reel_data.get("id")
         user_id = reel_data.get("user_id")
         
-        logger.info(f"🔧 [DB_INSERT] Starting insert for process_id: {process_id}")
+        logger.info(f"🔧 [DB_INSERT] Starting upsert for process_id: {process_id}")
         
-        # ✅ FIXED: Store FULL bilingual JSONB object
         raw_title = reel_data.get("summary_title")
         raw_text = reel_data.get("summary_text")
-        
-        logger.info(f"🔧 [DB_INSERT] Raw title type: {type(raw_title)}, value preview: {str(raw_title)[:100]}")
-        logger.info(f"🔧 [DB_INSERT] Raw text type: {type(raw_text)}, value preview: {str(raw_text)[:100]}")
         
         # Convert dict to JSON string for JSONB columns
         if isinstance(raw_title, dict):
@@ -48,15 +43,8 @@ def insert_reel_into_db(reel_data):
         else:
             summary_text_json = raw_text or None
         
-        # ✅ FIXED: Only mark as "done" if explicitly passed from background worker
         final_status = reel_data.get("status", "processing")
         
-        logger.info(f"🔧 [DB_INSERT] summary_title_json type: {type(summary_title_json)}")
-        logger.info(f"🔧 [DB_INSERT] summary_text_json type: {type(summary_text_json)}")
-        logger.info(f"🔧 [DB_INSERT] final_status: {final_status}")
-        logger.info(f"🔧 [DB_INSERT] duration: {reel_data.get('duration')}")
-        logger.info(f"🔧 [DB_INSERT] author_name: {reel_data.get('author_name')}")
-
         # Ensure JSONB fields are valid strings
         gcs_urls = reel_data.get("gcs_urls", {})
         if isinstance(gcs_urls, dict):
@@ -66,7 +54,6 @@ def insert_reel_into_db(reel_data):
         if isinstance(transcription, dict):
             transcription = json.dumps(transcription, ensure_ascii=False)
         
-        # ✅ FIXED: summary_bullets should be JSONB
         summary_bullets = reel_data.get("summary_bullets", [])
         if isinstance(summary_bullets, list):
             summary_bullets_json = json.dumps(summary_bullets, ensure_ascii=False)
@@ -140,42 +127,30 @@ def insert_reel_into_db(reel_data):
             
             "summary_category": reel_data.get("summary_category", "General"),
             "summary_topic": reel_data.get("summary_topic", "General"),
-            "summary_title": summary_title_json,  # ✅ JSONB string
-            "summary_text": summary_text_json,     # ✅ JSONB string
+            "summary_title": summary_title_json, 
+            "summary_text": summary_text_json,   
             
-            "summary_bullets": summary_bullets_json,  # ✅ JSONB array
+            "summary_bullets": summary_bullets_json, 
             "summary_hashtags": reel_data.get("summary_hashtags", []),
             "summary_emojis": reel_data.get("summary_emojis", []),
             
             "content_type": reel_data.get("content_type", "generic"),
-            "recipe": recipe_json,   # Full Dual-Language JSON
-            "workout": workout_json, # Full Dual-Language JSON
+            "recipe": recipe_json,   
+            "workout": workout_json, 
             
             "gcs_urls": gcs_urls,
             "transcription": transcription,
             "created_at": reel_data.get("created_at")
         }
         
-        logger.info(f"🔧 [DB_INSERT] Getting database connection...")
-        conn = get_connection()
+        logger.info(f"🔧 [DB_INSERT] Executing SQL and committing transaction...")
         
-        logger.info(f"🔧 [DB_INSERT] Executing SQL...")
-        execute(sql, params, commit=False)
-        
-        logger.info(f"🔧 [DB_INSERT] SQL executed successfully. Committing transaction...")
-        conn.commit()
+        # ✅ FIX: execute() naturally grabs a connection, runs the query, AND commits it!
+        execute(sql, params, commit=True)
         
         logger.info(f"✅ [DB] Successfully saved {process_id} | status={final_status}")
 
     except Exception as e:
         logger.error(f"❌❌❌ [DB_INSERT] FAILED for {process_id}: {e}")
         logger.exception("Full traceback:")
-        
-        # Rollback on error
-        if conn:
-            try:
-                conn.rollback()
-                logger.warning(f"⚠️ [DB_INSERT] Transaction rolled back for {process_id}")
-            except Exception as rollback_error:
-                logger.error(f"❌ [DB_INSERT] Rollback also failed: {rollback_error}")
         raise e

@@ -70,38 +70,38 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 <div className="flex items-center gap-2 mb-4">
                   <img src="https://raw.githubusercontent.com/SE7EN2606/recolekt/81dfd0ba97241d903f74e94e9e795b09ed6ab48d/recolekt_logo_white_bg.svg" alt="recolekt" className="h-8 md:h-9" />
                 </div>
-                <p className="text-gray-500 text-sm leading-relaxed">{t('footerSlogan')}</p>
+                <p className="text-gray-500 text-sm leading-relaxed">{t('common:footerSlogan')}</p>
               </div>
 
               <div>
-                <h4 className="font-bold text-white mb-4">{t('product')}</h4>
+                <h4 className="font-bold text-white mb-4">{t('common:product')}</h4>
                 <ul className="space-y-3 text-sm text-gray-400">
-                  <li><a href="#" className="hover:text-white transition-colors">{t('features')}</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">{t('pricing')}</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">{t('security')}</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('common:features')}</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('common:pricing')}</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('common:security')}</a></li>
                 </ul>
               </div>
 
               <div>
-                <h4 className="font-bold text-white mb-4">{t('company')}</h4>
+                <h4 className="font-bold text-white mb-4">{t('common:company')}</h4>
                 <ul className="space-y-3 text-sm text-gray-400">
-                  <li><a href="#" className="hover:text-white transition-colors">{t('about')}</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">{t('blog')}</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">{t('contact')}</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('common:about')}</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('common:blog')}</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('common:contact')}</a></li>
                 </ul>
               </div>
 
               <div>
-                <h4 className="font-bold text-white mb-4">{t('legal')}</h4>
+                <h4 className="font-bold text-white mb-4">{t('common:legal')}</h4>
                 <ul className="space-y-3 text-sm text-gray-400">
-                  <li><a href="#" className="hover:text-white transition-colors">{t('privacy')}</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">{t('terms')}</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('common:privacy')}</a></li>
+                  <li><a href="#" className="hover:text-white transition-colors">{t('common:terms')}</a></li>
                 </ul>
               </div>
             </div>
 
             <div className="pt-8 border-t border-gray-800 text-center md:text-left">
-              <p className="text-gray-500 text-sm">{t('footerCopyright')}</p>
+              <p className="text-gray-500 text-sm">{t('common:footerCopyright')}</p>
             </div>
           </div>
         </footer>
@@ -113,7 +113,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 function App() {
   return (
     <I18nextProvider i18n={i18n}>
-      {/* 🔥 ADDED SUSPENSE WRAPPER */}
       <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#f8fafc]"><div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin"></div></div>}>
         <LanguageProvider>
           <Router>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
 
 interface EditableTitleProps {
   title: string;
@@ -49,6 +50,8 @@ export const EditableBullets: React.FC<EditableBulletsProps> = ({
   onChange,
   mobile = false 
 }) => {
+  const { t } = useTranslation(['videoDetail']); // 🔥 HOOK
+
   // Safety check to ensure value is always an array
   const safeValue = Array.isArray(value) ? value : [];
   const safeBullets = Array.isArray(bullets) ? bullets : [];
@@ -89,14 +92,14 @@ export const EditableBullets: React.FC<EditableBulletsProps> = ({
                 value={b.headline || ''}
                 onChange={(e) => updateBullet(i, 'headline', e.target.value)}
                 className={`w-full px-${mobile ? '2' : '3'} py-1.5 text-${mobile ? 'xs' : 'sm'} font-semibold border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500`}
-                placeholder="Headline"
+                placeholder={t('videoDetail:headline')}
               />
               <input
                 type="text"
                 value={b.text || ''}
                 onChange={(e) => updateBullet(i, 'text', e.target.value)}
                 className={`w-full px-${mobile ? '2' : '3'} py-1.5 text-${mobile ? 'xs' : 'sm'} border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500`}
-                placeholder="Description"
+                placeholder={t('videoDetail:description')}
               />
             </div>
             <button
@@ -111,7 +114,7 @@ export const EditableBullets: React.FC<EditableBulletsProps> = ({
           onClick={addBullet}
           className={`text-${mobile ? 'xs' : 'sm'} text-primary-600 hover:text-primary-700 font-medium`}
         >
-          + Add Highlight
+          {t('videoDetail:addHighlight')}
         </button>
       </div>
     );
@@ -152,6 +155,8 @@ export const EditableHashtags: React.FC<EditableHashtagsProps> = ({
   onChange,
   mobile = false 
 }) => {
+  const { t } = useTranslation(['videoDetail']); // 🔥 HOOK
+
   const safeValue = Array.isArray(value) ? value : [];
   const safeHashtags = Array.isArray(hashtags) ? hashtags : [];
 
@@ -180,7 +185,7 @@ export const EditableHashtags: React.FC<EditableHashtagsProps> = ({
               type="text"
               value={tag}
               onChange={(e) => updateHashtag(index, e.target.value)}
-              placeholder="hashtag"
+              placeholder={t('videoDetail:hashtag')}
               className="flex-1 px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
             <button
@@ -195,7 +200,7 @@ export const EditableHashtags: React.FC<EditableHashtagsProps> = ({
           onClick={addHashtag}
           className="text-xs text-primary-600 hover:text-primary-700 font-medium"
         >
-          + Add Hashtag
+          {t('videoDetail:addHashtag')}
         </button>
       </div>
     );
@@ -224,6 +229,7 @@ interface VideoMetaInfoProps {
 }
 
 export const VideoMetaInfo: React.FC<VideoMetaInfoProps> = ({ author, savedAt }) => {
+  const { t } = useTranslation(['videoDetail']); // 🔥 HOOK
   return (
     <div className="flex items-center justify-between mb-4 pb-2">
       <a
@@ -246,7 +252,7 @@ export const VideoMetaInfo: React.FC<VideoMetaInfoProps> = ({ author, savedAt })
           {author.replace('@', '')}
         </div>
       </a>
-      {savedAt && <div className="text-sm text-gray-500">Saved on {savedAt}</div>}
+      {savedAt && <div className="text-sm text-gray-500">{t('videoDetail:savedOn', { date: savedAt })}</div>}
     </div>
   );
 };

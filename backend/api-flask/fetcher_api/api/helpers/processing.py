@@ -1,5 +1,5 @@
 # fetcher_api/api/helpers/processing.py
-"""Background processing logic - Fixed Dual-Language Structure"""
+"""Background processing logic - Fixed Dual-Language Structure with Early UI Updates"""
 import os
 import json
 import shutil
@@ -11,6 +11,7 @@ from fetcher_api.services.ai_service import analyze_instagram_video
 from fetcher_api.services.db_insert import insert_reel_into_db
 from fetcher_api.services.storage import save_video_to_gcs, save_result_json_to_gcs
 from fetcher_api.utils.files import cleanup_file
+from fetcher_api.adapters.db import execute  # ✅ Added for early UI updates
 from fetcher_api.api.helpers.normalizers import (
     get_video_duration,
     json_loads_maybe,
@@ -89,7 +90,6 @@ def background_process(
             if not caption:
                 caption = meta.get("caption", "")
             if not author_name:
-                # ✅ FIXED - was "author_name"
                 author_name = meta.get("username", "")
 
             result["caption"] = caption
@@ -100,23 +100,17 @@ def background_process(
 
         if os.path.exists(video_path):
             file_size = os.path.getsize(video_path)
-            logger.info(
-                f"📊 Video file size: {file_size:,} bytes ({file_size / (1024*1024):.2f} MB)"
-            )
+            logger.info(f"📊 Video file size: {file_size:,} bytes ({file_size / (1024*1024):.2f} MB)")
         else:
             logger.error(f"❌ Video file DOES NOT EXIST at: {video_path}")
 
         duration, duration_seconds = get_video_duration(video_path)
 
-        logger.info(
-            f"⏱️ Duration extraction result: duration={duration}, seconds={duration_seconds}"
-        )
+        logger.info(f"⏱️ Duration extraction result: duration={duration}, seconds={duration_seconds}")
 
         if duration:
             result["duration"] = duration
-            logger.info(f"✅ Duration saved to result: {duration}")
         else:
-            logger.warning("⚠️ No duration extracted! Setting to None")
             result["duration"] = None
 
         # 3. Find/Download Thumbnail
@@ -124,8 +118,6 @@ def background_process(
         if os.path.exists(video_path):
             try:
                 logger.info("🖼️ Looking for Instagram thumbnail...")
-
-                # Check if instaloader downloaded thumbnail alongside video
                 video_dir = os.path.dirname(video_path)
                 possible_thumbnail_paths = [
                     os.path.join(video_dir, f"{shortcode}.jpg"),
@@ -140,12 +132,8 @@ def background_process(
                         logger.info(f"✅ Found thumbnail from instaloader: {thumbnail_path}")
                         break
 
-                # If not found and we have post object, download it
                 if not thumbnail_path and post_object:
-                    from fetcher_api.services.video_analysis import (
-                        download_instagram_thumbnail,
-                    )
-
+                    from fetcher_api.services.video_analysis import download_instagram_thumbnail
                     thumbnail_path = os.path.join(video_dir, f"{shortcode}_thumbnail.jpg")
                     if download_instagram_thumbnail(post_object, thumbnail_path):
                         logger.info(f"✅ Downloaded Instagram thumbnail: {thumbnail_path}")
@@ -157,6 +145,38 @@ def background_process(
 
             except Exception as e:
                 logger.error(f"❌ Thumbnail search/download failed: {e}")
+
+        # =========================================================
+        # 🚀 STEP 3.5: EARLY UI UPDATE (Upload Thumbnail Instantly)
+        # =========================================================
+        thumbnail_already_uploaded = False
+        if thumbnail_path and os.path.exists(thumbnail_path) and save_to_gcs and gcs_client.available:
+            try:
+                logger.info("🚀 Uploading thumbnail early so UI can display it...")
+                bucket = gcs_client.client.bucket(gcs_client.analysis_bucket_name)
+                thumbnail_gcs_path = f"media/IG_reels/{shortcode}/{shortcode}_thumbnail.jpeg"
+                thumbnail_blob = bucket.blob(thumbnail_gcs_path)
+                thumbnail_blob.upload_from_filename(thumbnail_path, content_type="image/jpeg")
+                
+                thumbnail_url = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/{thumbnail_gcs_path}"
+                
+                gcs_urls = result.get("gcs_urls", {})
+                if isinstance(gcs_urls, str):
+                    gcs_urls = json_loads_maybe(gcs_urls, default={})
+                gcs_urls = ensure_dict(gcs_urls)
+                gcs_urls["preview_thumbnail"] = thumbnail_url
+                result["gcs_urls"] = gcs_urls
+                
+                # ✅ Ping the database immediately so the frontend React app gets the image
+                execute(
+                    "UPDATE reels SET gcs_urls = %s::jsonb WHERE id = %s",
+                    (json.dumps(gcs_urls, ensure_ascii=False), result["process_id"]),
+                    commit=True
+                )
+                thumbnail_already_uploaded = True
+                logger.info("✅ Early thumbnail saved to DB! UI should update and show blurry placeholder now.")
+            except Exception as e:
+                logger.error(f"❌ Early thumbnail upload failed: {e}")
 
         # 4. Transcribe
         raw_transcription = transcribe_video_deepgram(video_path)
@@ -181,18 +201,14 @@ def background_process(
             }
 
         transcript_text = ensure_dict(transcription_data).get("transcript", "")
-        detected_lang = ensure_dict(transcription_data).get(
-            "detected_language", "unknown"
-        )
+        detected_lang = ensure_dict(transcription_data).get("detected_language", "unknown")
 
         logger.info(f"🗣️ Audio transcribed. Language detected: {detected_lang}")
 
         # 5. OCR Merge
         merged_text = transcript_text
         try:
-            merged_text, _ = maybe_ocr_and_merge_text(
-                transcript_text, caption, None, None, "document"
-            )
+            merged_text, _ = maybe_ocr_and_merge_text(transcript_text, caption, None, None, "document")
         except Exception as e:
             logger.warning(f"OCR step failed: {e}")
 
@@ -250,17 +266,14 @@ def background_process(
 
             summary_block = {
                 "english": {
-                    "title": eng_recipe.get("title", "") or eng_summary.get(
-                        "title", "Recipe"
-                    ),
+                    "title": eng_recipe.get("title", "") or eng_summary.get("title", "Recipe"),
                     "summary": eng_summary.get("summary", ""),
                     "headlines": eng_summary.get("headlines", []),
                     "hashtags": eng_summary.get("hashtags", []),
                     "emojis": eng_summary.get("emojis", []),
                 },
                 "original": {
-                    "title": orig_recipe.get("title", "")
-                    or orig_summary.get("title", "Recette"),
+                    "title": orig_recipe.get("title", "") or orig_summary.get("title", "Recette"),
                     "summary": orig_summary.get("summary", ""),
                     "headlines": orig_summary.get("headlines", []),
                     "hashtags": orig_summary.get("hashtags", []),
@@ -274,14 +287,12 @@ def background_process(
 
         else:
             summary_block = summary_from_ai
-
             display_title = eng_summary.get("title", "Saved Video")
             display_category = ai_result.get("category", "General")
             display_topic = ai_result.get("topic", "General")
 
         eng_data = ensure_dict(ensure_dict(summary_block).get("english", {}))
 
-        # ✅ Save the full bilingual structure + helper columns into result (DB side unchanged)
         result.update(
             {
                 "summary": summary_block,
@@ -290,82 +301,51 @@ def background_process(
                 "content_type": content_type,
                 "summary_category": display_category,
                 "summary_topic": display_topic,
-                # Keep these as full objects for DB compatibility
                 "summary_title": summary_block,
                 "summary_text": summary_block,
-                "summary_bullets": json.dumps(
-                    ensure_list(eng_data.get("headlines", [])), ensure_ascii=False
-                ),
+                "summary_bullets": json.dumps(ensure_list(eng_data.get("headlines", [])), ensure_ascii=False),
                 "summary_hashtags": ensure_list(eng_data.get("hashtags", [])),
                 "summary_emojis": ensure_list(eng_data.get("emojis", [])),
                 "recipe": json_stringify(recipe_raw) if recipe_raw is not None else None,
-                "workout": json_stringify(workout_raw)
-                if workout_raw is not None
-                else None,
+                "workout": json_stringify(workout_raw) if workout_raw is not None else None,
                 "transcription": transcription_data,
                 "created_at": datetime.utcnow().isoformat(),
             }
         )
 
-        logger.info(f"🔍 summary_block type: {type(summary_block)}")
-        logger.info(f"🔍 summary_block preview: {str(summary_block)[:200]}")
-
-        # 7. Upload Thumbnail + Caption + Transcription JSONs to GCS
+        # 7. Upload Rest of JSONs to GCS
         if save_to_gcs and gcs_client.available:
             try:
                 bucket = gcs_client.client.bucket(gcs_client.analysis_bucket_name)
 
-                # Upload Thumbnail
-                if thumbnail_path and os.path.exists(thumbnail_path):
-                    thumbnail_gcs_path = (
-                        f"media/IG_reels/{shortcode}/{shortcode}_thumbnail.jpeg"
-                    )
+                # ✅ Skip thumbnail upload if we already did it in Step 3.5!
+                if not thumbnail_already_uploaded and thumbnail_path and os.path.exists(thumbnail_path):
+                    thumbnail_gcs_path = f"media/IG_reels/{shortcode}/{shortcode}_thumbnail.jpeg"
                     thumbnail_blob = bucket.blob(thumbnail_gcs_path)
-                    thumbnail_blob.upload_from_filename(
-                        thumbnail_path, content_type="image/jpeg"
-                    )
-
-                    thumbnail_url = (
-                        f"https://storage.googleapis.com/"
-                        f"{gcs_client.analysis_bucket_name}/{thumbnail_gcs_path}"
-                    )
-
+                    thumbnail_blob.upload_from_filename(thumbnail_path, content_type="image/jpeg")
+                    thumbnail_url = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/{thumbnail_gcs_path}"
+                    
                     gcs_urls = result.get("gcs_urls", {})
-                    if isinstance(gcs_urls, str):
-                        gcs_urls = json_loads_maybe(gcs_urls, default={})
+                    if isinstance(gcs_urls, str): gcs_urls = json_loads_maybe(gcs_urls, default={})
                     gcs_urls = ensure_dict(gcs_urls)
                     gcs_urls["preview_thumbnail"] = thumbnail_url
                     result["gcs_urls"] = gcs_urls
 
-                    logger.info(f"✅ Uploaded thumbnail: {thumbnail_gcs_path}")
-                else:
-                    logger.warning("⚠️ No thumbnail to upload")
-
                 # Upload Caption JSON
-                caption_json_path = (
-                    f"media/IG_reels/{shortcode}/{shortcode}_caption.json"
-                )
+                caption_json_path = f"media/IG_reels/{shortcode}/{shortcode}_caption.json"
                 caption_blob = bucket.blob(caption_json_path)
                 caption_blob.upload_from_string(
-                    json.dumps(
-                        {"caption": caption, "author": author_name},
-                        indent=2,
-                        ensure_ascii=False,
-                    ),
+                    json.dumps({"caption": caption, "author": author_name}, indent=2, ensure_ascii=False),
                     content_type="application/json",
                 )
-                logger.info(f"✅ Uploaded caption JSON: {caption_json_path}")
 
                 # Upload Transcription JSON
-                transcription_json_path = (
-                    f"media/IG_reels/{shortcode}/{shortcode}_transcription.json"
-                )
+                transcription_json_path = f"media/IG_reels/{shortcode}/{shortcode}_transcription.json"
                 transcription_blob = bucket.blob(transcription_json_path)
                 transcription_blob.upload_from_string(
                     json.dumps(transcription_data, indent=2, ensure_ascii=False),
                     content_type="application/json",
                 )
-                logger.info(f"✅ Uploaded transcription JSON: {transcription_json_path}")
 
             except Exception as e:
                 logger.error(f"❌ Failed to upload files to GCS: {e}")
@@ -376,23 +356,15 @@ def background_process(
             try:
                 video_url = save_video_to_gcs(video_path, shortcode, "IG")
 
-                # Build a compact copy of result for GCS (remove redundant summary copies)
                 compact_result = dict(result)
                 try:
                     summary_for_json = ensure_dict(compact_result.get("summary", {}))
                     eng_for_json = ensure_dict(summary_for_json.get("english", {}))
-
-                    # Store small helper strings instead of full objects
                     compact_result["summary_title"] = eng_for_json.get("title", "") or ""
-                    compact_result["summary_text"] = (
-                        eng_for_json.get("summary", "") or ""
-                    )
+                    compact_result["summary_text"] = eng_for_json.get("summary", "") or ""
                 except Exception as e:
-                    logger.warning(
-                        f"⚠️ Failed to compact summary for GCS JSON: {e}"
-                    )
+                    pass
 
-                # Drop fully redundant helper fields from the JSON file
                 for key in ("summary_bullets", "summary_hashtags", "summary_emojis"):
                     compact_result.pop(key, None)
 
@@ -406,8 +378,7 @@ def background_process(
 
                 if video_url:
                     gcs_urls = result.get("gcs_urls", {})
-                    if isinstance(gcs_urls, str):
-                        gcs_urls = json_loads_maybe(gcs_urls, default={})
+                    if isinstance(gcs_urls, str): gcs_urls = json_loads_maybe(gcs_urls, default={})
                     gcs_urls = ensure_dict(gcs_urls)
                     gcs_urls["video"] = video_url
                     result["gcs_urls"] = gcs_urls
@@ -418,7 +389,6 @@ def background_process(
 
         # 9. Finalize
         result["status"] = "done"
-
         logger.info(f"💾 Saving to database with duration={result.get('duration')}")
         insert_reel_into_db(result)
 
@@ -429,23 +399,18 @@ def background_process(
 
         # 10. Cleanup MP4 from GCS
         if video_uploaded_successfully:
-            logger.info("🗑️ Processing complete - cleaning up MP4 from GCS...")
             cleanup_video_from_gcs(shortcode)
 
         # 11. Cleanup local files
         cleanup_file(video_path)
-        if thumbnail_path:
-            cleanup_file(thumbnail_path)
-        if temp_dir and os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
+        if thumbnail_path: cleanup_file(thumbnail_path)
+        if temp_dir and os.path.exists(temp_dir): shutil.rmtree(temp_dir)
 
     except Exception as e:
         logger.error(f"❌ Background Process Failed: {e}", exc_info=True)
         try:
             result["status"] = "error"
-            if "user_id" not in result:
-                result["user_id"] = user_id
+            if "user_id" not in result: result["user_id"] = user_id
             insert_reel_into_db(result)
         except Exception:
             pass
-

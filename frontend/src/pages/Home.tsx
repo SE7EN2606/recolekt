@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Wand2, AlertCircle } from "lucide-react";
 import { Button } from "../components/Button";
+import { useTranslation } from "react-i18next"; // 🔥 IMPORT
 
 export const Home: React.FC = () => {
   const [url, setUrl] = useState("");
@@ -9,10 +10,8 @@ export const Home: React.FC = () => {
   const [error, setError] = useState("");
   const [pendingUrl, setPendingUrl] = useState("");
   const navigate = useNavigate();
+  const { t } = useTranslation(['home', 'common']); // 🔥 HOOK
 
-  // Works in BOTH envs:
-  // - Deployed: set VITE_API_BASE in Netlify env vars
-  // - Local: either set VITE_API_BASE in .env.local OR fallback to localhost:5001
   const RAW_API_BASE =
     (import.meta as any).env?.VITE_API_BASE ||
     (import.meta as any).env?.VITE_API_URL ||
@@ -23,7 +22,6 @@ export const Home: React.FC = () => {
   const joinUrl = (base: string, path: string) =>
     `${String(base).replace(/\/+$/, "")}/${String(path).replace(/^\/+/, "")}`;
 
-  // Auto-dismiss error after 15 seconds with fade out
   useEffect(() => {
     if (error) {
       const timer = setTimeout(() => {
@@ -33,7 +31,6 @@ export const Home: React.FC = () => {
     }
   }, [error]);
 
-  // Check if user just logged in/verified and has a pending URL to save
   useEffect(() => {
     const checkPendingVideo = async () => {
       const storedPendingUrl = localStorage.getItem("pendingVideoUrl");
@@ -44,20 +41,17 @@ export const Home: React.FC = () => {
             credentials: "include",
           });
 
-          // ✅ Check for 401 before processing
           if (authResponse.status === 401) {
-            return; // User not authenticated, do nothing
+            return;
           }
 
           const authData = await authResponse.json();
 
           if (authData.authenticated) {
-            // User is now authenticated, process the pending video
             localStorage.removeItem("pendingVideoUrl");
             setUrl(storedPendingUrl);
             setPendingUrl("");
 
-            // Automatically trigger save logic
             setTimeout(() => {
               handleSaveWithUrl(storedPendingUrl);
             }, 500);
@@ -69,7 +63,6 @@ export const Home: React.FC = () => {
     };
 
     checkPendingVideo();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handlePaste = async () => {
@@ -106,8 +99,6 @@ export const Home: React.FC = () => {
         credentials: "include",
       });
 
-      // ✅ CRITICAL: Authentication Check
-      // If 401, stop everything, save URL, and send to login.
       if (response.status === 401) {
         localStorage.setItem("pendingVideoUrl", cleanUrl);
         setIsLoading(false);
@@ -115,43 +106,34 @@ export const Home: React.FC = () => {
         return;
       }
 
-      // Read response only if authenticated
       const data = await response.json();
 
-      // Handle Plan Limits / Verification
       if (response.status === 403) {
         if (data.code === "VERIFICATION_REQUIRED") {
           localStorage.setItem("pendingVideoUrl", cleanUrl);
           setPendingUrl(cleanUrl);
-          setError(
-            "Please verify your account to save videos. Check your email for verification link."
-          );
+          setError(t('home:verifyError'));
           setIsLoading(false);
           return;
         }
-        // Handle other 403s (like plan limits)
-        setError(data.error || "Limit reached.");
+        setError(data.error || t('home:limitError'));
         setIsLoading(false);
         return;
       }
 
-      // Handle Duplicates
       if (response.status === 409) {
-        setError(data.error || "This video has already been saved to your collection.");
+        setError(data.error || t('home:duplicateError'));
         setUrl("");
         setIsLoading(false);
         return;
       }
 
-      // Handle Generic Errors
       if (!response.ok) {
-        console.error("Backend error:", data);
-        setError(data.error || "Failed to import this URL. Please try again.");
+        setError(data.error || t('home:genericError'));
         setIsLoading(false);
         return;
       }
 
-      // ✅ SUCCESS: Optimistic Update
       const client_temp_id = `temp_${Date.now()}`;
 
       const realRecord = {
@@ -174,8 +156,7 @@ export const Home: React.FC = () => {
       setIsLoading(false);
       navigate(`/gallery?new=${client_temp_id}&url=${encodeURIComponent(cleanUrl)}`);
     } catch (err) {
-      console.error("Failed to save video:", err);
-      setError("Network error. Please check your connection and try again.");
+      setError(t('home:networkError'));
       setIsLoading(false);
     }
   };
@@ -184,7 +165,6 @@ export const Home: React.FC = () => {
     handleSaveWithUrl(url);
   };
 
-  // Paste SVG Icon Component
   const PasteIcon = ({ className = "" }: { className?: string }) => (
     <svg
       className={className}
@@ -201,29 +181,25 @@ export const Home: React.FC = () => {
 
   return (
     <div className="flex flex-col items-center">
-      {/* Hero Section */}
       <div className="w-full max-w-4xl mx-auto pt-8 md:pt-0 pb-8 md:pb-12 px-4 text-center">
         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary-50 text-primary-700 text-sm md:text-base font-medium mb-8 md:mb-8 animate-fade-in">
           <Wand2 size={16} className="md:w-5 md:h-5" />
-          <span>Save & Organize Short Videos</span>
+          <span>{t('home:heroPill')}</span>
         </div>
 
         <h1 className="text-4xl md:text-7xl font-bold text-gray-900 tracking-tight mb-6">
-          Your Personal <br />
+          {t('home:heroTitlePart1')} <br />
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-primary-400">
-            Video Library
+            {t('home:heroTitlePart2')}
           </span>
         </h1>
 
         <p className="text-base md:text-xl text-gray-500 max-w-2xl mx-auto mb-8 md:mb-12 leading-relaxed">
-          Save Instagram Reels, organize them into collections, and let AI help you categorize what
-          matters most.
+          {t('home:heroSubtitle')}
         </p>
 
-        {/* Input Section */}
         <div className="w-full max-w-3xl mx-auto mt-8">
           <div className="flex flex-col gap-4">
-            {/* ERROR ALERT */}
             {error && (
               <div
                 className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-800 text-sm animate-fade-in"
@@ -247,7 +223,7 @@ export const Home: React.FC = () => {
             <div className="relative flex-1">
               <input
                 type="text"
-                placeholder="Insert instagram link here"
+                placeholder={t('home:inputPlaceholder')}
                 className="w-full h-[50px] md:h-[60px] pl-4 md:pl-6 pr-16 md:pr-52 text-sm md:text-lg bg-white border border-gray-200 rounded-xl focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none text-gray-900 placeholder-gray-500 shadow-sm relative z-0"
                 value={url}
                 onChange={(e) => {
@@ -256,7 +232,6 @@ export const Home: React.FC = () => {
                 }}
               />
 
-              {/* Clear URL Button */}
               {url && !isLoading && (
                 <button
                   type="button"
@@ -279,7 +254,6 @@ export const Home: React.FC = () => {
                 </button>
               )}
 
-              {/* Paste Button - Mobile */}
               <div className="absolute right-2 top-1/2 -translate-y-1/2 md:hidden z-10">
                 <button
                   type="button"
@@ -291,7 +265,6 @@ export const Home: React.FC = () => {
                 </button>
               </div>
 
-              {/* Desktop Buttons */}
               <div className="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 items-center gap-2 z-10">
                 <button
                   type="button"
@@ -310,16 +283,15 @@ export const Home: React.FC = () => {
                   {isLoading ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      <span>Saving...</span>
+                      <span>{t('home:savingButton')}</span>
                     </>
                   ) : (
-                    "Save"
+                    t('home:saveButton')
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Mobile Save Button */}
             <button
               onClick={handleSave}
               disabled={!url.trim() || isLoading}
@@ -328,33 +300,31 @@ export const Home: React.FC = () => {
               {isLoading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>Saving...</span>
+                  <span>{t('home:savingButton')}</span>
                 </>
               ) : (
-                "Save"
+                t('home:saveButton')
               )}
             </button>
           </div>
         </div>
 
-        {/* Checkmarks */}
         <div className="flex flex-wrap items-center justify-center gap-4 md:gap-8 text-xs md:text-base text-gray-500 font-medium mt-10 md:mt-14 mb-4 md:mb-6">
           <div className="flex items-center gap-2">
-            <span className="text-green-500">✓</span> Public videos only
+            <span className="text-green-500">✓</span> {t('home:check1')}
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-green-500">✓</span> Privacy respected
+            <span className="text-green-500">✓</span> {t('home:check2')}
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-green-500">✓</span> Fast & reliable
+            <span className="text-green-500">✓</span> {t('home:check3')}
           </div>
         </div>
       </div>
 
-      {/* Features Grid */}
       <div className="w-full max-w-[1100px] px-4 md:px-8 py-8 md:py-16 bg-white border border-gray-100 rounded-3xl shadow-sm mb-12 md:mb-16">
         <h2 className="text-2xl md:text-3xl font-bold text-center text-gray-900 mb-8 md:mb-16">
-          How It Works
+          {t('home:howItWorks')}
         </h2>
 
         <div className="grid md:grid-cols-3 gap-8 md:gap-12">
@@ -363,10 +333,10 @@ export const Home: React.FC = () => {
               1
             </div>
             <h3 className="text-lg md:text-xl font-bold text-gray-900 mb-2 md:mb-3">
-              Paste Link
+              {t('home:step1Title')}
             </h3>
             <p className="text-sm md:text-base text-gray-500 leading-relaxed">
-              Share any public Instagram Reel URL
+              {t('home:step1Desc')}
             </p>
           </div>
 
@@ -375,10 +345,10 @@ export const Home: React.FC = () => {
               2
             </div>
             <h3 className="text-lg md:text-xl font-bold text-gray-900 mb-2 md:mb-3">
-              Auto-Organize
+              {t('home:step2Title')}
             </h3>
             <p className="text-sm md:text-base text-gray-500 leading-relaxed">
-              Our AI categorizes and extracts key information
+              {t('home:step2Desc')}
             </p>
           </div>
 
@@ -387,29 +357,28 @@ export const Home: React.FC = () => {
               3
             </div>
             <h3 className="text-lg md:text-xl font-bold text-gray-900 mb-2 md:mb-3">
-              Explore & Share
+              {t('home:step3Title')}
             </h3>
             <p className="text-sm md:text-base text-gray-500 leading-relaxed">
-              Browse your collection and discover similar content
+              {t('home:step3Desc')}
             </p>
           </div>
         </div>
       </div>
 
-      {/* CTA */}
       <div className="text-center mb-16 md:mb-20 px-4">
         <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4 md:mb-6">
-          Ready to get started?
+          {t('home:ctaTitle')}
         </h2>
         <p className="text-sm md:text-lg text-gray-500 mb-6 md:mb-8">
-          Scroll up to save your first Instagram Reel or explore our gallery
+          {t('home:ctaDesc')}
         </p>
         <Button
           onClick={() => navigate("/gallery")}
           size="lg"
           className="px-6 md:px-8 py-3 md:py-4 text-base md:text-lg gap-2 shadow-xl shadow-primary-600/20"
         >
-          View Gallery <ArrowRight size={18} className="md:w-5 md:h-5" />
+          {t('home:viewGallery')} <ArrowRight size={18} className="md:w-5 md:h-5" />
         </Button>
       </div>
 

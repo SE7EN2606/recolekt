@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Globe, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Heart, Globe, Loader2, CheckCircle2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { getAuthHeaders } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next';
+import { useData } from '../context/DataContext';
 
 interface VideoCardProps {
   video: any;
@@ -26,25 +28,12 @@ const safeStr = (v: any): string => {
   return String(v);
 };
 
-/**
- * Resolve the best display title from a video object.
- * Priority:
- *  1. summary.english.title  (from result.json summary block)
- *  2. summary_title          (top-level denormalized field)
- *  3. summary.original.title
- *  4. video.title
- *  5. First line of caption  (last resort)
- */
-function resolveTitle(video: any, preferOriginal = false): { english: string; original: string; hasTwoLanguages: boolean } {
-  const DEFAULT = 'Untitled Video';
+function resolveTitle(video: any, t: any, preferOriginal = false): { english: string; original: string; hasTwoLanguages: boolean } {
+  const DEFAULT = t('videoCard:untitledVideo');
 
   const summary = video?.summary ?? video?.raw?.summary ?? {};
 
-  // Unwrap nested summary.summary shape
-  const summaryObj =
-    summary?.english || summary?.original
-      ? summary
-      : summary?.summary ?? summary;
+  const summaryObj = summary?.english || summary?.original ? summary : summary?.summary ?? summary;
 
   const englishBlock = summaryObj?.english ?? summaryObj?.EN ?? summaryObj?.en ?? {};
   const originalBlock = summaryObj?.original ?? summaryObj?.OG ?? summaryObj?.og ?? {};
@@ -52,16 +41,13 @@ function resolveTitle(video: any, preferOriginal = false): { english: string; or
   const engTitle = safeStr(englishBlock?.title).trim();
   const origTitle = safeStr(originalBlock?.title).trim();
 
-  // Also check top-level summary_title
   const topLevelTitle = safeStr(video?.summary_title ?? video?.summaryTitle).trim();
 
-  // Also check recipe.english.title / recipe.original.title
   const recipe = video?.recipe;
   const recipeObj = recipe && typeof recipe === 'object' ? recipe : null;
   const recipeEngTitle = safeStr(recipeObj?.english?.title).trim();
   const recipeOrigTitle = safeStr(recipeObj?.original?.title).trim();
 
-  // Resolve english
   const english =
     engTitle ||
     topLevelTitle ||
@@ -70,56 +56,40 @@ function resolveTitle(video: any, preferOriginal = false): { english: string; or
     safeStr(video?.caption ?? '').split('\n')[0].trim() ||
     DEFAULT;
 
-  // Resolve original
   const original =
     origTitle ||
     recipeOrigTitle ||
     safeStr(video?.title).trim() ||
-    english; // fall back to english if no original
+    english; 
 
-  // Only show globe / hasTwoLanguages when they are meaningfully different
-  const hasTwoLanguages =
-    !!(engTitle && origTitle) && engTitle !== origTitle;
+  const hasTwoLanguages = !!(engTitle && origTitle) && engTitle !== origTitle;
 
   return { english, original, hasTwoLanguages };
 }
 
 const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggleSelect, selectionMode }) => {
   const navigate = useNavigate();
+  const { t, i18n } = useTranslation(['videoCard']);
+  const { addVideo, deleteVideos } = useData();
 
   const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
 
   const [isFavorite, setIsFavorite] = useState<boolean>(Boolean(video?.isFavorite ?? video?.is_favorite ?? false));
-  const [showOriginal, setShowOriginal] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(i18n.language.startsWith('fr'));
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    setShowOriginal(i18n.language.startsWith('fr'));
+  }, [i18n.language]);
 
   useEffect(() => {
     setIsFavorite(Boolean(video?.isFavorite ?? video?.is_favorite ?? false));
   }, [video?.isFavorite, video?.is_favorite, videoId]);
 
-  useEffect(() => {
-    setShowOriginal(false);
-  }, [videoId]);
-
   const isProcessing = video?.category === 'Processing' || video?.status === 'processing';
-  const isFailed = video?.category === 'Failed' || video?.status === 'failed';
-  const isDisabled = isProcessing || isFailed;
-
-  // ── Title & language resolution ──────────────────────────────────────────
-  const { english: englishTitle, original: originalTitle, hasTwoLanguages } = useMemo(
-    () => resolveTitle(video),
-    [video]
-  );
-
-  const displayTitle = showOriginal ? originalTitle : englishTitle;
-
-  // Language badge code from transcription
-  let languageCode = 'OG';
-  const transcription = video?.transcription ?? video?.transcript ?? video?.raw?.transcription;
-  if (transcription && typeof transcription === 'object' && transcription.detected_language) {
-    languageCode = String(transcription.detected_language).toUpperCase();
-  }
-
-  // ── Display helpers ───────────────────────────────────────────────────────
+  const isFailedStatus = video?.category === 'Failed' || video?.status === 'error' || video?.status === 'failed';
+  
   const thumbnailUrl =
     video?.thumbnailUrl ||
     video?.thumbnail_url ||
@@ -129,7 +99,27 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     video?.raw?.gcsurls?.previewthumbnail ||
     '';
 
-  const author = String(video?.author ?? video?.author_name ?? video?.authorName ?? 'Unknown');
+  const isDone = video?.status === 'done' || video?.status === 'completed';
+  
+  const isMissingThumbnail = isDone && !thumbnailUrl;
+  
+  const hasError = isFailedStatus || isMissingThumbnail;
+  const isDisabled = isProcessing || hasError;
+
+  const { english: englishTitle, original: originalTitle, hasTwoLanguages } = useMemo(
+    () => resolveTitle(video, t),
+    [video, t]
+  );
+
+  const displayTitle = showOriginal ? originalTitle : englishTitle;
+
+  let languageCode = 'OG';
+  const transcription = video?.transcription ?? video?.transcript ?? video?.raw?.transcription;
+  if (transcription && typeof transcription === 'object' && transcription.detected_language) {
+    languageCode = String(transcription.detected_language).toUpperCase();
+  }
+
+  const author = String(video?.author ?? video?.author_name ?? video?.authorName ?? t('videoCard:unknownAuthor'));
   const duration = video?.duration;
 
   const sourceUrl = String(
@@ -150,7 +140,6 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
       ? `https://www.instagram.com/${author.replace('@', '')}/`
       : sourceUrl || '#';
 
-  // ── Event handlers ────────────────────────────────────────────────────────
   const handleHeartClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -159,16 +148,13 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     const next = !isFavorite;
     setIsFavorite(next);
 
-    if (!videoId) {
-      console.warn('Cannot toggle favorite: missing video id');
-      return;
-    }
+    if (!videoId) return;
 
     try {
       const encodedId = encodeURIComponent(String(videoId));
       const url = joinUrl(API_BASE, `/api/update/${encodedId}`);
 
-      const res = await fetch(url, {
+      await fetch(url, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -177,10 +163,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         credentials: 'include',
         body: JSON.stringify({ is_favorite: next }),
       });
-
-      if (!res.ok) throw new Error(`Failed to update favorite: ${res.status}`);
     } catch (err) {
-      console.error('❌ Failed to update favorite status', err);
       setIsFavorite((prev) => !prev);
     }
   };
@@ -208,21 +191,51 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     }
   };
 
+  const handleRetry = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!sourceUrl || isRetrying) return;
+    
+    setIsRetrying(true);
+    try {
+      await addVideo(sourceUrl, true);
+    } catch (err) {
+      console.error("Retry failed:", err);
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!videoId || isDeleting) return;
+    
+    setIsDeleting(true);
+    try {
+      await deleteVideos([videoId]);
+    } catch (err) {
+      console.error("Delete failed:", err);
+      setIsDeleting(false);
+    }
+  };
+
   const errorText =
     video?.errorMessage ||
     video?.error_message ||
     video?.raw?.errormessage ||
-    'Something went wrong. Please try again.';
+    (isMissingThumbnail ? t('videoCard:missingThumbnailText', 'Media download failed.') : t('videoCard:defaultError'));
 
   return (
     <div className="group relative flex flex-col gap-3 transition-transform duration-300">
       <div
         onClick={handleCardClick}
-        className={`relative rounded-2xl overflow-hidden aspect-[9/16] bg-gray-100 shadow-sm transition-shadow duration-300 ${
-          isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'
+        className={`relative rounded-2xl overflow-hidden aspect-[9/16] shadow-sm transition-shadow duration-300 ${
+          isDisabled ? 'cursor-default' : 'cursor-pointer'
         } ${selected ? 'ring-4 ring-primary-500 ring-offset-2' : 'hover:shadow-lg'}`}
         style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}
       >
+        {/* Render Thumbnail or Shimmering Placeholder */}
         {thumbnailUrl ? (
           <img
             src={thumbnailUrl}
@@ -235,32 +248,53 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
             }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gray-200">
-            <span className="text-gray-400 text-sm">No preview</span>
+          <div className={`w-full h-full flex items-center justify-center ${isProcessing ? 'placeholder-skeleton' : 'bg-gray-200'}`}>
+            {!hasError && !isProcessing && (
+              <span className="text-gray-400 text-sm">{t('videoCard:noPreview')}</span>
+            )}
           </div>
         )}
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
+        {/* Base dark gradient to make white text at bottom readable */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60 pointer-events-none" />
 
-        {/* Processing overlay (defensive — Gallery.tsx renders its own styled version) */}
+        {/* PROCESSING OVERLAY: Grey Blur + Purple Scanners */}
         {isProcessing && (
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-40 flex items-center justify-center pointer-events-none">
-            <div className="flex flex-col items-center gap-3">
-              <Loader2 className="w-10 h-10 text-white animate-spin" />
-              <span className="text-white text-sm font-medium">Processing...</span>
+          <div className="processing-overlay">
+            <div className="scan-grid" />
+            <div className="scan-line-seq-h" />
+            <div className="scan-line-seq-v" />
+            <div className="flex flex-col items-center gap-3 relative z-10">
+              <Loader2 className="w-10 h-10 text-white animate-spin drop-shadow-md" />
+              <span className="text-white text-sm font-medium drop-shadow-md tracking-wide">{t('videoCard:processing')}</span>
             </div>
           </div>
         )}
 
-        {/* Failed overlay */}
-        {isFailed && (
-          <div className="absolute inset-0 bg-red-500/90 backdrop-blur-sm z-40 flex items-center justify-center pointer-events-none">
-            <div className="flex flex-col items-center gap-3 px-4 text-center">
-              <AlertCircle className="w-10 h-10 text-white" />
-              <div>
-                <p className="text-white text-sm font-semibold mb-1">Processing Failed</p>
-                <p className="text-white/90 text-xs">{errorText}</p>
-              </div>
+        {hasError && (
+          <div className="absolute inset-0 bg-red-600/90 backdrop-blur-md z-40 flex flex-col items-center justify-center p-4 text-center">
+            <AlertCircle className="w-12 h-12 text-white/90 mb-3" />
+            <p className="text-white font-bold text-base mb-1">{t('videoCard:processingFailed')}</p>
+            <p className="text-white/80 text-xs mb-6 px-2 line-clamp-2">{errorText}</p>
+            
+            <div className="flex flex-col gap-2 w-full max-w-[140px]">
+              <button 
+                onClick={handleRetry}
+                disabled={isRetrying || isDeleting}
+                className="flex items-center justify-center gap-2 w-full py-2.5 bg-white text-red-600 font-semibold rounded-xl text-sm hover:bg-red-50 transition-colors disabled:opacity-50 shadow-sm"
+              >
+                {isRetrying ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                {isRetrying ? t('videoCard:retrying', 'Retrying...') : t('videoCard:tryAgain', 'Try Again')}
+              </button>
+              
+              <button 
+                onClick={handleDelete}
+                disabled={isRetrying || isDeleting}
+                className="flex items-center justify-center gap-2 w-full py-2.5 bg-red-700 text-white font-medium rounded-xl text-sm hover:bg-red-800 transition-colors disabled:opacity-50"
+              >
+                {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {t('videoCard:remove', 'Remove')}
+              </button>
             </div>
           </div>
         )}
@@ -277,12 +311,11 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           </div>
         )}
 
-        {/* Globe — only shown when two real distinct languages exist */}
         {hasTwoLanguages && !isDisabled && !selectionMode && (
           <button
             onClick={handleLanguageToggle}
             className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg flex items-center gap-1.5 text-white hover:bg-black/80 transition-colors z-30"
-            title={showOriginal ? `Showing ${languageCode}` : 'Showing English'}
+            title={showOriginal ? t('videoCard:showingLanguage', { lang: languageCode }) : t('videoCard:showingEnglish')}
           >
             <Globe size={12} className="text-gray-200" />
             <span className="text-[10px] font-bold uppercase tracking-wider">
@@ -291,13 +324,13 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           </button>
         )}
 
-        {duration && duration !== '0:00' && (
+        {duration && duration !== '0:00' && !hasError && (
           <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-medium text-white z-20">
             {duration}
           </div>
         )}
 
-        {!selectionMode && (
+        {!selectionMode && !hasError && (
           <div className="absolute top-3 right-3 z-20">
             <div className="w-7 h-7 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white shadow-sm">
               {platform === 'instagram' && (
@@ -320,7 +353,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           </div>
         )}
 
-        {!selectionMode && (
+        {!selectionMode && !hasError && (
           <div className="absolute inset-0 p-4 flex flex-col justify-start z-30 pointer-events-none">
             <div className="flex justify-start pointer-events-auto">
               <button
@@ -353,7 +386,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         <h3
           onClick={handleCardClick}
           className={`font-semibold text-gray-900 leading-tight line-clamp-2 transition-colors ${
-            isDisabled ? 'cursor-not-allowed opacity-50' : 'hover:text-primary-600 cursor-pointer'
+            isDisabled ? 'cursor-default opacity-50' : 'hover:text-primary-600 cursor-pointer'
           }`}
           title={displayTitle}
         >

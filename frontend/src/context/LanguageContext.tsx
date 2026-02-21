@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface LanguageContextType {
   showOriginal: boolean;
@@ -24,14 +25,12 @@ const extractText = (v: any): string => {
   if (typeof v === 'string') return v;
   if (!v) return '';
 
-  // If it is a {english, original} wrapper, unwrap first (caller decides which branch)
+  // If it is a {english, original} wrapper, unwrap first
   if (isPlainObject(v) && (v.english !== undefined || v.original !== undefined)) {
-    // Return empty here; unwrapping is handled in t() so showOriginal is respected.
     return '';
   }
 
   if (isPlainObject(v)) {
-    // Common keys in your payloads
     const keys = ['summary', 'text', 'headline', 'title', 'description', 'value', 'content', 'name'];
     for (const k of keys) {
       if (typeof v[k] === 'string' && v[k].trim()) return v[k];
@@ -42,12 +41,23 @@ const extractText = (v: any): string => {
 };
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [showOriginal, setShowOriginal] = useState(false);
-  const [languageCode, setLanguageCode] = useState('FR');
+  const { i18n } = useTranslation();
+
+  // 🔥 STATE: Initialize based on the i18next current language
+  const [showOriginal, setShowOriginal] = useState(i18n.language.startsWith('fr'));
+  const [languageCode, setLanguageCode] = useState(i18n.language.toUpperCase());
+
+  // 🔥 EFFECT: When the App Language changes (via i18n), sync the content preference
+  useEffect(() => {
+    const isFr = i18n.language.startsWith('fr');
+    setShowOriginal(isFr);
+    setLanguageCode(isFr ? 'FR' : 'EN');
+    console.log('🌍 App Language changed to:', i18n.language, 'Setting content to Original:', isFr);
+  }, [i18n.language]);
 
   const toggleLanguage = useCallback(() => {
     setShowOriginal(prev => {
-      console.log('🌍 Language Toggle:', prev ? 'EN' : 'ORIGINAL');
+      console.log('🌍 Content Toggle:', prev ? 'Showing Translation' : 'Showing Original');
       return !prev;
     });
   }, []);
@@ -63,25 +73,19 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return data.map(item => t(item));
     }
 
-    // Handle { english, original } wrappers (can contain strings OR objects)
+    // Handle { english, original } wrappers
     if (isPlainObject(data) && (data.english !== undefined || data.original !== undefined)) {
       const picked = showOriginal
         ? (data.original ?? data.english ?? '')
         : (data.english ?? data.original ?? '');
 
-      // If picked is a string -> done
       if (typeof picked === 'string') return picked;
-
-      // If picked is an array -> translate recursively
       if (Array.isArray(picked)) return picked.map(item => t(item));
 
-      // If picked is an object -> try to extract meaningful text;
-      // if no direct text, return the object translated field-by-field (so UI can use it safely).
       if (isPlainObject(picked)) {
         const direct = extractText(picked);
         if (direct) return direct;
 
-        // Translate object values recursively
         const out: any = {};
         for (const [k, v] of Object.entries(picked)) {
           out[k] = t(v);
@@ -92,7 +96,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return safeStr(picked);
     }
 
-    // Plain objects: translate each field (so nested english/original fields inside are handled)
+    // Plain objects: translate each field
     if (isPlainObject(data)) {
       const out: any = {};
       for (const [k, v] of Object.entries(data)) {
@@ -101,12 +105,20 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return out;
     }
 
-    // Numbers/booleans/etc.
     return safeStr(data);
   }, [showOriginal]);
 
+  // 🔥 Memoize the context value to prevent unnecessary re-renders
+  const value = useMemo(() => ({
+    showOriginal,
+    toggleLanguage,
+    t,
+    languageCode,
+    setLanguageCode
+  }), [showOriginal, toggleLanguage, t, languageCode]);
+
   return (
-    <LanguageContext.Provider value={{ showOriginal, toggleLanguage, t, languageCode, setLanguageCode }}>
+    <LanguageContext.Provider value={value}>
       {children}
     </LanguageContext.Provider>
   );

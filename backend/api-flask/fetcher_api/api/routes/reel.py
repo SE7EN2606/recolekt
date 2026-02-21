@@ -620,7 +620,6 @@ def search_reels():
             row_dict["summary_title"] = summary_title_str
             row_dict["summary_text"] = summary_obj
             row_dict["summary"] = summary_obj
-
             row_dict.pop("summary_bullets", None)
             row_dict.pop("summary_hashtags", None)
             row_dict.pop("summary_emojis", None)
@@ -637,30 +636,3 @@ def search_reels():
         logger.error(f"Error in /search: {e}", exc_info=True)
         return jsonify({"error": "Internal error"}), 500
 
-
-@reel_bp.route("/cleanup_stuck", methods=["POST"])
-def cleanup_stuck_videos():
-    """Delete 'processing' videos older than 30 minutes from the DB"""
-    try:
-        user_id = get_user_id_from_request()
-    except ValueError:
-        return jsonify({"error": "Authentication required"}), 401
-
-    cutoff = datetime.utcnow() - timedelta(minutes=30)
-
-    sql = """
-        DELETE FROM reels
-        WHERE user_id = %s AND status = 'processing' AND created_at < %s
-        RETURNING id
-    """
-
-    result = fetch_all(sql, (user_id, cutoff))
-    deleted_ids = (
-        [row["id"] if hasattr(row, "keys") else row[0] for row in result]
-        if result
-        else []
-    )
-
-    logger.info(f"🧹 Cleaned up {len(deleted_ids)} stuck videos for user {user_id}")
-
-    return jsonify({"status": "cleaned", "deleted": len(deleted_ids), "ids": deleted_ids})

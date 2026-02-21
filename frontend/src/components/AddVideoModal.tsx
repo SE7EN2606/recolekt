@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useData } from '../context/DataContext';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
 
 // Paste Icon SVG
 const PasteIcon = ({ className = "" }: { className?: string }) => (
@@ -21,6 +22,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const { addVideo } = useData();
+  const { t } = useTranslation(['modals', 'common']); // 🔥 HOOK
 
   if (!isOpen) return null;
 
@@ -53,7 +55,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
       setUrl('');
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to import video');
+      setError(err.message || t('modals:importFailed'));
       console.error('Error adding video:', err);
     } finally {
       setIsLoading(false);
@@ -63,7 +65,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Save a New Video</h2>
+        <h2 className="text-xl font-bold text-gray-900 mb-4">{t('modals:saveNewVideo')}</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="relative">
@@ -71,7 +73,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="Insert Instagram link here"
+              placeholder={t('modals:pastePlaceholder')}
               className="w-full h-[50px] pl-4 pr-16 text-sm bg-white border border-gray-200 rounded-xl focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none text-gray-900 placeholder-gray-500 shadow-sm"
               autoFocus
               disabled={isLoading}
@@ -82,7 +84,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
                 onClick={handlePaste}
                 disabled={isLoading}
                 className="flex items-center justify-center w-[36px] h-[36px] bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all border border-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Paste from clipboard"
+                title={t('modals:pasteTitle')}
               >
                 <PasteIcon className="w-4 h-4" />
               </button>
@@ -100,14 +102,14 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
               className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={isLoading}
             >
-              Cancel
+              {t('common:cancel')}
             </button>
             <button
               type="submit"
               disabled={!url.trim() || isLoading}
               className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-semibold"
             >
-              {isLoading ? 'Processing...' : 'Save'}
+              {isLoading ? t('common:processing') : t('common:save')}
             </button>
           </div>
         </form>

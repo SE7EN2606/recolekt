@@ -145,5 +145,11 @@
   "rum": "ALCOHOL",
   "orange blossom water": "LIQUID",
   "bitter almond extract": "VANILLA",
-  "leeks white part only": "ALLIUM"
+  "leeks white part only": "ALLIUM",
+  "plain yogurt": "PROTEIN_DAIRY",
+  "semolina": "GRAIN",
+  "parmigiano reggiano": "PROTEIN_DAIRY",
+  "nutmeg": "SPICE",
+  "pecorino romano": "PROTEIN_DAIRY",
+  "pectine nh": "OTHER"
 }

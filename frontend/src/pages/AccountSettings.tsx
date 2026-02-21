@@ -4,6 +4,7 @@ import { ExternalLink, Trash2, TriangleAlert, Loader2 } from 'lucide-react';
 import { useAuth, getAuthHeaders } from '../context/AuthContext';
 import { InstallShortcutModal } from '../components/InstallShortcutModal';
 import shortcutsIcon from '/assets/shortcuts_icon.png';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
 
 const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
@@ -17,6 +18,7 @@ interface TokenInfo {
 export const AccountSettings: React.FC = () => {
   const navigate = useNavigate();
   const { user, loading, isAuthenticated } = useAuth();
+  const { t } = useTranslation(['account', 'common']); // 🔥 HOOK
   
   const [email, setEmail] = useState('');
   const [isEditingEmail, setIsEditingEmail] = useState(false);
@@ -29,8 +31,8 @@ export const AccountSettings: React.FC = () => {
   const [shortcutData, setShortcutData] = useState<any>(null);
   const [isLoadingShortcut, setIsLoadingShortcut] = useState(false);
 
-  // Geolocation state (removed ALL CAPS default)
-  const [country, setCountry] = useState('Detecting...');
+  // Geolocation state
+  const [country, setCountry] = useState(t('account:detecting'));
 
   useEffect(() => {
     if (user?.email) {
@@ -57,14 +59,13 @@ export const AccountSettings: React.FC = () => {
       .then(res => res.json())
       .then(data => {
         if (data.country_name) {
-          // Removed .toUpperCase()
           setCountry(data.country_name);
         } else {
-          setCountry('Unknown');
+          setCountry(t('account:unknown'));
         }
       })
-      .catch(() => setCountry('Unknown'));
-  }, []);
+      .catch(() => setCountry(t('account:unknown')));
+  }, [t]);
 
   const fetchTokenInfo = async () => {
     setIsLoadingToken(true);
@@ -86,10 +87,7 @@ export const AccountSettings: React.FC = () => {
   };
 
   const generateToken = async () => {
-    const confirmed = confirm(
-      'This will revoke your existing token and generate a new one. ' +
-      'Any shortcuts using the old token will stop working. Continue?'
-    );
+    const confirmed = confirm(t('account:revokeConfirm'));
     
     if (!confirmed) return;
     
@@ -106,20 +104,19 @@ export const AccountSettings: React.FC = () => {
       const data = await response.json();
       
       const copyToken = confirm(
-        `✅ Token Generated!\n\n${data.token}\n\n` +
-        `This is the only time you'll see the full token.\n\n` +
-        `Click OK to copy it to clipboard, or Cancel to continue without copying.`
+        `${t('account:tokenGenerated')}\n\n${data.token}\n\n` +
+        `${t('account:tokenWarning')}`
       );
       
       if (copyToken) {
         await navigator.clipboard.writeText(data.token);
-        alert('Token copied to clipboard!');
+        alert(t('account:copied'));
       }
       
       await fetchTokenInfo();
     } catch (error) {
       console.error('Failed to generate token:', error);
-      alert('Failed to generate token. Please try again.');
+      alert(t('account:generateFailed'));
     } finally {
       setIsGenerating(false);
     }
@@ -140,7 +137,7 @@ export const AccountSettings: React.FC = () => {
       setShowShortcutModal(true);
     } catch (error) {
       console.error('Error:', error);
-      alert('Failed to get shortcut. Please try again.');
+      alert(t('account:shortcutFailed'));
     } finally {
       setIsLoadingShortcut(false);
     }
@@ -163,7 +160,6 @@ export const AccountSettings: React.FC = () => {
 
   const displayName = user.name || 'User';
 
-  // Removed `uppercase` class from the input
   const InputField = ({ label, value, readOnly = false, onChange, onBlur, action }: any) => (
     <div className="border-b border-gray-100 py-6 last:border-0 relative">
       <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">
@@ -187,8 +183,8 @@ export const AccountSettings: React.FC = () => {
     <div className="w-full pt-8 md:pt-0 pb-0 md:pb-6 animate-fade-in">
       <div className="flex flex-col gap-6 mb-8 px-4 md:px-0">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Personal Info</h1>
-          <p className="text-gray-500 text-sm mt-1">Manage your identity and billing details</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('account:personalInfo')}</h1>
+          <p className="text-gray-500 text-sm mt-1">{t('account:manageIdentity')}</p>
         </div>
       </div>
 
@@ -210,21 +206,19 @@ export const AccountSettings: React.FC = () => {
               )}
             </div>
             <div>
-              {/* Removed uppercase class from name rendering */}
               <h2 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight">
                 {displayName}
               </h2>
-              <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">Personal Account</p>
+              <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">{t('account:personalAccount')}</p>
             </div>
           </div>
 
           {/* Form Fields */}
           <div className="space-y-2">
-            {/* Removed .toUpperCase() from displayName */}
-            <InputField label="Full Name" value={displayName} readOnly />
+            <InputField label={t('account:fullName')} value={displayName} readOnly />
             
             <InputField 
-              label="Email Address" 
+              label={t('account:emailAddress')} 
               value={email} 
               readOnly={!isEditingEmail}
               onChange={(e: any) => setEmail(e.target.value)}
@@ -238,12 +232,12 @@ export const AccountSettings: React.FC = () => {
                       : 'bg-white border-gray-200 text-gray-600 hover:border-primary-600 hover:text-primary-600 shadow-sm'}
                   `}
                 >
-                  {isEditingEmail ? 'Done' : 'Edit'}
+                  {isEditingEmail ? t('account:done') : t('account:edit')}
                 </button>
               }
             />
 
-            <InputField label="Country" value={country} readOnly />
+            <InputField label={t('account:country')} value={country} readOnly />
           </div>
         </div>
 
@@ -258,10 +252,10 @@ export const AccountSettings: React.FC = () => {
             
             <div className="flex-1">
               <h3 className="text-xl font-bold text-gray-900 tracking-tight mb-1">
-                Save Reels from Instagram
+                {t('account:shortcutTitle')}
               </h3>
               <p className="text-sm text-gray-600 font-medium">
-                One-click shortcut for iPhone & Mac
+                {t('account:shortcutDesc')}
               </p>
             </div>
           </div>
@@ -274,7 +268,7 @@ export const AccountSettings: React.FC = () => {
             {isLoadingShortcut ? (
               <>
                 <Loader2 className="w-6 h-6 animate-spin mr-3" />
-                Loading...
+                {t('common:loading')}
               </>
             ) : (
               <>
@@ -294,7 +288,7 @@ export const AccountSettings: React.FC = () => {
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                   <path d="m7 10 5 5 5-5"></path>
                 </svg>
-                Install Shortcut
+                {t('account:installShortcut')}
               </>
             )}
           </button>
@@ -302,14 +296,14 @@ export const AccountSettings: React.FC = () => {
           <div className="bg-white/60 backdrop-blur-sm rounded-xl p-4 border border-white/50">
             <h4 className="font-bold text-gray-900 text-xs uppercase tracking-wider mb-3 flex items-center gap-2">
               <span className="w-1 h-4 bg-gradient-to-b from-[#8b5cf6] to-[#7c3aed] rounded-full"></span>
-              How to Use
+              {t('account:howToUse')}
             </h4>
             <ol className="list-decimal list-inside space-y-1.5 text-sm text-gray-700 font-medium">
-              <li>Click "Install Shortcut" above</li>
-              <li>Copy your personal API token</li>
-              <li>Tap "Get Shortcut" to install</li>
-              <li>Paste your token when prompted</li>
-              <li>Share any Instagram reel → "Recolekt" ✨</li>
+              <li>{t('account:step1')}</li>
+              <li>{t('account:step2')}</li>
+              <li>{t('account:step3')}</li>
+              <li>{t('account:step4')}</li>
+              <li>{t('account:step5')}</li>
             </ol>
           </div>
         </div>
@@ -317,8 +311,8 @@ export const AccountSettings: React.FC = () => {
         {/* Payment Section */}
         <div className="bg-white md:rounded-3xl shadow-sm p-6 md:p-8 border border-gray-100">
           <div className="flex items-center justify-between mb-8">
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Payment Method</h3>
-            <span className="text-[10px] font-black text-primary-600 bg-primary-50 px-3 py-1 rounded-full uppercase tracking-widest">Via Stripe</span>
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{t('account:paymentMethod')}</h3>
+            <span className="text-[10px] font-black text-primary-600 bg-primary-50 px-3 py-1 rounded-full uppercase tracking-widest">{t('account:viaStripe')}</span>
           </div>
           
           <div className="p-6 bg-gray-50 rounded-3xl border border-gray-100 flex items-center justify-between group hover:border-primary-200 transition-colors">
@@ -326,14 +320,14 @@ export const AccountSettings: React.FC = () => {
               <div className="w-12 h-8 bg-white border border-gray-200 rounded-lg flex items-center justify-center font-black italic text-[10px] text-gray-400 shadow-sm">VISA</div>
               <div>
                 <span className="block font-black text-gray-900 tracking-tight">•••• 4242</span>
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Expires 12/26</span>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{t('account:expires')} 12/26</span>
               </div>
             </div>
             <button 
               onClick={() => window.open('https://billing.stripe.com/p/login/test_portal', '_blank')}
               className="flex items-center gap-2 bg-white px-5 py-2.5 rounded-xl text-xs font-black text-gray-900 border border-gray-200 shadow-sm hover:shadow-md transition-all active:scale-95"
             >
-              Manage <ExternalLink size={14} />
+              {t('account:manage')} <ExternalLink size={14} />
             </button>
           </div>
         </div>
@@ -345,19 +339,19 @@ export const AccountSettings: React.FC = () => {
               <TriangleAlert size={24} />
             </div>
             <div>
-              <h3 className="text-lg font-black text-red-900 mb-2 tracking-tight">Danger Zone</h3>
+              <h3 className="text-lg font-black text-red-900 mb-2 tracking-tight">{t('account:dangerZone')}</h3>
               <p className="text-red-700/80 text-sm font-medium mb-6 leading-relaxed">
-                Deleting your account is permanent. All your videos, collections, and AI summaries will be erased immediately.
+                {t('account:deleteWarning')}
               </p>
               <button 
                 className="flex items-center gap-2 px-6 py-3 bg-white border border-red-200 text-red-600 rounded-xl font-bold text-sm hover:bg-red-600 hover:text-white hover:border-red-600 transition-colors shadow-sm"
                 onClick={() => {
-                  if(confirm("Are you sure you want to PERMANENTLY delete your account?")) {
+                  if(confirm(t('account:deleteConfirm'))) {
                     // Delete logic
                   }
                 }}
               >
-                <Trash2 size={16} /> Delete Account
+                <Trash2 size={16} /> {t('account:deleteAccount')}
               </button>
             </div>
           </div>

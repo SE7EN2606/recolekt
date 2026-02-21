@@ -1,0 +1,10 @@
+{
+  "untitledVideo": "Untitled Video",
+  "unknownAuthor": "Unknown",
+  "noPreview": "No preview",
+  "processing": "Processing...",
+  "processingFailed": "Processing Failed",
+  "defaultError": "Something went wrong. Please try again.",
+  "showingLanguage": "Showing {{lang}}",
+  "showingEnglish": "Showing English"
+}

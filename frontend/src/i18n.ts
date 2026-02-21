@@ -8,22 +8,42 @@ i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    lng: 'en', // default language
     fallbackLng: 'en',
     supportedLngs: ['en', 'fr'],
-    ns: ['common', 'gallery'],
+    
+    // 🔥 List all namespaces used in your project to ensure they are loaded
+    ns: [
+      'common', 
+      'gallery', 
+      'settings', 
+      'header', 
+      'sidebar', 
+      'videoCard', 
+      'videoDetail', 
+      'account', // ✅ Ensure this is here
+      'auth',
+      'modals',
+      'home',
+      'features'
+    ],
     defaultNS: 'common',
-    
+
     detection: {
-      order: ['navigator', 'localStorage'],
-      caches: ['localStorage']
+      // 1. Check storage first for instant flicker-free loading
+      // 2. ONLY check navigator (browser) if storage is empty
+      order: ['localStorage', 'navigator'], 
+      lookupLocalStorage: 'i18nextLng',
+      caches: ['localStorage'],
     },
-    
+
     backend: {
+      // Points to frontend/public/locales/...
       loadPath: '/locales/{{lng}}/{{ns}}.json'
     },
-    
-    interpolation: { escapeValue: false }
+
+    interpolation: {
+      escapeValue: false, // React already escapes values to prevent XSS
+    }
   });
 
 export default i18n;

@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT i18n
 
 interface User {
   id: string;
   email: string;
   name: string;
   picture?: string;
+  language?: string; // 🔥 ADDED
 }
 
 interface AuthContextType {
@@ -16,6 +18,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   registerUser: (email: string, password: string, name: string) => Promise<User | null>;
   loginUser: (email: string, password: string) => Promise<User | null>;
+  updateUserLanguage: (lang: string) => Promise<void>; // 🔥 ADDED
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -32,12 +35,20 @@ const API_BASE = getApiBase();
 function joinUrl(base: string, path: string) {
   const b = String(base || '').replace(/\/+$/, '');
   const p = String(path || '').replace(/^\/+/, '');
-  return b ? `${b}/${p}` : `/${p}`;
+  if (!b) return `/${p}`;
+  return `${b}/${p}`;
 }
 
+// ✅ Robust header generation to ensure Authorization is always sent
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json'
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
 }
 
 const LS_USER_KEY = 'auth_user';
@@ -88,6 +99,8 @@ function readTokenInUrl(): string | null {
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { i18n } = useTranslation(); // 🔥 HOOK FOR PERSISTENCE
+  
   const [user, setUser] = useState<User | null>(() => {
     if (hasTokenInUrl()) return null;
     const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
@@ -115,11 +128,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const clearAuthEverywhere = () => {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('token');
+    localStorage.removeItem('i18nextLng'); // Clear local hint
     clearCachedUser();
     setUser(null);
     setError(null);
     setIsAuthenticated(false);
     setToken(null);
+    setLoading(false);
   };
 
   const fetchMe = async (opts?: { showLoading?: boolean }) => {
@@ -128,7 +143,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const currentToken = localStorage.getItem('auth_token') || localStorage.getItem('token');
     if (!currentToken) {
       clearAuthEverywhere();
-      setLoading(false);
       return;
     }
 
@@ -159,6 +173,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(authUser);
         setIsAuthenticated(true);
         saveCachedUser(authUser);
+        
+        // 🔥 SYNC i18n WITH DATABASE (PWA READY LOGIC)
+        const dbLang = authUser.language || 'en';
+        const localLang = localStorage.getItem('i18nextLng');
+
+        // Only update if different to prevent flicker
+        if (dbLang !== localLang) {
+          i18n.changeLanguage(dbLang);
+          localStorage.setItem('i18nextLng', dbLang);
+        }
       } else {
         clearAuthEverywhere();
       }
@@ -169,6 +193,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 🔥 NEW FUNCTION: UPDATE DB LANGUAGE + LOCAL HINT
+  const updateUserLanguage = async (lang: string) => {
+    // 1. Instant local update
+    i18n.changeLanguage(lang); 
+    localStorage.setItem('i18nextLng', lang);
+
+    if (!userRef.current) return;
+    
+    try {
+      // 2. Persistent cloud update
+      await fetch(joinUrl(API_BASE, '/api/auth/language'), {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ language: lang }),
+        credentials: 'include',
+      });
+      setUser((prev) => prev ? { ...prev, language: lang } : prev);
+    } catch (error) {
+      console.error('Failed to save language to DB', error);
     }
   };
 
@@ -197,6 +243,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(data.user);
       setIsAuthenticated(true);
       saveCachedUser(data.user);
+
+      if (data.user.language) {
+        i18n.changeLanguage(data.user.language);
+        localStorage.setItem('i18nextLng', data.user.language);
+      }
       
       return data.user;
     } catch (error: any) {
@@ -208,7 +259,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // ✅ FIX: Now accepts and passes the `name` parameter
   const registerUser = async (email: string, password: string, name: string): Promise<User | null> => {
     setLoading(true);
     setError(null);
@@ -227,7 +277,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const data = await response.json();
-      
       return data.user;
     } catch (error: any) {
       console.error('❌ Register error:', error);
@@ -246,9 +295,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
       void fetchMe({ showLoading: true });
-      return () => {
-        if (abortRef.current) abortRef.current.abort();
-      };
+      return () => { if (abortRef.current) abortRef.current.abort(); };
     }
 
     const currentToken = localStorage.getItem('auth_token') || localStorage.getItem('token');
@@ -256,9 +303,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearCachedUser();
       setUser(null);
       setLoading(false);
-      return () => {
-        if (abortRef.current) abortRef.current.abort();
-      };
+      return () => { if (abortRef.current) abortRef.current.abort(); };
     }
 
     if (userRef.current) {
@@ -267,9 +312,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       void fetchMe({ showLoading: true });
     }
 
-    return () => {
-      if (abortRef.current) abortRef.current.abort();
-    };
+    return () => { if (abortRef.current) abortRef.current.abort(); };
   }, []);
 
   useEffect(() => {
@@ -315,8 +358,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isAuthenticated,
       registerUser,
       loginUser,
+      updateUserLanguage, // 🔥 ADDED
     }),
-    [user, loading, error, isAuthenticated]
+    [user, loading, error, isAuthenticated, updateUserLanguage]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, User, ArrowLeft, AlertCircle, KeyRound } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
 
 const RAW_API_BASE =
   import.meta.env.VITE_API_BASE ||
@@ -14,6 +15,7 @@ const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
 function joinUrl(base: string, path: string) {
   const b = String(base || '').replace(/\/+$/, '');
   const p = String(path || '').replace(/^\/+/, '');
+  if (!b) return `/${p}`;
   return `${b}/${p}`;
 }
 
@@ -29,6 +31,7 @@ export const Auth: React.FC = () => {
   const [view, setView] = useState<ViewState>('login');
   const [hasPendingVideo, setHasPendingVideo] = useState(false);
   const [loading, setLoading] = useState(false);
+  const { t } = useTranslation(['auth', 'common']); // 🔥 HOOK
   
   // States to persist between steps
   const [resetEmail, setResetEmail] = useState('');
@@ -92,7 +95,7 @@ export const Auth: React.FC = () => {
         });
         const data = await response.json();
         if (response.ok) {
-          alert("Password reset successful! Please log in.");
+          alert(t('auth:resetSuccess'));
           setView('login');
         } else throw new Error(data.error || "Failed to reset password");
 
@@ -109,7 +112,7 @@ export const Auth: React.FC = () => {
         } else throw new Error(data.error || "Invalid code");
       }
     } catch (error: any) {
-      alert(error.message || "An error occurred.");
+      alert(error.message || t('common:errorOccurred'));
     } finally {
       setLoading(false);
     }
@@ -134,24 +137,24 @@ export const Auth: React.FC = () => {
           </div>
           <div className="max-w-lg">
             <h1 className="text-5xl font-black tracking-tight mb-6 leading-tight">
-              Stop losing your <br/>
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-secondary-500">digital inspiration.</span>
+              {t('auth:inspiration').split('.')[0]} <br/>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-secondary-500">{t('auth:inspiration').split('.')[1] || 'digital inspiration.'}</span>
             </h1>
             <p className="text-gray-400 text-lg leading-relaxed font-medium">
-              Join thousands of creators who use Recolekt to organize their visual chaos into a searchable library.
+              {t('auth:creatorsJoin')}
             </p>
           </div>
           <div className="flex gap-4 text-xs font-black uppercase tracking-widest text-gray-500">
             <span>© 2025 Recolekt</span>
-            <Link to="/help" className="hover:text-white transition-colors">Help</Link>
-            <Link to="/help?section=contact" className="hover:text-white transition-colors">Contact</Link>
+            <Link to="/help" className="hover:text-white transition-colors">{t('auth:help')}</Link>
+            <Link to="/help?section=contact" className="hover:text-white transition-colors">{t('auth:contact')}</Link>
           </div>
         </div>
 
         <div className="w-full md:w-1/2 flex flex-col justify-start items-center h-full relative pl-0 md:pl-16 pt-24 md:pt-18">
             <div className="hidden md:block absolute top-12 right-0">
                <Link to="/" className="flex items-center gap-2 text-gray-400 hover:text-gray-900 font-bold text-sm transition-colors">
-                  <ArrowLeft size={16} /> Back to Homepage
+                  <ArrowLeft size={16} /> {t('common:backToHome')}
                </Link>
             </div>
 
@@ -161,25 +164,25 @@ export const Auth: React.FC = () => {
                   <div className="mb-4 p-3 rounded-xl flex items-center justify-center gap-2 border transition-all" style={{ backgroundColor: view === 'login' ? 'rgba(225, 29, 72, 0.05)' : 'rgba(139, 92, 246, 0.05)', borderColor: view === 'login' ? 'rgba(225, 29, 72, 0.2)' : 'rgba(139, 92, 246, 0.2)', color: view === 'login' ? '#e11d48' : '#8b5cf6' }}>
                     {view === 'login' ? <AlertCircle size={18} /> : <DownloadIcon color="#8b5cf6" />}
                     <p className="text-xs font-bold whitespace-nowrap">
-                      {view === 'login' ? "Log in to save this clip." : "Create an account to save this clip."}
+                      {view === 'login' ? t('auth:loginToSave') : t('auth:registerToSave')}
                     </p>
                   </div>
                 )}
 
                 <div className="text-center mb-6">
                   <h2 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">
-                    {view === 'login' && 'Welcome to Recolekt'}
-                    {view === 'register' && 'Create an account'}
-                    {view === 'forgot' && 'Reset Password'}
-                    {view === 'reset' && 'New Password'}
-                    {view === 'verify' && 'Verify Email'}
+                    {view === 'login' && t('auth:welcome')}
+                    {view === 'register' && t('auth:createAccount')}
+                    {view === 'forgot' && t('auth:resetPassword')}
+                    {view === 'reset' && t('auth:newPassword')}
+                    {view === 'verify' && t('auth:verifyEmail')}
                   </h2>
                   <p className="text-gray-500 text-sm font-medium">
-                    {view === 'login' && 'Enter your details to access your collection.'}
-                    {view === 'register' && 'Start curating your inspiration today.'}
-                    {view === 'forgot' && "We'll send a code to your email."}
-                    {view === 'reset' && "Enter the 6-digit code we sent you."}
-                    {view === 'verify' && "Enter the 6-digit code sent to your email."}
+                    {view === 'login' && t('auth:enterDetails')}
+                    {view === 'register' && t('auth:startCurating')}
+                    {view === 'forgot' && t('auth:sendCode')}
+                    {view === 'reset' && t('auth:enter6Digit')}
+                    {view === 'verify' && t('auth:enterEmailCode')}
                   </p>
                 </div>
 
@@ -187,11 +190,11 @@ export const Auth: React.FC = () => {
                   <>
                     <button type="button" onClick={signInWithGoogle} className="w-full flex items-center justify-center gap-3 p-3 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 hover:bg-gray-50 shadow-sm mb-4">
                       <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
-                      <span>Continue with Google</span>
+                      <span>{t('auth:googleContinue')}</span>
                     </button>
                     <div className="relative mb-6">
                       <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
-                      <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-4 text-gray-400 font-black tracking-widest">Or continue with email</span></div>
+                      <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-4 text-gray-400 font-black tracking-widest">{t('auth:emailContinue')}</span></div>
                     </div>
                   </>
                 )}
@@ -199,7 +202,7 @@ export const Auth: React.FC = () => {
                 <form onSubmit={handleSubmit} className="space-y-3">
                    {view === 'register' && (
                      <div className="space-y-1">
-                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Full Name</label>
+                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">{t('auth:fullName')}</label>
                        <div className="relative">
                          <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                          <input type="text" name="name" placeholder="John Doe" required className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 font-medium text-sm" />
@@ -209,7 +212,7 @@ export const Auth: React.FC = () => {
 
                    {(view === 'login' || view === 'register' || view === 'forgot') && (
                      <div className="space-y-1">
-                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Email Address</label>
+                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">{t('auth:emailAddress')}</label>
                        <div className="relative">
                          <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                          <input type="email" name="email" placeholder="name@example.com" required className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 font-medium text-sm" />
@@ -230,7 +233,7 @@ export const Auth: React.FC = () => {
                    {(view === 'login' || view === 'register' || view === 'reset') && (
                      <div className="space-y-1">
                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">
-                         {view === 'reset' ? 'New Password' : 'Password'}
+                         {view === 'reset' ? t('auth:newPassword') : t('auth:password')}
                        </label>
                        <div className="relative">
                          <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -241,26 +244,26 @@ export const Auth: React.FC = () => {
 
                    {view === 'login' && (
                      <div className="flex justify-end">
-                       <button type="button" onClick={() => setView('forgot')} className="text-xs font-bold text-gray-500 hover:text-gray-900">Forgot password?</button>
+                       <button type="button" onClick={() => setView('forgot')} className="text-xs font-bold text-gray-500 hover:text-gray-900">{t('auth:forgotPassword')}</button>
                      </div>
                    )}
 
                    <Button type="submit" fullWidth disabled={loading} className={`h-12 mt-4 text-sm font-black shadow-xl rounded-xl ${loading ? 'opacity-80' : ''}`}>
-                     {loading ? 'Processing...' : 
-                        view === 'login' ? 'Sign In' : 
-                        view === 'register' ? 'Create Account' : 
-                        view === 'forgot' ? 'Send Reset Code' :
-                        view === 'reset' ? 'Reset Password' :
-                        'Verify Account'
+                     {loading ? t('common:processing') : 
+                        view === 'login' ? t('common:signIn') : 
+                        view === 'register' ? t('auth:createAccount') : 
+                        view === 'forgot' ? t('auth:sendResetCode') :
+                        view === 'reset' ? t('auth:resetPassword') :
+                        t('auth:verifyAccount')
                      }
                    </Button>
                 </form>
 
                 <div className="mt-4 text-center">
                   <p className="text-gray-500 text-sm font-medium">
-                    {view === 'login' ? "Don't have an account?" : "Back to"}
+                    {view === 'login' ? t('auth:noAccount') : t('auth:backTo')}
                     <button onClick={() => setView(view === 'login' ? 'register' : 'login')} className="ml-1 font-black hover:underline" style={{ color: '#e11d48' }}>
-                      {view === 'login' ? 'Sign Up' : 'Sign In'}
+                      {view === 'login' ? t('common:signUp') : t('common:signIn')}
                     </button>
                   </p>
                 </div>

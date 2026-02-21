@@ -1,19 +1,20 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { User, Settings, LogOut, X } from 'lucide-react';
-import { AuthModal } from './AuthModal'; // NEW AuthModal
+import { User, Settings, LogOut } from 'lucide-react';
+import { AuthModal } from './AuthModal';
+import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
 
 export const ProfileMenu = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
   const { user, signOut, loading, isAuthenticated } = useAuth();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const navigate = useNavigate();
+  const { t } = useTranslation(['header', 'settings', 'common']); // 🔥 HOOK
 
   if (!isOpen) return null;
 
   return (
     <>
-      {/* Profile Menu */}
       <div className="fixed top-16 right-4 md:right-6 w-80 bg-white rounded-3xl shadow-2xl border border-gray-100 z-[9998] animate-in slide-in-from-top-4 duration-200">
         <div className="p-6">
           {isAuthenticated && user ? (
@@ -37,7 +38,7 @@ export const ProfileMenu = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                   className="w-full flex items-center gap-3 p-4 rounded-2xl hover:bg-gray-50 transition-all group"
                 >
                   <Settings className="w-5 h-5 text-gray-500 group-hover:text-primary-600" />
-                  <span className="font-medium text-gray-900">Account Settings</span>
+                  <span className="font-medium text-gray-900">{t('header:accountSettings')}</span>
                 </button>
               </div>
 
@@ -49,7 +50,7 @@ export const ProfileMenu = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 className="w-full flex items-center gap-3 p-4 text-red-600 hover:bg-red-50 rounded-2xl transition-all font-medium"
               >
                 <LogOut className="w-5 h-5" />
-                <span>Sign Out</span>
+                <span>{t('settings:signOut')}</span>
               </button>
             </>
           ) : (
@@ -59,26 +60,20 @@ export const ProfileMenu = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                 disabled={loading}
                 className="w-full bg-gradient-to-r from-primary-600 to-primary-700 text-white py-4 px-6 rounded-2xl font-bold text-lg shadow-xl hover:shadow-2xl active:scale-[0.98] transition-all disabled:opacity-50"
               >
-                {loading ? 'Loading...' : 'Sign In'}
+                {loading ? t('common:loading') : t('common:signIn')}
               </button>
               <button
-                onClick={() => {
-                  setIsAuthModalOpen(true);
-                }}
+                onClick={() => setIsAuthModalOpen(true)}
                 className="w-full text-primary-600 font-bold text-lg py-4 px-6 border-2 border-primary-200 rounded-2xl hover:bg-primary-50 hover:border-primary-300 transition-all"
               >
-                Create Account
+                {t('common:signUp')}
               </button>
             </div>
           )}
         </div>
       </div>
 
-      {/* Auth Modal */}
-      <AuthModal 
-        isOpen={isAuthModalOpen} 
-        onClose={() => setIsAuthModalOpen(false)} 
-      />
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
     </>
   );
 };

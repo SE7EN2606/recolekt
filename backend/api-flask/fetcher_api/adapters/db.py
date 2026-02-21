@@ -1,5 +1,6 @@
 import os
 import logging
+import threading
 import psycopg2
 import psycopg2.extras
 from psycopg2.pool import ThreadedConnectionPool
@@ -24,22 +25,24 @@ if LOCAL_ENV.exists():
 # Thread-safe Connection Pool
 # -------------------------------------------------
 _pool = None
+_pool_lock = threading.Lock() # ✅ Prevents multiple pool creation
 
 def init_pool():
-    """Initializes the database connection pool."""
+    """Initializes the database connection pool in a thread-safe manner."""
     global _pool
-    if _pool is None:
-        DATABASE_URL = os.environ.get("DATABASE_URL")
-        if not DATABASE_URL:
-            raise RuntimeError("DATABASE_URL is not set. Check your environment variables.")
-        
-        try:
-            # ✅ FIX: ThreadedConnectionPool is natively safe for Flask's multi-threading
-            _pool = ThreadedConnectionPool(1, 20, DATABASE_URL, sslmode="require")
-            logger.info("📡 PostgreSQL ThreadedConnectionPool created (min=1, max=20)")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize database pool: {e}")
-            raise
+    with _pool_lock:
+        if _pool is None:
+            DATABASE_URL = os.environ.get("DATABASE_URL")
+            if not DATABASE_URL:
+                raise RuntimeError("DATABASE_URL is not set. Check your environment variables.")
+            
+            try:
+                # ✅ ThreadedConnectionPool is natively safe for Flask's multi-threading
+                _pool = ThreadedConnectionPool(1, 20, DATABASE_URL, sslmode="require")
+                logger.info("📡 PostgreSQL ThreadedConnectionPool created (min=1, max=20)")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize database pool: {e}")
+                raise
 
 @contextmanager
 def get_db_connection():
@@ -52,27 +55,35 @@ def get_db_connection():
         
     conn = _pool.getconn()
         
-    # ✅ FIX: Ping the database. If Neon closed the connection, gracefully throw it away!
+    # ✅ Ping the database. If Neon closed the connection, gracefully throw it away!
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT 1")
     except (psycopg2.OperationalError, psycopg2.InterfaceError):
         logger.warning("🔌 NeonDB closed idle connection. Replacing gracefully...")
-        # Tell the pool to close and discard this specific dead connection
-        _pool.putconn(conn, close=True)
-        # Grab a fresh one
+        try:
+            _pool.putconn(conn, close=True)
+        except:
+            pass
         conn = _pool.getconn()
         
     try:
         # Try to rollback any stuck transactions from a previous checkout
         try:
             conn.rollback()
-        except Exception:
+        except:
             pass
         yield conn
     finally:
-        # Safely return the valid connection to the pool
-        _pool.putconn(conn)
+        # ✅ FIX: Safely return the valid connection to the pool
+        # Check closed status to prevent "trying to put unkeyed connection"
+        if conn and not conn.closed:
+            try:
+                _pool.putconn(conn)
+            except Exception as e:
+                # Silently catch the "unkeyed" error to prevent API request crash
+                if "unkeyed" not in str(e):
+                    logger.error(f"❌ Pool return error: {e}")
 
 # Legacy support
 def get_conn():
@@ -82,7 +93,10 @@ def get_conn():
 
 def release_conn(conn):
     if _pool and conn:
-        _pool.putconn(conn)
+        try:
+            _pool.putconn(conn)
+        except Exception:
+            pass
 
 get_connection = get_conn
 
@@ -94,11 +108,8 @@ def fetch_one(sql, params=None):
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(sql, params)
-                row = cur.fetchone()
-            conn.commit()
-            return row
+                return cur.fetchone()
         except Exception as e:
-            conn.rollback()
             logger.error("❌ fetch_one failed: %s", e, exc_info=True)
             raise
 
@@ -107,11 +118,8 @@ def fetch_all(sql, params=None):
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(sql, params)
-                rows = cur.fetchall()
-            conn.commit()
-            return rows
+                return cur.fetchall()
         except Exception as e:
-            conn.rollback()
             logger.error("❌ fetch_all failed: %s", e, exc_info=True)
             raise
 

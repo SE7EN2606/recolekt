@@ -13,6 +13,10 @@
   "legal": "Légal",
   "privacy": "Confidentialité",
   "terms": "Conditions",
+  "save": "Enregistrer",
+  "processing": "Traitement...",
+  "backToHome": "Retour à l'accueil",
+  "errorOccurred": "Une erreur est survenue.",
   "footerSlogan": "Sauvegardez et organisez vos reels préférés.",
   "footerCopyright": "© 2025 recolekt. Respect de la confidentialité et des conditions d'utilisation."
 }

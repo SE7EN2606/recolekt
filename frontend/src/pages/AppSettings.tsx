@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'; // 🔥 IMPORT i18n
 
 export const AppSettings: React.FC = () => {
   const navigate = useNavigate();
-  const { signOut, user, loading, isAuthenticated } = useAuth();
+  const { signOut, user, loading, isAuthenticated, updateUserLanguage } = useAuth(); // 🔥 Pull updateUserLanguage
   const { videos } = useData(); 
   const { t, i18n } = useTranslation(['settings']); // 🔥 USE settings namespace
 
@@ -196,7 +196,7 @@ export const AppSettings: React.FC = () => {
             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-2 mb-3">{t('settings:preferences')}</h3>
             <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm">
               
-              {/* 🔥 LANGUAGE TOGGLE WIRED TO i18n */}
+              {/* 🔥 LANGUAGE TOGGLE WIRED TO updateUserLanguage (NeonDB) */}
               <div className="w-full flex items-center justify-between p-5 border-b border-gray-50">
                 <div className="flex items-center gap-4">
                   <div className="p-2.5 rounded-xl bg-gray-50 text-gray-500"><Globe size={20} /></div>
@@ -204,13 +204,13 @@ export const AppSettings: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-xl">
                   <button 
-                    onClick={() => i18n.changeLanguage('en')} 
+                    onClick={() => updateUserLanguage('en')} 
                     className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${currentLang === 'EN' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                   >
                     English
                   </button>
                   <button 
-                    onClick={() => i18n.changeLanguage('fr')} 
+                    onClick={() => updateUserLanguage('fr')} 
                     className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${currentLang === 'FR' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                   >
                     Français
