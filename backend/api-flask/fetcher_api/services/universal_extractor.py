@@ -1,7 +1,7 @@
 # fetcher_api/services/universal_extractor.py
 """
 Universal Content Extractor - BILINGUAL TWO-CALL approach
-Call 1: Extract structured data (title, recipe, hashtags, etc.)
+Call 1: Extract structured data (title, recipe/guide, hashtags, etc.)
 Call 2: Generate summary in BOTH English AND original language
 """
 
@@ -33,8 +33,8 @@ from fetcher_api.services.summary_formatter import (
 
 logger = logging.getLogger(__name__)
 
-# bumped because we now support ingredients_groups + time/servings meta
-EXTRACTOR_VERSION = "universal-v14-groups-time"
+# Bumped version to reflect universal Step-by-Step guide support
+EXTRACTOR_VERSION = "universal-v15-guides"
 
 
 def smart_truncate_summary(text: str, max_chars: int = SUMMARY_MAX_CHARS) -> str:
@@ -97,7 +97,7 @@ class UniversalExtractor:
             effective_lang
         )
 
-        # CALL 1: Extract structured data (NO summary yet)
+        # CALL 1: Extract structured data
         logger.info("📞 CALL 1: Extracting structured data...")
         prompt_data = self._build_data_extraction_prompt(
             transcript, caption, effective_lang, content_type
@@ -117,10 +117,9 @@ class UniversalExtractor:
             title_en = "Saved Content"
         title_en = clean_title(title_en) or "Saved Content"
 
-        # Brief description for summary call
         brief_description = safe_str(result_data.get("brief_description", ""))
 
-        # CALL 2: Generate summary (bilingual if needed)
+        # CALL 2: Generate summary
         if is_english_content:
             logger.info("📞 CALL 2: Generating English summary...")
             prompt_summary = self._build_summary_prompt_english(
@@ -133,9 +132,9 @@ class UniversalExtractor:
             if is_caption_copy(summary_en_raw, caption):
                 logger.error("🚨 AI COPIED CAPTION! Using fallback summary.")
                 summary_en_raw = (
-                    f"{title_en} is a {content_type} that combines simple "
-                    "ingredients and straightforward techniques for a practical, "
-                    "home-friendly result. Suitable for various skill levels and occasions."
+                    f"{title_en} is a practical {content_type} guide that provides "
+                    "clear steps and requirements for an easy-to-follow result. "
+                    "Suitable for various skill levels."
                 )
 
             summary_en = smart_truncate_summary(summary_en_raw)
@@ -164,9 +163,8 @@ class UniversalExtractor:
             if is_caption_copy(summary_en_raw, caption):
                 logger.error("🚨 AI COPIED CAPTION in English! Using fallback.")
                 summary_en_raw = (
-                    f"{title_en} is a {content_type} that combines simple "
-                    "ingredients and straightforward techniques for a practical, "
-                    "home-friendly result."
+                    f"{title_en} is a practical {content_type} guide that provides "
+                    "clear steps and requirements for an easy-to-follow result."
                 )
 
             if is_caption_copy(summary_og_raw, caption):
@@ -208,39 +206,22 @@ class UniversalExtractor:
             emojis = (emojis + ["✨", "💡", "📌", "✅"])[:4]
         emojis = emojis[:4]
 
-        # ---------- Recipe extraction (with time, servings, and OPTIONAL groups) ----------
-        recipe_obj = result_data.get("recipe", {}) if content_type == "recipe" else {}
+        # ---------- Universal Guide extraction (Maps to "recipe" schema for UI) ----------
+        # We always check for "recipe" key from AI, as we instructed it to use this schema for ALL guides
+        recipe_obj = result_data.get("recipe", {}) 
 
         ingredients_en = normalize_ingredients(recipe_obj.get("ingredients", []))
         instructions_en = safe_list(recipe_obj.get("instructions", []))
         tips_en = safe_list(recipe_obj.get("tips", []))
         notes_en = safe_list(recipe_obj.get("notes", []))
-
-        # NEW: optional ingredients_groups from AI when multiple variants exist
         ingredients_groups = safe_list(recipe_obj.get("ingredients_groups", []))
 
-        # Meta fields
-        servings = safe_str(recipe_obj.get("servings", "")).strip()
-        if not servings:
-            servings = safe_str(recipe_obj.get("yield", "")).strip()
-
+        servings = safe_str(recipe_obj.get("servings", "")).strip() or safe_str(recipe_obj.get("yield", "")).strip()
         prep_time = safe_str(recipe_obj.get("prep_time", "")).strip()
         cook_time = safe_str(recipe_obj.get("cook_time", "")).strip()
         total_time = safe_str(recipe_obj.get("total_time", "")).strip()
 
-        # ⚠️ CRITICAL FIX: If content_type is "recipe" but AI didn't extract ingredients,
-        # we must still provide a recipe object (even if minimal) to keep the contract consistent.
-        if content_type == "recipe" and not ingredients_en:
-            logger.error(
-                "🚨 RECIPE EXTRACTION FAILED: content_type='recipe' but no ingredients extracted. "
-                "Falling back to empty recipe structure. Title: %s",
-                title_en,
-            )
-            # Provide minimal structure so UI doesn't see recipe=null
-            ingredients_en = []
-            instructions_en = instructions_en or []
-
-        # Original-language recipe translation if needed
+        # Original-language translation if needed
         ingredients_og = ingredients_en
         instructions_og = instructions_en
         tips_og = tips_en
@@ -248,16 +229,12 @@ class UniversalExtractor:
         headlines_og = headlines_en
 
         if not is_english_content and (ingredients_en or instructions_en):
-            logger.info("🌐 Translating recipe to %s...", effective_lang)
+            logger.info("🌐 Translating guide to %s...", effective_lang)
 
             to_translate = {}
             if ingredients_en:
-                to_translate["ingredient_names"] = [
-                    ing["item"] for ing in ingredients_en
-                ]
-                to_translate["ingredient_units"] = [
-                    ing["unit"] for ing in ingredients_en
-                ]
+                to_translate["ingredient_names"] = [ing["item"] for ing in ingredients_en]
+                to_translate["ingredient_units"] = [ing["unit"] for ing in ingredients_en]
             if instructions_en:
                 to_translate["instructions"] = instructions_en
             if tips_en:
@@ -265,9 +242,7 @@ class UniversalExtractor:
             if notes_en:
                 to_translate["notes"] = notes_en
             if headlines_en:
-                to_translate["headlines"] = [
-                    f"{h['headline']}: {h['text']}" for h in headlines_en
-                ]
+                to_translate["headlines"] = [f"{h['headline']}: {h['text']}" for h in headlines_en]
 
             translated = self._translate_mega_batch(to_translate, effective_lang)
 
@@ -289,21 +264,17 @@ class UniversalExtractor:
                     else:
                         unit_og = ing["unit"]
 
-                    ingredients_og.append(
-                        {
-                            "item": name_og,
-                            "name": name_og,
-                            "quantity": ing["quantity"],
-                            "unit": unit_og,
-                            "emoji": ing["emoji"],
-                        }
-                    )
+                    ingredients_og.append({
+                        "item": name_og,
+                        "name": name_og,
+                        "quantity": ing["quantity"],
+                        "unit": unit_og,
+                        "emoji": ing["emoji"],
+                    })
 
             instructions_og_raw = safe_list(translated.get("instructions", []))
             if instructions_og_raw and len(instructions_og_raw) >= len(instructions_en):
-                instructions_og = [
-                    clean_text(safe_str(x)) for x in instructions_og_raw
-                ]
+                instructions_og = [clean_text(safe_str(x)) for x in instructions_og_raw]
 
             tips_og_raw = safe_list(translated.get("tips", []))
             if tips_og_raw and len(tips_og_raw) >= len(tips_en):
@@ -325,14 +296,12 @@ class UniversalExtractor:
                     {
                         "headline": b["headline"],
                         "text": b["description"],
-                        "emoji": headlines_en[i].get("emoji", "")
-                        if i < len(headlines_en)
-                        else "",
+                        "emoji": headlines_en[i].get("emoji", "") if i < len(headlines_en) else "",
                     }
                     for i, b in enumerate(bullets_og)
                 ]
 
-            logger.info("✅ Translation complete for recipe/headlines")
+            logger.info("✅ Translation complete for guide/headlines")
 
         # ---------- Final bilingual data objects ----------
         bilingual_summary = {
@@ -341,20 +310,20 @@ class UniversalExtractor:
                 "summary": ai_paragraph_en,
                 "headlines": headlines_en,
                 "hashtags": hashtags,
-                "emojis": [],
+                "emojis": emojis, # ✅ FIXED: Actually map emojis here
             },
             "original": {
                 "title": title_og,
                 "summary": summary_og if not is_english_content else ai_paragraph_en,
                 "headlines": headlines_og,
                 "hashtags": hashtags,
-                "emojis": [],
+                "emojis": emojis, # ✅ FIXED
             },
         }
 
         recipe_data = None
-        # ✅ Always create recipe_data when content_type is "recipe"
-        if content_type == "recipe":
+        # ✅ If the AI successfully extracted ANY ingredients/requirements or instructions, build the object
+        if ingredients_en or instructions_en:
             recipe_data = {
                 "english": {
                     "title": title_en,
@@ -384,9 +353,6 @@ class UniversalExtractor:
 
         logger.info("✅ Content extracted with %d API calls", self.api_call_count)
 
-        # NOTE: We intentionally return a *minimal* set of fields here.
-        # AIService._normalize_ui_output will add summary_text/summary_title
-        # derived from this canonical bilingual summary.
         return {
             "content_type": content_type,
             "extractor_version": EXTRACTOR_VERSION,
@@ -396,38 +362,34 @@ class UniversalExtractor:
             "summary": bilingual_summary,
             "hashtags": hashtags,
             "emojis": emojis,
-            "recipe": json.dumps(recipe_data, ensure_ascii=False)
-            if recipe_data
-            else None,
-            "workout": None,
+            "recipe": json.dumps(recipe_data, ensure_ascii=False) if recipe_data else None,
+            "workout": None, # Kept null as we merge everything into the universal "recipe" schema for UI
+            "detected_language": effective_lang # ✅ Explicitly return the language for db_insert
         }
 
     def _build_data_extraction_prompt(
         self, transcript: str, caption: str, lang: str, content_type: str
     ) -> str:
         """CALL 1: Extract structured data only (no summary)"""
-        type_specific = ""
-
-        if content_type == "recipe":
-            # NOTE: ingredients_groups is key for cases like two plaque sizes in one caption.
-            type_specific = f"""
-7. **recipe** object:
-   - **servings**: number of people or portions (infer from caption or typical yield if not explicit, e.g. 8–12 for a large cake)
-   - **prep_time**: human-readable estimate like "25 min" or "15 min" for all preparation and mixing, even if not explicitly given
-   - **cook_time**: human-readable estimate like "45 min" or "2h", based on baking / cooking / resting in heat
-   - **total_time**: optional human-readable total including prep + cook + resting (e.g. "1h 10min")
-   - **ingredients**: array with item, quantity, unit, emoji (required fields). Use the DEFAULT / FIRST variant if there are several sizes.
-   - **ingredients_groups** (optional but IMPORTANT when caption lists several sizes / variants):
-       * If the caption gives ingredient lists for different pan sizes (e.g. "Pour une plaque 25 x 30 cm :" and "Pour une plaque 30 x 40 cm :"), create one entry per variant:
-         - "title": section header text EXACTLY as in the caption (any language)
-         - "items": full ingredient array for that variant (item, quantity, unit, emoji)
-       * Quantities must match that variant (e.g. for "55 g + 40 g de sucre", use the TOTAL like "95 g sugar").
-       * If there is only one variant, you may omit ingredients_groups.
-   - **instructions**: 6-12 clear steps
-   - **tips**: optional helpful tips
-   - **notes**: optional important notes
-
-If the caption/transcript does not clearly specify times or servings, use your best expert estimate based on similar recipes. Always fill **servings**, **prep_time** and **cook_time** with realistic values.
+        
+        # ✅ NEW UNIVERSAL INSTRUCTION BLOCK: Maps any category into the "recipe" schema!
+        type_specific = f"""
+7. **recipe** object: ALWAYS INCLUDE THIS OBJECT IF THE CONTENT IS A TUTORIAL, WORKOUT, DIY, RECIPE, OR HAS CLEAR STEPS.
+   We use the "recipe" schema universally for ALL categories. Map the content accordingly:
+   
+   - **servings**: Yield or difficulty (e.g., "4 people", "Beginner", "1 Room", "N/A")
+   - **prep_time**: Time to gather materials or setup (e.g., "5 min", "N/A")
+   - **cook_time**: Active time required (e.g., "15 min workout", "1 hour project", "20 min bake")
+   - **total_time**: Total time
+   - **ingredients**: array with item, quantity, unit, emoji (required fields). 
+        - For FOOD: "Flour", "200", "g", "🌾"
+        - For WORKOUT: "Dumbbells", "2", "items", "🏋️"
+        - For DIY/HACKS: "Baking Soda", "1", "cup", "🫧"
+        - For TECH/FINANCE: "App Name", "1", "download", "📱"
+   - **ingredients_groups** (optional): Group requirements if needed (e.g., "Upper Body", "Lower Body", "Tools", "Materials").
+   - **instructions**: 6-12 clear, actionable steps.
+   - **tips**: optional helpful tips or safety warnings.
+   - **notes**: optional important context.
 """
 
         return f"""Extract structured data from this {content_type} content. Output ONLY valid JSON.
@@ -442,14 +404,14 @@ CAPTION:
 
 EXTRACT:
 
-1. **category**: English category (e.g., "Food", "Fitness", "Beauty")
+1. **category**: Choose the most accurate English category from this list: Food & Drink, Fitness & Workouts, Beauty & Grooming, Home & DIY, Life Hacks & Productivity, Tech & Gadgets, Personal Finance, Self-Care & Mental Health, Parenting & Kids, Travel & Packing, or General.
 
-2. **topic**: English topic (e.g., "Pumpkin Bars", "HIIT Workout")
+2. **topic**: 2-3 word English topic (e.g., "Pumpkin Bars", "HIIT Workout", "Stain Removal")
 
 3. **title**: Precise English title, <= {TITLE_MAX_CHARS} chars, NO emojis
 
 4. **brief_description**: ONE sentence (max 80 chars) describing what this is
-   Example: "A hybrid dessert combining cookie and chocolate fondant"
+   Example: "A 10-minute full body home workout without equipment"
 
 5. **highlights**: array of EXACTLY 4 objects with these fields:
    - "emoji": ONE relevant emoji (required)
@@ -458,7 +420,7 @@ EXTRACT:
 
 6. **hashtags**: 5-10 keywords WITHOUT '#'
 
-7. **emojis**: 4 relevant emojis
+7. **emojis**: array of 4 relevant emojis for this content type.
 
 {type_specific}
 
@@ -468,47 +430,18 @@ Return JSON with these fields only. Do NOT include summary field.
     def _build_summary_prompt_english(
         self, title: str, brief_desc: str, content_type: str
     ) -> str:
-        """CALL 2: Generate English-only summary"""
-
-        if content_type == "recipe":
-            guidelines = """
-Write about:
-- WHAT the dish is (not HOW to make it)
-- Who it's for (families, chocolate lovers, etc.)
-- Key characteristics (one-pot, quick, no-bake, etc.)
-- What makes it special or different
-
-DO NOT write about:
-- Textures (chewy, crisp, gooey, molten, etc.)
-- Cooking methods or steps
-- Ingredient quantities
-"""
-        else:
-            guidelines = """
-Write about:
-- WHAT the content teaches or shows
-- Who it's useful for
-- Practical benefits or applications
-- When/why someone would use this
-"""
-
-        return f"""Write a factual summary paragraph for this {content_type}.
+        return f"""Write a factual summary paragraph for this content.
 
 TITLE: {title}
-
 BRIEF DESCRIPTION: {brief_desc}
 
 REQUIREMENTS:
 - Length: 250-{SUMMARY_MAX_CHARS} characters (2-3 complete sentences)
 - Style: Simple, factual, informative (like Wikipedia intro)
+- Write about: WHAT the content teaches/shows, WHO it's useful for, and PRACTICAL benefits.
 - NO emojis, NO marketing language, NO flowery adjectives
-- NO texture descriptions (chewy, crisp, gooey, velvety, etc.)
+- Do NOT write out the step-by-step instructions (keep it high level)
 - Write in your own words - do NOT copy phrases from the input
-
-{guidelines}
-
-GOOD EXAMPLE:
-"A one-pot chicken stew with leeks, potatoes, peas, and curry. The dish is naturally creamy from the potatoes, family-friendly, and requires minimal cleanup while delivering tender chicken and mild vegetable flavors that appeal to both adults and children."
 
 Output ONLY valid JSON with one field:
 {{"summary": "your summary text here"}}
@@ -517,68 +450,31 @@ Output ONLY valid JSON with one field:
     def _build_summary_prompt_bilingual(
         self, title: str, brief_desc: str, content_type: str, original_lang: str
     ) -> str:
-        """CALL 2: Generate bilingual summary (English + original language)"""
-
         lang_name_map = {
-            "fr": "French",
-            "es": "Spanish",
-            "de": "German",
-            "it": "Italian",
-            "pt": "Portuguese",
-            "ar": "Arabic",
-            "ru": "Russian",
-            "ja": "Japanese",
-            "zh": "Chinese",
-            "ko": "Korean",
+            "fr": "French", "es": "Spanish", "de": "German", "it": "Italian",
+            "pt": "Portuguese", "ar": "Arabic", "ru": "Russian", "ja": "Japanese",
+            "zh": "Chinese", "ko": "Korean",
         }
         lang_name = lang_name_map.get(original_lang, original_lang.upper())
 
-        if content_type == "recipe":
-            guidelines = """
-Write about:
-- WHAT the dish is (not HOW to make it)
-- Who it's for (families, chocolate lovers, etc.)
-- Key characteristics (one-pot, quick, no-bake, etc.)
-- What makes it special or different
-
-DO NOT write about:
-- Textures (chewy, crisp, gooey, molten, etc.)
-- Cooking methods or steps
-- Ingredient quantities
-"""
-        else:
-            guidelines = """
-Write about:
-- WHAT the content teaches or shows
-- Who it's useful for
-- Practical benefits or applications
-- When/why someone would use this
-"""
-
-        return f"""Write TWO summary paragraphs for this {content_type}: one in English, one in {lang_name}.
+        return f"""Write TWO summary paragraphs for this content: one in English, one in {lang_name}.
 
 TITLE (English): {title}
-
 BRIEF DESCRIPTION: {brief_desc}
 
 REQUIREMENTS:
 - Length: 250-{SUMMARY_MAX_CHARS} characters EACH (2-3 complete sentences)
 - Style: Simple, factual, informative (like Wikipedia intro)
+- Write about: WHAT the content teaches/shows, WHO it's useful for, and PRACTICAL benefits.
 - NO emojis, NO marketing language, NO flowery adjectives
-- NO texture descriptions (chewy, crisp, gooey, velvety, etc.)
 - Write ORIGINAL text in both languages - do NOT copy from input
 - Translate the title to {lang_name} as well
 
-{guidelines}
-
-GOOD EXAMPLE (English):
-"A one-pot chicken stew with leeks, potatoes, peas, and curry. The dish is naturally creamy from the potatoes, family-friendly, and requires minimal cleanup while delivering tender chicken and mild vegetable flavors that appeal to both adults and children."
-
 Output ONLY valid JSON with three fields:
 {{
-  "summary_en": "English summary here (250-{SUMMARY_MAX_CHARS} chars)",
-  "summary_original": "{lang_name} summary here (250-{SUMMARY_MAX_CHARS} chars)",
-  "title_original": "{lang_name} title here (<= {TITLE_MAX_CHARS} chars)"
+  "summary_en": "English summary here",
+  "summary_original": "{lang_name} summary here",
+  "title_original": "{lang_name} title here"
 }}
 """
 
@@ -620,31 +516,19 @@ Output ONLY valid JSON with three fields:
     def _translate_mega_batch(self, data: Dict, target_lang: str) -> Dict:
         fields_to_translate = []
         if "ingredient_names" in data:
-            fields_to_translate.append(
-                '"ingredient_names": ["translated ingredient 1", "translated ingredient 2", ...]'
-            )
+            fields_to_translate.append('"ingredient_names": ["translated item 1", ...]')
         if "ingredient_units" in data:
-            fields_to_translate.append(
-                '"ingredient_units": ["translated unit 1", "translated unit 2", ...]'
-            )
+            fields_to_translate.append('"ingredient_units": ["translated unit 1", ...]')
         if "instructions" in data:
-            fields_to_translate.append(
-                '"instructions": ["translated instruction 1", "translated instruction 2", ...]'
-            )
+            fields_to_translate.append('"instructions": ["translated step 1", ...]')
         if "tips" in data:
-            fields_to_translate.append(
-                '"tips": ["translated tip 1", "translated tip 2", ...]'
-            )
+            fields_to_translate.append('"tips": ["translated tip 1", ...]')
         if "notes" in data:
-            fields_to_translate.append(
-                '"notes": ["translated note 1", "translated note 2", ...]'
-            )
+            fields_to_translate.append('"notes": ["translated note 1", ...]')
         if "headlines" in data:
-            fields_to_translate.append(
-                '"headlines": ["translated headline 1", "translated headline 2", ...]'
-            )
+            fields_to_translate.append('"headlines": ["translated headline 1", ...]')
 
-        expected_structure = "{\\n  " + ",\\n  ".join(fields_to_translate) + "\\n}"
+        expected_structure = "{\n  " + ",\n  ".join(fields_to_translate) + "\n}"
 
         prompt = f"""Translate ALL fields into {target_lang}. Keep exact structure and order. Output ONLY valid JSON.
 
@@ -658,7 +542,7 @@ RULES:
 - Translate EVERY field accurately
 - Keep arrays in same order
 - Preserve meaning and context
-- For units: keep metric symbols (g, ml, kg) unchanged, translate word units (leaf → feuille, pinch → pincée)
+- For units: keep metric symbols (g, ml, kg) unchanged, translate word units
 - Do NOT add emojis
 """
 
@@ -670,10 +554,7 @@ RULES:
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "You output only valid JSON. Translate accurately while "
-                        "preserving structure. Keep metric units (g, ml, kg) unchanged."
-                    ),
+                    "content": "You output only valid JSON. Translate accurately while preserving structure.",
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -685,9 +566,7 @@ RULES:
 
         return {
             "ingredient_names": safe_list(result.get("ingredient_names", [])),
-            "ingredient_units": safe_list(
-                result.get("ingredient_units", [])
-            ),
+            "ingredient_units": safe_list(result.get("ingredient_units", [])),
             "instructions": safe_list(result.get("instructions", [])),
             "tips": safe_list(result.get("tips", [])),
             "notes": safe_list(result.get("notes", [])),
@@ -743,4 +622,5 @@ RULES:
             "emojis": [],
             "recipe": None,
             "workout": None,
+            "detected_language": "unknown" # ✅ Added fallback language
         }

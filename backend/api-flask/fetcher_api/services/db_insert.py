@@ -71,6 +71,13 @@ def insert_reel_into_db(reel_data):
         if isinstance(workout_json, dict):
             workout_json = json.dumps(workout_json, ensure_ascii=False)
 
+        # ✅ FIX: Default emojis to empty list if missing
+        summary_emojis = reel_data.get("summary_emojis") or []
+        
+        # ✅ FIX: Extract detected_language properly
+        detected_language = reel_data.get("detected_language", "unknown")
+
+        # ✅ FIX: Added detected_language to INSERT and UPDATE
         sql = """
         INSERT INTO reels (
             id, user_id, source_url, status, folder_id,
@@ -79,7 +86,7 @@ def insert_reel_into_db(reel_data):
             summary_category, summary_topic, summary_title, summary_text,
             summary_bullets, summary_hashtags, summary_emojis,
             
-            content_type, recipe, workout,
+            content_type, recipe, workout, detected_language,
             
             gcs_urls, transcription, created_at, updated_at
         )
@@ -90,7 +97,7 @@ def insert_reel_into_db(reel_data):
             %(summary_category)s, %(summary_topic)s, %(summary_title)s::jsonb, %(summary_text)s::jsonb,
             %(summary_bullets)s::jsonb, %(summary_hashtags)s, %(summary_emojis)s,
             
-            %(content_type)s, %(recipe)s::jsonb, %(workout)s::jsonb,
+            %(content_type)s, %(recipe)s::jsonb, %(workout)s::jsonb, %(detected_language)s,
             
             %(gcs_urls)s::jsonb, %(transcription)s::jsonb, %(created_at)s, NOW()
         )
@@ -109,6 +116,7 @@ def insert_reel_into_db(reel_data):
             content_type = EXCLUDED.content_type,
             recipe = EXCLUDED.recipe,
             workout = EXCLUDED.workout,
+            detected_language = EXCLUDED.detected_language,
             transcription = EXCLUDED.transcription,
             gcs_urls = EXCLUDED.gcs_urls,
             updated_at = NOW();
@@ -132,11 +140,12 @@ def insert_reel_into_db(reel_data):
             
             "summary_bullets": summary_bullets_json, 
             "summary_hashtags": reel_data.get("summary_hashtags", []),
-            "summary_emojis": reel_data.get("summary_emojis", []),
+            "summary_emojis": summary_emojis, # ✅ Fixed
             
             "content_type": reel_data.get("content_type", "generic"),
             "recipe": recipe_json,   
             "workout": workout_json, 
+            "detected_language": detected_language, # ✅ Fixed
             
             "gcs_urls": gcs_urls,
             "transcription": transcription,
@@ -145,7 +154,6 @@ def insert_reel_into_db(reel_data):
         
         logger.info(f"🔧 [DB_INSERT] Executing SQL and committing transaction...")
         
-        # ✅ FIX: execute() naturally grabs a connection, runs the query, AND commits it!
         execute(sql, params, commit=True)
         
         logger.info(f"✅ [DB] Successfully saved {process_id} | status={final_status}")
