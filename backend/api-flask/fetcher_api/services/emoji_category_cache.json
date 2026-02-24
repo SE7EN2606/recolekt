@@ -151,5 +151,6 @@
   "parmigiano reggiano": "PROTEIN_DAIRY",
   "nutmeg": "SPICE",
   "pecorino romano": "PROTEIN_DAIRY",
-  "pectine nh": "OTHER"
+  "pectine nh": "OTHER",
+  "crepe": "GRAIN"
 }

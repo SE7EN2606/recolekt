@@ -6,6 +6,7 @@ Outputs UI-compatible fields for all content types
 
 from typing import Dict
 import logging
+import os  # 🔑 needed for MISTRAL_API_KEY logging
 
 from fetcher_api.services.reel_classifier import classify_reel_content, caption_looks_like_recipe
 from fetcher_api.services.universal_extractor import UniversalExtractor
@@ -18,6 +19,14 @@ PIPELINE_VERSION = "universal-v1-single-extractor"
 class AIService:
     def __init__(self):
         self.extractor = UniversalExtractor()
+
+        # 🔑 Log the Mistral key presence + prefix at startup
+        api_key = os.getenv("MISTRAL_API_KEY")
+        logger.info(
+            "🚀 AI SERVICE STARTED - MISTRAL KEY: %s",
+            (api_key[:12] + "...") if api_key else "MISSING",
+        )
+
         logger.info("✅ AI Service initialized (%s)", PIPELINE_VERSION)
 
     def _normalize_ui_output(self, out: Dict) -> Dict:

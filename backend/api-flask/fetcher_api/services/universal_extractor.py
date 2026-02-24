@@ -68,13 +68,19 @@ class UniversalExtractor:
         api_key = os.getenv("MISTRAL_API_KEY")
         if not api_key:
             raise ValueError("MISTRAL_API_KEY not found in environment")
+        
+        logger.info("🔑 Mistral API key prefix: %s", api_key[:12] if api_key else "MISSING")
+        
         self.client = Mistral(api_key=api_key)
-        self.model = "mistral-large-latest"
+        self.model = "mistral-small-latest"
         self.api_call_count = 0
 
     def extract(
         self, transcript: str, caption: str, lang: str, classification: Dict
     ) -> Dict:
+        
+        # FORCE LOG TO CONFIRM CLASS IS CALLED:
+        logger.info("🔍 UniversalExtractor.extract() called!")
         self.api_call_count = 0
 
         transcript = transcript or ""
