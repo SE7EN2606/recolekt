@@ -2,15 +2,15 @@
 """
 Universal Content Extractor - BILINGUAL TWO-CALL approach
 Call 1: Extract structured data (title, recipe/guide, hashtags, etc.)
-Call 2: Generate summary in BOTH English AND original language
+Call 2: Generate summary in BOTH English AND original language + translations (no Call 3)
 """
 
 import os
 import json
 import logging
+import requests
 from typing import Dict
 
-from mistralai import Mistral
 from fetcher_api.services.extractor_helpers import (
     is_english,
     is_unknown_lang,
@@ -30,18 +30,16 @@ from fetcher_api.services.summary_formatter import (
     strip_emoji,
     format_ai_summary,
 )
+from fetcher_api.services.usage_tracker import record_call
 
 logger = logging.getLogger(__name__)
 
-# Bumped version to reflect universal Step-by-Step guide support
 EXTRACTOR_VERSION = "universal-v15-guides"
+MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 
 
 def smart_truncate_summary(text: str, max_chars: int = SUMMARY_MAX_CHARS) -> str:
-    """
-    Truncate summary intelligently at sentence boundaries.
-    Never cut mid-word.
-    """
+    """Truncate summary intelligently at sentence boundaries. Never cut mid-word."""
     s = strip_emoji(text or "").strip()
     if len(s) <= max_chars:
         return s
@@ -68,18 +66,17 @@ class UniversalExtractor:
         api_key = os.getenv("MISTRAL_API_KEY")
         if not api_key:
             raise ValueError("MISTRAL_API_KEY not found in environment")
-        
-        logger.info("🔑 Mistral API key prefix: %s", api_key[:12] if api_key else "MISSING")
-        
-        self.client = Mistral(api_key=api_key)
+
+        logger.info("🔑 Mistral HTTP ready: %s...", api_key[:12])
+
+        self.api_key = api_key
         self.model = "mistral-small-latest"
         self.api_call_count = 0
 
     def extract(
         self, transcript: str, caption: str, lang: str, classification: Dict
     ) -> Dict:
-        
-        # FORCE LOG TO CONFIRM CLASS IS CALLED:
+
         logger.info("🔍 UniversalExtractor.extract() called!")
         self.api_call_count = 0
 
@@ -99,11 +96,9 @@ class UniversalExtractor:
                     effective_lang,
                 )
 
-        is_english_content = is_english(effective_lang) or is_unknown_lang(
-            effective_lang
-        )
+        is_english_content = is_english(effective_lang) or is_unknown_lang(effective_lang)
 
-        # CALL 1: Extract structured data
+        # ── CALL 1: Extract structured data ──
         logger.info("📞 CALL 1: Extracting structured data...")
         prompt_data = self._build_data_extraction_prompt(
             transcript, caption, effective_lang, content_type
@@ -125,7 +120,21 @@ class UniversalExtractor:
 
         brief_description = safe_str(result_data.get("brief_description", ""))
 
-        # CALL 2: Generate summary
+        # ---------- Extract guide/recipe fields from Call 1 ----------
+        recipe_obj = result_data.get("recipe", {})
+
+        ingredients_en = normalize_ingredients(recipe_obj.get("ingredients", []))
+        instructions_en = safe_list(recipe_obj.get("instructions", []))
+        tips_en = safe_list(recipe_obj.get("tips", []))
+        notes_en = safe_list(recipe_obj.get("notes", []))
+        ingredients_groups = safe_list(recipe_obj.get("ingredients_groups", []))
+
+        servings = safe_str(recipe_obj.get("servings", "")).strip() or safe_str(recipe_obj.get("yield", "")).strip()
+        prep_time = safe_str(recipe_obj.get("prep_time", "")).strip()
+        cook_time = safe_str(recipe_obj.get("cook_time", "")).strip()
+        total_time = safe_str(recipe_obj.get("total_time", "")).strip()
+
+        # ── CALL 2: Generate summary (+ translations if non-English) ──
         if is_english_content:
             logger.info("📞 CALL 2: Generating English summary...")
             prompt_summary = self._build_summary_prompt_english(
@@ -146,25 +155,31 @@ class UniversalExtractor:
             summary_en = smart_truncate_summary(summary_en_raw)
             summary_og = summary_en
             title_og = title_en
+
+            # No translations needed for English
+            ingredients_og = ingredients_en
+            instructions_og = instructions_en
+            tips_og = tips_en
+            notes_og = notes_en
+
         else:
             logger.info(
-                "📞 CALL 2: Generating BILINGUAL summary (English + %s)...",
+                "📞 CALL 2: Generating BILINGUAL summary + translations (English + %s)...",
                 effective_lang,
             )
+            # ✅ Pass translation data into Call 2 — eliminates Call 3
             prompt_summary = self._build_summary_prompt_bilingual(
-                title_en, brief_description, content_type, effective_lang
+                title_en, brief_description, content_type, effective_lang,
+                ingredients=ingredients_en if ingredients_en else None,
+                instructions=instructions_en if instructions_en else None,
+                tips=tips_en if tips_en else None,
+                notes=notes_en if notes_en else None,
             )
             result_summary = self._call_ai(prompt_summary)
 
-            summary_en_raw = clean_text(
-                safe_str(result_summary.get("summary_en", ""))
-            )
-            summary_og_raw = clean_text(
-                safe_str(result_summary.get("summary_original", ""))
-            )
-            title_og_raw = clean_title(
-                safe_str(result_summary.get("title_original", ""))
-            )
+            summary_en_raw = clean_text(safe_str(result_summary.get("summary_en", "")))
+            summary_og_raw = clean_text(safe_str(result_summary.get("summary_original", "")))
+            title_og_raw = clean_title(safe_str(result_summary.get("title_original", "")))
 
             if is_caption_copy(summary_en_raw, caption):
                 logger.error("🚨 AI COPIED CAPTION in English! Using fallback.")
@@ -174,86 +189,23 @@ class UniversalExtractor:
                 )
 
             if is_caption_copy(summary_og_raw, caption):
-                logger.error(
-                    "🚨 AI COPIED CAPTION in original language! Using fallback."
-                )
+                logger.error("🚨 AI COPIED CAPTION in original language! Using fallback.")
                 summary_og_raw = summary_en_raw
 
             summary_en = smart_truncate_summary(summary_en_raw)
             summary_og = smart_truncate_summary(summary_og_raw)
             title_og = title_og_raw or title_en
 
-        highlights_raw = safe_list(result_data.get("highlights", []))
-
-        ai_paragraph_en, ai_bullets_en = format_ai_summary(
-            title_en=title_en,
-            summary_en_raw=summary_en,
-            highlights_raw=highlights_raw,
-            content_type=content_type,
-        )
-
-        headlines_en = [
-            {
-                "headline": b["headline"],
-                "text": b["description"],
-                "emoji": b.get("emoji", ""),
-            }
-            for b in ai_bullets_en
-        ]
-
-        hashtags = safe_list(result_data.get("hashtags", []))
-        hashtags = [str(t).lstrip("#").strip() for t in hashtags if str(t).strip()]
-        hashtags = unique_keep_order(hashtags)
-
-        emojis = safe_list(result_data.get("emojis", []))
-        emojis = [e.strip() for e in emojis if isinstance(e, str) and e.strip()]
-        emojis = unique_keep_order(emojis)
-        if len(emojis) < 4:
-            emojis = (emojis + ["✨", "💡", "📌", "✅"])[:4]
-        emojis = emojis[:4]
-
-        # ---------- Universal Guide extraction (Maps to "recipe" schema for UI) ----------
-        # We always check for "recipe" key from AI, as we instructed it to use this schema for ALL guides
-        recipe_obj = result_data.get("recipe", {}) 
-
-        ingredients_en = normalize_ingredients(recipe_obj.get("ingredients", []))
-        instructions_en = safe_list(recipe_obj.get("instructions", []))
-        tips_en = safe_list(recipe_obj.get("tips", []))
-        notes_en = safe_list(recipe_obj.get("notes", []))
-        ingredients_groups = safe_list(recipe_obj.get("ingredients_groups", []))
-
-        servings = safe_str(recipe_obj.get("servings", "")).strip() or safe_str(recipe_obj.get("yield", "")).strip()
-        prep_time = safe_str(recipe_obj.get("prep_time", "")).strip()
-        cook_time = safe_str(recipe_obj.get("cook_time", "")).strip()
-        total_time = safe_str(recipe_obj.get("total_time", "")).strip()
-
-        # Original-language translation if needed
-        ingredients_og = ingredients_en
-        instructions_og = instructions_en
-        tips_og = tips_en
-        notes_og = notes_en
-        headlines_og = headlines_en
-
-        if not is_english_content and (ingredients_en or instructions_en):
-            logger.info("🌐 Translating guide to %s...", effective_lang)
-
-            to_translate = {}
-            if ingredients_en:
-                to_translate["ingredient_names"] = [ing["item"] for ing in ingredients_en]
-                to_translate["ingredient_units"] = [ing["unit"] for ing in ingredients_en]
-            if instructions_en:
-                to_translate["instructions"] = instructions_en
-            if tips_en:
-                to_translate["tips"] = tips_en
-            if notes_en:
-                to_translate["notes"] = notes_en
-            if headlines_en:
-                to_translate["headlines"] = [f"{h['headline']}: {h['text']}" for h in headlines_en]
-
-            translated = self._translate_mega_batch(to_translate, effective_lang)
+            # ✅ Pull translations directly from result_summary (no Call 3)
+            translated = result_summary
 
             ingredient_names_og = safe_list(translated.get("ingredient_names", []))
             ingredient_units_og = safe_list(translated.get("ingredient_units", []))
+
+            ingredients_og = ingredients_en
+            instructions_og = instructions_en
+            tips_og = tips_en
+            notes_og = notes_en
 
             if ingredient_names_og and len(ingredient_names_og) >= len(ingredients_en):
                 ingredients_og = []
@@ -290,7 +242,31 @@ class UniversalExtractor:
             if notes_og_raw and len(notes_og_raw) >= len(notes_en):
                 notes_og = [clean_text(safe_str(x)) for x in notes_og_raw]
 
-            translated_headlines = safe_list(translated.get("headlines", []))
+            logger.info("✅ Translations extracted from Call 2 (no Call 3 needed)")
+
+        # ---------- Build headlines ----------
+        highlights_raw = safe_list(result_data.get("highlights", []))
+
+        ai_paragraph_en, ai_bullets_en = format_ai_summary(
+            title_en=title_en,
+            summary_en_raw=summary_en,
+            highlights_raw=highlights_raw,
+            content_type=content_type,
+        )
+
+        headlines_en = [
+            {
+                "headline": b["headline"],
+                "text": b["description"],
+                "emoji": b.get("emoji", ""),
+            }
+            for b in ai_bullets_en
+        ]
+
+        # ---------- Translate headlines (from Call 2 result) ----------
+        headlines_og = headlines_en
+        if not is_english_content:
+            translated_headlines = safe_list(result_summary.get("headlines", []))
             if translated_headlines:
                 _, bullets_og = format_ai_summary(
                     title_en=title_og,
@@ -307,7 +283,16 @@ class UniversalExtractor:
                     for i, b in enumerate(bullets_og)
                 ]
 
-            logger.info("✅ Translation complete for guide/headlines")
+        hashtags = safe_list(result_data.get("hashtags", []))
+        hashtags = [str(t).lstrip("#").strip() for t in hashtags if str(t).strip()]
+        hashtags = unique_keep_order(hashtags)
+
+        emojis = safe_list(result_data.get("emojis", []))
+        emojis = [e.strip() for e in emojis if isinstance(e, str) and e.strip()]
+        emojis = unique_keep_order(emojis)
+        if len(emojis) < 4:
+            emojis = (emojis + ["✨", "💡", "📌", "✅"])[:4]
+        emojis = emojis[:4]
 
         # ---------- Final bilingual data objects ----------
         bilingual_summary = {
@@ -316,19 +301,18 @@ class UniversalExtractor:
                 "summary": ai_paragraph_en,
                 "headlines": headlines_en,
                 "hashtags": hashtags,
-                "emojis": emojis, # ✅ FIXED: Actually map emojis here
+                "emojis": emojis,
             },
             "original": {
                 "title": title_og,
                 "summary": summary_og if not is_english_content else ai_paragraph_en,
                 "headlines": headlines_og,
                 "hashtags": hashtags,
-                "emojis": emojis, # ✅ FIXED
+                "emojis": emojis,
             },
         }
 
         recipe_data = None
-        # ✅ If the AI successfully extracted ANY ingredients/requirements or instructions, build the object
         if ingredients_en or instructions_en:
             recipe_data = {
                 "english": {
@@ -369,30 +353,29 @@ class UniversalExtractor:
             "hashtags": hashtags,
             "emojis": emojis,
             "recipe": json.dumps(recipe_data, ensure_ascii=False) if recipe_data else None,
-            "workout": None, # Kept null as we merge everything into the universal "recipe" schema for UI
-            "detected_language": effective_lang # ✅ Explicitly return the language for db_insert
+            "workout": None,
+            "detected_language": effective_lang,
         }
 
     def _build_data_extraction_prompt(
         self, transcript: str, caption: str, lang: str, content_type: str
     ) -> str:
         """CALL 1: Extract structured data only (no summary)"""
-        
-        # ✅ NEW UNIVERSAL INSTRUCTION BLOCK: Maps any category into the "recipe" schema!
+
         type_specific = f"""
 7. **recipe** object: ALWAYS INCLUDE THIS OBJECT IF THE CONTENT IS A TUTORIAL, WORKOUT, DIY, RECIPE, OR HAS CLEAR STEPS.
    We use the "recipe" schema universally for ALL categories. Map the content accordingly:
-   
+
    - **servings**: Yield or difficulty (e.g., "4 people", "Beginner", "1 Room", "N/A")
    - **prep_time**: Time to gather materials or setup (e.g., "5 min", "N/A")
    - **cook_time**: Active time required (e.g., "15 min workout", "1 hour project", "20 min bake")
    - **total_time**: Total time
-   - **ingredients**: array with item, quantity, unit, emoji (required fields). 
+   - **ingredients**: array with item, quantity, unit, emoji (required fields).
         - For FOOD: "Flour", "200", "g", "🌾"
         - For WORKOUT: "Dumbbells", "2", "items", "🏋️"
         - For DIY/HACKS: "Baking Soda", "1", "cup", "🫧"
         - For TECH/FINANCE: "App Name", "1", "download", "📱"
-   - **ingredients_groups** (optional): Group requirements if needed (e.g., "Upper Body", "Lower Body", "Tools", "Materials").
+   - **ingredients_groups** (optional): Group requirements if needed.
    - **instructions**: 6-12 clear, actionable steps.
    - **tips**: optional helpful tips or safety warnings.
    - **notes**: optional important context.
@@ -410,17 +393,16 @@ CAPTION:
 
 EXTRACT:
 
-1. **category**: Choose the most accurate English category from this list: Food & Drink, Fitness & Workouts, Beauty & Grooming, Home & DIY, Life Hacks & Productivity, Tech & Gadgets, Personal Finance, Self-Care & Mental Health, Parenting & Kids, Travel & Packing, or General.
+1. **category**: Choose from: Food & Drink, Fitness & Workouts, Beauty & Grooming, Home & DIY, Life Hacks & Productivity, Tech & Gadgets, Personal Finance, Self-Care & Mental Health, Parenting & Kids, Travel & Packing, or General.
 
 2. **topic**: 2-3 word English topic (e.g., "Pumpkin Bars", "HIIT Workout", "Stain Removal")
 
 3. **title**: Precise English title, <= {TITLE_MAX_CHARS} chars, NO emojis
 
 4. **brief_description**: ONE sentence (max 80 chars) describing what this is
-   Example: "A 10-minute full body home workout without equipment"
 
-5. **highlights**: array of EXACTLY 4 objects with these fields:
-   - "emoji": ONE relevant emoji (required)
+5. **highlights**: array of EXACTLY 4 objects:
+   - "emoji": ONE relevant emoji
    - "headline": 3-5 word title (NO emojis in text)
    - "description": One sentence (NO emojis in text)
 
@@ -454,7 +436,16 @@ Output ONLY valid JSON with one field:
 """
 
     def _build_summary_prompt_bilingual(
-        self, title: str, brief_desc: str, content_type: str, original_lang: str
+        self,
+        title: str,
+        brief_desc: str,
+        content_type: str,
+        original_lang: str,
+        ingredients: list = None,
+        instructions: list = None,
+        tips: list = None,
+        notes: list = None,
+        headlines: list = None,
     ) -> str:
         lang_name_map = {
             "fr": "French", "es": "Spanish", "de": "German", "it": "Italian",
@@ -463,125 +454,126 @@ Output ONLY valid JSON with one field:
         }
         lang_name = lang_name_map.get(original_lang, original_lang.upper())
 
+        # ── Build optional translation block ──
+        translation_input = ""
+        translation_output_fields = []
+
+        if ingredients:
+            names = [i["item"] for i in ingredients]
+            units = [i["unit"] for i in ingredients]
+            translation_input += f'\n"ingredient_names_en": {json.dumps(names, ensure_ascii=False)}'
+            translation_input += f'\n"ingredient_units_en": {json.dumps(units, ensure_ascii=False)}'
+            translation_output_fields.append('"ingredient_names": ["translated name 1", ...]')
+            translation_output_fields.append('"ingredient_units": ["translated unit 1", ...]')
+
+        if instructions:
+            translation_input += f'\n"instructions_en": {json.dumps(instructions, ensure_ascii=False)}'
+            translation_output_fields.append('"instructions": ["translated step 1", ...]')
+
+        if tips:
+            translation_input += f'\n"tips_en": {json.dumps(tips, ensure_ascii=False)}'
+            translation_output_fields.append('"tips": ["translated tip 1", ...]')
+
+        if notes:
+            translation_input += f'\n"notes_en": {json.dumps(notes, ensure_ascii=False)}'
+            translation_output_fields.append('"notes": ["translated note 1", ...]')
+
+        if headlines:
+            hl_list = [f"{h['headline']}: {h['text']}" for h in headlines]
+            translation_input += f'\n"headlines_en": {json.dumps(hl_list, ensure_ascii=False)}'
+            translation_output_fields.append('"headlines": ["translated headline 1: text 1", ...]')
+
+        has_translation = bool(translation_input)
+
+        translation_section = ""
+        if has_translation:
+            extra_fields = ",\n  ".join(translation_output_fields)
+            translation_section = f"""
+CONTENT TO TRANSLATE TO {lang_name.upper()}:
+{translation_input}
+
+Also include these translated fields in your JSON output:
+  {extra_fields}
+"""
+
+        extra_json_fields = ""
+        if has_translation:
+            extra_json_fields = ",\n  " + ",\n  ".join(translation_output_fields)
+
         return f"""Write TWO summary paragraphs for this content: one in English, one in {lang_name}.
 
 TITLE (English): {title}
 BRIEF DESCRIPTION: {brief_desc}
-
+{translation_section}
 REQUIREMENTS:
-- Length: 250-{SUMMARY_MAX_CHARS} characters EACH (2-3 complete sentences)
+- Summary length: 250-{SUMMARY_MAX_CHARS} characters EACH (2-3 complete sentences)
 - Style: Simple, factual, informative (like Wikipedia intro)
 - Write about: WHAT the content teaches/shows, WHO it's useful for, and PRACTICAL benefits.
 - NO emojis, NO marketing language, NO flowery adjectives
 - Write ORIGINAL text in both languages - do NOT copy from input
 - Translate the title to {lang_name} as well
+- For translations: preserve meaning accurately, keep metric units (g, kg, ml, etc.) unchanged
 
-Output ONLY valid JSON with three fields:
+Output ONLY valid JSON:
 {{
   "summary_en": "English summary here",
   "summary_original": "{lang_name} summary here",
-  "title_original": "{lang_name} title here"
+  "title_original": "{lang_name} title here"{extra_json_fields}
 }}
 """
 
     def _call_ai(self, prompt: str, max_retries: int = 2) -> Dict:
-        for attempt in range(max_retries + 1):
-            try:
-                logger.info(
-                    "🤖 Calling Mistral API (attempt %d/%d)...",
-                    attempt + 1,
-                    max_retries + 1,
-                )
-                self.api_call_count += 1
-
-                response = self.client.chat.complete(
-                    model=self.model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a content analysis expert. Generate ORIGINAL text. "
-                                "NEVER copy from input. Output only valid JSON."
-                            ),
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.1,
-                )
-                content = response.choices[0].message.content
-                return json.loads(content)
-            except Exception as e:
-                logger.error(
-                    "❌ AI call failed (attempt %s): %s", attempt + 1, e
-                )
-                if attempt == max_retries:
-                    raise
-        raise ValueError("AI call failed after retries")
-
-    def _translate_mega_batch(self, data: Dict, target_lang: str) -> Dict:
-        fields_to_translate = []
-        if "ingredient_names" in data:
-            fields_to_translate.append('"ingredient_names": ["translated item 1", ...]')
-        if "ingredient_units" in data:
-            fields_to_translate.append('"ingredient_units": ["translated unit 1", ...]')
-        if "instructions" in data:
-            fields_to_translate.append('"instructions": ["translated step 1", ...]')
-        if "tips" in data:
-            fields_to_translate.append('"tips": ["translated tip 1", ...]')
-        if "notes" in data:
-            fields_to_translate.append('"notes": ["translated note 1", ...]')
-        if "headlines" in data:
-            fields_to_translate.append('"headlines": ["translated headline 1", ...]')
-
-        expected_structure = "{\n  " + ",\n  ".join(fields_to_translate) + "\n}"
-
-        prompt = f"""Translate ALL fields into {target_lang}. Keep exact structure and order. Output ONLY valid JSON.
-
-Return JSON with EXACT structure:
-{expected_structure}
-
-DATA TO TRANSLATE:
-{json.dumps(data, ensure_ascii=False, indent=2)}
-
-RULES:
-- Translate EVERY field accurately
-- Keep arrays in same order
-- Preserve meaning and context
-- For units: keep metric symbols (g, ml, kg) unchanged, translate word units
-- Do NOT add emojis
-"""
-
-        self.api_call_count += 1
-        logger.info("🌐 Translating to %s in ONE batch call...", target_lang)
-
-        response = self.client.chat.complete(
-            model=self.model,
-            messages=[
+        """✅ Pure HTTP call - no Mistral SDK dependency."""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self.model,
+            "messages": [
                 {
                     "role": "system",
-                    "content": "You output only valid JSON. Translate accurately while preserving structure.",
+                    "content": (
+                        "You are a content analysis expert. Generate ORIGINAL text. "
+                        "NEVER copy from input. Output only valid JSON."
+                    ),
                 },
                 {"role": "user", "content": prompt},
             ],
-            response_format={"type": "json_object"},
-            temperature=0.1,
-        )
-
-        result = json.loads(response.choices[0].message.content)
-
-        return {
-            "ingredient_names": safe_list(result.get("ingredient_names", [])),
-            "ingredient_units": safe_list(result.get("ingredient_units", [])),
-            "instructions": safe_list(result.get("instructions", [])),
-            "tips": safe_list(result.get("tips", [])),
-            "notes": safe_list(result.get("notes", [])),
-            "headlines": safe_list(result.get("headlines", [])),
+            "response_format": {"type": "json_object"},
+            "temperature": 0.1,
         }
+
+        for attempt in range(max_retries + 1):
+            try:
+                logger.info("🤖 Calling Mistral HTTP (attempt %d/%d)...", attempt + 1, max_retries + 1)
+                self.api_call_count += 1
+
+                resp = requests.post(MISTRAL_API_URL, headers=headers, json=payload, timeout=30)
+                resp.raise_for_status()
+
+                raw = resp.json()["choices"][0]["message"]["content"]
+                content = json.loads(raw)
+
+                # ✅ Track successful call
+                record_call(prompt_len=len(prompt), response_len=len(raw))
+
+                return content
+
+            except Exception as e:
+                logger.error("❌ HTTP Mistral failed (attempt %d): %s", attempt + 1, e)
+
+                # ✅ Track failed call
+                record_call(prompt_len=len(prompt), response_len=0, error=True)
+
+                if attempt == max_retries:
+                    raise
+
+        raise ValueError("Mistral HTTP call failed after retries")
 
     def fallback(self, caption: str, classification: Dict) -> Dict:
         title = derive_best_title_from_caption(caption) or (
-            caption.split("\n")[0] if caption else "Saved Content"
+            caption.split("\\n")[0] if caption else "Saved Content"
         ).strip()
         title = clean_title(title) or "Saved Content"
 
@@ -628,5 +620,5 @@ RULES:
             "emojis": [],
             "recipe": None,
             "workout": None,
-            "detected_language": "unknown" # ✅ Added fallback language
+            "detected_language": "unknown",
         }

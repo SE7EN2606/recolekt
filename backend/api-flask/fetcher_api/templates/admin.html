@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Recolekt Admin</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0a0a0a;
+            color: #e5e5e5;
+            min-height: 100vh;
+            padding: 32px 24px;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .header h1 { font-size:22px; font-weight:700; color:white; }
+        .badge-green {
+            background:#16a34a22; color:#4ade80;
+            border:1px solid #16a34a44;
+            padding:4px 12px; border-radius:999px;
+            font-size:12px; font-weight:600;
+        }
+        .badge-blue {
+            display:inline-block; padding:2px 8px;
+            border-radius:4px; font-size:11px; font-weight:700;
+            background:#1d4ed822; color:#60a5fa;
+            border:1px solid #1d4ed844;
+        }
+        .timestamp { font-size:12px; color:#555; margin-bottom:32px; }
+        .section-title {
+            font-size:11px; font-weight:700;
+            text-transform:uppercase; letter-spacing:0.1em;
+            color:#555; margin-bottom:12px; margin-top:32px;
+        }
+        .grid {
+            display:grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap:12px;
+        }
+        .card {
+            background:#141414; border:1px solid #222;
+            border-radius:12px; padding:20px;
+        }
+        .card .label {
+            font-size:11px; color:#555; font-weight:600;
+            text-transform:uppercase; letter-spacing:0.08em;
+            margin-bottom:8px;
+        }
+        .card .value { font-size:28px; font-weight:800; color:white; }
+        .card .sub { font-size:12px; color:#555; margin-top:4px; }
+        .card.green { border-color:#16a34a33; }
+        .card.green .value { color:#4ade80; }
+        .card.purple { border-color:#7c3aed33; }
+        .card.purple .value { color:#a78bfa; }
+        .card.blue { border-color:#1d4ed833; }
+        .card.blue .value { color:#60a5fa; }
+        .card.yellow { border-color:#d9770633; }
+        .card.yellow .value { color:#fbbf24; }
+        .card.red { border-color:#dc262633; }
+        .card.red .value { color:#f87171; }
+        .card.wide { grid-column: span 2; }
+        .users-table { width:100%; border-collapse:collapse; margin-top:4px; }
+        .users-table th {
+            text-align:left; font-size:11px; color:#555;
+            font-weight:600; text-transform:uppercase;
+            letter-spacing:0.08em; padding:8px 12px;
+            border-bottom:1px solid #222;
+        }
+        .users-table td {
+            padding:10px 12px; font-size:13px; color:#ccc;
+            border-bottom:1px solid #1a1a1a;
+        }
+        .users-table tr:last-child td { border-bottom:none; }
+        .refresh-btn {
+            background:#1a1a1a; color:#aaa;
+            border:1px solid #333; padding:8px 16px;
+            border-radius:8px; font-size:13px; cursor:pointer;
+        }
+        .refresh-btn:hover { background:#222; color:white; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div><h1>⚡ Recolekt Admin</h1></div>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <span class="badge-blue" id="env-badge">...</span>
+            <span class="badge-green" id="status-badge">● online</span>
+            <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+        </div>
+    </div>
+    <div class="timestamp" id="timestamp">Loading...</div>
+
+    <div class="section-title">👥 Users</div>
+    <div class="grid">
+        <div class="card green">
+            <div class="label">Total Users</div>
+            <div class="value" id="users-total">—</div>
+        </div>
+        <div class="card blue">
+            <div class="label">Active Today</div>
+            <div class="value" id="users-active">—</div>
+        </div>
+    </div>
+
+    <div class="section-title">🎬 Reels</div>
+    <div class="grid">
+        <div class="card purple">
+            <div class="label">Total Reels</div>
+            <div class="value" id="reels-total">—</div>
+        </div>
+        <div class="card blue">
+            <div class="label">Processed Today</div>
+            <div class="value" id="reels-today">—</div>
+        </div>
+        <div class="card wide">
+            <div class="label">Last Processed</div>
+            <div class="value" style="font-size:14px;font-weight:600;" id="reels-last">—</div>
+        </div>
+    </div>
+
+    <div class="section-title">🤖 Mistral AI</div>
+    <div class="grid">
+        <div class="card yellow">
+            <div class="label">Calls Today</div>
+            <div class="value" id="mistral-calls">—</div>
+            <div class="sub" id="mistral-remaining">— remaining</div>
+        </div>
+        <div class="card blue">
+            <div class="label">Tokens Today (est.)</div>
+            <div class="value" id="mistral-tokens">—</div>
+        </div>
+        <div class="card green">
+            <div class="label">Tokens This Month</div>
+            <div class="value" id="mistral-month">—</div>
+        </div>
+        <div class="card red">
+            <div class="label">Errors Today</div>
+            <div class="value" id="mistral-errors">—</div>
+        </div>
+    </div>
+    <div style="margin-top:8px;font-size:12px;color:#555;" id="mistral-last-call">Last call: —</div>
+
+    <div class="section-title">🆕 Newest Users</div>
+    <div class="card">
+        <table class="users-table">
+            <thead>
+                <tr><th>Email</th><th>Joined</th></tr>
+            </thead>
+            <tbody id="users-table-body">
+                <tr><td colspan="2" style="color:#555;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section-title">🖥️ Server</div>
+    <div class="grid">
+        <div class="card">
+            <div class="label">Extractor Version</div>
+            <div class="value" style="font-size:14px;" id="server-extractor">—</div>
+        </div>
+        <div class="card">
+            <div class="label">Python Version</div>
+            <div class="value" style="font-size:14px;" id="server-python">—</div>
+        </div>
+    </div>
+
+    <div style="margin-top:48px;font-size:11px;color:#333;text-align:center;">
+        Recolekt Admin · Auto-refreshes every 30s
+    </div>
+
+    <script>
+        const KEY = "{{admin_key}}";
+
+        function fmt(n) {
+            if (n === null || n === undefined || n === "n/a") return "—";
+            if (typeof n === "number" && n >= 1000) return (n / 1000).toFixed(1) + "k";
+            return String(n);
+        }
+
+        function fmtDate(iso) {
+            if (!iso) return "—";
+            return new Date(iso).toLocaleString();
+        }
+
+        async function loadData() {
+            try {
+                const res = await fetch(`/api/admin/dashboard?key=${KEY}`);
+                const d = await res.json();
+
+                document.getElementById("timestamp").textContent = "Last updated: " + fmtDate(d.timestamp);
+                document.getElementById("env-badge").textContent = d.environment || "—";
+
+                document.getElementById("users-total").textContent = fmt(d.users?.total);
+                document.getElementById("users-active").textContent = fmt(d.users?.active_today);
+
+                document.getElementById("reels-total").textContent = fmt(d.reels?.total);
+                document.getElementById("reels-today").textContent = fmt(d.reels?.processed_today);
+                document.getElementById("reels-last").textContent = fmtDate(d.reels?.last_processed_at);
+
+                document.getElementById("mistral-calls").textContent = fmt(d.mistral?.calls_today);
+                document.getElementById("mistral-remaining").textContent = fmt(d.mistral?.estimated_remaining) + " remaining";
+                const tok = d.mistral?.tokens_estimated_today;
+                document.getElementById("mistral-tokens").textContent = tok ? (tok / 1000).toFixed(1) + "k" : "—";
+                const month = d.mistral?.remaining_tokens_month;
+                document.getElementById("mistral-month").textContent = month ? (parseInt(month) / 1000000).toFixed(2) + "M" : "—";
+                document.getElementById("mistral-errors").textContent = fmt(d.mistral?.errors_today);
+                document.getElementById("mistral-last-call").textContent = "Last call: " + fmtDate(d.mistral?.last_call_at);
+
+                const tbody = document.getElementById("users-table-body");
+                const users = d.users?.newest || [];
+                if (users.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="2" style="color:#555;">No users yet</td></tr>';
+                } else {
+                    tbody.innerHTML = users.map(u => `
+                        <tr>
+                            <td>${u.email}</td>
+                            <td style="color:#555;">${fmtDate(u.joined)}</td>
+                        </tr>
+                    `).join("");
+                }
+
+                document.getElementById("server-extractor").textContent = d.server?.extractor_version || "—";
+                document.getElementById("server-python").textContent = d.server?.python_version || "—";
+
+            } catch(e) {
+                document.getElementById("timestamp").textContent = "❌ Error: " + e.message;
+            }
+        }
+
+        loadData();
+        setInterval(loadData, 30000);
+    </script>
+</body>
+</html>

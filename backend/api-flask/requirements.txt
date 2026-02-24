@@ -13,7 +13,7 @@ soundfile==0.12.1
 audioread==3.0.1
 librosa==0.10.1
 gunicorn==21.2.0
-mistralai
+mistralai==1.0.0
 psycopg2-binary
 google-cloud-storage
 google-cloud-vision

@@ -4,14 +4,14 @@ import json
 import os
 import re
 import unicodedata
+import requests
 from typing import Dict, Optional
-
-from mistralai import Mistral
 
 BASE_DIR = os.path.dirname(__file__)
 CACHE_PATH = os.path.join(BASE_DIR, "emoji_category_cache.json")
 
-MISTRAL_MODEL = "mistral-large-latest"
+MISTRAL_MODEL = "mistral-small-latest"
+MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 
 _UNITS = {
     "g", "kg", "mg", "ml", "l", "cl",
@@ -84,7 +84,7 @@ CATEGORY_TO_EMOJI: Dict[str, str] = {
     "FAT_OIL": "🧈",
     "BUTTER": "🧈",
 
-    # Sweeteners - MORE SPECIFIC
+    # Sweeteners
     "SWEETENER": "🧊",
     "SWEETENER_POWDER": "❄️",
     "SWEETENER_BROWN": "🟤",
@@ -109,7 +109,6 @@ CATEGORY_TO_EMOJI: Dict[str, str] = {
 
 ALLOWED_CATEGORIES = set(CATEGORY_TO_EMOJI.keys())
 
-# --- Static Overrides ---
 STATIC_CATEGORY_OVERRIDES: Dict[str, str] = {
     # Dairy
     "yogurt": "PROTEIN_DAIRY",
@@ -121,13 +120,11 @@ STATIC_CATEGORY_OVERRIDES: Dict[str, str] = {
     "creme": "PROTEIN_DAIRY",
     "cheese": "PROTEIN_DAIRY",
     "fromage": "PROTEIN_DAIRY",
-    
     # Eggs
     "egg": "PROTEIN_EGG",
     "eggs": "PROTEIN_EGG",
     "oeuf": "PROTEIN_EGG",
     "oeufs": "PROTEIN_EGG",
-    
     # Fats
     "butter": "BUTTER",
     "beurre": "BUTTER",
@@ -140,7 +137,6 @@ STATIC_CATEGORY_OVERRIDES: Dict[str, str] = {
     "corn oil": "FAT_OIL",
     "sunflower oil": "FAT_OIL",
     "perilla oil": "FAT_OIL",
-
     # Grains
     "flour": "GRAIN",
     "farine": "GRAIN",
@@ -148,8 +144,7 @@ STATIC_CATEGORY_OVERRIDES: Dict[str, str] = {
     "pasta": "GRAIN",
     "noodle": "STARCH",
     "glass noodle": "STARCH",
-    
-    # Sugars (more specific)
+    # Sugars
     "sugar": "SWEETENER",
     "sucre": "SWEETENER",
     "granulated sugar": "SWEETENER",
@@ -162,7 +157,6 @@ STATIC_CATEGORY_OVERRIDES: Dict[str, str] = {
     "miel": "SWEETENER_LIQUID",
     "maple syrup": "SWEETENER_LIQUID",
     "corn syrup": "SWEETENER_LIQUID",
-    
     # Chocolate
     "chocolate chip": "SWEETENER_CHOCOLATE",
     "chocolate chips": "SWEETENER_CHOCOLATE",
@@ -175,7 +169,6 @@ STATIC_CATEGORY_OVERRIDES: Dict[str, str] = {
     "chocolat noir": "SWEETENER_CHOCOLATE",
     "milk chocolate": "SWEETENER_CHOCOLATE",
     "chocolat au lait": "SWEETENER_CHOCOLATE",
-    
     # Vanilla
     "vanilla": "VANILLA",
     "vanille": "VANILLA",
@@ -184,7 +177,6 @@ STATIC_CATEGORY_OVERRIDES: Dict[str, str] = {
     "vanilla liquid": "VANILLA",
     "vanilla pod": "VANILLA",
     "gousse de vanille": "VANILLA",
-    
     # Baking
     "baking powder": "SPICE",
     "levure chimique": "SPICE",
@@ -193,7 +185,6 @@ STATIC_CATEGORY_OVERRIDES: Dict[str, str] = {
     "bicarbonate de soude": "SPICE",
     "yeast": "FERMENTED",
     "levure": "FERMENTED",
-    
     # Spices
     "salt": "SPICE",
     "sel": "SPICE",
@@ -203,7 +194,6 @@ STATIC_CATEGORY_OVERRIDES: Dict[str, str] = {
     "cannelle": "SPICE",
     "cumin": "SPICE",
     "turmeric": "SPICE",
-    
     # Fruits
     "apple": "FRUIT",
     "pomme": "FRUIT",
@@ -211,15 +201,13 @@ STATIC_CATEGORY_OVERRIDES: Dict[str, str] = {
     "poire": "FRUIT",
     "pears in syrup": "FRUIT",
     "poires au sirop": "FRUIT",
-    
     # Nuts
     "walnut": "NUT_SEED",
     "walnuts": "NUT_SEED",
     "noix": "NUT_SEED",
     "almond": "NUT_SEED",
     "amande": "NUT_SEED",
-    
-    # Sauces & Condiments
+    # Sauces
     "soy sauce": "CONDIMENT",
     "oyster sauce": "CONDIMENT",
     "tonkatsu sauce": "CONDIMENT",
@@ -227,28 +215,24 @@ STATIC_CATEGORY_OVERRIDES: Dict[str, str] = {
     "mayonnaise": "CONDIMENT",
     "mustard": "CONDIMENT",
     "vinegar": "CONDIMENT",
-    
     # Fermented
     "kimchi": "FERMENTED",
     "gochujang": "CHILI",
     "sriracha": "CHILI",
-    
     # Alcohol
     "mirin": "ALCOHOL",
     "sweet cooking wine": "ALCOHOL",
     "wine": "ALCOHOL",
     "vin": "ALCOHOL",
-
     # Starches
     "potato starch": "STARCH",
     "starch": "STARCH",
-
-    # Fix misspellings
+    # Potato
     "potatoe": "POTATO",
     "potato": "POTATO",
 }
 
-# --- Canonicalization ---
+
 def _norm(s: str) -> str:
     s = (s or "").strip().lower()
     s = unicodedata.normalize("NFKD", s)
@@ -256,6 +240,7 @@ def _norm(s: str) -> str:
     s = re.sub(r"[^\w\s/.-]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
 
 def _canonical_key(s: str) -> str:
     s = _norm(s)
@@ -275,16 +260,13 @@ def _canonical_key(s: str) -> str:
         t2 = t.strip(" .-")
         if not t2:
             continue
-
         t2 = _SPELLING_FIXES.get(t2, t2)
-
         if t2 in _UNITS:
             continue
         if t2 in _STOP_WORDS:
             continue
         if re.match(r"^\d+(?:[./]\d+)?(ml|l|cl|g|kg|mg|tsp|tbsp)$", t2):
             continue
-
         kept.append(t2)
 
     s = " ".join(kept).strip()
@@ -296,11 +278,10 @@ def _canonical_key(s: str) -> str:
 
     return s.strip()
 
-# --- Cache ---
+
 def _load_cache() -> Dict[str, str]:
     if not os.path.exists(CACHE_PATH):
         return {}
-
     try:
         with open(CACHE_PATH, "r", encoding="utf-8") as f:
             raw = json.load(f)
@@ -326,6 +307,7 @@ def _load_cache() -> Dict[str, str]:
 
     return sanitized
 
+
 def _save_cache(cache: Dict[str, str]) -> None:
     cleaned: Dict[str, str] = {}
     for k, v in (cache or {}).items():
@@ -335,17 +317,19 @@ def _save_cache(cache: Dict[str, str]) -> None:
             cleaned[ck] = cv
     _write_json(CACHE_PATH, cleaned)
 
+
 def _write_json(path: str, data: Dict[str, str]) -> None:
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
 
-# --- Classification ---
+
 def _normalize_category(cat: str) -> str:
     cat = (cat or "").strip()
     cat = LEGACY_CATEGORY_ALIASES.get(cat, cat)
     return cat
+
 
 def _build_category_prompt(ingredient: str) -> str:
     return f"""
@@ -379,40 +363,41 @@ INGREDIENT:
 {ingredient}
 """.strip()
 
-_client: Optional[Mistral] = None
-
-def _get_client() -> Mistral:
-    global _client
-    if _client is None:
-        api_key = os.getenv("MISTRAL_API_KEY")
-        if not api_key:
-            raise RuntimeError("MISTRAL_API_KEY not set")
-        _client = Mistral(api_key=api_key)
-    return _client
 
 def _classify_with_ai(ingredient_key: str) -> str:
-    client = _get_client()
+    """✅ Pure HTTP call - no Mistral SDK dependency."""
+    api_key = os.getenv("MISTRAL_API_KEY")
+    if not api_key:
+        raise RuntimeError("MISTRAL_API_KEY not set")
+
     prompt = _build_category_prompt(ingredient_key)
 
-    resp = client.chat.complete(
-        model=MISTRAL_MODEL,
-        messages=[
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": MISTRAL_MODEL,
+        "messages": [
             {"role": "system", "content": "You output only valid JSON."},
             {"role": "user", "content": prompt},
         ],
-        response_format={"type": "json_object"},
-        temperature=0.0,
-    )
+        "response_format": {"type": "json_object"},
+        "temperature": 0.0,
+    }
 
-    data = json.loads(resp.choices[0].message.content)
-    cat = _normalize_category(data.get("category"))
+    resp = requests.post(MISTRAL_API_URL, headers=headers, json=payload, timeout=15)
+    resp.raise_for_status()
+
+    data = json.loads(resp.json()["choices"][0]["message"]["content"])
+    cat = _normalize_category(data.get("category", ""))
 
     if cat not in ALLOWED_CATEGORIES:
         raise ValueError(f"Invalid category from AI: {cat}")
 
     return cat
 
-# --- Main ---
+
 def infer_ingredient_emoji(ingredient_english: str) -> str:
     """
     Deterministic emoji inference:
@@ -424,7 +409,7 @@ def infer_ingredient_emoji(ingredient_english: str) -> str:
 
     toks = set(key.split())
 
-    # Hard guards (these must beat a bad cache forever)
+    # Hard guards
     if "butter" in toks or "beurre" in toks:
         return CATEGORY_TO_EMOJI["BUTTER"]
     if "oil" in toks or "huile" in toks:
@@ -446,6 +431,7 @@ def infer_ingredient_emoji(ingredient_english: str) -> str:
     _CATEGORY_CACHE[key] = cat
     _save_cache(_CATEGORY_CACHE)
     return CATEGORY_TO_EMOJI[cat]
+
 
 # --- Init ---
 _CATEGORY_CACHE: Dict[str, str] = _load_cache()

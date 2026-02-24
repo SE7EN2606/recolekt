@@ -35,9 +35,9 @@ import logging
 import warnings
 import tempfile
 import subprocess
-from datetime import timedelta
+from datetime import datetime, timedelta
 
-from flask import send_from_directory, request, jsonify
+from flask import send_from_directory, request, jsonify, render_template
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -66,6 +66,9 @@ from fetcher_api import create_app
 app = create_app()
 if not app:
     raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
+
+# ✅ Tell Flask where templates live
+app.template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fetcher_api", "templates")
 
 # ✅ Tell Flask it's behind a secure Railway load balancer
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
@@ -153,7 +156,7 @@ from fetcher_api.api import register_blueprints
 register_blueprints(app)
 
 # ============================================
-# 🚀 NEW: Rate Limits Endpoint
+# 🚀 Rate Limits Endpoint
 # ============================================
 from fetcher_api.services.rate_monitor import get_mistral_limits
 
@@ -162,16 +165,106 @@ def rate_limits():
     """Control panel: current Mistral rate limit status."""
     return jsonify(get_mistral_limits())
 
-@app.route("/api/control-panel", methods=["GET"])
-def control_panel():
-    """Admin dashboard metrics."""
+# ============================================
+# 🔐 ADMIN API ENDPOINT
+# ============================================
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "change-me-in-env")
+
+@app.route("/api/admin/dashboard", methods=["GET"])
+def admin_dashboard():
+    """Super admin dashboard JSON - protected by secret key."""
+    key = request.args.get("key", "")
+    if key != ADMIN_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    from fetcher_api.services.usage_tracker import get_usage
+    from fetcher_api.adapters.db import get_db_connection
+
+    usage = get_usage()
     limits = get_mistral_limits()
+
+    total_users = active_users_today = total_reels = reels_today = "n/a"
+    last_reel_at = None
+    newest_users = []
+
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+
+            cur.execute("SELECT COUNT(*) FROM users")
+            total_users = cur.fetchone()[0]
+
+            cur.execute("""
+                SELECT COUNT(DISTINCT user_id) FROM reels
+                WHERE created_at >= NOW() - INTERVAL '24 hours'
+            """)
+            active_users_today = cur.fetchone()[0]
+
+            cur.execute("SELECT COUNT(*) FROM reels")
+            total_reels = cur.fetchone()[0]
+
+            cur.execute("""
+                SELECT COUNT(*) FROM reels
+                WHERE created_at >= NOW() - INTERVAL '24 hours'
+            """)
+            reels_today = cur.fetchone()[0]
+
+            cur.execute("SELECT MAX(created_at) FROM reels")
+            last_reel_at = cur.fetchone()[0]
+            if last_reel_at:
+                last_reel_at = last_reel_at.isoformat()
+
+            cur.execute("""
+                SELECT email, created_at FROM users
+                ORDER BY created_at DESC LIMIT 5
+            """)
+            rows = cur.fetchall()
+            newest_users = [{"email": r[0], "joined": r[1].isoformat()} for r in rows]
+
+            cur.close()
+
+    except Exception as e:
+        logger.error("Admin DB query failed: %s", e)
+
     return jsonify({
-        "mistral": limits,
-        "extractor_version": "universal-v15-guides",
         "status": "online",
-        "timestamp": "2026-02-24T09:17:00Z",
+        "environment": "RAILWAY" if IS_RAILWAY else "LOCAL",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "mistral": {
+            "calls_today": usage["calls_today"],
+            "calls_total": usage["calls_total"],
+            "estimated_remaining": max(0, 200 - usage["calls_today"]),
+            "tokens_estimated_today": usage["tokens_estimated_today"],
+            "remaining_tokens_month": limits.get("remaining_tokens_month"),
+            "errors_today": usage["errors_today"],
+            "last_call_at": usage["last_call_at"],
+        },
+        "users": {
+            "total": total_users,
+            "active_today": active_users_today,
+            "newest": newest_users,
+        },
+        "reels": {
+            "total": total_reels,
+            "processed_today": reels_today,
+            "last_processed_at": last_reel_at,
+        },
+        "server": {
+            "extractor_version": "universal-v15-guides",
+            "python_version": sys.version.split(" ")[0],
+        },
     })
+
+# ============================================
+# 🖥️ ADMIN HTML PAGE
+# ============================================
+@app.route("/admin", methods=["GET"])
+def admin_page():
+    """Visual admin dashboard - protected by secret key."""
+    key = request.args.get("key", "")
+    if key != ADMIN_SECRET:
+        return render_template("admin_login.html"), 401
+    return render_template("admin.html", admin_key=key)
 
 # -------------------------------------------------
 # ✅ Global Error Handlers
