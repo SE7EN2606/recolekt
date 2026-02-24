@@ -4,6 +4,7 @@ import os
 import json
 import shutil
 import logging
+import threading
 from datetime import datetime
 
 from fetcher_api.services.transcription import transcribe_video_deepgram
@@ -157,16 +158,16 @@ def background_process(
                 thumbnail_gcs_path = f"media/IG_reels/{shortcode}/{shortcode}_thumbnail.jpeg"
                 thumbnail_blob = bucket.blob(thumbnail_gcs_path)
                 thumbnail_blob.upload_from_filename(thumbnail_path, content_type="image/jpeg")
-                
+
                 thumbnail_url = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/{thumbnail_gcs_path}"
-                
+
                 gcs_urls = result.get("gcs_urls", {})
                 if isinstance(gcs_urls, str):
                     gcs_urls = json_loads_maybe(gcs_urls, default={})
                 gcs_urls = ensure_dict(gcs_urls)
                 gcs_urls["preview_thumbnail"] = thumbnail_url
                 result["gcs_urls"] = gcs_urls
-                
+
                 # ✅ Ping the database immediately so the frontend React app gets the image
                 execute(
                     "UPDATE reels SET gcs_urls = %s::jsonb WHERE id = %s",
@@ -324,7 +325,7 @@ def background_process(
                     thumbnail_blob = bucket.blob(thumbnail_gcs_path)
                     thumbnail_blob.upload_from_filename(thumbnail_path, content_type="image/jpeg")
                     thumbnail_url = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/{thumbnail_gcs_path}"
-                    
+
                     gcs_urls = result.get("gcs_urls", {})
                     if isinstance(gcs_urls, str): gcs_urls = json_loads_maybe(gcs_urls, default={})
                     gcs_urls = ensure_dict(gcs_urls)
@@ -362,7 +363,7 @@ def background_process(
                     eng_for_json = ensure_dict(summary_for_json.get("english", {}))
                     compact_result["summary_title"] = eng_for_json.get("title", "") or ""
                     compact_result["summary_text"] = eng_for_json.get("summary", "") or ""
-                except Exception as e:
+                except Exception:
                     pass
 
                 for key in ("summary_bullets", "summary_hashtags", "summary_emojis"):
@@ -392,16 +393,32 @@ def background_process(
         logger.info(f"💾 Saving to database with duration={result.get('duration')}")
         insert_reel_into_db(result)
 
+        # 🧠 10. Auto-embed in background — non-blocking, zero impact on reel save
+        def _embed_async():
+            try:
+                from fetcher_api.services.embeddings import embed_reel
+                from fetcher_api.services.semantic_search import save_embedding
+                vec = embed_reel(result)
+                if vec:
+                    save_embedding(result.get("id") or result.get("process_id"), vec)
+                    logger.info("✅ Embedding saved for %s", result.get("process_id"))
+                else:
+                    logger.warning("⚠️ No embedding generated for %s", result.get("process_id"))
+            except Exception as e:
+                logger.warning("⚠️ Embedding failed (non-fatal): %s", e)
+
+        threading.Thread(target=_embed_async, daemon=True).start()
+
         safe_title = display_title
         if isinstance(safe_title, dict):
             safe_title = safe_title.get("english", "Saved Video")
         logger.info(f"✅ Processing Complete: {safe_title}")
 
-        # 10. Cleanup MP4 from GCS
+        # 11. Cleanup MP4 from GCS
         if video_uploaded_successfully:
             cleanup_video_from_gcs(shortcode)
 
-        # 11. Cleanup local files
+        # 12. Cleanup local files
         cleanup_file(video_path)
         if thumbnail_path: cleanup_file(thumbnail_path)
         if temp_dir and os.path.exists(temp_dir): shutil.rmtree(temp_dir)
