@@ -20,8 +20,6 @@ def get_mistral_limits():
         calls_today = usage["calls_today"]
         estimated_remaining = max(0, FREE_TIER_DAILY_LIMIT - calls_today)
 
-        logger.info("📊 Mistral: %s calls today, ~%s remaining", calls_today, estimated_remaining)
-
         return {
             "status": "ok",
             "model": "mistral-small-latest",
