@@ -1,9 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Globe, Crown, Video, LogOut, HelpCircle, Info, Moon, Sun, Check, Zap, Infinity, ChartPie } from 'lucide-react';
+import { User, Globe, Crown, Video, LogOut, HelpCircle, Info, Moon, Sun, Check, Zap, Infinity, ChartPie, Activity, AlertTriangle, BarChart3 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useData } from '../context/DataContext';
+
+interface MistralLimits {
+  status: string;
+  remaining_requests?: string;
+  total_limit?: string;
+  reset_seconds?: string;
+  model?: string;
+  error?: string;
+}
 
 export const Settings: React.FC = () => {
   const navigate = useNavigate();
@@ -11,10 +20,26 @@ export const Settings: React.FC = () => {
   const [lang, setLang] = useState<'EN' | 'FR'>('EN');
   const [darkMode, setDarkMode] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [mistralLimits, setMistralLimits] = useState<MistralLimits | null>(null);
+  const [loadingLimits, setLoadingLimits] = useState(true);
 
   const isPro = user?.isPro || false;
   const clipsUsed = 4;
   const clipsLimit = 5;
+
+  // ✅ Fetch Mistral rate limits
+  useEffect(() => {
+    fetch('/api/rate-limits')
+      .then(res => res.json())
+      .then((data: MistralLimits) => {
+        setMistralLimits(data);
+        setLoadingLimits(false);
+      })
+      .catch(err => {
+        console.error('Failed to load Mistral limits:', err);
+        setLoadingLimits(false);
+      });
+  }, []);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -48,6 +73,42 @@ export const Settings: React.FC = () => {
       </div>
     </button>
   );
+
+  // ✅ Mistral Status Badge
+  const MistralStatus = () => {
+    if (loadingLimits) return <div className="w-5 h-5 bg-gray-200 rounded-full animate-spin" />;
+    
+    if (mistralLimits?.status === 'error') {
+      return (
+        <div className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">
+          <AlertTriangle size={12} />
+          Error
+        </div>
+      );
+    }
+
+    if (!mistralLimits?.remaining_requests) {
+      return <span className="text-xs text-gray-400">N/A</span>;
+    }
+
+    const remaining = parseInt(mistralLimits.remaining_requests);
+    const total = parseInt(mistralLimits.total_limit || '0');
+    const used = total - remaining;
+    const percent = total > 0 ? Math.round((used / total) * 100) : 0;
+
+    const statusColor = remaining > 20 ? 'text-green-600' : remaining > 5 ? 'text-yellow-600' : 'text-red-600';
+    
+    return (
+      <div className="flex flex-col items-end text-xs font-bold text-gray-600 space-y-0.5">
+        <span className={`${statusColor} flex items-center gap-1`}>
+          {remaining}/{total}
+          {remaining <= 5 && <AlertTriangle size={12} />}
+        </span>
+        <span className="text-[10px] text-gray-400">{percent}% used</span>
+        <span className="text-[9px] text-gray-400">{mistralLimits.model}</span>
+      </div>
+    );
+  };
 
   return (
     <div className="w-full pt-8 md:pt-0 pb-0 md:pb-6">
@@ -144,6 +205,50 @@ export const Settings: React.FC = () => {
                 </>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* ✅ NEW: Mistral AI Control Panel Card */}
+        <div className="bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 rounded-3xl shadow-sm p-6 md:p-8 border border-indigo-100">
+          <div className="flex items-start justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+                <BarChart3 size={20} className="text-white" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-gray-900">AI Processing</h3>
+                <p className="text-sm text-gray-500">Mistral API rate limits</p>
+              </div>
+            </div>
+            <MistralStatus />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="p-4 bg-white/70 backdrop-blur-sm rounded-2xl border border-gray-100 text-center">
+              <Activity size={24} className="mx-auto mb-2 text-indigo-600" />
+              <div className="text-lg font-black text-gray-900">{mistralLimits?.remaining_requests || '—'}</div>
+              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Remaining</div>
+            </div>
+            <div className="p-4 bg-white/70 backdrop-blur-sm rounded-2xl border border-gray-100 text-center">
+              <BarChart3 size={24} className="mx-auto mb-2 text-purple-600" />
+              <div className="text-lg font-black text-gray-900">{mistralLimits?.total_limit || '—'}</div>
+              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Total Limit</div>
+            </div>
+            <div className="p-4 bg-white/70 backdrop-blur-sm rounded-2xl border border-gray-100 text-center">
+              <Activity size={24} className="mx-auto mb-2 text-pink-600" />
+              <div className="text-lg font-black text-gray-900">{mistralLimits?.reset_seconds || '—'}s</div>
+              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Reset</div>
+            </div>
+          </div>
+
+          <div className="text-center">
+            <Button 
+              variant="outline" 
+              className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold"
+              onClick={() => window.open('https://console.mistral.ai/', '_blank')}
+            >
+              Open Mistral Console
+            </Button>
           </div>
         </div>
 
