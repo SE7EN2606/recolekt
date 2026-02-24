@@ -152,6 +152,27 @@ logger.info("✅ OAuth initialized with Google provider")
 from fetcher_api.api import register_blueprints
 register_blueprints(app)
 
+# ============================================
+# 🚀 NEW: Rate Limits Endpoint
+# ============================================
+from fetcher_api.services.rate_monitor import get_mistral_limits
+
+@app.route("/api/rate-limits", methods=["GET"])
+def rate_limits():
+    """Control panel: current Mistral rate limit status."""
+    return jsonify(get_mistral_limits())
+
+@app.route("/api/control-panel", methods=["GET"])
+def control_panel():
+    """Admin dashboard metrics."""
+    limits = get_mistral_limits()
+    return jsonify({
+        "mistral": limits,
+        "extractor_version": "universal-v15-guides",
+        "status": "online",
+        "timestamp": "2026-02-24T09:17:00Z",
+    })
+
 # -------------------------------------------------
 # ✅ Global Error Handlers
 # -------------------------------------------------
@@ -208,7 +229,7 @@ def _image_to_gray_array(path: str, max_size: int = 640) -> np.ndarray:
 
 def _mean_abs_diff(a: np.ndarray, b: np.ndarray) -> float:
     if a.shape != b.shape:
-        h, w = min(a.shape[0], b.shape[0]), min(a.shape[1], b.shape[1])
+        h, w = min(a.shape[0], b.shape[1]), min(a.shape[1], b.shape[1])
         a, b = a[:h, :w], b[:h, :w]
     return float(np.mean(np.abs(a - b)))
 
