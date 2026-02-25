@@ -255,6 +255,32 @@ def admin_dashboard():
         },
     })
 
+
+# ============================================
+# 📧 ADMIN DAILY DIGEST ENDPOINT
+# ============================================
+DIGEST_SECRET = os.getenv("ADMIN_DIGEST_SECRET", "")
+
+@app.route("/api/admin/digest", methods=["POST", "GET"])
+def admin_digest():
+    """Trigger daily digest email — protected by ADMIN_DIGEST_SECRET."""
+    secret = request.args.get("secret", "") or request.headers.get("X-Cron-Secret", "")
+    if not DIGEST_SECRET or secret != DIGEST_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        from fetcher_api.services.digest import get_daily_stats, send_admin_digest_email
+        stats = get_daily_stats()
+        sent = send_admin_digest_email(stats)
+        return jsonify({
+            "status": "ok" if sent else "email_failed",
+            "stats": stats,
+        })
+    except Exception as e:
+        logger.error("Digest failed: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
 # ============================================
 # 🖥️ ADMIN HTML PAGE
 # ============================================

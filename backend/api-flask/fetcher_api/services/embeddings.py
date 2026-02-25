@@ -14,45 +14,60 @@ def _get_client():
     return _client
 
 
+def _extract_str(val) -> str:
+    if not val:
+        return ""
+    if isinstance(val, str):
+        return val
+    if isinstance(val, dict):
+        for key in ("en", "english", "fr", "original"):
+            v = val.get(key)
+            if isinstance(v, str) and v.strip():
+                return v
+            if isinstance(v, dict):
+                for subkey in ("title", "summary", "text"):
+                    sv = v.get(subkey)
+                    if isinstance(sv, str) and sv.strip():
+                        return sv
+        for v in val.values():
+            if isinstance(v, str) and v.strip():
+                return v
+    return ""
+
+
 def build_embed_text(reel: dict) -> str:
-    """Combine richest text fields into one string for embedding."""
     parts = []
 
-    title = reel.get("summary_title") or ""
-    if isinstance(title, dict):
-        title = title.get("en") or title.get("fr") or next(iter(title.values()), "")
+    title = _extract_str(reel.get("summary_title"))
     if title:
         parts.append(title)
 
-    topic = reel.get("summary_topic") or ""
+    topic = _extract_str(reel.get("summary_topic"))
     if topic:
         parts.append(topic)
 
-    text = reel.get("summary_text") or ""
-    if isinstance(text, dict):
-        text = text.get("en") or text.get("fr") or next(iter(text.values()), "")
+    text = _extract_str(reel.get("summary_text"))
     if text:
         parts.append(text)
 
-    caption = reel.get("caption") or ""
+    caption = _extract_str(reel.get("caption"))
     if caption:
         parts.append(caption[:500])
 
     transcription = reel.get("transcription") or ""
     if isinstance(transcription, dict):
-        transcription = transcription.get("text") or transcription.get("transcript") or ""
-    if isinstance(transcription, str) and transcription:
+        transcription = transcription.get("transcript") or transcription.get("text") or ""
+    if isinstance(transcription, str) and transcription.strip():
         parts.append(transcription[:1000])
 
     hashtags = reel.get("summary_hashtags") or []
     if isinstance(hashtags, list) and hashtags:
-        parts.append(" ".join(hashtags))
+        parts.append(" ".join(str(h) for h in hashtags))
 
-    return " | ".join(filter(None, parts))
+    return " | ".join(p for p in parts if isinstance(p, str) and p.strip())
 
 
 def embed_text(text: str) -> list | None:
-    """Call OpenAI text-embedding-3-small and return vector."""
     if not text or not text.strip():
         return None
     try:
@@ -67,10 +82,10 @@ def embed_text(text: str) -> list | None:
 
 
 def embed_reel(reel: dict) -> list | None:
-    """Build embed text from reel dict and return vector."""
     text = build_embed_text(reel)
     if not text.strip():
-        logger.warning("⚠️ Empty embed text for reel %s", reel.get("id"))
+        logger.warning("Empty embed text for reel %s", reel.get("id"))
         return None
-    logger.info("🧠 Embedding reel %s (%d chars)", reel.get("id"), len(text))
+    logger.info("Embedding reel %s (%d chars)", reel.get("id"), len(text))
     return embed_text(text)
+
