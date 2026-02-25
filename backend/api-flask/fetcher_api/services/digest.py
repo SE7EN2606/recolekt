@@ -29,7 +29,6 @@ def get_deepgram_minutes_today() -> float | None:
         )
         resp.raise_for_status()
         data = resp.json()
-        # Sum hours from all requests and convert to minutes
         hours = sum(r.get("hours", 0) for r in data.get("requests", []))
         minutes = round(hours * 60, 2)
         return minutes
@@ -55,28 +54,22 @@ def get_daily_stats() -> dict:
         "active_users_today": 0,
         "total_users": 0,
         "deepgram_minutes_today": get_deepgram_minutes_today(),
-        "gcs_total_gb": None,  # placeholder — add GCS billing API later
+        "gcs_total_gb": None,
     }
 
     try:
         with get_db_connection() as conn:
             cur = conn.cursor()
-
             cur.execute("SELECT COUNT(*) FROM reels WHERE created_at >= NOW() - INTERVAL '24 hours'")
             stats["reels_today"] = cur.fetchone()[0]
-
             cur.execute("SELECT COUNT(*) FROM reels")
             stats["reels_total"] = cur.fetchone()[0]
-
             cur.execute("SELECT COUNT(*) FROM users WHERE created_at >= NOW() - INTERVAL '24 hours'")
             stats["new_users_today"] = cur.fetchone()[0]
-
             cur.execute("SELECT COUNT(DISTINCT user_id) FROM reels WHERE created_at >= NOW() - INTERVAL '24 hours'")
             stats["active_users_today"] = cur.fetchone()[0]
-
             cur.execute("SELECT COUNT(*) FROM users")
             stats["total_users"] = cur.fetchone()[0]
-
             cur.close()
     except Exception as e:
         logger.error("Digest DB query failed: %s", e)
@@ -93,8 +86,11 @@ def _fmt(val, suffix="", fallback="—"):
 def build_digest_html(stats: dict) -> str:
     """Build a clean HTML email body from stats dict."""
     ts = stats.get("timestamp", "")[:10]
-    return f"""
-<!DOCTYPE html>
+    errors = stats.get("mistral_errors_today") or 0
+    error_class = "warn" if errors > 0 else "ok"
+    error_val = str(errors)
+
+    return f"""<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8"/>
@@ -108,50 +104,49 @@ def build_digest_html(stats: dict) -> str:
     .row:last-child {{ border-bottom:none; }}
     .label {{ color:#555; }}
     .value {{ font-weight:700; color:#111; }}
-    .ok {{ color:#16a34a; }}
-    .warn {{ color:#d97706; }}
+    .ok {{ color:#16a34a; font-weight:700; }}
+    .warn {{ color:#d97706; font-weight:700; }}
   </style>
 </head>
 <body>
-  <h1>⚡ Recolekt Daily Digest</h1>
-  <div class="sub">{ts} · Auto-generated summary</div>
+  <h1>Recolekt Daily Summary</h1>
+  <div class="sub">{ts} · Auto-generated</div>
 
   <div class="card">
-    <h3>👥 Users</h3>
+    <h3>Users</h3>
     <div class="row"><span class="label">Total users</span><span class="value">{_fmt(stats.get('total_users'))}</span></div>
     <div class="row"><span class="label">Active today</span><span class="value">{_fmt(stats.get('active_users_today'))}</span></div>
     <div class="row"><span class="label">New today</span><span class="value">{_fmt(stats.get('new_users_today'))}</span></div>
   </div>
 
   <div class="card">
-    <h3>🎬 Reels</h3>
+    <h3>Reels</h3>
     <div class="row"><span class="label">Processed today</span><span class="value">{_fmt(stats.get('reels_today'))}</span></div>
     <div class="row"><span class="label">Total reels</span><span class="value">{_fmt(stats.get('reels_total'))}</span></div>
   </div>
 
   <div class="card">
-    <h3>🤖 Mistral AI</h3>
+    <h3>Mistral AI</h3>
     <div class="row"><span class="label">Calls today</span><span class="value">{_fmt(stats.get('mistral_calls_today'))}</span></div>
     <div class="row"><span class="label">Tokens estimated</span><span class="value">{_fmt(stats.get('mistral_tokens_today'))}</span></div>
-    <div class="row"><span class="label">Errors today</span><span class="value {'warn' if (stats.get('mistral_errors_today') or 0) > 0 else 'ok'}">{_fmt(stats.get('mistral_errors_today'), fallback='0')}</span></div>
+    <div class="row"><span class="label">Errors today</span><span class="{error_class}">{error_val}</span></div>
   </div>
 
   <div class="card">
-    <h3>🎙️ Deepgram</h3>
+    <h3>Deepgram</h3>
     <div class="row"><span class="label">Minutes transcribed today</span><span class="value">{_fmt(stats.get('deepgram_minutes_today'), suffix=' min')}</span></div>
   </div>
 
   <div class="card">
-    <h3>☁️ Storage (GCS)</h3>
+    <h3>Storage (GCS)</h3>
     <div class="row"><span class="label">Bucket size</span><span class="value">{_fmt(stats.get('gcs_total_gb'), suffix=' GB')}</span></div>
   </div>
 
   <div style="font-size:11px;color:#bbb;text-align:center;margin-top:32px;">
-    Recolekt Admin · api.recolekt.app
+    Recolekt · api.recolekt.app
   </div>
 </body>
-</html>
-"""
+</html>"""
 
 
 def send_admin_digest_email(stats: dict) -> bool:
@@ -170,9 +165,9 @@ def send_admin_digest_email(stats: dict) -> bool:
     html = build_digest_html(stats)
 
     payload = {
-        "from": os.getenv("RESEND_FROM_EMAIL", "admin@recolekt.app"),
+        "from": os.getenv("RESEND_FROM_EMAIL", "digest@recolekt.app"),
         "to": [to_email],
-        "subject": f"⚡ Recolekt Daily Digest — {date_str}",
+        "subject": f"Recolekt Daily Summary - {date_str}",
         "html": html,
     }
 
