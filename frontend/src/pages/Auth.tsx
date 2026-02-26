@@ -3,7 +3,9 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, User, ArrowLeft, AlertCircle, KeyRound } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth } from '../context/AuthContext';
-import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
+import { useTranslation } from 'react-i18next';
+
+import LogoWhite from '../assets/recolekt_logo_white.png';
 
 const RAW_API_BASE =
   import.meta.env.VITE_API_BASE ||
@@ -31,9 +33,8 @@ export const Auth: React.FC = () => {
   const [view, setView] = useState<ViewState>('login');
   const [hasPendingVideo, setHasPendingVideo] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { t } = useTranslation(['auth', 'common']); // 🔥 HOOK
+  const { t } = useTranslation(['auth', 'common']); 
   
-  // States to persist between steps
   const [resetEmail, setResetEmail] = useState('');
   const [verificationEmail, setVerificationEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
@@ -68,7 +69,6 @@ export const Auth: React.FC = () => {
         else throw new Error("Authentication failed");
         
       } else if (view === 'register') {
-        // ✅ FIX: Pass the name collected from the form!
         const res = await registerUser(email, password, name);
         if (res) {
           setVerificationEmail(email);
@@ -121,31 +121,31 @@ export const Auth: React.FC = () => {
   return (
     <div className="min-h-screen w-full relative bg-white flex flex-col md:flex-row">
       <div className="fixed inset-0 flex pointer-events-none">
-        <div className="hidden md:block w-1/2 h-full bg-[#0B0F19] relative">
-           <div className="absolute top-0 left-0 w-full h-full bg-[url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop')] bg-cover bg-center opacity-20 mix-blend-overlay"></div>
-           <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-transparent to-[#0B0F19]"></div>
-        </div>
+        <div className="hidden md:block w-1/2 h-full bg-[#0B0F19] relative"></div>
         <div className="w-full md:w-1/2 h-full bg-white"></div>
       </div>
 
-      <div className="relative z-10 w-full max-w-[1100px] mx-auto min-h-screen flex flex-col md:flex-row">
+      <div className="relative z-10 w-full max-w-[1280px] mx-auto min-h-screen flex flex-col md:flex-row px-6 md:px-8">
+        
         <div className="hidden md:flex w-1/2 flex-col justify-between py-16 pr-16 text-white h-full">
           <div>
             <Link to="/" className="inline-block hover:opacity-80 transition-opacity">
-              <img src="https://raw.githubusercontent.com/SE7EN2606/recolekt/refs/heads/main/frontend/assets/recolekt_logo_white.png" alt="recolekt" className="h-10" />
+              <img src={LogoWhite} alt="recolekt" className="h-10 object-contain" />
             </Link>
           </div>
           <div className="max-w-lg">
             <h1 className="text-5xl font-black tracking-tight mb-6 leading-tight">
-              {t('auth:inspiration').split('.')[0]} <br/>
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-secondary-500">{t('auth:inspiration').split('.')[1] || 'digital inspiration.'}</span>
+              {t('auth:inspirationTop')}{' '}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-secondary-500">
+                {t('auth:inspirationHighlight')}
+              </span>
             </h1>
             <p className="text-gray-400 text-lg leading-relaxed font-medium">
               {t('auth:creatorsJoin')}
             </p>
           </div>
           <div className="flex gap-4 text-xs font-black uppercase tracking-widest text-gray-500">
-            <span>© 2025 Recolekt</span>
+            <span>© 2025 recolekt</span>
             <Link to="/help" className="hover:text-white transition-colors">{t('auth:help')}</Link>
             <Link to="/help?section=contact" className="hover:text-white transition-colors">{t('auth:contact')}</Link>
           </div>
@@ -161,7 +161,7 @@ export const Auth: React.FC = () => {
             <div className="w-full max-w-sm">
                 
                 {hasPendingVideo && view !== 'verify' && (
-                  <div className="mb-4 p-3 rounded-xl flex items-center justify-center gap-2 border transition-all" style={{ backgroundColor: view === 'login' ? 'rgba(225, 29, 72, 0.05)' : 'rgba(139, 92, 246, 0.05)', borderColor: view === 'login' ? 'rgba(225, 29, 72, 0.2)' : 'rgba(139, 92, 246, 0.2)', color: view === 'login' ? '#e11d48' : '#8b5cf6' }}>
+                  <div className="mt-8 mb-4 p-3 rounded-xl flex items-center justify-center gap-2 border transition-all" style={{ backgroundColor: view === 'login' ? 'rgba(225, 29, 72, 0.05)' : 'rgba(139, 92, 246, 0.05)', borderColor: view === 'login' ? 'rgba(225, 29, 72, 0.2)' : 'rgba(139, 92, 246, 0.2)', color: view === 'login' ? '#e11d48' : '#8b5cf6' }}>
                     {view === 'login' ? <AlertCircle size={18} /> : <DownloadIcon color="#8b5cf6" />}
                     <p className="text-xs font-bold whitespace-nowrap">
                       {view === 'login' ? t('auth:loginToSave') : t('auth:registerToSave')}
@@ -177,21 +177,20 @@ export const Auth: React.FC = () => {
                     {view === 'reset' && t('auth:newPassword')}
                     {view === 'verify' && t('auth:verifyEmail')}
                   </h2>
-                  <p className="text-gray-500 text-sm font-medium">
-                    {view === 'login' && t('auth:enterDetails')}
-                    {view === 'register' && t('auth:startCurating')}
-                    {view === 'forgot' && t('auth:sendCode')}
-                    {view === 'reset' && t('auth:enter6Digit')}
-                    {view === 'verify' && t('auth:enterEmailCode')}
-                  </p>
                 </div>
 
                 {(view === 'login' || view === 'register') && (
                   <>
-                    <button type="button" onClick={signInWithGoogle} className="w-full flex items-center justify-center gap-3 p-3 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 hover:bg-gray-50 shadow-sm mb-4">
-                      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+                    {/* ✅ BEAUTIFUL GLASS HOVER EFFECT APPLIED HERE */}
+                    <button 
+                      type="button" 
+                      onClick={signInWithGoogle} 
+                      className="group w-full flex items-center justify-center gap-3 p-3 mb-4 bg-white/40 hover:bg-white/80 text-gray-800 font-bold rounded-xl transition-all duration-300 border border-gray-200 hover:border-primary-200 backdrop-blur-xl shadow-sm hover:shadow-lg hover:shadow-primary-600/10 hover:-translate-y-1 active:scale-95"
+                    >
+                      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" />
                       <span>{t('auth:googleContinue')}</span>
                     </button>
+                    
                     <div className="relative mb-6">
                       <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
                       <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-4 text-gray-400 font-black tracking-widest">{t('auth:emailContinue')}</span></div>
@@ -261,8 +260,8 @@ export const Auth: React.FC = () => {
 
                 <div className="mt-4 text-center">
                   <p className="text-gray-500 text-sm font-medium">
-                    {view === 'login' ? t('auth:noAccount') : t('auth:backTo')}
-                    <button onClick={() => setView(view === 'login' ? 'register' : 'login')} className="ml-1 font-black hover:underline" style={{ color: '#e11d48' }}>
+                    {view === 'login' ? t('auth:noAccount') : t('auth:backTo')}{' '}
+                    <button onClick={() => setView(view === 'login' ? 'register' : 'login')} className="font-black hover:underline" style={{ color: '#e11d48' }}>
                       {view === 'login' ? t('common:signUp') : t('common:signIn')}
                     </button>
                   </p>

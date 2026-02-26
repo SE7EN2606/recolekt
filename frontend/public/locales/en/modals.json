@@ -1,0 +1,22 @@
+{
+  "collections": "Collections",
+  "myProfile": "My Profile",
+  "saveNewVideo": "Save a New Video",
+  "pastePlaceholder": "Insert Instagram link here",
+  "pasteTitle": "Paste from clipboard",
+  "importFailed": "Failed to import video",
+  "errorAlreadySaved": "This video has already been saved.",
+  "errorNotAuth": "Not authenticated. Please log in again.",
+  "errorInvalidUrl": "Please provide a valid URL.",
+  "errorServer": "Failed to process video. Please try again.",
+  "manageCollections": "Manage Collections",
+  "manageCollectionsDesc": "Rename, delete or add folders",
+  "noCollectionsYet": "No collections yet.",
+  "items": "items",
+  "addSubfolder": "Add subfolder",
+  "parentCollection": "Parent collection",
+  "noParent": "No parent (top level)",
+  "subCollectionNamePlaceholder": "Sub-collection name...",
+  "collectionNamePlaceholder": "Collection name...",
+  "createNewCollection": "Create New Collection"
+}

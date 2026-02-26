@@ -1,0 +1,22 @@
+{
+  "collections": "Collections",
+  "myProfile": "Mon profil",
+  "saveNewVideo": "Enregistrer une nouvelle vidéo",
+  "pastePlaceholder": "Insérez le lien Instagram ici",
+  "pasteTitle": "Coller depuis le presse-papiers",
+  "importFailed": "Échec de l'importation de la vidéo",
+  "errorAlreadySaved": "Cette vidéo a déjà été enregistrée.",
+  "errorNotAuth": "Non authentifié. Veuillez vous reconnecter.",
+  "errorInvalidUrl": "Veuillez fournir un lien valide.",
+  "errorServer": "Échec du traitement de la vidéo. Veuillez réessayer.",
+  "manageCollections": "Gérer les collections",
+  "manageCollectionsDesc": "Renommer, supprimer ou ajouter des dossiers",
+  "noCollectionsYet": "Aucune collection pour le moment.",
+  "items": "éléments",
+  "addSubfolder": "Ajouter un sous-dossier",
+  "parentCollection": "Collection parente",
+  "noParent": "Aucun parent (niveau principal)",
+  "subCollectionNamePlaceholder": "Nom du sous-dossier...",
+  "collectionNamePlaceholder": "Nom de la collection...",
+  "createNewCollection": "Créer une nouvelle collection"
+}

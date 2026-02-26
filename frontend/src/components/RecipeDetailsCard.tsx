@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { ChefHat, Clock, Flame, Users, Lightbulb } from 'lucide-react';
-import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
+import { useTranslation } from 'react-i18next';
 
 type RawIngredient =
   | string
@@ -71,11 +71,10 @@ function parseIngredientString(text: string) {
   };
 }
 
-// Round numeric quantities to whole numbers
 function formatQuantity(q: string): string {
   const n = parseFloat(q.replace(',', '.'));
   if (!Number.isFinite(n)) return q;
-  return String(Math.round(n)); // nearest integer for clean display
+  return String(Math.round(n));
 }
 
 interface IngredientRowProps {
@@ -100,9 +99,7 @@ const IngredientRow: React.FC<IngredientRowProps> = ({
       ? parseIngredientString(raw)
       : {
           ...raw,
-          ...(raw.item || raw.name
-            ? {}
-            : parseIngredientString(String(raw))),
+          ...(raw.item || raw.name ? {} : parseIngredientString(String(raw))),
         };
 
   const baseLabel = (base.item || base.name || '').trim();
@@ -142,33 +139,23 @@ const IngredientRow: React.FC<IngredientRowProps> = ({
     'recipe-ingredient-row flex items-start gap-3 py-1 cursor-pointer select-none' +
     (checked ? ' recipe-ingredient-row--checked' : '');
 
-  const handleClick = () => onToggle(id);
-
   return (
-    <li className={rowClass} onClick={handleClick}>
+    <li className={rowClass} onClick={() => onToggle(id)}>
       <div className="mt-1.5 min-w-[16px]">
         <div className="recipe-ingredient-bullet" />
       </div>
       <div className="text-sm font-medium leading-relaxed">
         {quantity && (
-          <span className="recipe-ingredient-qty mr-1">
-            {quantity}
-          </span>
+          <span className="recipe-ingredient-qty mr-1">{quantity}</span>
         )}
         {unit && (
-          <span className="recipe-ingredient-unit mr-1.5">
-            {unit}
-          </span>
+          <span className="recipe-ingredient-unit mr-1.5">{unit}</span>
         )}
         {mainLabel && (
-          <span className="recipe-ingredient-text">
-            {mainLabel}
-          </span>
+          <span className="recipe-ingredient-text">{mainLabel}</span>
         )}
         {note && (
-          <span className="recipe-ingredient-note ml-1">
-            ({note})
-          </span>
+          <span className="recipe-ingredient-note ml-1">({note})</span>
         )}
       </div>
     </li>
@@ -183,14 +170,16 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   scaleQuantity,
   onServingScaleChange,
 }) => {
-  const { t } = useTranslation(['videoDetail']); // 🔥 HOOK
+  const { t } = useTranslation(['videoDetail']);
 
   const prep = (recipe.prep_time || '').trim() || '—';
   const cook = (recipe.cook_time || '').trim() || '—';
 
+  // ✅ Safe fallbacks for all array fields
   const groups: IngredientGroup[] =
-    (recipe.ingredients_groups as IngredientGroup[] | null) || [];
-  const flat: RawIngredient[] = recipe.ingredients || [];
+    Array.isArray(recipe.ingredients_groups) ? recipe.ingredients_groups : [];
+  const flat: RawIngredient[] =
+    Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
 
   const hasGroups = groups.length > 0;
   const hasFlat = !hasGroups && flat.length > 0;
@@ -204,17 +193,10 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   }, [recipe.servings]);
 
   const currentScale = servingScale || 1;
-  const currentServings = Math.max(
-    1,
-    Math.round(baseServings * currentScale),
-  );
+  const currentServings = Math.max(1, Math.round(baseServings * currentScale));
 
-  const [checkedIds, setCheckedIds] = React.useState<Set<string>>(
-    () => new Set(),
-  );
-  const [checkedSteps, setCheckedSteps] = React.useState<Set<number>>(
-    () => new Set(),
-  );
+  const [checkedIds, setCheckedIds] = React.useState<Set<string>>(() => new Set());
+  const [checkedSteps, setCheckedSteps] = React.useState<Set<number>>(() => new Set());
 
   const handleToggle = (id: string) => {
     setCheckedIds((prev) => {
@@ -241,8 +223,12 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     });
   };
 
+  // ✅ Safe arrays for instructions, tips, notes
+  const instructions = Array.isArray(recipe.instructions) ? recipe.instructions : [];
+  const tips = Array.isArray(recipe.tips) ? recipe.tips : [];
+  const notes = Array.isArray(recipe.notes) ? recipe.notes : [];
+
   return (
-    // ✅ Added mt-4 for extra top spacing above the card
     <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
       {/* Header */}
       <div className="bg-tertiary-50/50 p-5 border-b border-gray-50 flex items-center gap-3">
@@ -252,37 +238,29 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         </h3>
       </div>
 
-      {/* Meta grid with icons */}
+      {/* Meta grid */}
       <div className="grid grid-cols-3 divide-x divide-gray-50 border-b border-gray-50">
-        {/* Prep */}
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Clock className="recipe-meta-icon mb-1" size={16} />
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
             {t('videoDetail:prep')}
           </span>
-          <span className="text-sm font-bold text-gray-900">
-            {prep}
-          </span>
+          <span className="text-sm font-bold text-gray-900">{prep}</span>
         </div>
 
-        {/* Cook */}
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Flame className="recipe-meta-icon mb-1" size={16} />
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
             {t('videoDetail:cook')}
           </span>
-          <span className="text-sm font-bold text-gray-900">
-            {cook}
-          </span>
+          <span className="text-sm font-bold text-gray-900">{cook}</span>
         </div>
 
-        {/* Servings */}
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Users className="recipe-meta-icon mb-1" size={16} />
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
             {t('videoDetail:servings')}
           </span>
-          {/* ✅ FIXED: flex-row and whitespace-nowrap to prevent line breaks */}
           <div className="flex flex-row items-center justify-center gap-2 mt-0.5 whitespace-nowrap w-full">
             <button
               type="button"
@@ -321,7 +299,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                   {group.title}
                 </h5>
                 <ul className="space-y-1">
-                  {group.items.map((it, itemIdx) => {
+                  {/* ✅ THE FIX: guard group.items with ?? [] */}
+                  {(group.items ?? []).map((it, itemIdx) => {
                     const id = `g${groupIdx}-i${itemIdx}`;
                     return (
                       <IngredientRow
@@ -340,69 +319,64 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
             ))}
 
           {hasFlat && (
-            <div className="relative">
-              <ul className="space-y-1">
-                {flat.map((it, idx) => {
-                  const id = `f${idx}`;
-                  return (
-                    <IngredientRow
-                      key={id}
-                      id={id}
-                      raw={it}
-                      servingScale={currentScale}
-                      scaleQuantity={scaleQuantity}
-                      checked={checkedIds.has(id)}
-                      onToggle={handleToggle}
-                    />
-                  );
-                })}
-              </ul>
-            </div>
+            <ul className="space-y-1">
+              {flat.map((it, idx) => {
+                const id = `f${idx}`;
+                return (
+                  <IngredientRow
+                    key={id}
+                    id={id}
+                    raw={it}
+                    servingScale={currentScale}
+                    scaleQuantity={scaleQuantity}
+                    checked={checkedIds.has(id)}
+                    onToggle={handleToggle}
+                  />
+                );
+              })}
+            </ul>
           )}
         </div>
       </div>
 
-      {/* Directions – clickable, strikethrough */}
-      {Array.isArray(recipe.instructions) &&
-        recipe.instructions.length > 0 && (
-          <div className="p-6 bg-gray-50/30">
-            <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">
-              {t('videoDetail:directions')}
-            </h4>
-            <div className="space-y-6">
-              {recipe.instructions.map((step, i) => {
-                const isChecked = checkedSteps.has(i);
-                return (
-                  <div
-                    key={i}
-                    className={`flex gap-4 items-start cursor-pointer select-none transition-opacity ${
-                      isChecked ? 'opacity-60' : ''
-                    }`}
-                    onClick={() => handleStepToggle(i)}
-                  >
-                    <div className="flex-shrink-0 pt-[0.1rem]">
-                      <div className="recipe-step-number-circle">
-                        <span className="recipe-step-number">
-                          {i + 1}
-                        </span>
-                      </div>
+      {/* Directions */}
+      {instructions.length > 0 && (
+        <div className="p-6 bg-gray-50/30">
+          <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">
+            {t('videoDetail:directions')}
+          </h4>
+          <div className="space-y-6">
+            {instructions.map((step, i) => {
+              const isChecked = checkedSteps.has(i);
+              return (
+                <div
+                  key={i}
+                  className={`flex gap-4 items-start cursor-pointer select-none transition-opacity ${
+                    isChecked ? 'opacity-60' : ''
+                  }`}
+                  onClick={() => handleStepToggle(i)}
+                >
+                  <div className="flex-shrink-0 pt-[0.1rem]">
+                    <div className="recipe-step-number-circle">
+                      <span className="recipe-step-number">{i + 1}</span>
                     </div>
-                    <p
-                      className={`text-sm font-medium text-gray-600 leading-relaxed ${
-                        isChecked ? 'line-through' : ''
-                      }`}
-                    >
-                      {step}
-                    </p>
                   </div>
-                );
-              })}
-            </div>
+                  <p
+                    className={`text-sm font-medium text-gray-600 leading-relaxed ${
+                      isChecked ? 'line-through' : ''
+                    }`}
+                  >
+                    {step}
+                  </p>
+                </div>
+              );
+            })}
           </div>
-        )}
+        </div>
+      )}
 
       {/* Tips & Notes */}
-      {(recipe.tips?.length || recipe.notes?.length) && (
+      {(tips.length > 0 || notes.length > 0) && (
         <div className="bg-yellow-50/50 border-t border-yellow-100 p-6">
           <div className="flex items-center gap-2 mb-4">
             <Lightbulb size={18} className="text-yellow-600" />
@@ -412,29 +386,24 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
 
           <div className="space-y-4">
-            {recipe.tips && recipe.tips.length > 0 && (
+            {tips.length > 0 && (
               <ul className="space-y-2">
-                {recipe.tips.map((tip, i) => (
+                {tips.map((tip, i) => (
                   <li
                     key={`tip-${i}`}
                     className="flex items-start gap-2 text-sm text-gray-700"
                   >
-                    <span className="text-yellow-500 font-bold">
-                      •
-                    </span>
+                    <span className="text-yellow-500 font-bold">•</span>
                     <span className="italic">{tip}</span>
                   </li>
                 ))}
               </ul>
             )}
 
-            {recipe.notes && recipe.notes.length > 0 && (
+            {notes.length > 0 && (
               <div className="pt-2">
-                {recipe.notes.map((note, i) => (
-                  <p
-                    key={`note-${i}`}
-                    className="text-sm text-gray-500 leading-relaxed"
-                  >
+                {notes.map((note, i) => (
+                  <p key={`note-${i}`} className="text-sm text-gray-500 leading-relaxed">
                     <span className="font-bold text-gray-600">
                       {t('videoDetail:noteLabel')}
                     </span>{' '}

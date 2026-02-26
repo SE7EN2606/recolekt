@@ -1,4 +1,6 @@
 {
+  "signIn": "Sign In",
+  "signUp": "Sign Up",
   "cancel": "Cancel",
   "delete": "Delete",
   "search": "Search...",
@@ -15,8 +17,11 @@
   "terms": "Terms",
   "save": "Save",
   "processing": "Processing...",
+  "sure": "Sure?",
+  "rename": "Rename",
+  "add": "Add",
   "backToHome": "Back to Homepage",
   "errorOccurred": "An error occurred.",
   "footerSlogan": "Save and organize your favorite reels.",
-  "footerCopyright": "© 2025 recolekt. Respecting privacy and platform terms of service."
+  "footerCopyright": "© 2025 recolekt."
 }

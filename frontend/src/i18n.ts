@@ -20,11 +20,12 @@ i18n
       'sidebar', 
       'videoCard', 
       'videoDetail', 
-      'account', // ✅ Ensure this is here
+      'account',
       'auth',
       'modals',
       'home',
-      'features'
+      'features',
+      'billing'
     ],
     defaultNS: 'common',
 

@@ -1,4 +1,6 @@
 {
+  "signIn": "Se connecter",
+  "signUp": "S'inscrire",
   "cancel": "Annuler",
   "delete": "Supprimer",
   "search": "Rechercher...",
@@ -15,6 +17,9 @@
   "terms": "Conditions",
   "save": "Enregistrer",
   "processing": "Traitement...",
+  "sure": "Sûr ?",
+  "rename": "Renommer",
+  "add": "Ajouter",
   "backToHome": "Retour à l'accueil",
   "errorOccurred": "Une erreur est survenue.",
   "footerSlogan": "Sauvegardez et organisez vos reels préférés.",

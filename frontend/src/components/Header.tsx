@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Globe, Check } from 'lucide-react';
+import { motion } from 'motion/react';
 import { Button } from './Button';
-import { MobileMenu } from './MobileMenu'; 
-import { InputModal } from './InputModal';
+import { MobileMenu } from './MobileMenu';
 import { MobileBottomNav } from './MobileBottomNav';
+import { InputModal } from './InputModal';
 import { useAuth } from '../context/AuthContext';
-import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
+import { useTranslation } from 'react-i18next';
 import LogoBlack from '../assets/recolekt_logo_black.png';
 import LogoIcon from '../assets/recolekt_icon.png';
 
@@ -14,19 +15,24 @@ export const Header: React.FC = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [hoveredPath, setHoveredPath] = useState<string | null>(null);
+  
+  // ✅ State for dropdowns
+  const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
+  const [isMobileLangMenuOpen, setIsMobileLangMenuOpen] = useState(false);
+  
   const location = useLocation();
   const navigate = useNavigate();
 
   const { user, isAuthenticated, loading } = useAuth();
-  const { t } = useTranslation(['header', 'common', 'gallery']); // 🔥 HOOK
+  
+  // ✅ We use i18n directly to change the language
+  const { t, i18n } = useTranslation(['header', 'common', 'gallery']);
 
   useEffect(() => {
     const handleScroll = () => {
       const scrolled = window.scrollY > 20;
-      setIsScrolled(prev => {
-        if (prev !== scrolled) return scrolled;
-        return prev;
-      });
+      setIsScrolled(prev => prev !== scrolled ? scrolled : prev);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
@@ -37,117 +43,230 @@ export const Header: React.FC = () => {
   const displayPicture = user?.picture || meta?.avatar_url;
   const initials = (displayName?.charAt?.(0) || 'U').toUpperCase();
 
-  const handleQuickAdd = (url: string) => {
+  const showAuthedUI = !loading && isAuthenticated;
+  const showSignedOutUI = !loading && !isAuthenticated;
+
+  const handleQuickAdd = (_url: string) => {
     alert(t('header:videoSaved'));
     setIsAddModalOpen(false);
   };
 
-  const showAuthedUI = !loading && isAuthenticated;
-  const showSignedOutUI = !loading && !isAuthenticated;
+  const handleLanguageChange = (lng: string) => {
+    i18n.changeLanguage(lng);
+    setIsLangMenuOpen(false);
+    setIsMobileLangMenuOpen(false);
+  };
+
+  // Helper to get current language code safely
+  const currentLang = i18n.language?.substring(0, 2).toLowerCase() || 'en';
+
+  const NavPill = ({ to, label }: { to: string; label: string }) => {
+    // Strict active check: only true if exactly on this path
+    const isActive = location.pathname === to;
+
+    return (
+      <Link
+        to={to}
+        onMouseEnter={() => setHoveredPath(to)}
+        className={`
+          relative px-6 py-2.5 rounded-full font-bold transition-all duration-300 tracking-tight
+          ${isScrolled ? 'text-[14.5px]' : 'text-[16px]'}
+          ${isActive ? 'text-primary-600' : 'text-gray-500 hover:text-primary-600'}
+        `}
+      >
+        {hoveredPath === to && (
+          <motion.span
+            layoutId="nav-pill-background"
+            className="absolute inset-0 bg-gray-100/50 border-2 border-gray-200 rounded-full -z-10 shadow-sm backdrop-blur-[2px]"
+            transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+          />
+        )}
+        <span className="relative z-10">{label}</span>
+      </Link>
+    );
+  };
 
   return (
     <>
       <header
-        className={`fixed top-0 z-40 w-full border-b bg-white transition-all duration-300 ease-in-out ${
-          isScrolled
-            ? 'bg-white/90 backdrop-blur-md border-gray-200 shadow-sm h-[60px] md:h-[70px]'
-            : 'border-transparent h-[85px] md:h-[90px]'
-        }`}
+        className={`
+          fixed top-0 left-0 right-0 z-40
+          transition-all duration-500 ease-[cubic-bezier(0.25,0.8,0.25,1)]
+          ${isScrolled
+            ? 'glass-header py-3 shadow-sm h-[65px] md:h-[70px]'
+            : 'bg-transparent py-6 h-[80px] md:h-[95px]'}
+        `}
       >
-        <div className="max-w-[1100px] mx-auto px-4 md:px-6 lg:px-8 h-full">
+        {/* MATCHED TO APP.TSX: max-w-[1280px] and px-4 md:px-6 */}
+        <div className="max-w-[1280px] mx-auto px-4 md:px-6 h-full">
           <div className="h-full flex items-center justify-between">
-            <Link to={showAuthedUI ? '/gallery' : '/'} className="flex items-center gap-2 flex-shrink-0 z-50">
+
+            {/* Logo - Aligned to the 1280px grid edge */}
+            <Link
+              to={showAuthedUI ? '/gallery' : '/'}
+              className="flex items-center z-50 group shrink-0"
+            >
               <img
                 src={isMobileMenuOpen ? LogoIcon : LogoBlack}
-                alt="Recolekt"
-                className={`transition-all duration-300 md:hidden object-contain ${isScrolled ? 'h-6' : 'h-8'}`}
+                alt="recolekt"
+                className={`transition-all duration-500 md:hidden object-contain ${isScrolled ? 'h-6' : 'h-8'}`}
               />
               <img
                 src={LogoBlack}
-                alt="Recolekt"
-                className={`hidden md:block transition-all duration-300 object-contain ${isScrolled ? 'h-7' : 'h-9'}`}
+                alt="recolekt"
+                className={`hidden md:block transition-all duration-500 object-contain ${isScrolled ? 'h-8' : 'h-10'}`}
               />
             </Link>
 
-            <nav className="hidden md:flex items-center gap-6 lg:gap-8 transition-all duration-300">
-              {loading ? (
-                <>
-                  <div className="h-4 w-16 bg-gray-200 rounded animate-pulse" />
-                  <div className="h-4 w-20 bg-gray-200 rounded animate-pulse" />
-                  <div className="h-4 w-20 bg-gray-200 rounded animate-pulse" />
-                </>
-              ) : showAuthedUI ? (
-                <>
-                  <Link
-                    to="/gallery"
-                    className={`font-medium transition-all duration-300 ${location.pathname.includes('/gallery') && !location.pathname.includes('/favorites') ? 'text-primary-600' : 'text-gray-600 hover:text-primary-600'} ${isScrolled ? 'text-sm' : 'text-base'}`}
-                  >
-                    {t('gallery:gallery')}
-                  </Link>
-                  <Link
-                    to="/gallery/favorites"
-                    className={`font-medium transition-all duration-300 ${location.pathname.includes('/favorites') ? 'text-primary-600' : 'text-gray-600 hover:text-primary-600'} ${isScrolled ? 'text-sm' : 'text-base'}`}
-                  >
-                    {t('gallery:favorites')}
-                  </Link>
-                  <Link
-                    to="/settings/app"
-                    className={`font-medium transition-all duration-300 ${
-                      location.pathname.includes('/settings/app') ? 'text-primary-600' : 'text-gray-600 hover:text-primary-600'
-                    } ${isScrolled ? 'text-sm' : 'text-base'}`}
-                  >
-                    {t('header:settings')}
-                  </Link>
-                </>
-              ) : (
-                <>
-                  <Link to="/" className={`text-gray-600 hover:text-primary-600 font-medium transition-all duration-300 ${isScrolled ? 'text-sm' : 'text-base'}`}>
-                    {t('header:home')}
-                  </Link>
-                  <Link to="/features" className={`text-gray-600 hover:text-primary-600 font-medium transition-all duration-300 ${isScrolled ? 'text-sm' : 'text-base'}`}>
-                    {t('common:features')}
-                  </Link>
-                  <Link to="/billing" className={`text-gray-600 hover:text-primary-600 font-medium transition-all duration-300 ${isScrolled ? 'text-sm' : 'text-base'}`}>
-                    {t('common:pricing')}
-                  </Link>
-                </>
-              )}
-            </nav>
-
-            <div className="flex items-center gap-3 lg:gap-4">
-              <div className="hidden md:flex items-center gap-3">
+            {/* Desktop Navigation & Actions */}
+            <div className="hidden md:flex items-center gap-8">
+              
+              <nav
+                className="flex items-center"
+                onMouseLeave={() => setHoveredPath(null)}
+              >
                 {loading ? (
-                  <>
-                    <div className="w-9 h-9 rounded-full bg-gray-200 animate-pulse" />
-                    <div className="h-9 w-24 rounded-lg bg-gray-200 animate-pulse" />
-                  </>
+                  <div className="flex items-center gap-4">
+                    <div className="h-4 w-16 bg-gray-100/50 rounded animate-pulse" />
+                    <div className="h-4 w-20 bg-gray-100/50 rounded animate-pulse" />
+                  </div>
                 ) : showAuthedUI ? (
-                  <button
-                    onClick={() => navigate('/settings/account')}
-                    className="relative w-9 h-9 rounded-full bg-primary-600 flex items-center justify-center text-white font-bold text-sm ring-2 ring-gray-100 hover:ring-primary-500 transition-all overflow-hidden shadow-sm"
-                    title={t('header:accountSettings')}
-                  >
-                    {displayPicture ? (
-                      <img src={displayPicture} alt={displayName} className="w-full h-full object-cover" />
-                    ) : (
-                      <span>{initials}</span>
-                    )}
-                  </button>
+                  <>
+                    <NavPill to="/gallery" label={t('gallery:gallery')} />
+                    <NavPill to="/gallery/favorites" label={t('gallery:favorites')} />
+                    <NavPill to="/settings/app" label={t('header:settings')} />
+                  </>
+                ) : (
+                  <>
+                    <NavPill to="/" label={t('header:home')} />
+                    <NavPill to="/features" label={t('common:features')} />
+                    <NavPill to="/billing" label={t('common:pricing')} />
+                  </>
+                )}
+              </nav>
+
+              <div className="h-5 w-px bg-gray-400/30" />
+
+              <div className="flex items-center gap-4">
+                {showAuthedUI ? (
+                  <Link to="/settings/account" className="relative group">
+                    <div className="w-11 h-11 rounded-full p-[2px] bg-gradient-to-br from-white/50 to-white/20 backdrop-blur-md border border-white/40 group-hover:border-primary-300 transition-colors shadow-sm overflow-hidden">
+                      <div className="w-full h-full bg-white/80 rounded-full flex items-center justify-center overflow-hidden">
+                        {displayPicture ? (
+                          <img src={displayPicture} alt={displayName} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-primary-600 to-primary-700 flex items-center justify-center text-white text-sm font-bold">
+                            {initials}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </Link>
                 ) : showSignedOutUI ? (
-                  <Button variant="primary" size="sm" className="h-9 px-5" onClick={() => navigate('/auth')}>
-                    {t('common:signIn')}
-                  </Button>
+                  <div className="flex items-center gap-4">
+                    
+                    {/* ✅ Desktop Language Dropdown */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setIsLangMenuOpen(!isLangMenuOpen)}
+                        className="flex items-center gap-1.5 px-2 py-1 mr-2 text-gray-400 hover:text-primary-600 transition-colors font-bold text-xs uppercase"
+                      >
+                        <Globe size={18} />
+                        <span className="hidden lg:inline-block">{currentLang}</span>
+                      </button>
+
+                      {isLangMenuOpen && (
+                        <>
+                          {/* Invisible overlay to close dropdown when clicking outside */}
+                          <div 
+                            className="fixed inset-0 z-40" 
+                            onClick={() => setIsLangMenuOpen(false)} 
+                          />
+                          <div className="absolute top-full mt-4 left-1/2 -translate-x-1/2 w-40 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 z-50 animate-fade-in">
+                            <button
+                              onClick={() => handleLanguageChange('en')}
+                              className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold hover:bg-gray-50 transition-colors ${currentLang === 'en' ? 'text-primary-600' : 'text-gray-700'}`}
+                            >
+                              English
+                              {currentLang === 'en' && <Check size={16} />}
+                            </button>
+                            <button
+                              onClick={() => handleLanguageChange('fr')}
+                              className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold hover:bg-gray-50 transition-colors ${currentLang === 'fr' ? 'text-primary-600' : 'text-gray-700'}`}
+                            >
+                              Français
+                              {currentLang === 'fr' && <Check size={16} />}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <Link
+                      to="/auth"
+                      className={`font-bold text-gray-900 hover:text-primary-600 transition-all duration-300 ${isScrolled ? 'text-[14.5px]' : 'text-[15px]'}`}
+                    >
+                      {t('common:signIn')}
+                    </Link>
+                    <Button
+                      variant="primary"
+                      size="md"
+                      className={`rounded-xl font-bold shadow-lg shadow-primary-600/20 hover:shadow-primary-600/30 hover:-translate-y-0.5 transition-all ${isScrolled ? 'px-5 py-2 text-[14px]' : 'px-6 py-2.5 text-[15px]'}`}
+                      onClick={() => navigate('/auth')}
+                    >
+                      {t('common:signUp')}
+                    </Button>
+                  </div>
                 ) : null}
               </div>
+            </div>
 
-              <div className="flex items-center gap-1 md:hidden">
-                <button
-                  className="p-2 -mr-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors z-50"
-                  onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                >
-                  {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-                </button>
-              </div>
+            {/* Mobile Toggle */}
+            <div className="flex items-center gap-4 md:hidden z-50">
+               {/* ✅ Mobile Language Dropdown */}
+               {showSignedOutUI && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setIsMobileLangMenuOpen(!isMobileLangMenuOpen)}
+                      className="flex items-center gap-1 text-gray-500 hover:text-gray-900 font-bold text-xs uppercase transition-colors"
+                    >
+                      <Globe size={18} />
+                      <span>{currentLang}</span>
+                    </button>
+
+                    {isMobileLangMenuOpen && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-40" 
+                          onClick={() => setIsMobileLangMenuOpen(false)} 
+                        />
+                        <div className="absolute top-full mt-4 right-0 w-40 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 z-50 animate-fade-in">
+                          <button
+                            onClick={() => handleLanguageChange('en')}
+                            className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'en' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}
+                          >
+                            English
+                            {currentLang === 'en' && <Check size={16} />}
+                          </button>
+                          <button
+                            onClick={() => handleLanguageChange('fr')}
+                            className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'fr' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}
+                          >
+                            Français
+                            {currentLang === 'fr' && <Check size={16} />}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+               )}
+               
+              <button
+                className="p-2.5 text-gray-800 hover:bg-gray-100 rounded-full transition-colors active:scale-95"
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              >
+                {isMobileMenuOpen ? <X size={24} /> : <Menu size={26} strokeWidth={2.5} />}
+              </button>
             </div>
           </div>
         </div>
