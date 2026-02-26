@@ -157,5 +157,11 @@
   "pistachio ganache": "SWEETENER_CHOCOLATE",
   "vanilla ganache": "SWEETENER_CHOCOLATE",
   "chocolate ganache": "SWEETENER_CHOCOLATE",
-  "dry active yeast": "FERMENTED"
+  "dry active yeast": "FERMENTED",
+  "finocchi": "VEGETABLE",
+  "acqua": "LIQUID",
+  "farina": "GRAIN",
+  "olio extravergine d oliva": "FAT_OIL",
+  "sale": "SPICE",
+  "stracchino": "PROTEIN_DAIRY"
 }
