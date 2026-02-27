@@ -10,6 +10,8 @@
 /* index.css */
 html {
   scrollbar-gutter: stable;
+  overflow-y: scroll; /* ✅ Add this to prevent page jumping between routes */
+  font-family: 'Inter', sans-serif; 
 }
 
 @theme {

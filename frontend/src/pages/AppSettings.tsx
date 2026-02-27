@@ -58,7 +58,7 @@ export const AppSettings: React.FC = () => {
     >
       <div className="flex items-center gap-3 md:gap-4">
         <div className="p-2 rounded-xl bg-gray-50 text-gray-500 group-hover:text-primary-600 transition-colors">
-          <Icon size={18} className="md:size-20" />
+          <Icon size={18} />
         </div>
         <span className="font-bold text-sm md:text-base text-gray-900">
           {label}
@@ -114,20 +114,6 @@ export const AppSettings: React.FC = () => {
             </div>
           </div>
 
-          <Button 
-            variant="outline" 
-            fullWidth 
-            className="
-              rounded-xl py-2.5 md:py-3
-              border-gray-200 text-gray-900
-              font-bold text-xs md:text-sm
-              bg-white hover:bg-gray-50 mb-6 md:mb-8
-            "
-            onClick={() => navigate('/settings/account')}
-          >
-            <User size={16} className="mr-2" /> {t('settings:editPersonalInfo')}
-          </Button>
-
           <div className="pt-6 md:pt-8 border-t border-gray-100">
             <div className="flex items-center justify-between mb-4 md:mb-6">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
@@ -149,7 +135,7 @@ export const AppSettings: React.FC = () => {
               <div className="bg-primary-50 rounded-2xl p-4 md:p-6 border border-primary-100 flex items-center justify-between">
                 <div className="flex items-center gap-3 md:gap-4">
                   <div className="p-2.5 md:p-3 bg-white rounded-full text-primary-600 shadow-sm">
-                    <Infinity size={22} className="md:size-24" />
+                    <Infinity size={22} />
                   </div>
                   <div>
                     <div className="font-black text-sm md:text-base text-gray-900">
@@ -181,7 +167,7 @@ export const AppSettings: React.FC = () => {
 
                 <div className="grid grid-cols-2 gap-3 md:gap-4">
                   <div className="p-3.5 md:p-4 bg-gray-50 rounded-2xl border border-gray-100 text-center">
-                    <Video size={18} className="md:size-20 mx-auto mb-1.5 md:mb-2 text-gray-400" />
+                    <Video size={18} className="mx-auto mb-1.5 md:mb-2 text-gray-400" />
                     <div className="text-lg md:text-xl font-black text-gray-900">
                       {clipsUsed}
                     </div>
@@ -190,7 +176,7 @@ export const AppSettings: React.FC = () => {
                     </div>
                   </div>
                   <div className="p-3.5 md:p-4 bg-gray-50 rounded-2xl border border-gray-100 text-center">
-                    <PieChart size={18} className="md:size-20 mx-auto mb-1.5 md:mb-2 text-gray-400" />
+                    <PieChart size={18} className="mx-auto mb-1.5 md:mb-2 text-gray-400" />
                     <div className="text-lg md:text-xl font-black text-gray-900">
                       {clipsLimit}
                     </div>
@@ -215,7 +201,7 @@ export const AppSettings: React.FC = () => {
               <div className="space-y-2.5 md:space-y-3 mb-6 md:mb-8">
                 {[t('settings:feat1'), t('settings:feat2'), t('settings:feat3')].map((feat, i) => (
                   <div key={i} className="flex items-center gap-2.5 md:gap-3 text-xs md:text-sm text-gray-300">
-                    <Check size={15} className="md:size-16 text-green-400 flex-shrink-0" />
+                    <Check size={16} className="text-green-400 flex-shrink-0" />
                     <span>{feat}</span>
                   </div>
                 ))}
@@ -246,39 +232,26 @@ export const AppSettings: React.FC = () => {
               <div className="w-full flex items-center justify-between px-4 md:px-5 py-4 md:py-5 border-b border-gray-50">
                 <div className="flex items-center gap-3 md:gap-4">
                   <div className="p-2 rounded-xl bg-gray-50 text-gray-500">
-                    <Globe size={18} className="md:size-20" />
+                    <Globe size={18} />
                   </div>
                   <span className="font-bold text-sm md:text-base text-gray-900">
                     {t('settings:language')}
                   </span>
                 </div>
-                <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-xl">
-                  <button 
-                    onClick={() => updateUserLanguage('en')} 
-                    className={`
-                      px-2.5 md:px-3 py-1.5 rounded-lg
-                      text-[11px] md:text-xs font-black
-                      transition-all
-                      ${currentLang === 'EN'
-                        ? 'bg-white text-primary-600 shadow-sm'
-                        : 'text-gray-400 hover:text-gray-600'}
-                    `}
+                
+                {/* Dropdown Menu */}
+                <div className="relative">
+                  <select
+                    value={i18n.language.substring(0, 2)}
+                    onChange={(e) => updateUserLanguage(e.target.value)}
+                    className="appearance-none bg-gray-50 border border-gray-100 text-gray-900 font-black text-xs md:text-sm rounded-xl px-4 py-2 pr-8 outline-none focus:ring-2 focus:ring-primary-100 cursor-pointer transition-all"
                   >
-                    English
-                  </button>
-                  <button 
-                    onClick={() => updateUserLanguage('fr')} 
-                    className={`
-                      px-2.5 md:px-3 py-1.5 rounded-lg
-                      text-[11px] md:text-xs font-black
-                      transition-all
-                      ${currentLang === 'FR'
-                        ? 'bg-white text-primary-600 shadow-sm'
-                        : 'text-gray-400 hover:text-gray-600'}
-                    `}
-                  >
-                    Français
-                  </button>
+                    <option value="en">English</option>
+                    <option value="fr">Français</option>
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                    <ChevronRight size={14} className="rotate-90" />
+                  </div>
                 </div>
               </div>
 
@@ -286,7 +259,7 @@ export const AppSettings: React.FC = () => {
               <div className="w-full flex items-center justify-between px-4 md:px-5 py-4 md:py-5">
                 <div className="flex items-center gap-3 md:gap-4">
                   <div className="p-2 rounded-xl bg-gray-50 text-gray-500">
-                    {darkMode ? <Moon size={18} className="md:size-20" /> : <Sun size={18} className="md:size-20" />}
+                    {darkMode ? <Moon size={18} /> : <Sun size={18} />}
                   </div>
                   <span className="font-bold text-sm md:text-base text-gray-900">
                     {t('settings:darkMode')}

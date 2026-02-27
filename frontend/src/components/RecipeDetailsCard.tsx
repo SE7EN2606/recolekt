@@ -12,10 +12,12 @@ type RawIngredient =
       item?: string | null;
       name?: string | null;
       note?: string | null;
+      emoji?: string | null;
     };
 
 export interface IngredientGroup {
-  title: string;
+  title?: string;
+  group?: string;
   items: RawIngredient[];
 }
 
@@ -39,6 +41,15 @@ export interface RecipeDetailsCardProps {
 
 /* ------------ helpers ------------ */
 
+const splitTrailingEmoji = (text: string): { body: string; emoji: string } => {
+  const emojiRegex = /[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+$/u;
+  const match = text.match(emojiRegex);
+  if (match) {
+    return { emoji: match[0].trim(), body: text.replace(emojiRegex, '').trim() };
+  }
+  return { body: text.trim(), emoji: '' };
+};
+
 function parseIngredientString(text: string) {
   let label = text.trim();
   let note = '';
@@ -53,12 +64,12 @@ function parseIngredientString(text: string) {
   let quantity = '';
   let unit = '';
 
+  // Only extract unit if there is a number FIRST
   if (parts.length && /^\d/.test(parts[0])) {
     quantity = parts.shift() || '';
-  }
-
-  if (parts.length && !/^\d/.test(parts[0]) && parts[0].length <= 5) {
-    unit = parts.shift() || '';
+    if (parts.length && !/^\d/.test(parts[0]) && parts[0].length <= 12) {
+      unit = parts.shift() || '';
+    }
   }
 
   const item = parts.join(' ').trim();
@@ -74,7 +85,7 @@ function parseIngredientString(text: string) {
 function formatQuantity(q: string): string {
   const n = parseFloat(q.replace(',', '.'));
   if (!Number.isFinite(n)) return q;
-  return String(Math.round(n));
+  return String(Math.round(n * 100) / 100);
 }
 
 interface IngredientRowProps {
@@ -94,13 +105,20 @@ const IngredientRow: React.FC<IngredientRowProps> = ({
   checked,
   onToggle,
 }) => {
-  const base =
-    typeof raw === 'string'
-      ? parseIngredientString(raw)
-      : {
-          ...raw,
-          ...(raw.item || raw.name ? {} : parseIngredientString(String(raw))),
-        };
+  let base: any = {};
+  let emoji = '';
+
+  if (typeof raw === 'string') {
+    const { body, emoji: extractedEmoji } = splitTrailingEmoji(raw);
+    base = parseIngredientString(body);
+    emoji = extractedEmoji;
+  } else {
+    base = { ...raw };
+    emoji = String(base.emoji || '');
+    if (!base.item && !base.name) {
+       Object.assign(base, parseIngredientString(String(raw)));
+    }
+  }
 
   const baseLabel = (base.item || base.name || '').trim();
 
@@ -137,26 +155,20 @@ const IngredientRow: React.FC<IngredientRowProps> = ({
 
   const rowClass =
     'recipe-ingredient-row flex items-start gap-3 py-1 cursor-pointer select-none' +
-    (checked ? ' recipe-ingredient-row--checked' : '');
+    (checked ? ' recipe-ingredient-row--checked opacity-60 line-through' : '');
 
+  // ✅ RESTORED EXACT ORIGINAL CSS CLASSES
   return (
     <li className={rowClass} onClick={() => onToggle(id)}>
       <div className="mt-1.5 min-w-[16px]">
         <div className="recipe-ingredient-bullet" />
       </div>
-      <div className="text-sm font-medium leading-relaxed">
-        {quantity && (
-          <span className="recipe-ingredient-qty mr-1">{quantity}</span>
-        )}
-        {unit && (
-          <span className="recipe-ingredient-unit mr-1.5">{unit}</span>
-        )}
-        {mainLabel && (
-          <span className="recipe-ingredient-text">{mainLabel}</span>
-        )}
-        {note && (
-          <span className="recipe-ingredient-note ml-1">({note})</span>
-        )}
+      <div className="text-sm font-medium leading-relaxed flex flex-wrap items-baseline">
+        {emoji && <span className="mr-1.5 text-base leading-none select-none">{emoji}</span>}
+        {quantity && <span className="recipe-ingredient-qty mr-1">{quantity}</span>}
+        {unit && <span className="recipe-ingredient-unit mr-1.5">{unit}</span>}
+        {mainLabel && <span className="recipe-ingredient-text">{mainLabel}</span>}
+        {note && <span className="recipe-ingredient-note ml-1">({note})</span>}
       </div>
     </li>
   );
@@ -175,14 +187,16 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const prep = (recipe.prep_time || '').trim() || '—';
   const cook = (recipe.cook_time || '').trim() || '—';
 
-  // ✅ Safe fallbacks for all array fields
-  const groups: IngredientGroup[] =
-    Array.isArray(recipe.ingredients_groups) ? recipe.ingredients_groups : [];
-  const flat: RawIngredient[] =
-    Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+  const flat: RawIngredient[] = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+  const groups: IngredientGroup[] = Array.isArray(recipe.ingredients_groups) ? recipe.ingredients_groups : [];
 
   const hasGroups = groups.length > 0;
   const hasFlat = !hasGroups && flat.length > 0;
+
+  // ✅ NEW: Sequential Mapper to bypass AI translation mistakes
+  const totalGroupItems = groups.reduce((acc, g) => acc + (g.items?.length || 0), 0);
+  const canSequentialMap = totalGroupItems === flat.length && flat.length > 0;
+  let globalIndex = 0; 
 
   const baseServings = React.useMemo(() => {
     const raw = (recipe.servings || '').toString();
@@ -223,14 +237,12 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     });
   };
 
-  // ✅ Safe arrays for instructions, tips, notes
   const instructions = Array.isArray(recipe.instructions) ? recipe.instructions : [];
   const tips = Array.isArray(recipe.tips) ? recipe.tips : [];
   const notes = Array.isArray(recipe.notes) ? recipe.notes : [];
 
   return (
     <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
-      {/* Header */}
       <div className="bg-tertiary-50/50 p-5 border-b border-gray-50 flex items-center gap-3">
         <ChefHat className="recipe-header-icon" size={20} />
         <h3 className="font-bold text-gray-900 text-lg">
@@ -238,52 +250,28 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         </h3>
       </div>
 
-      {/* Meta grid */}
       <div className="grid grid-cols-3 divide-x divide-gray-50 border-b border-gray-50">
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Clock className="recipe-meta-icon mb-1" size={16} />
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            {t('videoDetail:prep')}
-          </span>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t('videoDetail:prep')}</span>
           <span className="text-sm font-bold text-gray-900">{prep}</span>
         </div>
-
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Flame className="recipe-meta-icon mb-1" size={16} />
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            {t('videoDetail:cook')}
-          </span>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t('videoDetail:cook')}</span>
           <span className="text-sm font-bold text-gray-900">{cook}</span>
         </div>
-
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Users className="recipe-meta-icon mb-1" size={16} />
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            {t('videoDetail:servings')}
-          </span>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t('videoDetail:servings')}</span>
           <div className="flex flex-row items-center justify-center gap-2 mt-0.5 whitespace-nowrap w-full">
-            <button
-              type="button"
-              onClick={() => handleServingsDelta(-1)}
-              className="w-7 h-7 flex-shrink-0 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-sm font-bold hover:bg-gray-200 transition"
-            >
-              −
-            </button>
-            <span className="text-sm font-extrabold text-gray-900 tabular-nums text-center min-w-[20px]">
-              {currentServings}
-            </span>
-            <button
-              type="button"
-              onClick={() => handleServingsDelta(1)}
-              className="w-7 h-7 flex-shrink-0 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-sm font-bold hover:bg-gray-200 transition"
-            >
-              +
-            </button>
+            <button type="button" onClick={() => handleServingsDelta(-1)} className="w-7 h-7 flex-shrink-0 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-sm font-bold hover:bg-gray-200 transition">−</button>
+            <span className="text-sm font-extrabold text-gray-900 tabular-nums text-center min-w-[20px]">{currentServings}</span>
+            <button type="button" onClick={() => handleServingsDelta(1)} className="w-7 h-7 flex-shrink-0 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center text-sm font-bold hover:bg-gray-200 transition">+</button>
           </div>
         </div>
       </div>
 
-      {/* Ingredients */}
       <div className="p-6 border-b border-gray-50">
         <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">
           {t('videoDetail:ingredients')}
@@ -292,21 +280,35 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           {hasGroups &&
             groups.map((group, groupIdx) => (
               <div key={groupIdx} className="relative">
-                {groupIdx > 0 && (
-                  <div className="absolute -top-3 left-0 right-0 border-t border-dashed border-gray-100" />
-                )}
+                {groupIdx > 0 && <div className="absolute -top-3 left-0 right-0 border-t border-dashed border-gray-100" />}
                 <h5 className="font-bold text-gray-900 text-sm mb-3 bg-gray-50 inline-block px-2 py-1 rounded-lg">
-                  {group.title}
+                  {group.title || group.group}
                 </h5>
                 <ul className="space-y-1">
-                  {/* ✅ THE FIX: guard group.items with ?? [] */}
                   {(group.items ?? []).map((it, itemIdx) => {
                     const id = `g${groupIdx}-i${itemIdx}`;
+                    
+                    // ✅ Extract the rich object using the sequential map or string match
+                    let enriched = it;
+                    if (typeof it === 'string' && flat.length > 0) {
+                      if (canSequentialMap) {
+                        enriched = flat[globalIndex];
+                      } else {
+                        const found = flat.find((f: any) => {
+                          if (typeof f === 'string') return false;
+                          const n = String(f.item || f.name || '').toLowerCase();
+                          return n.includes(it.toLowerCase()) || it.toLowerCase().includes(n);
+                        });
+                        if (found) enriched = found;
+                      }
+                    }
+                    globalIndex++;
+
                     return (
                       <IngredientRow
                         key={id}
                         id={id}
-                        raw={it}
+                        raw={enriched}
                         servingScale={currentScale}
                         scaleQuantity={scaleQuantity}
                         checked={checkedIds.has(id)}
@@ -339,7 +341,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         </div>
       </div>
 
-      {/* Directions */}
       {instructions.length > 0 && (
         <div className="p-6 bg-gray-50/30">
           <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">
@@ -351,9 +352,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               return (
                 <div
                   key={i}
-                  className={`flex gap-4 items-start cursor-pointer select-none transition-opacity ${
-                    isChecked ? 'opacity-60' : ''
-                  }`}
+                  className={`flex gap-4 items-start cursor-pointer select-none transition-opacity ${isChecked ? 'opacity-60' : ''}`}
                   onClick={() => handleStepToggle(i)}
                 >
                   <div className="flex-shrink-0 pt-[0.1rem]">
@@ -361,11 +360,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                       <span className="recipe-step-number">{i + 1}</span>
                     </div>
                   </div>
-                  <p
-                    className={`text-sm font-medium text-gray-600 leading-relaxed ${
-                      isChecked ? 'line-through' : ''
-                    }`}
-                  >
+                  <p className={`text-sm font-medium text-gray-600 leading-relaxed ${isChecked ? 'line-through' : ''}`}>
                     {step}
                   </p>
                 </div>
@@ -375,7 +370,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         </div>
       )}
 
-      {/* Tips & Notes */}
       {(tips.length > 0 || notes.length > 0) && (
         <div className="bg-yellow-50/50 border-t border-yellow-100 p-6">
           <div className="flex items-center gap-2 mb-4">
@@ -384,30 +378,22 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               {t('videoDetail:chefsNotes')}
             </h4>
           </div>
-
           <div className="space-y-4">
             {tips.length > 0 && (
               <ul className="space-y-2">
                 {tips.map((tip, i) => (
-                  <li
-                    key={`tip-${i}`}
-                    className="flex items-start gap-2 text-sm text-gray-700"
-                  >
+                  <li key={`tip-${i}`} className="flex items-start gap-2 text-sm text-gray-700">
                     <span className="text-yellow-500 font-bold">•</span>
                     <span className="italic">{tip}</span>
                   </li>
                 ))}
               </ul>
             )}
-
             {notes.length > 0 && (
               <div className="pt-2">
                 {notes.map((note, i) => (
                   <p key={`note-${i}`} className="text-sm text-gray-500 leading-relaxed">
-                    <span className="font-bold text-gray-600">
-                      {t('videoDetail:noteLabel')}
-                    </span>{' '}
-                    {note}
+                    <span className="font-bold text-gray-600">{t('videoDetail:noteLabel')}</span> {note}
                   </p>
                 ))}
               </div>

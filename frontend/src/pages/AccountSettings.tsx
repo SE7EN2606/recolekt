@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ExternalLink, Trash2, TriangleAlert, Loader2 } from 'lucide-react';
+import { ExternalLink, Trash2, TriangleAlert, Loader2, SquarePen, Save, Check } from 'lucide-react';
 import { useAuth, getAuthHeaders } from '../context/AuthContext';
 import { InstallShortcutModal } from '../components/InstallShortcutModal';
 import shortcutsIcon from '/assets/shortcuts_icon.png';
@@ -15,28 +15,73 @@ interface TokenInfo {
   last_used_at?: string;
 }
 
+const COUNTRIES = [
+  "United States", "United Kingdom", "France", "Canada", "Germany", "Australia", 
+  "Afghanistan", "Albania", "Algeria", "American Samoa", "Andorra", "Angola", 
+  "Anguilla", "Antarctica", "Antigua and Barbuda", "Argentina", "Armenia", "Aruba", 
+  "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", 
+  "Belarus", "Belgium", "Belize", "Benin", "Bermuda", "Bhutan", "Bolivia", 
+  "Bosnia and Herzegovina", "Botswana", "Bouvet Island", "Brazil", "British Indian Ocean Territory", 
+  "Brunei Darussalam", "Bulgaria", "Burkina Faso", "Burundi", "Cambodia", "Cameroon", 
+  "Cape Verde", "Cayman Islands", "Central African Republic", "Chad", "Chile", "China", 
+  "Christmas Island", "Cocos (Keeling) Islands", "Colombia", "Comoros", "Congo", 
+  "Congo, The Democratic Republic of The", "Cook Islands", "Costa Rica", "Cote D'ivoire", 
+  "Croatia", "Cuba", "Cyprus", "Czech Republic", "Denmark", "Djibouti", "Dominica", 
+  "Dominican Republic", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", 
+  "Estonia", "Ethiopia", "Falkland Islands (Malvinas)", "Faroe Islands", "Fiji", "Finland", 
+  "French Guiana", "French Polynesia", "French Southern Territories", "Gabon", "Gambia", 
+  "Georgia", "Germany", "Ghana", "Gibraltar", "Greece", "Greenland", "Grenada", "Guadeloupe", 
+  "Guam", "Guatemala", "Guinea", "Guinea-bissau", "Guyana", "Haiti", 
+  "Heard Island and Mcdonald Islands", "Holy See (Vatican City State)", "Honduras", "Hong Kong", 
+  "Hungary", "Iceland", "India", "Indonesia", "Iran, Islamic Republic of", "Iraq", "Ireland", 
+  "Israel", "Italy", "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati", 
+  "Korea, Democratic People's Republic of", "Korea, Republic of", "Kuwait", "Kyrgyzstan", 
+  "Lao People's Democratic Republic", "Latvia", "Lebanon", "Lesotho", "Liberia", 
+  "Libyan Arab Jamahiriya", "Liechtenstein", "Lithuania", "Luxembourg", "Macao", 
+  "Macedonia, The Former Yugoslav Republic of", "Madagascar", "Malawi", "Malaysia", "Maldives", 
+  "Mali", "Malta", "Marshall Islands", "Martinique", "Mauritania", "Mauritius", "Mayotte", 
+  "Mexico", "Micronesia, Federated States of", "Moldova, Republic of", "Monaco", "Mongolia", 
+  "Montserrat", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nauru", "Nepal", "Netherlands", 
+  "Netherlands Antilles", "New Caledonia", "New Zealand", "Nicaragua", "Niger", "Nigeria", 
+  "Niue", "Norfolk Island", "Northern Mariana Islands", "Norway", "Oman", "Pakistan", "Palau", 
+  "Palestinian Territory, Occupied", "Panama", "Papua New Guinea", "Paraguay", "Peru", 
+  "Philippines", "Pitcairn", "Poland", "Portugal", "Puerto Rico", "Qatar", "Reunion", "Romania", 
+  "Russian Federation", "Rwanda", "Saint Helena", "Saint Kitts and Nevis", "Saint Lucia", 
+  "Saint Pierre and Miquelon", "Saint Vincent and The Grenadines", "Samoa", "San Marino", 
+  "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia and Montenegro", "Seychelles", 
+  "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa", 
+  "South Georgia and The South Sandwich Islands", "Spain", "Sri Lanka", "Sudan", "Suriname", 
+  "Svalbard and Jan Mayen", "Swaziland", "Sweden", "Switzerland", "Syrian Arab Republic", 
+  "Taiwan, Province of China", "Tajikistan", "Tanzania, United Republic of", "Thailand", 
+  "Timor-leste", "Togo", "Tokelau", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", 
+  "Turkmenistan", "Turks and Caicos Islands", "Tuvalu", "Uganda", "Ukraine", "United Arab Emirates", 
+  "United Kingdom", "United States", "United States Minor Outlying Islands", "Uruguay", 
+  "Uzbekistan", "Vanuatu", "Venezuela", "Viet Nam", "Virgin Islands, British", 
+  "Virgin Islands, U.S.", "Wallis and Futuna", "Western Sahara", "Yemen", "Zambia", "Zimbabwe"
+];
+
 export const AccountSettings: React.FC = () => {
   const navigate = useNavigate();
   const { user, loading, isAuthenticated } = useAuth();
   const { t } = useTranslation(['account', 'common']);
   
   const [email, setEmail] = useState('');
-  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [name, setName] = useState('');
+  const [country, setCountry] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  
   const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null);
   const [isLoadingToken, setIsLoadingToken] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   
-  // Shortcut modal state
   const [showShortcutModal, setShowShortcutModal] = useState(false);
   const [shortcutData, setShortcutData] = useState<any>(null);
   const [isLoadingShortcut, setIsLoadingShortcut] = useState(false);
 
-  // Geolocation state
-  const [country, setCountry] = useState(t('account:detecting'));
-
   useEffect(() => {
-    if (user?.email) {
-      setEmail(user.email);
+    if (user) {
+      setEmail(user.email || '');
+      setName(user.name || '');
     }
     window.scrollTo(0, 0);
   }, [user]);
@@ -53,19 +98,14 @@ export const AccountSettings: React.FC = () => {
     }
   }, [user]);
 
-  // Fetch user location on mount
   useEffect(() => {
-    fetch('https://ipapi.co/json/')
-      .then(res => res.json())
-      .then(data => {
-        if (data.country_name) {
-          setCountry(data.country_name);
-        } else {
-          setCountry(t('account:unknown'));
-        }
-      })
-      .catch(() => setCountry(t('account:unknown')));
-  }, [t]);
+    if (!country) {
+      fetch('https://ipapi.co/json/')
+        .then(res => res.json())
+        .then(data => setCountry(data.country_name || t('account:unknown')))
+        .catch(() => setCountry(t('account:unknown')));
+    }
+  }, [t, country]);
 
   const fetchTokenInfo = async () => {
     setIsLoadingToken(true);
@@ -88,7 +128,6 @@ export const AccountSettings: React.FC = () => {
 
   const generateToken = async () => {
     const confirmed = confirm(t('account:revokeConfirm'));
-    
     if (!confirmed) return;
     
     setIsGenerating(true);
@@ -102,7 +141,6 @@ export const AccountSettings: React.FC = () => {
       if (!response.ok) throw new Error('Failed to generate token');
       
       const data = await response.json();
-      
       const copyToken = confirm(
         `${t('account:tokenGenerated')}\n\n${data.token}\n\n` +
         `${t('account:tokenWarning')}`
@@ -112,7 +150,6 @@ export const AccountSettings: React.FC = () => {
         await navigator.clipboard.writeText(data.token);
         alert(t('account:copied'));
       }
-      
       await fetchTokenInfo();
     } catch (error) {
       console.error('Failed to generate token:', error);
@@ -143,11 +180,9 @@ export const AccountSettings: React.FC = () => {
     }
   };
 
-  const handleEmailBlur = async () => {
-    if (isEditingEmail && email !== user?.email) {
-      console.log('Auto-saving email:', email);
-      setIsEditingEmail(false);
-    }
+  const handleSaveInfo = async () => {
+    // Add logic here to sync state with your Neon DB via /api/user/profile update
+    setIsEditing(false);
   };
 
   if (loading || !user) {
@@ -159,31 +194,6 @@ export const AccountSettings: React.FC = () => {
   }
 
   const displayName = user.name || 'User';
-
-  const InputField = ({ label, value, readOnly = false, onChange, onBlur, action }: any) => (
-    <div className="border-b border-gray-100 py-4 md:py-6 last:border-0 relative">
-      <label className="block text-[10px] md:text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1.5 md:mb-2">
-        {label}
-      </label>
-      <div className="flex items-center justify-between gap-3 md:gap-4">
-        <input 
-          type="text"
-          value={value}
-          readOnly={readOnly}
-          onChange={onChange}
-          onBlur={onBlur}
-          className={`
-            flex-1 bg-transparent
-            text-base md:text-xl
-            font-black text-gray-900 outline-none
-            transition-colors
-            ${readOnly ? 'cursor-default' : 'focus:text-primary-600'}
-          `}
-        />
-        {action}
-      </div>
-    </div>
-  );
 
   return (
     <div className="w-full pt-6 md:pt-0 pb-0 md:pb-6 animate-fade-in">
@@ -199,61 +209,80 @@ export const AccountSettings: React.FC = () => {
       </div>
 
       <div className="space-y-5 md:space-y-6 px-4 md:px-0">
+        
         {/* Personal Info Card */}
         <div className="bg-white rounded-2xl md:rounded-3xl shadow-sm p-5 md:p-8 border border-gray-100">
-          {/* Avatar Section */}
-          <div className="flex items-center gap-4 md:gap-5 mb-6 md:mb-10 pb-6 md:pb-10 border-b border-gray-50">
-            <div className="w-14 h-14 md:w-16 md:h-16 bg-dark-900 rounded-full flex items-center justify-center text-white text-lg md:text-2xl font-black shadow-lg overflow-hidden border-2 border-white">
-              {user.picture ? (
-                 <img 
-                    src={user.picture} 
-                    alt={displayName} 
-                    className="w-full h-full object-cover" 
-                 />
-              ) : (
-                <span>{displayName.charAt(0).toUpperCase()}</span>
-              )}
-            </div>
-            <div>
-              <h2 className="text-lg md:text-2xl font-black text-gray-900 tracking-tight">
-                {displayName}
+          
+          {/* Header with Avatar, Name, and Edit Button aligned to the right */}
+          <div className="flex items-center justify-between mb-8 pb-8 border-b border-gray-50">
+            <div className="flex items-center gap-4 md:gap-5">
+              <div className="w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br from-primary-600 to-primary-700 rounded-full flex items-center justify-center text-white text-lg md:text-2xl font-black shadow-lg overflow-hidden border-2 border-white">
+                {user.picture ? (
+                   <img src={user.picture} alt={displayName} className="w-full h-full object-cover" />
+                ) : (
+                  <span>{displayName.charAt(0).toUpperCase()}</span>
+                )}
+              </div>
+              <h2 className="text-lg md:text-2xl font-black text-gray-900 tracking-tight uppercase truncate max-w-[200px] md:max-w-[300px]">
+                {name || displayName}
               </h2>
-              <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">
-                {t('account:personalAccount')}
-              </p>
             </div>
+
+            {/* ✅ Edit/Save Button aligned to the right */}
+            <button 
+              onClick={() => isEditing ? handleSaveInfo() : setIsEditing(true)}
+              className="flex items-center gap-2 bg-white border border-gray-200 px-3 md:px-4 py-2 md:py-2.5 rounded-xl text-primary-600 font-black text-xs uppercase shadow-sm hover:bg-primary-50 hover:border-primary-200 transition-all active:scale-95"
+            >
+              {isEditing ? (
+                <><Check size={16} /><span className="hidden md:inline">{t('account:done')}</span></>
+              ) : (
+                <><SquarePen size={16} /><span className="hidden md:inline">{t('account:edit')}</span></>
+              )}
+            </button>
           </div>
 
           {/* Form Fields */}
-          <div className="space-y-1 md:space-y-2">
-            <InputField label={t('account:fullName')} value={displayName} readOnly />
+          <div className="space-y-6">
+            <div className="border-b border-gray-50 pb-4">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{t('account:fullName')}</label>
+              <input 
+                value={name} 
+                readOnly={!isEditing} 
+                onChange={(e) => setName(e.target.value)}
+                className={`w-full bg-transparent text-lg md:text-xl font-black outline-none transition-colors mt-1 ${isEditing ? 'text-primary-600 border-b-2 border-primary-100 pb-1' : 'text-gray-900 border-none'}`}
+              />
+            </div>
             
-            <InputField 
-              label={t('account:emailAddress')} 
-              value={email} 
-              readOnly={!isEditingEmail}
-              onChange={(e: any) => setEmail(e.target.value)}
-              onBlur={handleEmailBlur}
-              action={
-                <button 
-                  onClick={() => setIsEditingEmail(!isEditingEmail)}
-                  className={`
-                    px-3 md:px-4 py-1.5 md:py-2
-                    border rounded-lg md:rounded-xl
-                    text-[10px] md:text-[11px]
-                    font-black uppercase tracking-widest
-                    transition-all
-                    ${isEditingEmail 
-                      ? 'bg-primary-600 border-primary-600 text-white shadow-lg shadow-primary-600/20' 
-                      : 'bg-white border-gray-200 text-gray-600 hover:border-primary-600 hover:text-primary-600 shadow-sm'}
-                  `}
-                >
-                  {isEditingEmail ? t('account:done') : t('account:edit')}
-                </button>
-              }
-            />
-
-            <InputField label={t('account:country')} value={country} readOnly />
+            <div className="border-b border-gray-50 pb-4">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{t('account:emailAddress')}</label>
+              <input 
+                value={email} 
+                readOnly={!isEditing} 
+                onChange={(e) => setEmail(e.target.value)}
+                className={`w-full bg-transparent text-lg md:text-xl font-black outline-none transition-colors mt-1 ${isEditing ? 'text-primary-600 border-b-2 border-primary-100 pb-1' : 'text-gray-900 border-none'}`}
+              />
+            </div>
+            
+            <div className="pb-2">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{t('account:country')}</label>
+              {isEditing ? (
+                <div className="relative mt-2 max-w-sm">
+                  <select 
+                    value={country} 
+                    onChange={(e) => setCountry(e.target.value)}
+                    className="w-full appearance-none bg-gray-50 border border-gray-100 rounded-xl p-3 text-base font-black text-primary-600 outline-none focus:ring-4 focus:ring-primary-100 transition-all cursor-pointer"
+                  >
+                    <option value="" disabled>Select Country</option> 
+                    {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-primary-400">
+                    <SquarePen size={18} />
+                  </div>
+                </div>
+              ) : (
+                <div className="text-lg md:text-xl font-black text-gray-900 mt-1">{country}</div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -334,7 +363,7 @@ export const AccountSettings: React.FC = () => {
           </div>
         </div>
 
-        {/* Payment Section */}
+        {/* ✅ RESTORED Payment Section */}
         <div className="bg-white rounded-2xl md:rounded-3xl shadow-sm p-5 md:p-8 border border-gray-100">
           <div className="flex items-center justify-between mb-6 md:mb-8">
             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
@@ -375,40 +404,31 @@ export const AccountSettings: React.FC = () => {
           </div>
         </div>
 
-        {/* Danger Zone */}
-        <div className="bg-red-50 rounded-2xl md:rounded-[32px] border border-red-100 p-5 md:p-8">
-          <div className="flex items-start gap-3 md:gap-4">
-            <div className="p-2.5 md:p-3 bg-white rounded-xl text-red-500 shadow-sm">
-              <TriangleAlert size={22} className="md:size-24" />
+        {/* Danger Zone: Centered */}
+        <div className="bg-red-50 rounded-2xl md:rounded-[32px] border border-red-100 p-8 flex flex-col items-center text-center">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2.5 bg-white rounded-xl text-red-500 shadow-sm">
+              <TriangleAlert size={24} />
             </div>
-            <div>
-              <h3 className="text-base md:text-lg font-black text-red-900 mb-2 tracking-tight">
-                {t('account:dangerZone')}
-              </h3>
-              <p className="text-red-700/80 text-xs md:text-sm font-medium mb-4 md:mb-6 leading-relaxed">
-                {t('account:deleteWarning')}
-              </p>
-              <button 
-                className="
-                  flex items-center gap-2
-                  px-5 md:px-6 py-2.5 md:py-3
-                  bg-white border border-red-200
-                  text-red-600 rounded-xl
-                  font-bold text-xs md:text-sm
-                  hover:bg-red-600 hover:text-white hover:border-red-600
-                  transition-colors shadow-sm
-                "
-                onClick={() => {
-                  if (confirm(t('account:deleteConfirm'))) {
-                    // Delete logic
-                  }
-                }}
-              >
-                <Trash2 size={16} /> {t('account:deleteAccount')}
-              </button>
-            </div>
+            <h3 className="text-lg md:text-xl font-black text-red-900 m-0 tracking-tight">{t('account:dangerZone')}</h3>
           </div>
+          
+          <p className="text-red-700/80 text-xs md:text-sm font-medium mb-8 max-w-md leading-relaxed">
+            {t('account:deleteWarning')}
+          </p>
+          
+          <button 
+            className="flex items-center gap-2 px-10 py-3.5 bg-white border border-red-200 text-red-600 rounded-xl font-black text-sm hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-95"
+            onClick={() => {
+              if (confirm(t('account:deleteConfirm'))) {
+                // Delete logic
+              }
+            }}
+          >
+            <Trash2 size={18} /> {t('account:deleteAccount')}
+          </button>
         </div>
+
       </div>
 
       {/* Install Modal */}
