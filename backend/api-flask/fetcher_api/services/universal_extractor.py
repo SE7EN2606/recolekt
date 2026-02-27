@@ -127,7 +127,6 @@ class UniversalExtractor:
         instructions_en = safe_list(recipe_obj.get("instructions", []))
         tips_en = safe_list(recipe_obj.get("tips", []))
         notes_en = safe_list(recipe_obj.get("notes", []))
-        ingredients_groups = safe_list(recipe_obj.get("ingredients_groups", []))
 
         servings = safe_str(recipe_obj.get("servings", "")).strip() or safe_str(recipe_obj.get("yield", "")).strip()
         prep_time = safe_str(recipe_obj.get("prep_time", "")).strip()
@@ -156,7 +155,6 @@ class UniversalExtractor:
             summary_og = summary_en
             title_og = title_en
 
-            # No translations needed for English
             ingredients_og = ingredients_en
             instructions_og = instructions_en
             tips_og = tips_en
@@ -167,7 +165,6 @@ class UniversalExtractor:
                 "📞 CALL 2: Generating BILINGUAL summary + translations (English + %s)...",
                 effective_lang,
             )
-            # ✅ Pass translation data into Call 2 — eliminates Call 3
             prompt_summary = self._build_summary_prompt_bilingual(
                 title_en, brief_description, content_type, effective_lang,
                 ingredients=ingredients_en if ingredients_en else None,
@@ -196,7 +193,6 @@ class UniversalExtractor:
             summary_og = smart_truncate_summary(summary_og_raw)
             title_og = title_og_raw or title_en
 
-            # ✅ Pull translations directly from result_summary (no Call 3)
             translated = result_summary
 
             ingredient_names_og = safe_list(translated.get("ingredient_names", []))
@@ -242,8 +238,6 @@ class UniversalExtractor:
             if notes_og_raw and len(notes_og_raw) >= len(notes_en):
                 notes_og = [clean_text(safe_str(x)) for x in notes_og_raw]
 
-            logger.info("✅ Translations extracted from Call 2 (no Call 3 needed)")
-
         # ---------- Build headlines ----------
         highlights_raw = safe_list(result_data.get("highlights", []))
 
@@ -263,7 +257,7 @@ class UniversalExtractor:
             for b in ai_bullets_en
         ]
 
-        # ---------- Translate headlines (from Call 2 result) ----------
+        # ---------- Translate headlines ----------
         headlines_og = headlines_en
         if not is_english_content:
             translated_headlines = safe_list(result_summary.get("headlines", []))
@@ -294,7 +288,6 @@ class UniversalExtractor:
             emojis = (emojis + ["✨", "💡", "📌", "✅"])[:4]
         emojis = emojis[:4]
 
-        # ---------- Final bilingual data objects ----------
         bilingual_summary = {
             "english": {
                 "title": title_en,
@@ -322,7 +315,6 @@ class UniversalExtractor:
                     "cook_time": cook_time or None,
                     "total_time": total_time or None,
                     "ingredients": ingredients_en,
-                    "ingredients_groups": ingredients_groups or None,
                     "instructions": instructions_en,
                     "tips": tips_en,
                     "notes": notes_en,
@@ -334,14 +326,11 @@ class UniversalExtractor:
                     "cook_time": cook_time or None,
                     "total_time": total_time or None,
                     "ingredients": ingredients_og,
-                    "ingredients_groups": ingredients_groups or None,
                     "instructions": instructions_og,
                     "tips": tips_og,
                     "notes": notes_og,
                 },
             }
-
-        logger.info("✅ Content extracted with %d API calls", self.api_call_count)
 
         return {
             "content_type": content_type,
@@ -360,60 +349,56 @@ class UniversalExtractor:
     def _build_data_extraction_prompt(
         self, transcript: str, caption: str, lang: str, content_type: str
     ) -> str:
-        """CALL 1: Extract structured data only (no summary)"""
-
+        
         type_specific = f"""
-7. **recipe** object: ALWAYS INCLUDE THIS OBJECT IF THE CONTENT IS A TUTORIAL, WORKOUT, DIY, RECIPE, OR HAS CLEAR STEPS.
-   We use the "recipe" schema universally for ALL categories. Map the content accordingly:
-
-   - **servings**: Yield or difficulty (e.g., "4 people", "Beginner", "1 Room", "N/A")
-   - **prep_time**: Time to gather materials or setup (e.g., "5 min", "N/A")
-   - **cook_time**: Active time required (e.g., "15 min workout", "1 hour project", "20 min bake")
-   - **total_time**: Total time
-   - **ingredients**: array with item, quantity, unit, emoji (required fields).
-        - For FOOD: "Flour", "200", "g", "🌾"
-        - For WORKOUT: "Dumbbells", "2", "items", "🏋️"
-        - For DIY/HACKS: "Baking Soda", "1", "cup", "🫧"
-        - For TECH/FINANCE: "App Name", "1", "download", "📱"
-   - **ingredients_groups** (optional): Group requirements if needed.
-   - **instructions**: 6-12 clear, actionable steps.
-   - **tips**: optional helpful tips or safety warnings.
-   - **notes**: optional important context.
+7. **recipe** object: YOU MUST ALWAYS CREATE THIS OBJECT if there are any ingredients or steps mentioned. 
+   Find the specific techniques used (e.g. "basting", "peeling") and include them.
+   - **servings**: Yield
+   - **prep_time**: Setup time
+   - **cook_time**: Active time
+   - **total_time**: Total duration
+   - **ingredients**: ARRAY OF OBJECTS. Each must have: "item", "quantity", "unit", "emoji". Never return strings.
+   - **instructions**: Detailed, actionable steps (minimum 6).
+   - **tips**: Extract specific chef secrets or nuances (e.g. "Keep whole for onctuosité").
+   - **notes**: Important context.
 """
 
         return f"""Extract structured data from this {content_type} content. Output ONLY valid JSON.
+        
+        CRITICAL: Identify the specific unique value of the content. Avoid generic descriptions.
+        If it's a cooking technique, explain the technique in the highlights.
 
-LANGUAGE: {lang}
+        LANGUAGE: {lang}
 
-TRANSCRIPT:
-{transcript[:3500]}
+        TRANSCRIPT:
+        {transcript[:3500]}
 
-CAPTION:
-{caption[:6000]}
+        CAPTION:
+        {caption[:6000]}
 
-EXTRACT:
+        EXTRACT:
 
-1. **category**: Choose from: Food & Drink, Fitness & Workouts, Beauty & Grooming, Home & DIY, Life Hacks & Productivity, Tech & Gadgets, Personal Finance, Self-Care & Mental Health, Parenting & Kids, Travel & Packing, or General.
+        1. **category**: Generate a highly specific, smart 1-2 word category perfectly tailored to the content. DO NOT USE "&" or "and". NEVER output "Food & Drink". Examples: "Gourmet Cooking", "Baking", "Skincare", "Woodworking", "Fitness", "Nutrition", "Travel".
 
-2. **topic**: 2-3 word English topic (e.g., "Pumpkin Bars", "HIIT Workout", "Stain Removal")
+        2. **topic**: 2-3 word English topic (e.g., "Pumpkin Bars", "HIIT Workout", "Stain Removal")
 
-3. **title**: Precise English title, <= {TITLE_MAX_CHARS} chars, NO emojis
+        3. **title**: Precise English title, <= {TITLE_MAX_CHARS} chars, NO emojis
 
-4. **brief_description**: ONE sentence (max 80 chars) describing what this is
+        4. **brief_description**: ONE sentence (max 80 chars) describing what this is
 
-5. **highlights**: array of EXACTLY 4 objects:
-   - "emoji": ONE relevant emoji
-   - "headline": 3-5 word title (NO emojis in text)
-   - "description": One sentence (NO emojis in text)
+        5. **highlights**: array of EXACTLY 4 objects:
+           - "emoji": ONE relevant emoji
+           - "headline": 3-5 word title (NO emojis in text)
+           - "description": One sentence (NO emojis in text). Capture SPECIFIC details, not generic fluff.
 
-6. **hashtags**: 5-10 keywords WITHOUT '#'
+        6. **hashtags**: 5-10 keywords WITHOUT '#'
 
-7. **emojis**: array of 4 relevant emojis for this content type.
+        7. **emojis**: array of 4 relevant emojis for this content type.
 
-{type_specific}
+        {type_specific}
 
-Return JSON with these fields only. Do NOT include summary field.
-"""
+        Return JSON with these fields only. Do NOT include summary field.
+        """
 
     def _build_summary_prompt_english(
         self, title: str, brief_desc: str, content_type: str
@@ -426,6 +411,7 @@ BRIEF DESCRIPTION: {brief_desc}
 REQUIREMENTS:
 - Length: 250-{SUMMARY_MAX_CHARS} characters (2-3 complete sentences)
 - Style: Simple, factual, informative (like Wikipedia intro)
+- NO FLUFF: NEVER use phrases like "This video is about", "This content provides", "Here is a guide", or "In this clip". Start directly with the core subject. Dive straight to the point.
 - Write about: WHAT the content teaches/shows, WHO it's useful for, and PRACTICAL benefits.
 - NO emojis, NO marketing language, NO flowery adjectives
 - Do NOT write out the step-by-step instructions (keep it high level)
@@ -445,7 +431,6 @@ Output ONLY valid JSON with one field:
         instructions: list = None,
         tips: list = None,
         notes: list = None,
-        headlines: list = None,
     ) -> str:
         lang_name_map = {
             "fr": "French", "es": "Spanish", "de": "German", "it": "Italian",
@@ -478,11 +463,6 @@ Output ONLY valid JSON with one field:
             translation_input += f'\n"notes_en": {json.dumps(notes, ensure_ascii=False)}'
             translation_output_fields.append('"notes": ["translated note 1", ...]')
 
-        if headlines:
-            hl_list = [f"{h['headline']}: {h['text']}" for h in headlines]
-            translation_input += f'\n"headlines_en": {json.dumps(hl_list, ensure_ascii=False)}'
-            translation_output_fields.append('"headlines": ["translated headline 1: text 1", ...]')
-
         has_translation = bool(translation_input)
 
         translation_section = ""
@@ -508,6 +488,7 @@ BRIEF DESCRIPTION: {brief_desc}
 REQUIREMENTS:
 - Summary length: 250-{SUMMARY_MAX_CHARS} characters EACH (2-3 complete sentences)
 - Style: Simple, factual, informative (like Wikipedia intro)
+- NO FLUFF: NEVER use phrases like "This video is about", "This content provides", "Here is a guide", or "In this clip". Start directly with the core subject. Dive straight to the point.
 - Write about: WHAT the content teaches/shows, WHO it's useful for, and PRACTICAL benefits.
 - NO emojis, NO marketing language, NO flowery adjectives
 - Write ORIGINAL text in both languages - do NOT copy from input
@@ -555,7 +536,7 @@ Output ONLY valid JSON:
                 raw = resp.json()["choices"][0]["message"]["content"]
                 content = json.loads(raw)
 
-                # ✅ Track successful call
+                # Track successful call
                 record_call(prompt_len=len(prompt), response_len=len(raw))
 
                 return content
@@ -563,7 +544,7 @@ Output ONLY valid JSON:
             except Exception as e:
                 logger.error("❌ HTTP Mistral failed (attempt %d): %s", attempt + 1, e)
 
-                # ✅ Track failed call
+                # Track failed call
                 record_call(prompt_len=len(prompt), response_len=0, error=True)
 
                 if attempt == max_retries:
@@ -573,7 +554,7 @@ Output ONLY valid JSON:
 
     def fallback(self, caption: str, classification: Dict) -> Dict:
         title = derive_best_title_from_caption(caption) or (
-            caption.split("\\n")[0] if caption else "Saved Content"
+            caption.split("\n")[0] if caption else "Saved Content"
         ).strip()
         title = clean_title(title) or "Saved Content"
 

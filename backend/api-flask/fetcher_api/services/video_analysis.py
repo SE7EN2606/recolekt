@@ -2,46 +2,47 @@
 
 import os
 import logging
+import subprocess
 from typing import Dict, Optional, Tuple
 
 from fetcher_api.adapters.instagram_client import instagram_client
 
 logger = logging.getLogger("video_analysis")
 
-
 def generate_reel_thumbnail(video_path: str, output_path: str, time_offset: float = 0.0) -> bool:
     """
-    DEPRECATED: Use download_instagram_thumbnail() instead.
-    This extracts frame 0, but Instagram uses custom thumbnails.
+    Extracts the first frame of the video using FFmpeg.
+    This works universally for Facebook, TikTok, etc.
     """
     try:
-        import cv2
-
-        cap = cv2.VideoCapture(video_path)
-
-        if not cap.isOpened():
-            logger.error("❌ Could not open video file")
-            cap.release()
+        if not os.path.exists(video_path):
+            logger.error(f"❌ Video file not found for thumbnail: {video_path}")
             return False
 
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        ret, frame = cap.read()
-
-        if ret and frame is not None:
-            success = cv2.imwrite(output_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
-            cap.release()
-
-            if success and os.path.exists(output_path):
-                logger.info("✅ Fallback: Saved frame 0")
-                return True
-
-        cap.release()
+        # Run FFmpeg to extract frame at 00:00:00
+        cmd = [
+            'ffmpeg',
+            '-y',  # Overwrite output file if it exists
+            '-i', video_path,
+            '-vframes', '1',
+            '-ss', str(time_offset),
+            '-q:v', '2',  # High quality jpeg
+            output_path
+        ]
+        
+        # Capture output silently
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        if result.returncode == 0 and os.path.exists(output_path):
+            logger.info(f"✅ FFmpeg successfully extracted thumbnail to: {output_path}")
+            return True
+        else:
+            logger.error(f"❌ FFmpeg failed to extract thumbnail. Error: {result.stderr.decode('utf-8')}")
+            return False
 
     except Exception as e:
-        logger.error(f"❌ Frame extraction error: {e}")
-
-    return False
-
+        logger.error(f"❌ FFmpeg frame extraction error: {e}")
+        return False
 
 def download_instagram_thumbnail_bytes(post) -> Optional[bytes]:
     """
@@ -115,7 +116,16 @@ def get_instagram_video_duration(url: str) -> Optional[int]:
     try:
         logger.info(f"🕒 Checking video duration for: {url}")
 
-        # Extract shortcode from URL
+        # Check if Facebook
+        url_lower = url.lower()
+        if "facebook.com" in url_lower or "fb." in url_lower:
+            # yt-dlp duration check for facebook
+            from fetcher_api.adapters.facebook_client import facebook_client
+            info = facebook_client.get_post_info(url)
+            # yt-dlp sometimes extracts duration, but if not we skip it.
+            return info.get("duration") if info else None
+
+        # Extract shortcode from URL (Instagram path)
         shortcode = instagram_client.extract_shortcode(url)
         if not shortcode:
             logger.error("❌ Could not extract shortcode from URL")
@@ -160,9 +170,38 @@ def get_instagram_video_duration(url: str) -> Optional[int]:
 
 def download_instagram_video(url: str, output_path: str) -> Dict:
     """
-    Download Instagram video using Instaloader.
-    Returns the post object so we can extract the real thumbnail.
+    Universal downloader. Retained name 'download_instagram_video' 
+    to not break existing background imports, but now routes Facebook
+    URLs to the facebook_client.
     """
+    url_lower = url.lower()
+    if "facebook.com" in url_lower or "fb." in url_lower:
+        # -------------------------------------
+        # FACEBOOK FLOW
+        # -------------------------------------
+        try:
+            logger.info(f"⬇️ Downloading Facebook video: {url}")
+            from fetcher_api.adapters.facebook_client import facebook_client
+            
+            fb_result = facebook_client.download_facebook_video(url, output_path)
+            
+            if not fb_result.get("success"):
+                return {"success": False, "metadata": {}, "post": None}
+                
+            # Facebook post object is just a dict for us, 
+            # we can use CV2 fallback for thumbnail later.
+            return {
+                "success": True,
+                "metadata": fb_result.get("metadata", {}),
+                "post": None 
+            }
+        except Exception as e:
+            logger.error(f"❌ Facebook download error: {e}")
+            return {"success": False, "metadata": {}, "post": None}
+
+    # -------------------------------------
+    # INSTAGRAM FLOW (Unchanged)
+    # -------------------------------------
     try:
         logger.info(f"⬇️ Downloading Instagram video: {url}")
 
@@ -211,7 +250,7 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
 
         logger.info(f"✅ Video saved to {output_path}")
 
-        # ✅ FIXED: Proper username extraction with fallback
+        # Proper username extraction with fallback
         username = ""
         if hasattr(post, 'owner_username') and post.owner_username:
             username = post.owner_username
@@ -233,8 +272,8 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
         metadata = {
             "username": username,
             "caption": post.caption if post.caption else "",
-            "likes": post.likes,
-            "comments": post.comments,
+            "likes": getattr(post, "likes", 0),
+            "comments": getattr(post, "comments", 0),
         }
 
         logger.info(f"📊 Metadata: @{metadata['username']} | ❤️ {metadata['likes']} | 💬 {metadata['comments']}")

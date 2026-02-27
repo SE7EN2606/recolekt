@@ -5,6 +5,7 @@ import tempfile
 import logging
 import threading
 import re
+import uuid
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 
@@ -61,7 +62,7 @@ def _extract_url_from_request():
     try:
         raw_data = request.get_data(as_text=True)
         logger.info(f"🔍 Raw body (first 300 chars): {raw_data[:300]}")
-        match = re.search(r'(https?://(?:www\.)?instagram\.com/[^\s"\'<>]+)', raw_data)
+        match = re.search(r'(https?://(?:www\.)?(?:instagram|facebook|fb)\.[^\s"\'<>]+)', raw_data)
         if match:
             found = match.group(1)
             logger.info(f"✅ Found URL via regex: {found}")
@@ -139,23 +140,50 @@ def summarize():
     }
 
     try:
+        platform_id = "IG"  # Default
+        shortcode = "unknown"
+
         if file and file.filename:
             filename = secure_filename(file.filename)
             video_path = save_uploaded_file(file, temp_dir)
             shortcode = get_unique_id(filename).rstrip("-")
             result["process_id"] = f"{shortcode}--{get_timestamp()}--{get_unique_id(url or filename)}"
             logger.info(f"📁 File upload: {result['process_id']}")
+        
         else:
-            logger.info(f"🔗 Processing Instagram URL: {url}")
-            shortcode = instagram_client.extract_shortcode(url) or "unknown"
+            # ---------------------------------------------------------
+            # ✅ FIXED: Facebook vs Instagram Routing
+            # ---------------------------------------------------------
+            url_lower = url.lower()
+            is_facebook = "facebook.com" in url_lower or "fb." in url_lower
+            
+            if is_facebook:
+                logger.info(f"🔗 Processing Facebook URL: {url}")
+                from fetcher_api.adapters.facebook_client import facebook_client
+                extracted = facebook_client.extract_shortcode(url)
+                shortcode = extracted if extracted else "unknown"
+                platform_id = "FB"
+            else:
+                logger.info(f"🔗 Processing Instagram URL: {url}")
+                extracted = instagram_client.extract_shortcode(url)
+                shortcode = extracted if extracted else "unknown"
+                platform_id = "IG"
+
             shortcode = shortcode.rstrip("-")
+
+            # Fallback for completely unknown IDs to prevent collisions
+            if not shortcode or shortcode == "unknown" or shortcode == "None":
+                shortcode = f"{platform_id.lower()}_{uuid.uuid4().hex[:10]}"
+                logger.info(f"🔄 Assigned dynamic shortcode: {shortcode}")
+
             result["process_id"] = f"{shortcode}--{get_timestamp()}--{get_unique_id(url)}"
             video_path = os.path.join(temp_dir, f"{result['process_id']}.mp4")
             logger.info(f"🆔 Process ID: {result['process_id']}")
 
             logger.info(f"⏭️ Skipping metadata fetch - will be done in background")
 
-        gcs_paths = generate_gcs_paths(shortcode, "IG")
+        # ✅ FIXED: Dynamically use FB_reels or IG_reels based on platform
+        gcs_paths = generate_gcs_paths(shortcode, platform_id)
         result["gcs_paths"] = gcs_paths
         
         logger.info(f"⏭️ Skipping thumbnail generation - will be done in background")
@@ -183,6 +211,7 @@ def summarize():
 
     try:
         logger.info(f"🚀 Starting background processing thread...")
+        # ✅ NOTE: Save dir is None here, but processing.py will still use the gcs_paths correctly.
         threading.Thread(
             target=background_process,
             args=(result, video_path, temp_dir, shortcode, "", url, save_to_gcs, "", None, user_id),

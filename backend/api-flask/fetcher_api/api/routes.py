@@ -8,6 +8,7 @@ import json
 import logging
 import tempfile
 import threading
+import uuid
 from datetime import datetime
 from flask import Blueprint, jsonify, request
 
@@ -247,23 +248,47 @@ def import_share():
             "upgrade": True
         }), 403
     
-    # Trigger processing (reuse existing /summarize logic)
-    from fetcher_api.adapters.instagram_client import instagram_client
+    # ---------------------------------------------------------
+    # Platform Detection and Routing
+    # ---------------------------------------------------------
     from fetcher_api.utils.timestamps import get_timestamp, get_unique_id
-    from fetcher_api.services.video_analysis import download_instagram_video
     from fetcher_api.services.storage import generate_gcs_paths
     from fetcher_api.api.helpers.processing import background_process
+
+    url_lower = url.lower()
+    is_facebook = "facebook.com" in url_lower or "fb." in url_lower
+
+    if is_facebook:
+        from fetcher_api.adapters.facebook_client import facebook_client
+        extracted = facebook_client.extract_shortcode(url)
+        shortcode = extracted if extracted else "unknown"
+        platform_id = "FB"
+    else:
+        from fetcher_api.adapters.instagram_client import instagram_client
+        extracted = instagram_client.extract_shortcode(url)
+        shortcode = extracted if extracted else "unknown"
+        platform_id = "IG"
+
+    shortcode = shortcode.strip()
     
-    shortcode = instagram_client.extract_shortcode(url) or "unknown"
-    shortcode = shortcode.rstrip()
+    # ✅ FIX: Catch "unknown", "None", or empty strings and assign a UUID
+    if not shortcode or shortcode.lower() == "unknown" or shortcode == "None":
+        shortcode = f"{platform_id.lower()}_{uuid.uuid4().hex[:10]}"
+        logger.info(f"🔄 Assigned dynamic shortcode: {shortcode}")
+
     process_id = f"{shortcode}_{get_timestamp()}_{get_unique_id(url)}"
     
-    # Start background processing (simplified - you can expand this)
     temp_dir = tempfile.mkdtemp()
     video_path = os.path.join(temp_dir, f"{process_id}.mp4")
     
     try:
-        dl = download_instagram_video(url, video_path)
+        # Download logic based on platform
+        if is_facebook:
+            from fetcher_api.adapters.facebook_client import facebook_client
+            dl = facebook_client.download_facebook_video(url, video_path)
+        else:
+            from fetcher_api.services.video_analysis import download_instagram_video
+            dl = download_instagram_video(url, video_path)
         
         if not dl.get("success"):
             return jsonify({
@@ -277,7 +302,7 @@ def import_share():
         author_name = metadata.get("username", "") or ""
         
         # Create preview record
-        gcs_paths = generate_gcs_paths(shortcode, "IG")
+        gcs_paths = generate_gcs_paths(shortcode, platform_id)
         
         preview_record = {
             "process_id": process_id,
@@ -313,7 +338,7 @@ def import_share():
             daemon=True
         ).start()
         
-        logger.info(f"✅ Started processing {process_id} via import_share")
+        logger.info(f"✅ Started processing {process_id} ({platform_id}) via import_share")
         
         # Return success with open_url
         open_url = f"{FRONTEND_BASE_URL}/gallery/all?refresh=1"
