@@ -1,3 +1,5 @@
+# fetcher_api/adapters/gcs_client.py
+
 import os
 import time
 import json

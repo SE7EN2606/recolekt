@@ -469,7 +469,10 @@ def get_reel(process_id):
 
 @reel_bp.route("/reel/<process_id>", methods=["DELETE", "OPTIONS"])
 def delete_reel(process_id):
-    """Delete reel from DB + Google Cloud Storage"""
+    """
+    Delete reel from DB + Google Cloud Storage.
+    FIXED: Now uniquely targets the process_id folder to avoid accidental cross-deletions.
+    """
     if request.method == "OPTIONS":
         return "", 200
 
@@ -479,92 +482,66 @@ def delete_reel(process_id):
         except ValueError:
             return jsonify({"error": "Authentication required"}), 401
 
-        if "--" in process_id:
-            shortcode = process_id.split("--")[0]
-        else:
-            shortcode = process_id.split("-")[0]
-        shortcode = shortcode.rstrip("-")
-
+        # 1. Fetch the record first to get the GCS URLs and the real ID
         reel_data = fetch_one(
             """
-            SELECT id, gcs_urls, source_url
-            FROM reels
-            WHERE user_id = %s AND (id = %s OR id LIKE %s OR source_url LIKE %s)
+            SELECT id, gcs_urls, source_url 
+            FROM reels 
+            WHERE user_id = %s AND id = %s 
             LIMIT 1
             """,
-            (user_id, process_id, f"{shortcode}%", f"%{shortcode}%"),
+            (user_id, process_id),
         )
 
         if not reel_data:
             logger.warning(f"⚠️ Reel {process_id} not found for user {user_id}")
             return jsonify({"error": "Reel not found"}), 404
 
-        if hasattr(reel_data, "keys"):
-            reel_dict = dict(reel_data)
-        elif hasattr(reel_data, "_asdict"):
-            reel_dict = reel_data._asdict()
-        else:
-            reel_dict = {"id": reel_data[0], "gcs_urls": reel_data[1]}
-
+        reel_dict = dict(reel_data) if hasattr(reel_data, "keys") else reel_data._asdict()
         actual_id = reel_dict["id"]
-        logger.info(f"🗑️ Found reel to delete: {actual_id}")
 
+        # 2. Delete the specific folder from Google Cloud Storage
         try:
             storage_client = storage.Client()
             bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-analysis")
             bucket = storage_client.bucket(bucket_name)
-            deleted_count = 0
-
-            gcs_urls_raw = reel_dict.get("gcs_urls")
-            folder_path = None
-            gcs_urls = json_loads_maybe(gcs_urls_raw, default=gcs_urls_raw)
-
-            if isinstance(gcs_urls, dict) and gcs_urls.get("preview_thumbnail"):
-                sample_path = gcs_urls["preview_thumbnail"]
-                if "media/IG_reels" in sample_path:
-                    parts = sample_path.split("media/IG_reels/")[1].split("/")
-                    if len(parts) >= 1:
-                        folder_name = parts[0]
-                        folder_path = f"media/IG_reels/{folder_name}/"
-                        logger.info(f"📂 Extracted folder from gcs_urls: {folder_path}")
-
-            if not folder_path:
-                logger.warning("⚠️ No folder extracted from gcs_urls, trying fallback patterns")
-                folder_paths = [
-                    f"media/IG_reels/{shortcode}/",
-                    f"media/IG_reels/{shortcode}-/",
-                    f"media/IG_reels/{shortcode}",
-                ]
+            
+            # We prioritize the folder named after the process_id
+            target_folder = f"media/IG_reels/{actual_id}/"
+            
+            logger.info(f"🔍 Attempting to clear GCS folder: {target_folder}")
+            blobs = list(bucket.list_blobs(prefix=target_folder))
+            
+            if blobs:
+                for blob in blobs:
+                    blob.delete()
+                logger.info(f"✅ Deleted {len(blobs)} files from GCS folder: {target_folder}")
             else:
-                folder_paths = [folder_path]
-
-            for folder in folder_paths:
-                logger.info(f"🔍 Checking GCS folder: {folder}")
-                blobs = list(bucket.list_blobs(prefix=folder))
-                if blobs:
-                    for blob in blobs:
-                        blob.delete()
-                        deleted_count += 1
-                        logger.info(f"🗑️ Deleted GCS file: {blob.name}")
-                    break
-
-            if deleted_count > 0:
-                logger.info(f"✅ Deleted {deleted_count} files from GCS")
-            else:
-                logger.warning(f"⚠️ No GCS files found for {process_id}")
+                # FALLBACK: If the folder doesn't exist by ID, check if it's stored under the old shortcode
+                gcs_urls = json_loads_maybe(reel_dict.get("gcs_urls"), default={})
+                if isinstance(gcs_urls, dict) and gcs_urls.get("preview_thumbnail"):
+                    sample = gcs_urls["preview_thumbnail"]
+                    if "media/IG_reels/" in sample:
+                        folder_name = sample.split("media/IG_reels/")[1].split("/")[0]
+                        fallback_folder = f"media/IG_reels/{folder_name}/"
+                        
+                        fallback_blobs = list(bucket.list_blobs(prefix=fallback_folder))
+                        for fb in fallback_blobs:
+                            fb.delete()
+                        logger.info(f"✅ Deleted {len(fallback_blobs)} files from fallback GCS folder: {fallback_folder}")
 
         except Exception as gcs_error:
-            logger.error(f"❌ GCS deletion error: {gcs_error}", exc_info=True)
+            logger.error(f"❌ GCS deletion error for {actual_id}: {gcs_error}")
 
+        # 3. Finally, delete the row from the database
         execute("DELETE FROM reels WHERE user_id = %s AND id = %s", (user_id, actual_id))
-        logger.info(f"✅ Deleted reel {actual_id} from NeonDB")
+        logger.info(f"✅ Deleted reel {actual_id} from database")
 
         return jsonify({"status": "deleted", "id": actual_id}), 200
 
     except Exception as e:
-        logger.error(f"❌ Error deleting reel {process_id}: {e}", exc_info=True)
+        logger.error(f"❌ Error in delete_reel: {e}", exc_info=True)
         return jsonify({"error": "Internal error", "details": str(e)}), 500
-
 
 @reel_bp.route("/search", methods=["GET"])
 def search_reels():
