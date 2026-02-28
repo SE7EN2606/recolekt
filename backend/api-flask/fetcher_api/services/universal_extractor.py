@@ -1,7 +1,7 @@
 # fetcher_api/services/universal_extractor.py
 """
 Universal Content Extractor - BILINGUAL TWO-CALL approach
-Call 1: Extract structured data (title, recipe/guide, hashtags, etc.)
+Call 1: Extract structured data (title, recipe/guide, hashtags, location, etc.)
 Call 2: Generate summary in BOTH English AND original language + translations (no Call 3)
 """
 
@@ -9,6 +9,7 @@ import os
 import json
 import logging
 import requests
+import re
 from typing import Dict
 
 from fetcher_api.services.extractor_helpers import (
@@ -116,6 +117,9 @@ class UniversalExtractor:
         brief_description = safe_str(result_data.get("brief_description", ""))
 
         highlights_raw = safe_list(result_data.get("highlights", []))
+        
+        # ---------- Extract Location (NEW) ----------
+        location_obj = result_data.get("location", None)
 
         # ---------- Extract guide/recipe fields from Call 1 ----------
         recipe_obj = result_data.get("recipe", {})
@@ -238,7 +242,6 @@ class UniversalExtractor:
                 notes_og = [clean_text(safe_str(x)) for x in notes_og_raw]
 
         # ---------- Build English headlines ----------
-        # 🔥 FIX: We just want the formatted bullets, we intentionally ignore the paragraph so the raw one isn't overwritten!
         _, ai_bullets_en = format_ai_summary(
             title_en=title_en,
             summary_en_raw=summary_en,
@@ -275,10 +278,24 @@ class UniversalExtractor:
                     for i, b in enumerate(bullets_og)
                 ]
 
-        hashtags = safe_list(result_data.get("hashtags", []))
-        hashtags = [str(t).lstrip("#").strip() for t in hashtags if str(t).strip()]
-        hashtags = unique_keep_order(hashtags)
+        # 🔥 FIX: GUARDRAIL POUR LES HASHTAGS ET DÉDUPLICATION
+        hashtags_raw = safe_list(result_data.get("hashtags", []))
+        hashtags_clean = [str(t).lstrip("#").strip() for t in hashtags_raw if str(t).strip()]
+        
+        # Extraction des hashtags existants dans la légende
+        caption_lower = caption.lower()
+        caption_tags = set(re.findall(r"#(\w+)", caption_lower))
+        
+        filtered_tags = []
+        for t in hashtags_clean:
+            t_lower = t.lower()
+            if t_lower not in caption_tags and t_lower not in [f.lower() for f in filtered_tags]:
+                filtered_tags.append(t)
+        
+        # On limite strictement à 5 hashtags
+        hashtags = filtered_tags[:5]
 
+        # ---------- Emojis ----------
         emojis = safe_list(result_data.get("emojis", []))
         emojis = [e.strip() for e in emojis if isinstance(e, str) and e.strip()]
         emojis = unique_keep_order(emojis)
@@ -286,7 +303,6 @@ class UniversalExtractor:
             emojis = (emojis + ["✨", "💡", "📌", "✅"])[:4]
         emojis = emojis[:4]
 
-        # 🔥 FIX: Pass summary_en and summary_og DIRECTLY to the output
         bilingual_summary = {
             "english": {
                 "title": title_en,
@@ -341,6 +357,7 @@ class UniversalExtractor:
             "hashtags": hashtags,
             "emojis": emojis,
             "recipe": json.dumps(recipe_data, ensure_ascii=False) if recipe_data else None,
+            "location": location_obj,  # ✅ ADDED FOR THE FUTURE MAP FEATURE
             "workout": None,
             "detected_language": effective_lang,
         }
@@ -350,16 +367,22 @@ class UniversalExtractor:
     ) -> str:
         
         type_specific = f"""
-7. **recipe** object: YOU MUST ALWAYS CREATE THIS OBJECT if there are any ingredients or steps mentioned. 
-   Find the specific techniques used (e.g. "basting", "peeling") and include them.
+7. **recipe** object: ONLY CREATE THIS OBJECT IF the content is an ACTUAL RECIPE TUTORIAL teaching how to make a dish at home. 
+   🚨 DO NOT create a recipe if the video is just a restaurant review, a food tasting, or visiting a shop.
+   If it IS a valid home recipe, include:
    - **servings**: Yield
    - **prep_time**: Setup time
    - **cook_time**: Active time
    - **total_time**: Total duration
    - **ingredients**: ARRAY OF OBJECTS. Each must have: "item", "quantity", "unit", "emoji". Never return strings.
    - **instructions**: Detailed, actionable steps (minimum 6).
-   - **tips**: Extract specific chef secrets or nuances (e.g. "Keep whole for onctuosité").
+   - **tips**: Extract specific chef secrets or nuances.
    - **notes**: Important context.
+
+8. **location** object: ONLY CREATE THIS OBJECT IF the video is about visiting a specific restaurant, shop, hotel, city, or physical place.
+   - **name**: Name of the place (e.g. "L'Antico Vinaio")
+   - **city**: City or region mentioned (e.g. "Paris")
+   - **type**: Type of place (e.g. "Sandwich Shop", "Restaurant", "Hotel")
 """
 
         return f"""Extract structured data from this {content_type} content. Output ONLY valid JSON.
@@ -390,7 +413,7 @@ class UniversalExtractor:
            - "headline": 3-5 word title (NO emojis in text)
            - "description": One sentence (NO emojis in text). Capture SPECIFIC details, not generic fluff.
 
-        6. **hashtags**: 5-10 keywords WITHOUT '#'
+        6. **hashtags**: Generate up to 5 highly relevant keywords WITHOUT '#'. 🚨 DO NOT repeat any hashtags that are already used in the CAPTION.
 
         7. **emojis**: array of 4 relevant emojis for this content type.
 
