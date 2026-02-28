@@ -38,25 +38,20 @@ EXTRACTOR_VERSION = "universal-v15-guides"
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 
 
-def smart_truncate_summary(text: str, max_chars: int = SUMMARY_MAX_CHARS) -> str:
-    """Truncate summary intelligently at sentence boundaries. Never cut mid-word."""
+def smart_truncate_summary(text: str, max_chars: int = 600) -> str:
+    """Truncate summary intelligently while preserving paragraph formatting."""
     s = strip_emoji(text or "").strip()
     if len(s) <= max_chars:
         return s
 
     cut = s[:max_chars]
-    last_period = max(cut.rfind("."), cut.rfind("!"), cut.rfind("?"))
-
-    if last_period > max_chars * 0.7:
-        return s[:last_period + 1].strip()
-
+    # Find last space to avoid cutting mid-word
     if " " in cut:
         cut = cut.rsplit(" ", 1)[0].rstrip()
-
+    
     cut = cut.rstrip(" ,.;:!-–—")
-
     if cut and not cut.endswith((".", "!", "?")):
-        cut += "."
+        cut += "..."
 
     return cut
 
@@ -120,6 +115,8 @@ class UniversalExtractor:
 
         brief_description = safe_str(result_data.get("brief_description", ""))
 
+        highlights_raw = safe_list(result_data.get("highlights", []))
+
         # ---------- Extract guide/recipe fields from Call 1 ----------
         recipe_obj = result_data.get("recipe", {})
 
@@ -141,14 +138,14 @@ class UniversalExtractor:
             )
             result_summary = self._call_ai(prompt_summary)
 
-            summary_en_raw = clean_text(safe_str(result_summary.get("summary", "")))
+            summary_en_raw = safe_str(result_summary.get("summary", ""))
 
             if is_caption_copy(summary_en_raw, caption):
                 logger.error("🚨 AI COPIED CAPTION! Using fallback summary.")
                 summary_en_raw = (
                     f"{title_en} is a practical {content_type} guide that provides "
-                    "clear steps and requirements for an easy-to-follow result. "
-                    "Suitable for various skill levels."
+                    "clear steps and requirements for an easy-to-follow result.\n\n"
+                    "Suitable for various skill levels and highly recommended."
                 )
 
             summary_en = smart_truncate_summary(summary_en_raw)
@@ -167,6 +164,7 @@ class UniversalExtractor:
             )
             prompt_summary = self._build_summary_prompt_bilingual(
                 title_en, brief_description, content_type, effective_lang,
+                highlights=highlights_raw,
                 ingredients=ingredients_en if ingredients_en else None,
                 instructions=instructions_en if instructions_en else None,
                 tips=tips_en if tips_en else None,
@@ -174,15 +172,16 @@ class UniversalExtractor:
             )
             result_summary = self._call_ai(prompt_summary)
 
-            summary_en_raw = clean_text(safe_str(result_summary.get("summary_en", "")))
-            summary_og_raw = clean_text(safe_str(result_summary.get("summary_original", "")))
+            summary_en_raw = safe_str(result_summary.get("summary_en", ""))
+            summary_og_raw = safe_str(result_summary.get("summary_original", ""))
             title_og_raw = clean_title(safe_str(result_summary.get("title_original", "")))
 
             if is_caption_copy(summary_en_raw, caption):
                 logger.error("🚨 AI COPIED CAPTION in English! Using fallback.")
                 summary_en_raw = (
                     f"{title_en} is a practical {content_type} guide that provides "
-                    "clear steps and requirements for an easy-to-follow result."
+                    "clear steps and requirements for an easy-to-follow result.\n\n"
+                    "Suitable for various skill levels and highly recommended."
                 )
 
             if is_caption_copy(summary_og_raw, caption):
@@ -238,10 +237,9 @@ class UniversalExtractor:
             if notes_og_raw and len(notes_og_raw) >= len(notes_en):
                 notes_og = [clean_text(safe_str(x)) for x in notes_og_raw]
 
-        # ---------- Build headlines ----------
-        highlights_raw = safe_list(result_data.get("highlights", []))
-
-        ai_paragraph_en, ai_bullets_en = format_ai_summary(
+        # ---------- Build English headlines ----------
+        # 🔥 FIX: We just want the formatted bullets, we intentionally ignore the paragraph so the raw one isn't overwritten!
+        _, ai_bullets_en = format_ai_summary(
             title_en=title_en,
             summary_en_raw=summary_en,
             highlights_raw=highlights_raw,
@@ -288,17 +286,18 @@ class UniversalExtractor:
             emojis = (emojis + ["✨", "💡", "📌", "✅"])[:4]
         emojis = emojis[:4]
 
+        # 🔥 FIX: Pass summary_en and summary_og DIRECTLY to the output
         bilingual_summary = {
             "english": {
                 "title": title_en,
-                "summary": ai_paragraph_en,
+                "summary": summary_en, 
                 "headlines": headlines_en,
                 "hashtags": hashtags,
                 "emojis": emojis,
             },
             "original": {
                 "title": title_og,
-                "summary": summary_og if not is_english_content else ai_paragraph_en,
+                "summary": summary_og if not is_english_content else summary_en, 
                 "headlines": headlines_og,
                 "hashtags": hashtags,
                 "emojis": emojis,
@@ -409,7 +408,8 @@ TITLE: {title}
 BRIEF DESCRIPTION: {brief_desc}
 
 REQUIREMENTS:
-- Length: 250-{SUMMARY_MAX_CHARS} characters (2-3 complete sentences)
+- Length: EXACTLY 250 to 450 characters.
+- Format: Write EXACTLY 2 paragraphs. Use a newline (\\n\\n) to separate them.
 - Style: Simple, factual, informative (like Wikipedia intro)
 - NO FLUFF: NEVER use phrases like "This video is about", "This content provides", "Here is a guide", or "In this clip". Start directly with the core subject. Dive straight to the point.
 - Write about: WHAT the content teaches/shows, WHO it's useful for, and PRACTICAL benefits.
@@ -427,6 +427,7 @@ Output ONLY valid JSON with one field:
         brief_desc: str,
         content_type: str,
         original_lang: str,
+        highlights: list = None,
         ingredients: list = None,
         instructions: list = None,
         tips: list = None,
@@ -442,6 +443,12 @@ Output ONLY valid JSON with one field:
         # ── Build optional translation block ──
         translation_input = ""
         translation_output_fields = []
+
+        if highlights:
+            # We only need to translate the text content, strip emojis to save tokens
+            hl_text = [{"headline": h.get("headline", ""), "description": h.get("description", "")} for h in highlights]
+            translation_input += f'\n"headlines_en": {json.dumps(hl_text, ensure_ascii=False)}'
+            translation_output_fields.append('"headlines": [{"headline": "translated headline", "description": "translated description"}]')
 
         if ingredients:
             names = [i["item"] for i in ingredients]
@@ -472,7 +479,7 @@ Output ONLY valid JSON with one field:
 CONTENT TO TRANSLATE TO {lang_name.upper()}:
 {translation_input}
 
-Also include these translated fields in your JSON output:
+Also include these translated fields in your JSON output exactly matching the structure of the input arrays:
   {extra_fields}
 """
 
@@ -486,7 +493,8 @@ TITLE (English): {title}
 BRIEF DESCRIPTION: {brief_desc}
 {translation_section}
 REQUIREMENTS:
-- Summary length: 250-{SUMMARY_MAX_CHARS} characters EACH (2-3 complete sentences)
+- Summary length: EXACTLY 250 to 450 characters EACH.
+- Format: Write EXACTLY 2 paragraphs per language. Use a newline (\\n\\n) to separate them.
 - Style: Simple, factual, informative (like Wikipedia intro)
 - NO FLUFF: NEVER use phrases like "This video is about", "This content provides", "Here is a guide", or "In this clip". Start directly with the core subject. Dive straight to the point.
 - Write about: WHAT the content teaches/shows, WHO it's useful for, and PRACTICAL benefits.
@@ -497,8 +505,8 @@ REQUIREMENTS:
 
 Output ONLY valid JSON:
 {{
-  "summary_en": "English summary here",
-  "summary_original": "{lang_name} summary here",
+  "summary_en": "English summary here\\n\\nSecond paragraph here",
+  "summary_original": "{lang_name} summary here\\n\\nSecond paragraph here",
   "title_original": "{lang_name} title here"{extra_json_fields}
 }}
 """

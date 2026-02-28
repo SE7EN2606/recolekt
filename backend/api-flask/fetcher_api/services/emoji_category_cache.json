@@ -184,5 +184,8 @@
   "pecorino or pangrattato": "OTHER",
   "fregula or any pasta shape": "GRAIN",
   "reedbow": "OTHER",
-  "lobster": "PROTEIN_OTHER"
+  "lobster": "PROTEIN_OTHER",
+  "fregula or pasta shape": "GRAIN",
+  "spinach": "VEGETABLE",
+  "pate feuilletee": "OTHER"
 }
