@@ -149,15 +149,26 @@ export const VideoDetail: React.FC = () => {
       const short = getShortcode(id); 
       const isFB = secureFound.source_url?.includes('facebook.com') || secureFound.source_url?.includes('fb.') || id.includes('FB') || short.length < 5;
       const folder = isFB ? 'FB_reels' : 'IG_reels';
-      const resultUrl = `https://storage.googleapis.com/recolekt-storage/media/${folder}/${short}/${short}_result.json?v=${Date.now()}`;
       
-      const gcsData = await fetchGcsJson<any>(resultUrl).catch(() => ({}));
+      // 🔥 FIX: Check the NEW highly-unique folder path first (using the full ID / process_id)
+      const newResultUrl = `https://storage.googleapis.com/recolekt-storage/media/${folder}/${id}/${short}_result.json?v=${Date.now()}`;
+      
+      // Legacy path for backward compatibility
+      const oldResultUrl = `https://storage.googleapis.com/recolekt-storage/media/${folder}/${short}/${short}_result.json?v=${Date.now()}`;
+      
+      let gcsData = {};
+      try {
+          // Try fetching from the new unique folder format
+          gcsData = await fetchGcsJson<any>(newResultUrl);
+      } catch (e) {
+          // If it fails (404), it's an old reel. Fall back to the old shortcode folder format.
+          gcsData = await fetchGcsJson<any>(oldResultUrl).catch(() => ({}));
+      }
 
       setVideo({ ...secureFound, ...gcsData, __raw: secureFound });
     } catch (err) {
       console.warn("Network fetch skipped or failed.");
     } finally {
-      // ✅ Allow UI to render once the final object is fully assembled
       setLoading(false);
     }
   }, [id, fetchBackendJsonNoStore, videos]);
