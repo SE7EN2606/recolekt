@@ -109,7 +109,6 @@ export const VideoDetail: React.FC = () => {
   const { videos, deleteVideos, moveVideos, toggleFavorite, updateVideo } = useData();
   const { showOriginal, toggleLanguage } = useLanguage(); 
   
-  // ✅ Added 'common' namespace to useTranslation to access general tags
   const { t } = useTranslation(['videoDetail', 'common']);
 
   const [video, setVideo] = useState<any>(null);
@@ -158,6 +157,7 @@ export const VideoDetail: React.FC = () => {
     } catch (err) {
       console.warn("Network fetch skipped or failed.");
     } finally {
+      // ✅ Allow UI to render once the final object is fully assembled
       setLoading(false);
     }
   }, [id, fetchBackendJsonNoStore, videos]);
@@ -168,7 +168,10 @@ export const VideoDetail: React.FC = () => {
       if (prev?.id === id) return prev; 
       const cached = videos.find((v: any) => v.id === id); 
       if (cached) {
-        if (cached.summary) {
+        // 🔥 FIX: Prevent the block-by-block pop-in!
+        // We only hide the loader if the cached version ALREADY has the JSON summary data
+        // If it doesn't, we leave `loading=true` so the page waits for `enrichVideo` to finish!
+        if (cached.summary || cached.status !== 'done') {
           setLoading(false);
         }
         return cached;
@@ -273,15 +276,14 @@ export const VideoDetail: React.FC = () => {
     setReportData(prev => ({ ...prev, errorType: prev.errorType.includes(type) ? prev.errorType.filter(t => t !== type) : [...prev.errorType, type] }));
   };
 
-  // ✅ Added Translation `t()` calls to the Desktop action items menu
   const actionItems: ActionItem[] = [
     { icon: IOSShareIcon, label: t('videoDetail:share', "Share Video"), onClick: handleShare, description: t('videoDetail:shareDesc', 'Share link with friends') },
-    { icon: Pencil, label: t('videoDetail:editDetails', "Edit Details"), onClick: () => setIsEditing(true), description: t('videoDetail:editDesc', 'Modify title, summary, or categories') },
+    { icon: Pencil, label: t('videoDetail:editReel', "Edit details"), onClick: () => setIsEditing(true), description: t('videoDetail:editDesc', 'Modify title, summary, or categories') },
     { icon: Heart, label: video?.isFavorite ? t('videoDetail:removeFromFavorites', "Remove from Favorites") : t('videoDetail:addToFavorites', "Add to Favorites"), onClick: handleToggleFavorite, variant: video?.isFavorite ? 'default' : 'primary' },
     { icon: FolderInput, label: t('videoDetail:moveToCollection', "Move to Collection"), onClick: () => setIsMoveModalOpen(true) },
-    { icon: Archive, label: t('videoDetail:archive', "Archive Video"), onClick: handleArchive },
+    { icon: Archive, label: t('videoDetail:archive', "Archive"), onClick: handleArchive },
     { icon: AlertCircle, label: t('videoDetail:reportIssue', "Report Issue"), onClick: () => setIsReportModalOpen(true) },
-    { icon: Trash2, label: t('common:delete', "Delete Video"), onClick: () => setIsDeleteConfirmOpen(true), variant: 'danger' }
+    { icon: Trash2, label: t('videoDetail:deleteReel', "Delete clip"), onClick: () => setIsDeleteConfirmOpen(true), variant: 'danger' }
   ];
 
   const viewModel = useMemo(() => {
@@ -358,7 +360,7 @@ export const VideoDetail: React.FC = () => {
     };
   }, [video, editedVideo, isEditing, showOriginal]);
 
-  if (loading || !viewModel) return (
+  if (loading || !video || !viewModel) return (
     <div className="p-10 text-center flex justify-center">
       <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
     </div>
@@ -459,7 +461,7 @@ export const VideoDetail: React.FC = () => {
              <div className="space-y-3">
                {viewModel.bullets.map((bullet: any, idx: number) => (
                  <div key={idx} className="flex items-start gap-3 text-gray-600 text-sm">
-                    <div className="w-1.5 h-1.5 rounded-full bg-primary-400 mt-2 flex-shrink-0"></div>
+                    {/* 🔥 FIX: Shows emoji INSTEAD of blue dot. No blue dot rendered. */}
                     {isEditing ? (
                       <div className="flex-1 flex items-center gap-2">
                         <input 
@@ -470,9 +472,18 @@ export const VideoDetail: React.FC = () => {
                         <button onClick={() => handleEditField('remove_bullet', null, idx)} className="text-gray-400 hover:text-red-500"><X size={14} /></button>
                       </div>
                     ) : (
-                      <span className="leading-relaxed">
-                        {bullet.headline ? `${bullet.headline}: ${bullet.text}` : safeString(bullet)}
-                      </span>
+                      <>
+                        {bullet.emoji && (
+                          <span className="text-base leading-none mt-0.5 flex-shrink-0">{bullet.emoji}</span>
+                        )}
+                        <span className="leading-relaxed">
+                          {bullet.headline ? (
+                            <>
+                              <span className="font-bold text-gray-900">{bullet.headline}:</span> {bullet.text}
+                            </>
+                          ) : safeString(bullet)}
+                        </span>
+                      </>
                     )}
                  </div>
                ))}
@@ -697,10 +708,9 @@ export const VideoDetail: React.FC = () => {
       </div>
 
       {/* ─── MODALS & SHEETS ─── */}
-      {/* ✅ Included translation inside the title block here */}
       <ActionSheet isOpen={isActionSheetOpen} onClose={() => setIsActionSheetOpen(false)} title={t('videoDetail:settings', 'Settings')} actions={actionItems} />  
       <MoveCollectionModal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} onMove={handleMove} />
-      <ConfirmModal isOpen={isDeleteConfirmOpen} onClose={() => setIsDeleteConfirmOpen(false)} onConfirm={handleDelete} title="Delete Video" message="Are you sure you want to delete this video? This action cannot be undone." confirmLabel="Delete" variant="danger" />
+      <ConfirmModal isOpen={isDeleteConfirmOpen} onClose={() => setIsDeleteConfirmOpen(false)} onConfirm={handleDelete} title={t('videoDetail:deleteTitle', "Delete this reel?")} message={t('videoDetail:deleteWarning', "This action cannot be undone.")} confirmLabel={t('videoDetail:delete', "Delete")} variant="danger" />
 
       {isReportModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center px-4">
@@ -709,7 +719,7 @@ export const VideoDetail: React.FC = () => {
             <div className="p-6 border-b border-gray-50 flex items-center justify-between bg-white sticky top-0 z-20">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-red-50 text-red-600 rounded-xl"><AlertCircle size={20} /></div>
-                <h3 className="text-lg font-black text-gray-900 tracking-tight">Report Issue</h3>
+                <h3 className="text-lg font-black text-gray-900 tracking-tight">{t('videoDetail:reportIssue', 'Report Issue')}</h3>
               </div>
               <button onClick={() => setIsReportModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X size={20} className="text-gray-400" /></button>
             </div>
