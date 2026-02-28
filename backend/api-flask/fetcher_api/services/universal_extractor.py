@@ -38,6 +38,14 @@ logger = logging.getLogger(__name__)
 EXTRACTOR_VERSION = "universal-v15-guides"
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 
+# Hardcoded bookmark messages for empty reels
+BOOKMARK_MESSAGES = {
+    "en": "Bookmark saved. The creator did not provide a detailed caption or transcript for this video.",
+    "fr": "Signet enregistré. Le créateur n'a pas fourni de légende ou de transcription détaillée pour cette vidéo.",
+    "es": "Marcador guardado. El creador no proporcionó una leyenda o transcripción detallada para este video.",
+    "it": "Segnalibro salvato. Il creatore non ha fornito una didascalia o una trascrizione dettagliata per questo video.",
+    "de": "Lesezeichen gespeichert. Der Ersteller hat keine detaillierte Bildunterschrift oder ein Transkript bereitgestellt."
+}
 
 def smart_truncate_summary(text: str, max_chars: int = 600) -> str:
     """Truncate summary intelligently while preserving paragraph formatting."""
@@ -94,7 +102,62 @@ class UniversalExtractor:
 
         is_english_content = is_english(effective_lang) or is_unknown_lang(effective_lang)
 
-        # ── CALL 1: Extract structured data ──
+        # ── CHECK FOR LOW CONTEXT (BOOKMARK MODE) ──
+        # If the video has almost zero text, prevent AI hallucination
+        total_text_len = len(transcript.strip()) + len(caption.strip())
+        is_low_context = total_text_len < 60
+
+        if is_low_context:
+            logger.info("⚠️ Low context detected (%d chars). Triggering Bookmark Mode.", total_text_len)
+            prompt_data = self._build_bookmark_prompt(caption, effective_lang)
+            result_data = self._call_ai(prompt_data)
+            
+            category = safe_str(result_data.get("category", "General")).strip() or "General"
+            topic = safe_str(result_data.get("topic", "")).strip()
+            title_en = clean_title(safe_str(result_data.get("title", "Saved Reel")))
+            
+            hashtags_raw = safe_list(result_data.get("hashtags", []))
+            hashtags = [str(t).lstrip("#").strip() for t in hashtags_raw if str(t).strip()][:5]
+            
+            emojis = safe_list(result_data.get("emojis", []))
+            emojis = [e.strip() for e in emojis if isinstance(e, str) and e.strip()][:4]
+
+            summary_en = BOOKMARK_MESSAGES["en"]
+            summary_og = BOOKMARK_MESSAGES.get(effective_lang[:2].lower(), BOOKMARK_MESSAGES["en"])
+
+            bilingual_summary = {
+                "english": {
+                    "title": title_en,
+                    "summary": summary_en,
+                    "headlines": [],
+                    "hashtags": hashtags,
+                    "emojis": emojis,
+                },
+                "original": {
+                    "title": title_en,
+                    "summary": summary_og,
+                    "headlines": [],
+                    "hashtags": hashtags,
+                    "emojis": emojis,
+                },
+            }
+
+            return {
+                "content_type": "general",
+                "extractor_version": EXTRACTOR_VERSION + "-bookmark",
+                "category": category,
+                "topic": topic,
+                "title": title_en,
+                "summary": bilingual_summary,
+                "hashtags": hashtags,
+                "emojis": emojis,
+                "recipe": None,
+                "location": None,
+                "workout": None,
+                "detected_language": effective_lang,
+            }
+
+        # ── CALL 1: Extract structured data (Standard Mode) ──
         logger.info("📞 CALL 1: Extracting structured data...")
         prompt_data = self._build_data_extraction_prompt(
             transcript, caption, effective_lang, content_type
@@ -118,7 +181,7 @@ class UniversalExtractor:
 
         highlights_raw = safe_list(result_data.get("highlights", []))
         
-        # ---------- Extract Location (NEW) ----------
+        # ---------- Extract Location ----------
         location_obj = result_data.get("location", None)
 
         # ---------- Extract guide/recipe fields from Call 1 ----------
@@ -278,11 +341,10 @@ class UniversalExtractor:
                     for i, b in enumerate(bullets_og)
                 ]
 
-        # 🔥 FIX: GUARDRAIL POUR LES HASHTAGS ET DÉDUPLICATION
+        # ---------- Hashtag Filtering ----------
         hashtags_raw = safe_list(result_data.get("hashtags", []))
         hashtags_clean = [str(t).lstrip("#").strip() for t in hashtags_raw if str(t).strip()]
         
-        # Extraction des hashtags existants dans la légende
         caption_lower = caption.lower()
         caption_tags = set(re.findall(r"#(\w+)", caption_lower))
         
@@ -292,7 +354,6 @@ class UniversalExtractor:
             if t_lower not in caption_tags and t_lower not in [f.lower() for f in filtered_tags]:
                 filtered_tags.append(t)
         
-        # On limite strictement à 5 hashtags
         hashtags = filtered_tags[:5]
 
         # ---------- Emojis ----------
@@ -357,10 +418,26 @@ class UniversalExtractor:
             "hashtags": hashtags,
             "emojis": emojis,
             "recipe": json.dumps(recipe_data, ensure_ascii=False) if recipe_data else None,
-            "location": location_obj,  # ✅ ADDED FOR THE FUTURE MAP FEATURE
+            "location": location_obj,
             "workout": None,
             "detected_language": effective_lang,
         }
+
+    def _build_bookmark_prompt(self, caption: str, lang: str) -> str:
+        return f"""The following text is extremely short. Generate basic metadata to categorize it as a bookmark. Output ONLY valid JSON.
+        
+        LANGUAGE: {lang}
+        CAPTION: {caption}
+        
+        EXTRACT:
+        1. **category**: 1-2 word broad category based on any context clues.
+        2. **topic**: 2-3 word topic.
+        3. **title**: A short, sensible title (max 40 chars).
+        4. **hashtags**: Up to 5 relevant keywords without '#'.
+        5. **emojis**: array of 2 relevant emojis.
+        
+        CRITICAL: Do not invent detailed facts or hallucinate a summary. Output JSON only.
+        """
 
     def _build_data_extraction_prompt(
         self, transcript: str, caption: str, lang: str, content_type: str
@@ -387,8 +464,8 @@ class UniversalExtractor:
 
         return f"""Extract structured data from this {content_type} content. Output ONLY valid JSON.
         
-        CRITICAL: Identify the specific unique value of the content. Avoid generic descriptions.
-        If it's a cooking technique, explain the technique in the highlights.
+        CRITICAL: Identify the specific unique value of the content. Do NOT hallucinate or invent facts not present in the text.
+        If the text is too sparse, leave fields empty rather than fabricating data.
 
         LANGUAGE: {lang}
 
