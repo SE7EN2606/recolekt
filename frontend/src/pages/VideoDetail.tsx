@@ -62,7 +62,6 @@ const TagsIcon = ({ size = 24, className = "" }: { size?: number, className?: st
   </svg>
 );
 
-// ✅ UPDATED MINIMALIST INLINE PLATFORM ICON
 const PlatformIcon = ({ platform }: { platform: string }) => {
   if (platform === 'facebook' || platform === 'fb') {
     return (
@@ -73,7 +72,7 @@ const PlatformIcon = ({ platform }: { platform: string }) => {
   }
   return (
     <svg className="w-3 h-3 text-pink-500 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
     </svg>
   );
 }
@@ -119,6 +118,7 @@ export const VideoDetail: React.FC = () => {
   const [editedVideo, setEditedVideo] = useState<any | null>(null);
   const [servingScale, setServingScale] = useState(1);
 
+  // Modals
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -138,29 +138,38 @@ export const VideoDetail: React.FC = () => {
     if (!id) return;
     try {
       setLoading(true);
-      const found = await fetchBackendJsonNoStore(apiUrl(`api/reel/${encodeURIComponent(id)}`));
-      if (!found?.id) return;
+      
+      const found = await fetchBackendJsonNoStore(apiUrl(`api/reel/${encodeURIComponent(id)}`)).catch(() => null);
 
-      const short = getShortcode(found.id);
-      const isFB = found.source_url?.includes('facebook.com') || found.source_url?.includes('fb.');
+      // 🔥 FIX 1: Prevent Backend SQL Bug from overwriting the view with the wrong video
+      let secureFound = found;
+      if (found?.id && found.id !== id && getShortcode(found.id) !== getShortcode(id)) {
+          console.warn(`Backend returned mismatch (Got: ${found.id}). Rejecting wrong reel.`);
+          secureFound = videos.find((v: any) => v.id === id) || { id };
+      }
+      if (!secureFound) secureFound = videos.find((v: any) => v.id === id) || { id };
+
+      // Use the actual requested ID to fetch from GCS, not the corrupted backend shortcode
+      const short = getShortcode(id); 
+      const isFB = secureFound.source_url?.includes('facebook.com') || secureFound.source_url?.includes('fb.') || id.includes('FB') || short.length < 5;
       const folder = isFB ? 'FB_reels' : 'IG_reels';
       const resultUrl = `https://storage.googleapis.com/recolekt-storage/media/${folder}/${short}/${short}_result.json?v=${Date.now()}`;
       
       const gcsData = await fetchGcsJson<any>(resultUrl).catch(() => ({}));
 
-      setVideo({ ...found, ...gcsData, __raw: found });
+      setVideo({ ...secureFound, ...gcsData, __raw: secureFound });
     } catch (err) {
       console.warn("Network fetch skipped or failed.");
     } finally {
       setLoading(false);
     }
-  }, [id, fetchBackendJsonNoStore]);
+  }, [id, fetchBackendJsonNoStore, videos]);
 
   useEffect(() => {
     if (!id || videos.length === 0) return;
     setVideo((prev: any) => {
-      if (prev) return prev; 
-      const cached = videos.find((v: any) => v.id === id || (v.id && v.id.split('--')[0] === id.split('--')[0]));
+      if (prev?.id === id) return prev; 
+      const cached = videos.find((v: any) => v.id === id); // Strict match to avoid "1" matching "1DKjp"
       if (cached) {
         setLoading(false);
         return cached;
@@ -177,7 +186,69 @@ export const VideoDetail: React.FC = () => {
     }
   }, [id, enrichVideo]);
 
-  useEffect(() => { if (isEditing && video) setEditedVideo({ ...video }); }, [isEditing, video]);
+  // Sync edit state
+  useEffect(() => { 
+    if (isEditing && video) {
+      setEditedVideo(JSON.parse(JSON.stringify(video))); // Safe deep copy
+    }
+  }, [isEditing, video]);
+
+  /* ─── SECURE EDIT HANDLER ─── */
+  const handleEditField = (field: string, value: any, index?: number) => {
+    setEditedVideo((prev: any) => {
+      if (!prev) return prev;
+      const next = { ...prev };
+      
+      let summaryObj = next.summary;
+      if (typeof summaryObj === 'string') {
+        try { summaryObj = JSON.parse(summaryObj); } catch(e) { summaryObj = { english: { summary: summaryObj }}; }
+      }
+      if (!summaryObj) summaryObj = {};
+      
+      const hasTranslation = !!(summaryObj.english && summaryObj.original);
+      const langKey = showOriginal && hasTranslation ? 'original' : 'english';
+      if (!summaryObj[langKey]) summaryObj[langKey] = {};
+
+      if (field === 'title') {
+        next.title = value;
+        next.display_title = value;
+        summaryObj[langKey].title = value;
+      } else if (field === 'summary') {
+        next.summary_text = value;
+        summaryObj[langKey].summary = value;
+      } else if (field === 'bullet' && index !== undefined) {
+        const currentBullets = [...(summaryObj[langKey].headlines || next.bullets || [])];
+        if (typeof currentBullets[index] === 'string') {
+          currentBullets[index] = value;
+        } else {
+          currentBullets[index] = { ...currentBullets[index], headline: value };
+        }
+        summaryObj[langKey].headlines = currentBullets;
+        next.bullets = currentBullets;
+      } else if (field === 'add_bullet') {
+        const currentBullets = [...(summaryObj[langKey].headlines || next.bullets || []), { headline: '', text: '' }];
+        summaryObj[langKey].headlines = currentBullets;
+        next.bullets = currentBullets;
+      } else if (field === 'remove_bullet' && index !== undefined) {
+        const currentBullets = (summaryObj[langKey].headlines || next.bullets || []).filter((_: any, i: number) => i !== index);
+        summaryObj[langKey].headlines = currentBullets;
+        next.bullets = currentBullets;
+      } else if (field === 'category') {
+        next.category = value;
+        next.summary_category = value;
+      } else if (field === 'topic') {
+        next.topic = value;
+        next.subCategory = value;
+        next.summary_topic = value;
+      } else if (field === 'tags') {
+        next.tags = value;
+        summaryObj[langKey].hashtags = value;
+      }
+
+      next.summary = summaryObj;
+      return next;
+    });
+  };
 
   /* ─── ACTION HANDLERS ─── */
   const handleToggleFavorite = () => toggleFavorite(video.id);
@@ -221,9 +292,17 @@ export const VideoDetail: React.FC = () => {
     if (!video) return null;
     const v = isEditing && editedVideo ? editedVideo : video;
     
-    const summaryObj = v.summary || {};
-    const hasTranslation = !!(summaryObj.english && summaryObj.original);
-    const langBlock = showOriginal && hasTranslation ? summaryObj.original : (summaryObj.english || summaryObj.en || summaryObj);
+    let summaryObj = v.summary;
+    if (typeof summaryObj === 'string') {
+      try { summaryObj = JSON.parse(summaryObj); } catch(e) { summaryObj = { english: { summary: summaryObj }}; }
+    }
+    if (!summaryObj) summaryObj = {};
+
+    const originalBlock = summaryObj.original || summaryObj.og || summaryObj.OG;
+    const englishBlock = summaryObj.english || summaryObj.en || summaryObj.EN || summaryObj;
+    
+    const hasTranslation = !!(originalBlock && englishBlock && originalBlock !== englishBlock);
+    const langBlock = (showOriginal && hasTranslation) ? originalBlock : englishBlock;
 
     let recipeData = v.recipe;
     if (typeof recipeData === 'string') {
@@ -238,8 +317,16 @@ export const VideoDetail: React.FC = () => {
     const transcriptionLang = v.transcription?.detected_language || 'en';
     const languageCode = transcriptionLang.toUpperCase();
 
-    const bulletsRaw = langBlock.headlines || v.bullets || [];
+    const displayTitle = safeString(langBlock?.title || v.display_title || v.title || 'Saved Reel');
+    const displaySummary = safeString(langBlock?.summary || v.summary_text || v.summary || '');
+    const displayCategory = safeString(v.category || v.summary_category || getCategory(v) || 'General');
+    const displaySubCategory = safeString(v.subCategory || v.topic || v.summary_topic || getTopic(v) || '');
+
+    const bulletsRaw = langBlock?.headlines || v.bullets || [];
     const bulletsArr = Array.isArray(bulletsRaw) ? bulletsRaw : [bulletsRaw];
+
+    const tagsRaw = langBlock?.hashtags || v.tags || [];
+    const tagsArr = Array.isArray(tagsRaw) ? tagsRaw : [];
 
     const transcriptionRaw = v.transcription || v.transcript;
     const transcriptionText = typeof transcriptionRaw === 'string'
@@ -253,13 +340,13 @@ export const VideoDetail: React.FC = () => {
 
     return {
       id: v.id,
-      title: safeString(v.display_title || langBlock.title || v.title || 'Saved Reel'),
+      title: displayTitle,
       author: safeString(v.author_name || v.author || 'Unknown'),
-      category: safeString(getCategory(v) || 'General'),
-      subCategory: safeString(getTopic(v) || ''),
-      summary: safeString(langBlock.summary || v.summary || ''),
+      category: displayCategory,
+      subCategory: displaySubCategory,
+      summary: displaySummary,
       bullets: bulletsArr, 
-      tags: Array.isArray(langBlock.hashtags) ? langBlock.hashtags : (Array.isArray(v.tags) ? v.tags : []),
+      tags: tagsArr,
       transcript: transcriptionText,
       caption: captionText,
       recipe: activeRecipe,
@@ -333,8 +420,8 @@ export const VideoDetail: React.FC = () => {
           {isEditing ? (
             <input 
               className="w-full text-2xl lg:text-3xl font-bold text-gray-900 leading-tight mb-3 border-b-2 border-primary-300 focus:outline-none focus:border-primary-500 bg-transparent py-1"
-              value={editedVideo?.title || viewModel.title}
-              onChange={e => setEditedVideo((prev: any) => prev ? ({ ...prev, title: e.target.value }) : null)}
+              value={viewModel.title}
+              onChange={e => handleEditField('title', e.target.value)}
               placeholder="Video Title"
             />
           ) : (
@@ -350,7 +437,12 @@ export const VideoDetail: React.FC = () => {
                   </span>
                 </a>
               )}
-              <div className="text-xs text-gray-400">Saved {viewModel.savedAt}</div>
+              {viewModel.savedAt && (
+                <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                  <Save size={14} className="text-gray-400" />
+                  <span>{viewModel.savedAt}</span>
+                </div>
+              )}
           </div>
           
           <div className="bg-primary-50 rounded-2xl p-6 mb-6">
@@ -358,17 +450,14 @@ export const VideoDetail: React.FC = () => {
              {isEditing ? (
                <textarea 
                  className="w-full text-gray-700 leading-relaxed mb-4 font-medium bg-white/50 border border-primary-200 rounded-xl p-3 focus:outline-none focus:border-primary-500 min-h-[100px]"
-                 value={editedVideo?.summary?.english?.summary || viewModel.summary}
-                 onChange={e => {
-                   setEditedVideo((prev: any) => {
-                     if (!prev) return null;
-                     return { ...prev, summary: { ...prev.summary, english: { ...prev.summary?.english, summary: e.target.value } } };
-                   });
-                 }}
+                 value={viewModel.summary}
+                 onChange={e => handleEditField('summary', e.target.value)}
                  placeholder="Summary"
                />
              ) : (
-               <p className="text-gray-700 leading-relaxed mb-4 font-medium">{viewModel.summary}</p>
+               <div className="text-gray-700 leading-relaxed mb-4 font-medium whitespace-pre-line">
+                 {viewModel.summary}
+               </div>
              )}
              
              <div className="space-y-3">
@@ -376,18 +465,14 @@ export const VideoDetail: React.FC = () => {
                  <div key={idx} className="flex items-start gap-3 text-gray-600 text-sm">
                     <div className="w-1.5 h-1.5 rounded-full bg-primary-400 mt-2 flex-shrink-0"></div>
                     {isEditing ? (
-                      <input 
-                        className="flex-1 bg-transparent border-b border-primary-100 focus:outline-none focus:border-primary-400 py-0.5"
-                        value={typeof bullet === 'string' ? bullet : bullet.headline}
-                        onChange={e => {
-                          setEditedVideo((prev: any) => {
-                            if (!prev) return null;
-                            const newBullets = [...(prev.summary?.english?.headlines || viewModel.bullets)];
-                            newBullets[idx] = { ...newBullets[idx], headline: e.target.value };
-                            return { ...prev, summary: { ...prev.summary, english: { ...prev.summary?.english, headlines: newBullets } } };
-                          });
-                        }}
-                      />
+                      <div className="flex-1 flex items-center gap-2">
+                        <input 
+                          className="flex-1 bg-transparent border-b border-primary-100 focus:outline-none focus:border-primary-400 py-0.5"
+                          value={typeof bullet === 'string' ? bullet : bullet.headline}
+                          onChange={e => handleEditField('bullet', e.target.value, idx)}
+                        />
+                        <button onClick={() => handleEditField('remove_bullet', null, idx)} className="text-gray-400 hover:text-red-500"><X size={14} /></button>
+                      </div>
                     ) : (
                       <span className="leading-relaxed">
                         {bullet.headline ? `${bullet.emoji ? bullet.emoji + ' ' : ''}${bullet.headline}: ${bullet.text}` : safeString(bullet)}
@@ -397,11 +482,7 @@ export const VideoDetail: React.FC = () => {
                ))}
                {isEditing && (
                  <button 
-                   onClick={() => setEditedVideo((prev: any) => {
-                     if (!prev) return null;
-                     const newBullets = [...(prev.summary?.english?.headlines || viewModel.bullets), { headline: '', text: '' }];
-                     return { ...prev, summary: { ...prev.summary, english: { ...prev.summary?.english, headlines: newBullets } } };
-                   })}
+                   onClick={() => handleEditField('add_bullet', null)}
                    className="text-xs font-bold text-primary-600 hover:text-primary-700 mt-2 flex items-center gap-1"
                  >
                    <Plus size={14} /> Add Bullet Point
@@ -419,6 +500,7 @@ export const VideoDetail: React.FC = () => {
             />
           )}
 
+          {/* Caption Block (Bottom Left) */}
           {(viewModel.caption || viewModel.transcript) && (
             <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden p-5 mt-8 mb-6">
               <div className="flex items-center gap-2 mb-3">
@@ -438,7 +520,10 @@ export const VideoDetail: React.FC = () => {
         {/* DESKTOP: RIGHT COLUMN */}
         <div className="space-y-8">
            <div className="space-y-6">
+               
+               {/* Metadata / Hashtags Block */}
                <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+                 {/* Category Row */}
                  <div className="p-5 flex flex-col gap-2 hover:bg-gray-50/50 transition-colors">
                    <div className="flex items-center gap-2">
                      <div className="p-1.5 bg-blue-50 text-blue-600 rounded-md">
@@ -450,7 +535,7 @@ export const VideoDetail: React.FC = () => {
                      <input 
                        className="text-lg font-bold text-gray-900 pl-1 leading-snug border-b border-primary-200 focus:outline-none focus:border-primary-500 bg-transparent"
                        value={viewModel.category}
-                       onChange={e => setEditedVideo((prev: any) => prev ? ({ ...prev, category: e.target.value }) : null)}
+                       onChange={e => handleEditField('category', e.target.value)}
                      />
                    ) : (
                      <div className="text-lg font-bold text-gray-900 pl-1 leading-snug">
@@ -459,6 +544,7 @@ export const VideoDetail: React.FC = () => {
                    )}
                  </div>
 
+                 {/* Topic Row */}
                  {(isEditing || viewModel.subCategory) && (
                    <div className="p-5 border-t border-gray-50 flex flex-col gap-2 hover:bg-gray-50/50 transition-colors">
                      <div className="flex items-center gap-2">
@@ -471,7 +557,7 @@ export const VideoDetail: React.FC = () => {
                        <input 
                          className="text-lg font-bold text-gray-900 pl-1 leading-snug border-b border-primary-200 focus:outline-none focus:border-primary-500 bg-transparent"
                          value={viewModel.subCategory}
-                         onChange={e => setEditedVideo((prev: any) => prev ? ({ ...prev, subCategory: e.target.value }) : null)}
+                         onChange={e => handleEditField('topic', e.target.value)}
                          placeholder="Add Topic"
                        />
                      ) : (
@@ -482,6 +568,7 @@ export const VideoDetail: React.FC = () => {
                    </div>
                  )}
 
+                 {/* Hashtags Row */}
                  <div className="p-5 border-t border-gray-50 bg-gray-50/30">
                    <div className="flex items-center gap-2 mb-3">
                      <div className="p-1.5 bg-tertiary-50 text-tertiary-600 rounded-md">
@@ -495,11 +582,11 @@ export const VideoDetail: React.FC = () => {
                        <div className="w-full space-y-2">
                          <div className="flex flex-wrap gap-2">
                            {viewModel.tags.map((tag: string, idx: number) => (
-                             <div key={idx} className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1">
-                               <span className="text-xs font-bold text-gray-700">#{safeString(tag).replace('#', '')}</span>
+                             <div key={idx} className="inline-flex items-center justify-center px-[0.9rem] py-[0.375rem] rounded-full bg-[#e0f2fe] text-[#075985] border border-[#7dd3fc] text-xs font-bold shadow-sm">
+                               <span className="text-xs font-bold text-[#075985]">#{safeString(tag).replace('#', '')}</span>
                                <button 
-                                 onClick={() => setEditedVideo((prev: any) => prev ? ({ ...prev, tags: prev.tags.filter((_: any, i: number) => i !== idx) }) : null)}
-                                 className="text-gray-400 hover:text-red-500"
+                                 onClick={() => handleEditField('tags', viewModel.tags.filter((_: any, i: number) => i !== idx))}
+                                 className="text-[#075985] hover:text-red-500 opacity-70 hover:opacity-100 ml-1.5"
                                >
                                  <X size={12} />
                                </button>
@@ -514,7 +601,7 @@ export const VideoDetail: React.FC = () => {
                                const val = (e.target as HTMLInputElement).value.trim();
                                if (val) {
                                  const tag = val.startsWith('#') ? val : `#${val}`;
-                                 setEditedVideo((prev: any) => prev ? ({ ...prev, tags: [...prev.tags, tag] }) : null);
+                                 handleEditField('tags', [...viewModel.tags, tag]);
                                  (e.target as HTMLInputElement).value = '';
                                }
                              }
@@ -525,15 +612,7 @@ export const VideoDetail: React.FC = () => {
                        viewModel.tags.map((tag: string, idx: number) => (
                          <span 
                            key={idx} 
-                           className="
-                             px-3 py-1.5
-                             bg-white text-gray-700
-                             border border-gray-200
-                             rounded-lg text-xs font-bold
-                             shadow-sm
-                             hover:border-tertiary-300 hover:text-tertiary-700 hover:shadow-md
-                             transition-all cursor-default
-                           "
+                           className="inline-flex items-center justify-center px-[0.9rem] py-[0.375rem] rounded-full bg-[#e0f2fe] text-[#075985] border border-[#7dd3fc] text-xs font-bold shadow-sm transition-all hover:bg-[#bae6fd] hover:border-[#38bdf8] hover:-translate-y-[1px] cursor-default"
                          >
                            #{safeString(tag).replace('#', '')}
                          </span>
@@ -543,6 +622,7 @@ export const VideoDetail: React.FC = () => {
                  </div>
                </div>
 
+               {/* Transcription Block */}
                {viewModel.transcript && (
                  <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
                     <button 
@@ -567,6 +647,7 @@ export const VideoDetail: React.FC = () => {
                  </div>
                )}
 
+              {/* View on IG/FB Button */}
               {viewModel.originalUrl && (
                 <div className="space-y-3">
                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Original Link</h4>
@@ -587,12 +668,12 @@ export const VideoDetail: React.FC = () => {
         <VideoDetailMobile
           viewModel={viewModel}
           isEditMode={isEditing}
-          tempTitle={editedVideo?.title || viewModel.title}
-          tempCategory={editedVideo?.category || viewModel.category}
-          tempTopic={editedVideo?.subCategory || viewModel.subCategory}
-          tempDescription={editedVideo?.summary?.english?.summary || viewModel.summary}
-          tempBullets={editedVideo?.summary?.english?.headlines || viewModel.bullets}
-          tempHashtags={editedVideo?.tags || viewModel.tags}
+          tempTitle={viewModel.title}
+          tempCategory={viewModel.category}
+          tempTopic={viewModel.subCategory}
+          tempDescription={viewModel.summary}
+          tempBullets={viewModel.bullets}
+          tempHashtags={viewModel.tags}
           servingScale={servingScale}
           useMetric={true}
           captionOpen={captionOpen}
@@ -601,12 +682,12 @@ export const VideoDetail: React.FC = () => {
           onShare={handleShare}
           onModifyToggle={() => setIsEditing(!isEditing)}
           onCancelEdit={() => setIsEditing(false)}
-          setTempTitle={(val) => setEditedVideo((p: any) => p ? {...p, title: val} : null)}
-          setTempCategory={(val) => setEditedVideo((p: any) => p ? {...p, category: val} : null)}
-          setTempTopic={(val) => setEditedVideo((p: any) => p ? {...p, subCategory: val} : null)}
-          setTempDescription={(val) => setEditedVideo((p: any) => p ? {...p, summary: { ...p.summary, english: { ...p.summary?.english, summary: val } }} : null)}
-          setTempBullets={(val) => setEditedVideo((p: any) => p ? {...p, summary: { ...p.summary, english: { ...p.summary?.english, headlines: val } }} : null)}
-          setTempHashtags={(val) => setEditedVideo((p: any) => p ? {...p, tags: val} : null)}
+          setTempTitle={(val) => handleEditField('title', val)}
+          setTempCategory={(val) => handleEditField('category', val)}
+          setTempTopic={(val) => handleEditField('topic', val)}
+          setTempDescription={(val) => handleEditField('summary', val)}
+          setTempBullets={(val) => handleEditField('tags', val)} 
+          setTempHashtags={(val) => handleEditField('tags', val)}
           setServingScale={setServingScale}
           setUseMetric={() => {}}
           setCaptionOpen={setCaptionOpen}
