@@ -9,8 +9,9 @@
 
 /* index.css */
 html {
-  scrollbar-gutter: stable;
-  overflow-y: scroll; /* ✅ Add this to prevent page jumping between routes */
+  /* This reserves space for the scrollbar even when it's hidden */
+  scrollbar-gutter: stable both-edges; 
+  overflow-y: scroll;
   font-family: 'Inter', sans-serif; 
 }
 

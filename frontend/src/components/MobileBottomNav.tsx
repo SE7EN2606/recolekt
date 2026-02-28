@@ -1,18 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutGrid, User, Plus } from 'lucide-react';
 import { ProfileMenu } from './ProfileMenu';
 import { useTranslation } from 'react-i18next';
 
-
 interface MobileBottomNavProps {
   onAddClick: () => void;
 }
 
-
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const { t } = useTranslation(['modals']);
+
+  // ✅ Fix: Scroll Lock when Profile Menu is open
+  useEffect(() => {
+    if (isProfileOpen) {
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+      if (scrollbarWidth > 0) {
+        document.body.style.paddingRight = `${scrollbarWidth}px`;
+      }
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.paddingRight = '';
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.paddingRight = '';
+      document.body.style.overflow = '';
+    };
+  }, [isProfileOpen]);
 
   return (
     <>

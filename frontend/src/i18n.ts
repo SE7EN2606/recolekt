@@ -39,7 +39,8 @@ i18n
 
     backend: {
       // Points to frontend/public/locales/...
-      loadPath: '/locales/{{lng}}/{{ns}}.json'
+      // 💡 CACHE BUSTING: Forces the browser to always fetch the latest translation files
+      loadPath: '/locales/{{lng}}/{{ns}}.json?v=' + new Date().getTime()
     },
 
     interpolation: {

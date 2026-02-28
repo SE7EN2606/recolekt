@@ -12,19 +12,16 @@ import { ManageCollectionsModal } from './ManageCollectionsModal';
 import { useTranslation } from 'react-i18next';
 import LogoBlack from '../assets/recolekt_logo_black.png';
 
-
 const FolderIcon = ({ size = 22, className = '' }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
   </svg>
 );
 
-
 interface MobileMenuProps {
   isOpen: boolean;
   onClose: () => void;
 }
-
 
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   const { user, isAuthenticated, loading, logout } = useAuth();
@@ -47,21 +44,27 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isOpen) {
       setShouldRender(true);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => setAnimateOpen(true));
-      });
+      requestAnimationFrame(() => requestAnimationFrame(() => setAnimateOpen(true)));
+      
+      // ✅ Fix scroll jump by compensating for scrollbar width
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+      if (scrollbarWidth > 0) {
+        document.body.style.paddingRight = `${scrollbarWidth}px`;
+      }
       document.body.style.overflow = 'hidden';
-      document.documentElement.style.overflow = 'hidden';
+      // Removed document.documentElement.style.overflow to prevent iOS Safari jumping
     } else {
       setAnimateOpen(false);
-      const timer = setTimeout(() => setShouldRender(false), 500);
-      document.body.style.overflow = '';
-      document.documentElement.style.overflow = '';
+      const timer = setTimeout(() => {
+        setShouldRender(false);
+        document.body.style.paddingRight = '';
+        document.body.style.overflow = '';
+      }, 500);
       return () => clearTimeout(timer);
     }
     return () => {
+      document.body.style.paddingRight = '';
       document.body.style.overflow = '';
-      document.documentElement.style.overflow = '';
     };
   }, [isOpen]);
 
@@ -89,7 +92,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   });
 
   const parentOptions = customFolders.map((f: any) => ({ id: f.id, name: f.name }));
-
   const showAuthedUI = !loading && isAuthenticated;
 
   if (!shouldRender) return null;
@@ -98,23 +100,23 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     <>
       <div
         className={`
-          fixed top-0 left-0 w-full z-[100] overflow-hidden
-          bg-white/80 backdrop-blur-2xl
-          transition-[height] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
-          ${animateOpen ? 'h-[100dvh]' : 'h-0'}
+          fixed inset-0 w-full z-[100] overflow-hidden
+          bg-[#f9fafb]/95 backdrop-blur-xl transform-gpu
+          transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
+          ${animateOpen ? 'translate-y-0' : 'translate-y-full'}
         `}
       >
         <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4">
 
           {/* Header */}
-          <div className="h-[80px] md:h-[90px] flex items-center justify-between flex-shrink-0 border-b border-white/20 gap-4">
+          <div className="h-[80px] md:h-[90px] flex items-center justify-between flex-shrink-0 border-b border-gray-200 gap-4">
             {showAuthedUI && (
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                 <input
                   type="text"
                   placeholder={t('common:search', 'Search...')}
-                  className="w-full bg-white/50 border border-white/40 rounded-xl py-3 pl-10 pr-4 text-sm font-medium focus:ring-4 focus:ring-primary-600/10 focus:border-primary-600 outline-none transition-all shadow-sm backdrop-blur-sm"
+                  className="w-full bg-white border border-gray-200 rounded-xl py-3 pl-10 pr-4 text-sm font-medium focus:ring-4 focus:ring-primary-600/10 focus:border-primary-600 outline-none transition-all shadow-sm"
                 />
               </div>
             )}
@@ -122,7 +124,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
             <button
               onClick={onClose}
-              className="p-2 text-gray-500 bg-white/50 rounded-full transition-colors hover:bg-white/80 flex-shrink-0"
+              className="p-2 text-gray-500 bg-white rounded-full transition-colors shadow-sm border border-gray-200 hover:bg-gray-50 flex-shrink-0"
             >
               <X size={24} />
             </button>
@@ -155,7 +157,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     ))}
                   </div>
 
-                  <div className="pt-8 border-t border-white/20 space-y-4">
+                  <div className="pt-8 border-t border-gray-200 space-y-4">
                     <Button
                       fullWidth
                       variant="primary"
@@ -183,7 +185,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
                   {/* User Info */}
                   <div className="flex items-center gap-4 px-2">
-                    <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border-2 border-white/60 shadow-sm">
+                    <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border border-gray-200 shadow-sm">
                       {displayPicture ? (
                         <img src={displayPicture} alt={displayName} className="w-full h-full object-cover" />
                       ) : (
@@ -203,10 +205,10 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
                       {t('sidebar:library', 'Library')}
                     </h3>
-                    <div className="glass-card rounded-[28px] overflow-hidden shadow-sm">
+                    <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
                       <button
                         onClick={() => handleNav('/gallery')}
-                        className="w-full flex items-center gap-4 p-5 border-b border-white/20 group transition-all hover:bg-white/40"
+                        className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50"
                       >
                         <LayoutGrid size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">
@@ -216,7 +218,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       </button>
                       <button
                         onClick={() => handleNav('/gallery/favorites')}
-                        className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-white/40"
+                        className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50"
                       >
                         <Heart size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">
@@ -249,10 +251,10 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       </div>
                     </div>
 
-                    <div className="glass-card rounded-[28px] overflow-hidden shadow-sm">
+                    <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
                       {customFolders.map((folder: any) => (
-                        <div key={folder.id} className="border-b border-white/20 last:border-0">
-                          <div className="flex items-center w-full pr-4 group transition-all hover:bg-white/40">
+                        <div key={folder.id} className="border-b border-gray-100 last:border-0">
+                          <div className="flex items-center w-full pr-4 group transition-all hover:bg-gray-50">
                             <button
                               onClick={() => handleNav(`/gallery/${folder.id}`)}
                               className="flex-1 flex items-center justify-between p-5"
@@ -263,16 +265,16 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                                   {folder.name}
                                 </span>
                               </div>
-                              <span className="text-[10px] font-black bg-white/50 text-gray-500 px-2 py-1 rounded-md tracking-wider group-hover:bg-primary-50 group-hover:text-primary-600 transition-colors">
+                              <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md tracking-wider group-hover:bg-primary-50 group-hover:text-primary-600 transition-colors">
                                 {folder.itemCount ?? 0}
                               </span>
                             </button>
                           </div>
 
                           {folder.subFolders && folder.subFolders.length > 0 && (
-                            <div className="bg-white/30">
+                            <div className="bg-gray-50/50">
                               {folder.subFolders.map((sub: any) => (
-                                <div key={sub.id} className="flex items-center w-full pr-4 group transition-all hover:bg-white/40">
+                                <div key={sub.id} className="flex items-center w-full pr-4 group transition-all hover:bg-gray-100">
                                   <button
                                     onClick={() => handleNav(`/gallery/${sub.id}`)}
                                     className="flex-1 flex items-center gap-3 pl-14 pr-2 py-3 text-sm"
@@ -298,10 +300,10 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                         </button>
                       )}
 
-                      <div className="border-t border-white/20">
+                      <div className="border-t border-gray-100">
                         <button
                           onClick={() => handleNav('/gallery/shared')}
-                          className="w-full flex items-center justify-between p-5 group transition-all hover:bg-white/40"
+                          className="w-full flex items-center justify-between p-5 group transition-all hover:bg-gray-50"
                         >
                           <div className="flex items-center gap-4">
                             <Share2 size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
@@ -313,10 +315,10 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                         </button>
                       </div>
 
-                      <div className="border-t border-white/20">
+                      <div className="border-t border-gray-100">
                         <button
                           onClick={() => handleNav('/gallery/archive')}
-                          className="w-full flex items-center justify-between p-5 group transition-all hover:bg-white/40"
+                          className="w-full flex items-center justify-between p-5 group transition-all hover:bg-gray-50"
                         >
                           <div className="flex items-center gap-4">
                             <Archive size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
@@ -335,10 +337,10 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
                       {t('common:account', 'Account')}
                     </h3>
-                    <div className="glass-card rounded-[28px] overflow-hidden shadow-sm">
+                    <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
                       <button
                         onClick={() => handleNav('/settings/account')}
-                        className="w-full flex items-center gap-4 p-5 border-b border-white/20 group transition-all hover:bg-white/40"
+                        className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50"
                       >
                         <User size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">
@@ -348,7 +350,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       </button>
                       <button
                         onClick={() => handleNav('/settings/app')}
-                        className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-white/40"
+                        className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50"
                       >
                         <Settings size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">
@@ -364,10 +366,10 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
                       {t('common:resources', 'Resources')}
                     </h3>
-                    <div className="glass-card rounded-[28px] overflow-hidden shadow-sm">
+                    <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
                       <button
                         onClick={() => handleNav('/help?section=how-to')}
-                        className="w-full flex items-center gap-4 p-5 border-b border-white/20 group transition-all hover:bg-white/40"
+                        className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50"
                       >
                         <BookOpen size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">
@@ -377,7 +379,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       </button>
                       <button
                         onClick={() => handleNav('/help?section=contact')}
-                        className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-white/40"
+                        className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50"
                       >
                         <HelpCircle size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">
@@ -391,7 +393,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                   {/* Sign Out */}
                   <button
                     onClick={handleLogout}
-                    className="w-full flex items-center justify-center gap-2 p-5 glass-card border border-red-100 text-red-600 rounded-[28px] font-bold shadow-sm hover:bg-red-50/50 transition-colors"
+                    className="w-full flex items-center justify-center gap-2 p-5 bg-white border border-red-200 text-red-600 rounded-[28px] font-bold shadow-sm hover:bg-red-50 transition-colors"
                   >
                     <LogOut size={20} />
                     {t('common:signOut', 'Sign Out')}

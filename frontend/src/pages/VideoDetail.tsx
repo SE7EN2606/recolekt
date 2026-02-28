@@ -108,7 +108,9 @@ export const VideoDetail: React.FC = () => {
   const navigate = useNavigate();
   const { videos, deleteVideos, moveVideos, toggleFavorite, updateVideo } = useData();
   const { showOriginal, toggleLanguage } = useLanguage(); 
-  const { t } = useTranslation(['videoDetail']);
+  
+  // ✅ Added 'common' namespace to useTranslation to access general tags
+  const { t } = useTranslation(['videoDetail', 'common']);
 
   const [video, setVideo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -137,19 +139,14 @@ export const VideoDetail: React.FC = () => {
   const enrichVideo = useCallback(async () => {
     if (!id) return;
     try {
-      setLoading(true);
-      
       const found = await fetchBackendJsonNoStore(apiUrl(`api/reel/${encodeURIComponent(id)}`)).catch(() => null);
 
-      // 🔥 FIX 1: Prevent Backend SQL Bug from overwriting the view with the wrong video
       let secureFound = found;
       if (found?.id && found.id !== id && getShortcode(found.id) !== getShortcode(id)) {
-          console.warn(`Backend returned mismatch (Got: ${found.id}). Rejecting wrong reel.`);
           secureFound = videos.find((v: any) => v.id === id) || { id };
       }
       if (!secureFound) secureFound = videos.find((v: any) => v.id === id) || { id };
 
-      // Use the actual requested ID to fetch from GCS, not the corrupted backend shortcode
       const short = getShortcode(id); 
       const isFB = secureFound.source_url?.includes('facebook.com') || secureFound.source_url?.includes('fb.') || id.includes('FB') || short.length < 5;
       const folder = isFB ? 'FB_reels' : 'IG_reels';
@@ -169,9 +166,11 @@ export const VideoDetail: React.FC = () => {
     if (!id || videos.length === 0) return;
     setVideo((prev: any) => {
       if (prev?.id === id) return prev; 
-      const cached = videos.find((v: any) => v.id === id); // Strict match to avoid "1" matching "1DKjp"
+      const cached = videos.find((v: any) => v.id === id); 
       if (cached) {
-        setLoading(false);
+        if (cached.summary) {
+          setLoading(false);
+        }
         return cached;
       }
       return prev;
@@ -186,14 +185,12 @@ export const VideoDetail: React.FC = () => {
     }
   }, [id, enrichVideo]);
 
-  // Sync edit state
   useEffect(() => { 
     if (isEditing && video) {
-      setEditedVideo(JSON.parse(JSON.stringify(video))); // Safe deep copy
+      setEditedVideo(JSON.parse(JSON.stringify(video)));
     }
   }, [isEditing, video]);
 
-  /* ─── SECURE EDIT HANDLER ─── */
   const handleEditField = (field: string, value: any, index?: number) => {
     setEditedVideo((prev: any) => {
       if (!prev) return prev;
@@ -250,7 +247,6 @@ export const VideoDetail: React.FC = () => {
     });
   };
 
-  /* ─── ACTION HANDLERS ─── */
   const handleToggleFavorite = () => toggleFavorite(video.id);
   const handleMove = (targetId: string) => { moveVideos([video.id], targetId); setIsMoveModalOpen(false); };
   const handleArchive = () => { moveVideos([video.id], 'archive'); setIsActionSheetOpen(false); };
@@ -277,17 +273,17 @@ export const VideoDetail: React.FC = () => {
     setReportData(prev => ({ ...prev, errorType: prev.errorType.includes(type) ? prev.errorType.filter(t => t !== type) : [...prev.errorType, type] }));
   };
 
+  // ✅ Added Translation `t()` calls to the Desktop action items menu
   const actionItems: ActionItem[] = [
-    { icon: IOSShareIcon, label: "Share Video", onClick: handleShare, description: 'Share link with friends' },
-    { icon: Pencil, label: "Edit Details", onClick: () => setIsEditing(true), description: 'Modify title, summary, or categories' },
-    { icon: Heart, label: video?.isFavorite ? "Remove from Favorites" : "Add to Favorites", onClick: handleToggleFavorite, variant: video?.isFavorite ? 'default' : 'primary' },
-    { icon: FolderInput, label: "Move to Collection", onClick: () => setIsMoveModalOpen(true) },
-    { icon: Archive, label: "Archive Video", onClick: handleArchive },
-    { icon: AlertCircle, label: "Report Issue", onClick: () => setIsReportModalOpen(true) },
-    { icon: Trash2, label: "Delete Video", onClick: () => setIsDeleteConfirmOpen(true), variant: 'danger' }
+    { icon: IOSShareIcon, label: t('videoDetail:share', "Share Video"), onClick: handleShare, description: t('videoDetail:shareDesc', 'Share link with friends') },
+    { icon: Pencil, label: t('videoDetail:editDetails', "Edit Details"), onClick: () => setIsEditing(true), description: t('videoDetail:editDesc', 'Modify title, summary, or categories') },
+    { icon: Heart, label: video?.isFavorite ? t('videoDetail:removeFromFavorites', "Remove from Favorites") : t('videoDetail:addToFavorites', "Add to Favorites"), onClick: handleToggleFavorite, variant: video?.isFavorite ? 'default' : 'primary' },
+    { icon: FolderInput, label: t('videoDetail:moveToCollection', "Move to Collection"), onClick: () => setIsMoveModalOpen(true) },
+    { icon: Archive, label: t('videoDetail:archive', "Archive Video"), onClick: handleArchive },
+    { icon: AlertCircle, label: t('videoDetail:reportIssue', "Report Issue"), onClick: () => setIsReportModalOpen(true) },
+    { icon: Trash2, label: t('common:delete', "Delete Video"), onClick: () => setIsDeleteConfirmOpen(true), variant: 'danger' }
   ];
 
-  /* ─── VIEW MODEL MAPPING ─── */
   const viewModel = useMemo(() => {
     if (!video) return null;
     const v = isEditing && editedVideo ? editedVideo : video;
@@ -403,7 +399,7 @@ export const VideoDetail: React.FC = () => {
                 {isEditing ? (
                   <>
                     <button onClick={handleSaveEdit} className="h-10 px-4 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg hover:bg-emerald-600 transition-colors font-bold text-sm gap-2">
-                      <Save size={18} /> Save
+                      <Save size={18} /> {t('common:save', 'Save')}
                     </button>
                     <button onClick={() => setIsEditing(false)} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-lg hover:bg-white/40 transition-colors">
                       <X size={20} />
@@ -475,7 +471,7 @@ export const VideoDetail: React.FC = () => {
                       </div>
                     ) : (
                       <span className="leading-relaxed">
-                        {bullet.headline ? `${bullet.emoji ? bullet.emoji + ' ' : ''}${bullet.headline}: ${bullet.text}` : safeString(bullet)}
+                        {bullet.headline ? `${bullet.headline}: ${bullet.text}` : safeString(bullet)}
                       </span>
                     )}
                  </div>
@@ -701,7 +697,8 @@ export const VideoDetail: React.FC = () => {
       </div>
 
       {/* ─── MODALS & SHEETS ─── */}
-      <ActionSheet isOpen={isActionSheetOpen} onClose={() => setIsActionSheetOpen(false)} title="Manage Reel" actions={actionItems} />
+      {/* ✅ Included translation inside the title block here */}
+      <ActionSheet isOpen={isActionSheetOpen} onClose={() => setIsActionSheetOpen(false)} title={t('videoDetail:settings', 'Settings')} actions={actionItems} />  
       <MoveCollectionModal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} onMove={handleMove} />
       <ConfirmModal isOpen={isDeleteConfirmOpen} onClose={() => setIsDeleteConfirmOpen(false)} onConfirm={handleDelete} title="Delete Video" message="Are you sure you want to delete this video? This action cannot be undone." confirmLabel="Delete" variant="danger" />
 
