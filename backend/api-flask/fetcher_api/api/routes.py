@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from flask import Blueprint, jsonify, request
 
-from fetcher_api.adapters.db import fetch_one, execute
+from fetcher_api.adapters.db import fetch_one, execute, get_user_tier, count_user_reels
 from fetcher_api.api.helpers.auth import get_user_id_from_request
 
 logger = logging.getLogger("api")
@@ -26,6 +26,12 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
 
+# Business Logic Limits
+PLAN_LIMITS = {
+    "free": 10,
+    "pro": 99999,   # Effectively unlimited
+    "admin": 99999
+}
 
 @api_bp.route("/", methods=["GET"])
 def root():
@@ -45,28 +51,14 @@ def health():
 
 @api_bp.route("/plan", methods=["GET"])
 def get_plan_route():
-    """Get user's subscription plan"""
+    """Get user's subscription plan from the users table"""
     try:
         user_id = get_user_id_from_request()
     except ValueError:
         return jsonify({"error": "Authentication required"}), 401
     
-    row = fetch_one("SELECT plan FROM user_entitlements WHERE user_id=%s", (user_id,))
-    plan = (row or {}).get("plan", "free")
-    
-    return jsonify({"plan": plan})
-
-
-def get_plan(user_id: str) -> str:
-    """Helper: get user plan"""
-    row = fetch_one("SELECT plan FROM user_entitlements WHERE user_id=%s", (user_id,))
-    return (row or {}).get("plan", "free")
-
-
-def count_saves(user_id: str) -> int:
-    """Helper: count user's saved reels"""
-    row = fetch_one("SELECT COUNT(*)::int AS c FROM reels WHERE user_id=%s", (user_id,))
-    return int((row or {}).get("c", 0))
+    tier = get_user_tier(user_id)
+    return jsonify({"plan": tier})
 
 
 @api_bp.route("/saves/count", methods=["GET"])
@@ -77,8 +69,7 @@ def count_saves_route():
     except ValueError:
         return jsonify({"error": "Authentication required"}), 401
     
-    count = count_saves(user_id)
-    
+    count = count_user_reels(user_id)
     return jsonify({"count": count})
 
 
@@ -229,7 +220,7 @@ def import_share():
     
     logger.info(f"📲 Import share from {client} for user {user_id}: {url}")
     
-    # Check duplicate
+    # 1. Check duplicate
     from fetcher_api.services.db_insert import check_duplicate_reel
     if check_duplicate_reel(user_id, url):
         return jsonify({
@@ -238,13 +229,17 @@ def import_share():
             "message": "This video has already been saved."
         }), 409
     
-    # Check plan limits
-    plan = get_plan(user_id)
-    if plan == "free" and count_saves(user_id) >= 10:
+    # 2. Check Plan Limits (Gatekeeper)
+    tier = get_user_tier(user_id)
+    current_count = count_user_reels(user_id)
+    limit = PLAN_LIMITS.get(tier, 10)
+
+    if current_count >= limit:
+        logger.warning(f"🚫 User {user_id} ({tier}) hit save limit: {current_count}/{limit}")
         return jsonify({
             "ok": False,
             "error": "limit_reached",
-            "message": "Free plan limit reached (10 saves). Upgrade to Pro.",
+            "message": f"{tier.capitalize()} plan limit reached ({limit} saves). Upgrade to Pro for unlimited saves.",
             "upgrade": True
         }), 403
     
@@ -271,7 +266,6 @@ def import_share():
 
     shortcode = shortcode.strip()
     
-    # ✅ FIX: Catch "unknown", "None", or empty strings and assign a UUID
     if not shortcode or shortcode.lower() == "unknown" or shortcode == "None":
         shortcode = f"{platform_id.lower()}_{uuid.uuid4().hex[:10]}"
         logger.info(f"🔄 Assigned dynamic shortcode: {shortcode}")
@@ -301,7 +295,7 @@ def import_share():
         caption = metadata.get("caption", "") or ""
         author_name = metadata.get("username", "") or ""
         
-        # Create preview record
+        # Create preview record in local file (for fast UI feedback)
         gcs_paths = generate_gcs_paths(shortcode, platform_id)
         
         preview_record = {

@@ -135,3 +135,16 @@ def execute(sql, params=None, commit=True):
             conn.rollback()
             logger.error("❌ execute failed: %s", e, exc_info=True)
             raise
+
+def get_user_tier(user_id):
+    """Fetches tier for the duration gatekeeper using the correct user_id column."""
+    # Note: We use user_id because that is the column name shown in your psql output
+    res = fetch_one("SELECT tier FROM users WHERE user_id = %s", (user_id,))
+    if res and 'tier' in res:
+        return res['tier']
+    return 'free'
+
+def count_user_reels(user_id):
+    """Counts how many reels a user has already saved."""
+    res = fetch_one("SELECT COUNT(*) as count FROM reels WHERE user_id = %s", (user_id,))
+    return res['count'] if res else 0
