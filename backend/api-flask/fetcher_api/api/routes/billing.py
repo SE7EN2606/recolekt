@@ -109,7 +109,11 @@ def webhook():
                 execute("""
                     INSERT INTO subscriptions (user_id, stripe_subscription_id, status, plan, current_period_end)
                     VALUES (%s,%s,%s,'pro',%s)
-                    ON CONFLICT (stripe_subscription_id) DO UPDATE SET status=EXCLUDED.status, updated_at=now();
+                    ON CONFLICT (stripe_subscription_id) DO UPDATE SET 
+                        status=EXCLUDED.status, 
+                        plan=EXCLUDED.plan,
+                        current_period_end=EXCLUDED.current_period_end,
+                        updated_at=now();
                 """, (user_id, subscription_id, status, _ts(sub.get("current_period_end"))))
                 _sync_user_tier(user_id, status)
 
@@ -125,7 +129,11 @@ def webhook():
             execute("""
                 INSERT INTO subscriptions (user_id, stripe_subscription_id, status, plan, current_period_end)
                 VALUES (%s,%s,%s,'pro',%s)
-                ON CONFLICT (stripe_subscription_id) DO UPDATE SET status=EXCLUDED.status, updated_at=now();
+                ON CONFLICT (stripe_subscription_id) DO UPDATE SET 
+                    status=EXCLUDED.status, 
+                    plan=EXCLUDED.plan,
+                    current_period_end=EXCLUDED.current_period_end,
+                    updated_at=now();
             """, (user_id, obj.get("id"), status, _ts(obj.get("current_period_end"))))
             _sync_user_tier(user_id, status)
         else:
