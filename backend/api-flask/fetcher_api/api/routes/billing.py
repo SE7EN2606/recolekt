@@ -1,6 +1,6 @@
 # fetcher_api/api/routes/billing.py
 """
-Billing and subscription routes - Cleaned Indentation for Railway
+Billing and subscription routes - Fixed for Railway Deployment
 """
 import os
 import logging
@@ -18,8 +18,21 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_PRO_MONTHLY = os.getenv("STRIPE_PRICE_PRO_MONTHLY", "")
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
 
+# ---------------------------------------------------------
+# HELPERS (Restored for main.py imports)
+# ---------------------------------------------------------
+
 def _ensure_billing_customer(user_id: str):
     execute("INSERT INTO billing_customers (user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING;", (user_id,))
+
+def _get_plan(user_id: str) -> str:
+    """Get user's subscription plan from the main users table"""
+    return get_user_tier(user_id)
+
+def _count_saves(user_id: str) -> int:
+    """Count user's saved reels"""
+    row = fetch_one("SELECT COUNT(*)::int AS c FROM reels WHERE user_id=%s;", (user_id,))
+    return int((row or {}).get("c", 0))
 
 def _sync_user_tier(user_id: str, stripe_status: str):
     new_tier = 'pro' if stripe_status in ("active", "trialing") else 'free'
@@ -29,6 +42,36 @@ def _sync_user_tier(user_id: str, stripe_status: str):
 def _ts(unix_seconds):
     if not unix_seconds: return None
     return datetime.fromtimestamp(int(unix_seconds), tz=timezone.utc)
+
+__all__ = ['billing_bp', '_get_plan', '_count_saves', '_ensure_billing_customer']
+
+# ---------------------------------------------------------
+# ROUTES
+# ---------------------------------------------------------
+
+@billing_bp.route("/billing/create-checkout-session", methods=["POST"])
+def create_checkout_session():
+    try:
+        user_id = get_user_id_from_request()
+    except ValueError:
+        return jsonify({"error": "Authentication required"}), 401
+    
+    _ensure_billing_customer(user_id)
+
+    if not stripe.api_key:
+        return jsonify({"error": "Missing STRIPE_SECRET_KEY"}), 500
+    if not STRIPE_PRICE_PRO_MONTHLY:
+        return jsonify({"error": "Missing STRIPE_PRICE_PRO_MONTHLY"}), 500
+
+    session_obj = stripe.checkout.Session.create(
+        mode="subscription",
+        line_items=[{"price": STRIPE_PRICE_PRO_MONTHLY, "quantity": 1}],
+        success_url=f"{FRONTEND_BASE_URL}/billing?success=true",
+        cancel_url=f"{FRONTEND_BASE_URL}/billing?cancel=true",
+        client_reference_id=user_id,
+        subscription_data={"trial_period_days": 7},
+    )
+    return jsonify({"url": session_obj.url})
 
 @billing_bp.route("/billing/webhook", methods=["POST"])
 def webhook():
