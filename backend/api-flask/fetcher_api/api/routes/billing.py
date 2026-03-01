@@ -1,7 +1,6 @@
 # fetcher_api/api/routes/billing.py
-
 """
-Billing and subscription routes - Fixed for Railway Deployment
+Billing and subscription routes - Cleaned Indentation for Railway
 """
 import os
 import logging
@@ -50,7 +49,6 @@ def webhook():
     obj = (event.get("data") or {}).get("object") or {}
     logger.info(f"🔔 Received Webhook: {etype}")
 
-    # 1. Handle Initial Checkout Success
     if etype == "checkout.session.completed":
         user_id = obj.get("client_reference_id")
         customer_id = obj.get("customer")
@@ -72,7 +70,6 @@ def webhook():
                 """, (user_id, subscription_id, status, _ts(sub.get("current_period_end"))))
                 _sync_user_tier(user_id, status)
 
-    # 2. Handle Recurring Updates
     elif etype in ("customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"):
         customer_id = obj.get("customer")
         status = obj.get("status")
