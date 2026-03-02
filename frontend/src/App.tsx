@@ -182,4 +182,4 @@ function App() {
   );
 }
 
-export default App;
+export default App;console.log('🧪 Netlify staging test')
