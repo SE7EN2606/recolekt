@@ -41,31 +41,35 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   const displayPicture = user?.picture || meta?.avatar_url;
   const initials = (displayName?.charAt?.(0) || 'U').toUpperCase();
 
+  // 🔥 FLAWLESS SCROLL LOCK (KILLS JITTER & BACKGROUND SCROLL)
   useEffect(() => {
     if (isOpen) {
       setShouldRender(true);
       requestAnimationFrame(() => requestAnimationFrame(() => setAnimateOpen(true)));
       
-      // ✅ Fix scroll jump by compensating for scrollbar width
       const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-      if (scrollbarWidth > 0) {
-        document.body.style.paddingRight = `${scrollbarWidth}px`;
-      }
+      const scrollY = window.scrollY;
+      
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollY}px`;
+      document.body.style.width = '100%';
       document.body.style.overflow = 'hidden';
-      // Removed document.documentElement.style.overflow to prevent iOS Safari jumping
+      if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
+      
     } else {
       setAnimateOpen(false);
       const timer = setTimeout(() => {
         setShouldRender(false);
-        document.body.style.paddingRight = '';
+        const scrollY = document.body.style.top;
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.width = '';
         document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+        if (scrollY) window.scrollTo(0, parseInt(scrollY || '0') * -1);
       }, 500);
       return () => clearTimeout(timer);
     }
-    return () => {
-      document.body.style.paddingRight = '';
-      document.body.style.overflow = '';
-    };
   }, [isOpen]);
 
   const handleNewCollection = (name: string, parentId?: string) => {
@@ -100,15 +104,15 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     <>
       <div
         className={`
-          fixed inset-0 w-full z-[100] overflow-hidden
-          bg-[#f9fafb]/95 backdrop-blur-xl transform-gpu
+          fixed inset-0 w-full z-[100] overflow-hidden overscroll-none
+          bg-[#f9fafb] transform-gpu
           transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
-          ${animateOpen ? 'translate-y-0' : 'translate-y-full'}
+          ${animateOpen ? 'translate-y-0' : '-translate-y-full'}
         `}
       >
         <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4">
 
-          {/* Header */}
+          {/* Header - EXACT structure from your old code to ensure search and cross align properly */}
           <div className="h-[80px] md:h-[90px] flex items-center justify-between flex-shrink-0 border-b border-gray-200 gap-4">
             {showAuthedUI && (
               <div className="relative flex-1">
@@ -122,6 +126,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
             )}
             {!showAuthedUI && <div className="flex-1" />}
 
+            {/* 🔥 Restored Cross Icon exactly as you requested */}
             <button
               onClick={onClose}
               className="p-2 text-gray-500 bg-white rounded-full transition-colors shadow-sm border border-gray-200 hover:bg-gray-50 flex-shrink-0"
@@ -183,7 +188,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
               {showAuthedUI && (
                 <div className="flex-1 space-y-8">
 
-                  {/* User Info */}
+                  {/* 🔥 RESTORED AVATAR EXACTLY AS PROVIDED */}
                   <div className="flex items-center gap-4 px-2">
                     <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border border-gray-200 shadow-sm">
                       {displayPicture ? (

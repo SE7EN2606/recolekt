@@ -1,18 +1,22 @@
 /** Google Fonts must come before @import "tailwindcss" */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap");
-
 @import "tailwindcss";
 
-/* =========================================================
-   THEME — replaces tailwind.config.ts entirely
-   ========================================================= */
-
-/* index.css */
 html {
-  /* This reserves space for the scrollbar even when it's hidden */
-  scrollbar-gutter: stable both-edges; 
-  overflow-y: scroll;
-  font-family: 'Inter', sans-serif; 
+  /* 🔥 CRITICAL: Forces scrollbar space to always exist, stopping the jitter */
+  scrollbar-gutter: stable;
+  overflow-y: scroll; 
+  font-family: 'Inter', sans-serif;
+}
+
+body {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+/* Prevents library-injected margin-right shifts */
+body[style] {
+  margin-right: 0px !important;
 }
 
 @theme {
