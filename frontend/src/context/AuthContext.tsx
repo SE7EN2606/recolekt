@@ -27,7 +27,7 @@ const getApiBase = () => {
   if (import.meta.env.MODE === 'production') {
     return import.meta.env.VITE_API_BASE || '';
   }
-  return import.meta.env.VITE_API_BASE || 'http://localhost:5001';
+  return import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5001';
 };
 
 const API_BASE = getApiBase();

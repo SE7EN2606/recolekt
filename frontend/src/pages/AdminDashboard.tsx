@@ -6,7 +6,7 @@ import { InstallShortcutModal } from '../components/InstallShortcutModal';
 import shortcutsIcon from '/assets/shortcuts_icon.png';
 import { useTranslation } from 'react-i18next'; // 🔥 IMPORT
 
-const API_BASE = import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5001';
+const API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
 interface TokenInfo {
   has_token: boolean;
