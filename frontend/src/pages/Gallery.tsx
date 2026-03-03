@@ -118,7 +118,7 @@ export const Gallery: React.FC = () => {
   const showSkeleton = authLoading || (dataLoading && videos.length === 0);
 
   if (showSkeleton) return (
-    <div className="w-full pt-8 md:pt-0 animate-pulse">
+    <div className="w-full pt-4 md:pt-0 animate-pulse">
       <div className="h-8 bg-gray-200 rounded-lg w-48 mb-8" />
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
         {Array.from({ length: 6 }).map((_, i) => (
@@ -131,7 +131,7 @@ export const Gallery: React.FC = () => {
   if (!user) return null;
 
   return (
-    <div className="w-full pt-8 md:pt-0 pb-0 md:pb-6 animate-fade-in">
+    <div className="w-full pt-4 md:pt-0 pb-0 md:pb-6 animate-fade-in">
       <div className="flex flex-col gap-6 mb-8">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">{getFolderTitle()}</h1>

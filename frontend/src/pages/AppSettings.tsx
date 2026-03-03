@@ -83,7 +83,8 @@ export const AppSettings: React.FC = () => {
 
   return (
     <div className="w-full pt-6 md:pt-0 pb-0 md:pb-6 animate-fade-in">
-      <div className="flex flex-col gap-4 md:gap-6 mb-6 md:mb-8 px-4 md:px-0">
+      {/* ✅ FIXED: Removed px-4 */}
+      <div className="flex flex-col gap-4 md:gap-6 mb-6 md:mb-8 md:px-0">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-gray-900">
             {t('settings:appSettings')}
@@ -94,7 +95,8 @@ export const AppSettings: React.FC = () => {
         </div>
       </div>
 
-      <div className="space-y-5 md:space-y-6 px-4 md:px-0">
+      {/* ✅ FIXED: Removed px-4 */}
+      <div className="space-y-5 md:space-y-6 md:px-0">
         {/* User Card */}
         <div className="bg-white rounded-2xl md:rounded-3xl shadow-sm p-5 md:p-8 border border-gray-100">
           <div className="flex items-center gap-4 md:gap-5 mb-5 md:mb-6">

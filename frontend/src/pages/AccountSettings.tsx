@@ -191,7 +191,7 @@ export const AccountSettings: React.FC = () => {
   const displayName = user.name || 'User';
 
   return (
-    <div className="w-full pt-6 md:pt-0 pb-0 md:pb-6 animate-fade-in">
+    <div className="w-full pt-4 md:pt-0 pb-0 md:pb-6 animate-fade-in">
       <div className="flex flex-col gap-4 md:gap-6 mb-6 md:mb-8">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-gray-900">{t('account:personalInfo')}</h1>

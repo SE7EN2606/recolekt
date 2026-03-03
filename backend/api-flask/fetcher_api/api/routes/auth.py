@@ -59,15 +59,14 @@ def create_jwt_token(user_id: str, email: str) -> str:
 def google_login():
     google = get_google_client()
     
-    # Use the GOOGLE_REDIRECT_URI from your Railway variables
-    # fallback to local if not found
+    # Use the variable you set in Railway (https://recolekt-staging.up.railway.app/api/auth/google/callback)
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
     
+    # Fallback for local dev only
     if not redirect_uri:
-        # Fallback for local development
         redirect_uri = url_for('auth.google_callback', _external=True, _scheme='http')
     
-    logger.info(f"🚀 Redirecting to Google with URI: {redirect_uri}")
+    logger.info(f"🚀 OAuth Start - Redirecting to Google with URI: {redirect_uri}")
     return google.authorize_redirect(redirect_uri)
 
 @auth_bp.route("/google/callback", methods=["GET"])
