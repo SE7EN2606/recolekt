@@ -1,92 +1,47 @@
 import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock, User, ShieldAlert } from 'lucide-react';
+import { Mail, Lock, User, ArrowLeft, AlertCircle, KeyRound } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import LogoWhite from '../assets/recolekt_logo_white.png';
 
+function joinUrl(base: string, path: string) {
+  const b = String(base || '').replace(/\/+$/, '');
+  const p = String(path || '').replace(/^\/+/, '');
+  if (!b) return `/${p}`;
+  return `${b}/${p}`;
+}
+
+type ViewState = 'login' | 'register' | 'forgot' | 'reset' | 'verify';
+
 export const Auth: React.FC = () => {
-  const [view, setView] = useState<'login' | 'register'>('login');
+  const [view, setView] = useState<ViewState>('login');
   const [loading, setLoading] = useState(false);
   const { t } = useTranslation(['auth', 'common']); 
   
+  const [resetEmail, setResetEmail] = useState('');
+  const [verificationEmail, setVerificationEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+
   const navigate = useNavigate();
   const { user, signInWithGoogle, loginUser, registerUser } = useAuth();
 
-  // 🛑 HARD STAGING CHECK
-  const isStaging = window.location.hostname.includes('staging') || window.location.hostname.includes('netlify.app');
-
   useEffect(() => {
-    if (user) {
+    if (user && view !== 'verify') {
       navigate('/gallery', { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, view]);
 
-  // ==========================================
-  // ☢️ STAGING ADMIN UI: BRUTALLY SIMPLE
-  // ==========================================
-  if (isStaging) {
-    const handleAdminSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-      setLoading(true);
-      const formData = new FormData(e.currentTarget);
-      const email = (formData.get('email') as string) || '';
-      const password = (formData.get('password') as string) || '';
-
-      try {
-        const res = await loginUser(email, password);
-        if (res) {
-          window.location.href = '/gallery';
-        } else {
-          alert("Invalid admin credentials");
-        }
-      } catch (error: any) {
-        alert(error.message || "Authentication failed");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    return (
-      <div className="min-h-screen w-full bg-black flex items-center justify-center px-4">
-        <div className="w-full max-w-sm bg-gray-900 p-8 rounded-2xl border-2 border-red-600 shadow-2xl shadow-red-900/50">
-          <div className="flex flex-col items-center mb-8">
-            <ShieldAlert size={48} className="text-red-500 mb-3" />
-            <h2 className="text-2xl font-black text-white tracking-widest uppercase text-center">STAGING ADMIN</h2>
-          </div>
-
-          <form onSubmit={handleAdminSubmit} className="space-y-6">
-            <div>
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Admin Email</label>
-              <input type="email" name="email" required className="mt-1 w-full bg-black border border-gray-700 text-white rounded-lg py-3 px-4 outline-none focus:border-red-500" />
-            </div>
-
-            <div>
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Password</label>
-              <input type="password" name="password" required className="mt-1 w-full bg-black border border-gray-700 text-white rounded-lg py-3 px-4 outline-none focus:border-red-500" />
-            </div>
-
-            <button type="submit" disabled={loading} className="w-full h-12 text-sm font-black tracking-widest rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50">
-              {loading ? 'AUTHENTICATING...' : 'SECURE LOGIN'}
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
-  // ==========================================
-  // 🟢 PRODUCTION UI: FULL AUTH PAGE
-  // ==========================================
-  const handleProdSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     const formData = new FormData(e.currentTarget);
     const email = (formData.get('email') as string) || '';
     const password = (formData.get('password') as string) || '';
     const name = (formData.get('name') as string) || '';
+    const code = (formData.get('code') as string) || '';
 
     try {
       if (view === 'login') {
@@ -95,8 +50,26 @@ export const Auth: React.FC = () => {
       } else if (view === 'register') {
         const res = await registerUser(email, password, name);
         if (res) {
-          await loginUser(email, password);
-          navigate('/gallery');
+          setVerificationEmail(email);
+          setRegPassword(password);
+          setView('verify');
+        }
+      } else if (view === 'forgot') {
+        const res = await fetch(joinUrl(API_BASE, '/api/auth/forgot-password'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        if (res.ok) { setResetEmail(email); setView('reset'); }
+      } else if (view === 'verify') {
+        const res = await fetch(joinUrl(API_BASE, '/api/auth/verify-email'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: verificationEmail, code })
+        });
+        if (res.ok) {
+          await loginUser(verificationEmail, regPassword);
+          setTimeout(() => window.location.href = '/gallery', 100);
         }
       }
     } catch (error: any) {
@@ -128,6 +101,10 @@ export const Auth: React.FC = () => {
             </h1>
             <p className="text-gray-400 text-lg leading-relaxed font-medium">{t('auth:creatorsJoin')}</p>
           </div>
+          <div className="flex gap-4 text-xs font-black uppercase tracking-widest text-gray-500">
+            <span>© 2026 recolekt</span>
+            <Link to="/help" className="hover:text-white transition-colors">{t('auth:help')}</Link>
+          </div>
         </div>
 
         <div className="w-full md:w-1/2 flex flex-col justify-start items-center h-full relative pl-0 md:pl-16 pt-24 md:pt-18">
@@ -152,7 +129,7 @@ export const Auth: React.FC = () => {
                   <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-4 text-gray-400 font-black tracking-widest">{t('auth:emailContinue')}</span></div>
                 </div>
                 
-                <form onSubmit={handleProdSubmit} className="space-y-3">
+                <form onSubmit={handleSubmit} className="space-y-3">
                   {view === 'register' && (
                      <div className="space-y-1">
                        <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:fullName')}</label>
