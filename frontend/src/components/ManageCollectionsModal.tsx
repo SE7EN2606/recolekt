@@ -1,8 +1,8 @@
-import { API_BASE } from "../utils/api";
-import React, { useEffect, useMemo, useState } from 'react';
-import {
-  X, FolderClosed, ChevronRight,
-  Trash2, Edit2, Plus, Check, Folder, CornerDownRight
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  X, Trash2, Edit2, Check, Folder, 
+  CornerDownRight, Plus, FolderPlus, 
+  AlertTriangle, FolderClosed 
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { Folder as FolderType } from '../types';
@@ -21,76 +21,25 @@ const isSystemOrAllVideos = (folder: FolderType) => {
   return SYSTEM_FOLDER_IDS.has(id) || Boolean((folder as any)?.isSystem) || name === 'all videos';
 };
 
-const sanitizeFolderTree = (list: FolderType[]): FolderType[] => {
-  const safe = Array.isArray(list) ? list : [];
-  return safe
-    .filter((f) => f && !isSystemOrAllVideos(f))
-    .map((f) => ({
-      ...f,
-      subFolders: sanitizeFolderTree((f.subFolders || []) as FolderType[]),
-    }));
-};
-
-const flattenFolders = (
-  folders: FolderType[],
-  depth = 0,
-): { folder: FolderType; depth: number }[] => {
-  const result: { folder: FolderType; depth: number }[] = [];
-  for (const folder of folders) {
-    result.push({ folder, depth });
-    if (folder.subFolders && folder.subFolders.length > 0) {
-      result.push(...flattenFolders(folder.subFolders as FolderType[], depth + 1));
-    }
-  }
-  return result;
-};
-
-const buildExpandedMap = (list: FolderType[]) => {
-  const expanded: Record<string, boolean> = {};
-  const walk = (folders: FolderType[]) => {
-    for (const f of folders) {
-      const hasSubs = !!(f.subFolders && f.subFolders.length > 0);
-      if (hasSubs) { expanded[f.id] = true; walk(f.subFolders as FolderType[]); }
-    }
-  };
-  walk(list);
-  return expanded;
-};
-
 export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
   isOpen,
-  onClose,
+  onClose
 }) => {
   const { folders, addFolder, updateFolder, deleteFolder, videos } = useData();
   const { t } = useTranslation(['modals', 'common']);
-
   const [isVisible, setIsVisible] = useState(false);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [addingRoot, setAddingRoot] = useState(false);
+  const [addingSubToId, setAddingSubToId] = useState<string | null>(null);
+  const [newName, setNewName] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [parentForNew, setParentForNew] = useState<string | null>(null);
 
-  const cleanedFolders = useMemo(
-    () => sanitizeFolderTree((folders || []) as FolderType[]),
-    [folders],
+  const customFolders = useMemo(() => 
+    (folders || []).filter(f => f && !isSystemOrAllVideos(f)),
+    [folders]
   );
-
-  const parentOptions = useMemo(
-    () => flattenFolders(cleanedFolders),
-    [cleanedFolders],
-  );
-
-  // Recursive count: includes videos in subfolders
-  const getVideoCount = (folderId: string) => {
-    const directCount = (videos || []).filter((v: any) => v.folderId === folderId).length;
-    const folder = (folders || []).find((f: any) => f.id === folderId);
-    const subFolderCount = (folder?.subFolders || []).reduce((acc: number, sub: any) => 
-      acc + (videos || []).filter((v: any) => v.folderId === sub.id).length, 0);
-    return directCount + subFolderCount;
-  };
 
   useEffect(() => {
     if (isOpen) {
@@ -99,179 +48,157 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
     } else {
       const timer = setTimeout(() => setIsVisible(false), 300);
       document.body.style.overflow = 'unset';
-      setEditingId(null);
-      setDeleteConfirmId(null);
-      setIsCreating(false);
-      setNewFolderName('');
-      setParentForNew(null);
+      resetState();
       return () => clearTimeout(timer);
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    setExpanded((prev) => {
-      if (prev && Object.keys(prev).length > 0) return prev;
-      return buildExpandedMap(cleanedFolders);
-    });
-  }, [isOpen, cleanedFolders]);
-
-  const toggleExpand = (id: string) => {
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const startEdit = (folder: FolderType) => {
-    if (isSystemOrAllVideos(folder)) return;
-    setEditingId(folder.id);
-    setEditName(folder.name);
+  const resetState = () => {
+    setEditingId(null);
+    setEditName('');
+    setAddingRoot(false);
+    setAddingSubToId(null);
+    setNewName('');
     setDeleteConfirmId(null);
   };
 
-  const saveEdit = () => {
-    if (editingId && editName.trim()) {
-      updateFolder(editingId, editName.trim());
+  const getVideoCount = (folderId: string) => {
+    const directCount = (videos || []).filter((v: any) => v.folderId === folderId).length;
+    const folder = (folders || []).find((f: any) => f.id === folderId);
+    const subFolderCount = (folder?.subFolders || []).reduce((acc: number, sub: any) => 
+      acc + (videos || []).filter((v: any) => v.folderId === sub.id).length, 0);
+    return directCount + subFolderCount;
+  };
+
+  const handleAddRoot = () => {
+    if (newName.trim()) {
+      addFolder(newName.trim());
+      setNewName('');
+      setAddingRoot(false);
+    }
+  };
+
+  const handleAddSub = (parentId: string) => {
+    if (newName.trim()) {
+      addFolder(newName.trim(), parentId);
+      setNewName('');
+      setAddingSubToId(null);
+    }
+  };
+
+  const handleUpdate = (id: string) => {
+    if (editName.trim()) {
+      updateFolder(id, editName.trim());
       setEditingId(null);
       setEditName('');
     }
   };
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditName('');
-  };
-
-  const requestDelete = (folder: FolderType) => {
-    if (isSystemOrAllVideos(folder)) return;
-    setDeleteConfirmId(folder.id);
-    setEditingId(null);
-  };
-
-  const confirmDelete = (id: string) => {
+  const handleDelete = (id: string) => {
     deleteFolder(id);
     setDeleteConfirmId(null);
   };
 
-  const handleCreate = () => {
-    const name = newFolderName.trim();
-    if (!name) return;
-    addFolder(name, parentForNew ?? undefined);
-    setNewFolderName('');
-    setIsCreating(false);
-    setParentForNew(null);
-  };
-
-  const renderFolder = (folder: FolderType, depth = 0) => {
-    const hasSubs = !!(folder.subFolders && folder.subFolders.length > 0);
-    const isExpanded = !!expanded[folder.id];
+  const renderFolderRow = (folder: FolderType, isSub: boolean = false) => {
     const isEditing = editingId === folder.id;
     const isDeleting = deleteConfirmId === folder.id;
-    
-    // Use CornerDownRight for subfolders to match sidebar
-    const Icon = depth === 0 ? FolderClosed : CornerDownRight;
+    const isAddingSub = addingSubToId === folder.id;
 
     return (
-      <div key={folder.id}>
-        <div
-          className={`
-            group flex items-center py-2 px-2 rounded-xl transition-all
-            ${isEditing ? 'bg-primary-50 border border-primary-100' : 'hover:bg-white/40 border border-transparent'}
-            ${depth > 0 ? 'ml-6 border-l border-white/20' : ''}
-          `}
-        >
-          {/* Expand toggle */}
-          <button
-            onClick={() => hasSubs && toggleExpand(folder.id)}
-            className={`p-1 mr-1 text-gray-400 hover:text-gray-600 rounded transition-colors ${!hasSubs ? 'opacity-0 cursor-default' : ''}`}
-          >
-            <ChevronRight
-              size={14}
-              className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-            />
-          </button>
-
-          {/* Icon + Name / Input */}
-          <div className="flex-1 flex items-center gap-2 min-w-0 mr-3">
-            <Icon 
-              size={16} 
-              className={depth > 0 ? 'text-gray-300' : 'text-primary-600'} 
-              strokeWidth={depth > 0 ? 2.5 : 2}
-            />
-
-            {isEditing ? (
-              <input
-                autoFocus
-                type="text"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                onBlur={saveEdit}
-                onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit(); }}
-                className="flex-1 bg-white border border-primary-200 rounded-lg px-3 py-1.5 text-sm font-bold text-gray-900 focus:ring-2 focus:ring-primary-500 outline-none"
-              />
-            ) : (
-              <div className="min-w-0">
-                <div className="font-bold text-sm text-gray-900 truncate">{folder.name}</div>
-                <div className="text-[10px] text-gray-400 font-medium">{getVideoCount(folder.id)} {t('modals:items')}</div>
-              </div>
-            )}
+      <div className="group">
+        <div className={`
+          flex items-center justify-between p-2.5 rounded-xl transition-all border
+          ${isEditing ? 'bg-primary-50 border-primary-100' : 'bg-transparent border-transparent hover:bg-primary-50/50 hover:border-primary-100/50'}
+          ${isSub ? 'ml-6' : ''}
+        `}>
+          <div className="flex-1 flex items-center gap-3 min-w-0 mr-2">
+             <div className={`flex items-center justify-center shrink-0 transition-colors ${isEditing ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'}`}>
+                {isSub ? <CornerDownRight size={18} strokeWidth={2.5} className="shrink-0" /> : <FolderClosed size={20} className="shrink-0" />}
+             </div>
+             
+             {isEditing ? (
+               <input 
+                 autoFocus
+                 type="text" 
+                 value={editName}
+                 onChange={(e) => setEditName(e.target.value)}
+                 onKeyDown={(e) => e.key === 'Enter' && handleUpdate(folder.id)}
+                 className="flex-1 bg-white border border-gray-200 rounded-lg px-2 py-1 text-sm font-bold text-gray-900 focus:ring-2 focus:ring-primary-500 outline-none min-w-0"
+               />
+             ) : (
+               <div className="min-w-0 flex-1">
+                 <div className="font-bold text-sm text-gray-900 truncate transition-colors group-hover:text-primary-900">{folder.name}</div>
+                 <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider transition-colors group-hover:text-primary-600/70">
+                   {getVideoCount(folder.id)} {t('modals:items', 'items')}
+                 </div>
+               </div>
+             )}
           </div>
 
-          {/* Actions */}
           <div className="flex items-center gap-1">
             {isEditing ? (
               <>
-                <button onClick={saveEdit} className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition-colors">
-                  <Check size={16} />
+                <button onClick={() => handleUpdate(folder.id)} className="p-1.5 text-green-600 hover:bg-green-100 rounded-lg transition-colors">
+                  <Check size={16} className="shrink-0" />
                 </button>
-                <button onClick={cancelEdit} className="p-2 text-gray-400 hover:bg-white/50 rounded-lg transition-colors">
-                  <X size={16} />
+                <button onClick={() => setEditingId(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors">
+                  <X size={16} className="shrink-0" />
                 </button>
               </>
-            ) : isDeleting ? (
-              <div className="flex items-center gap-1 bg-red-50 p-1 rounded-lg">
-                <span className="text-[10px] font-bold text-red-600 pl-2">{t('common:sure')}</span>
-                <button onClick={() => confirmDelete(folder.id)} className="p-1.5 bg-white text-red-600 rounded-md shadow-sm hover:bg-red-100">
-                  <Check size={14} />
-                </button>
-                <button onClick={() => setDeleteConfirmId(null)} className="p-1.5 text-gray-400 hover:bg-white rounded-md">
-                  <X size={14} />
-                </button>
-              </div>
             ) : (
-              <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={() => {
-                    setParentForNew(folder.id);
-                    setIsCreating(true);
-                    setExpanded((prev) => ({ ...prev, [folder.id]: true }));
-                  }}
-                  className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-white/50 rounded-lg transition-colors"
-                  title={t('modals:addSubfolder')}
+              <div className={`flex items-center gap-0.5 ${isDeleting ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'} transition-all`}>
+                {!isSub && (
+                  <button 
+                    onClick={() => { setAddingSubToId(folder.id); setNewName(''); setAddingRoot(false); }} 
+                    className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-100/50 rounded-lg transition-colors"
+                  >
+                    <Plus size={16} className="shrink-0" />
+                  </button>
+                )}
+                
+                <button 
+                  onClick={() => { setEditingId(folder.id); setEditName(folder.name); setDeleteConfirmId(null); }} 
+                  className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-100/50 rounded-lg transition-colors"
+                  title={t('common:rename', 'Rename')}
                 >
-                  <Plus size={14} />
+                  <Edit2 size={16} className="shrink-0" />
                 </button>
-                <button
-                  onClick={() => startEdit(folder)}
-                  className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                  title={t('common:rename')}
-                >
-                  <Edit2 size={14} />
-                </button>
-                <button
-                  onClick={() => requestDelete(folder)}
+
+                <button 
+                  onClick={() => setDeleteConfirmId(folder.id)} 
                   className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  title={t('common:delete')}
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={16} className="shrink-0" />
                 </button>
               </div>
             )}
           </div>
         </div>
 
-        {/* Subfolders */}
-        {hasSubs && isExpanded && (
-          <div className="mt-1">
-            {folder.subFolders!.map((sub) => renderFolder(sub as FolderType, depth + 1))}
+        {isDeleting && (
+          <div className="p-3 bg-red-50 rounded-xl border border-red-100 mt-2 mb-2 mx-2 animate-fade-in flex items-start gap-3">
+             <AlertTriangle className="text-red-500 shrink-0 mt-0.5" size={18} />
+             <div className="flex-1">
+               <h4 className="text-sm font-bold text-red-700">{t('common:delete', 'Delete')} "{folder.name}"?</h4>
+               <div className="flex gap-2 mt-3">
+                 <button onClick={() => handleDelete(folder.id)} className="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg shadow-sm">{t('common:confirmDelete', 'Confirm')}</button>
+                 <button onClick={() => setDeleteConfirmId(null)} className="px-3 py-1.5 bg-white border border-red-200 text-red-700 text-xs font-bold rounded-lg hover:bg-red-50 transition-colors">{t('common:cancel', 'Cancel')}</button>
+               </div>
+             </div>
+          </div>
+        )}
+
+        {isAddingSub && (
+          <div className="ml-8 mr-2 mt-1 mb-2 flex items-center gap-2 p-2 bg-primary-50/50 rounded-xl border border-primary-100 animate-fade-in">
+            <CornerDownRight size={16} className="text-primary-400 ml-1 shrink-0" />
+            <input 
+              autoFocus type="text" placeholder={t('modals:subCollectionNamePlaceholder', 'Sub-folder name...')} value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddSub(folder.id)}
+              className="flex-1 bg-white border border-primary-200 rounded-lg px-3 py-1.5 text-sm font-medium outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <button onClick={() => handleAddSub(folder.id)} className="p-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Check size={14} className="shrink-0" /></button>
+            <button onClick={() => setAddingSubToId(null)} className="p-1.5 text-gray-400 hover:bg-white rounded-lg"><X size={14} className="shrink-0" /></button>
           </div>
         )}
       </div>
@@ -282,110 +209,64 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
 
   return (
     <div className={`fixed inset-0 z-[200] flex items-center justify-center px-4 transition-all duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div className={`
-        relative bg-white/90 backdrop-blur-xl border border-white/40
-        w-full max-w-lg rounded-2xl shadow-2xl
-        flex flex-col max-h-[85vh]
-        transform transition-all duration-300
-        ${isOpen ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}
-      `}>
-
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      <div className={`bg-white/95 backdrop-blur-xl border border-white/40 w-full max-w-lg rounded-2xl shadow-2xl transform transition-all duration-300 flex flex-col max-h-[85vh] ${isOpen ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}>
+        
         {/* Header */}
-        <div className="p-6 border-b border-white/20 flex items-center justify-between flex-shrink-0">
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-white/50 rounded-t-2xl">
           <div>
-            <h3 className="text-xl font-bold text-gray-900">{t('modals:manageCollections')}</h3>
-            <p className="text-gray-500 text-sm mt-1">{t('modals:manageCollectionsDesc')}</p>
+            <h3 className="text-lg font-black text-gray-900">{t('modals:manageCollections', 'Manage Collections')}</h3>
+            <p className="text-gray-500 text-xs mt-0.5">{t('modals:manageCollectionsDesc', 'Organize your library structure')}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 -mr-2 text-gray-400 hover:bg-white/50 rounded-full transition-colors"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Folder Tree */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-1">
-          {cleanedFolders.length === 0 ? (
-            <div className="text-center py-10">
-              <Folder size={48} className="mx-auto text-gray-300 mb-4" />
-              <p className="text-gray-400 font-medium">{t('modals:noCollectionsYet')}</p>
-            </div>
-          ) : (
-            cleanedFolders.map((folder) => renderFolder(folder))
-          )}
-        </div>
-
-        {/* Footer / Create New */}
-        <div className="p-4 border-t border-white/20 bg-white/30 rounded-b-2xl backdrop-blur-sm">
-          {isCreating ? (
-            <div className="space-y-3">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                  {t('modals:parentCollection')}
-                </label>
-                <div className="relative">
-                  <select
-                    className="w-full bg-white/60 border border-white/40 rounded-xl px-3 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 backdrop-blur-sm appearance-none cursor-pointer"
-                    value={parentForNew ?? ''}
-                    onChange={(e) => setParentForNew(e.target.value || null)}
-                  >
-                    <option value="">{t('modals:noParent')}</option>
-                    {parentOptions.map(({ folder, depth }) => (
-                      <option key={folder.id} value={folder.id}>
-                        {`${'— '.repeat(depth)}${folder.name}`}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 rotate-90 text-gray-400 pointer-events-none" />
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <input
-                  autoFocus
-                  type="text"
-                  placeholder={parentForNew ? t('modals:subCollectionNamePlaceholder') : t('modals:collectionNamePlaceholder')}
-                  value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') { setIsCreating(false); setParentForNew(null); setNewFolderName(''); } }}
-                  className="flex-1 bg-white/60 border border-white/40 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 backdrop-blur-sm"
-                />
-                <button
-                  onClick={handleCreate}
-                  disabled={!newFolderName.trim()}
-                  className="bg-primary-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-primary-700 disabled:opacity-50 shadow-sm shadow-primary-600/20 transition-colors"
-                >
-                  {t('common:add')}
-                </button>
-                <button
-                  onClick={() => { setIsCreating(false); setParentForNew(null); setNewFolderName(''); }}
-                  className="px-3 py-2 text-sm font-medium text-gray-500 hover:bg-white/50 rounded-xl transition-colors"
-                >
-                  {t('common:cancel')}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              onClick={() => { setParentForNew(null); setIsCreating(true); }}
-              className="w-full py-2.5 flex items-center justify-center gap-2 text-primary-600 font-bold 
-                        bg-white/20 border border-white/40 rounded-xl transition-all duration-300
-                        hover:bg-white/60 hover:border-white hover:shadow-lg hover:shadow-primary-500/10 
-                        active:scale-[0.97] active:bg-white/80"
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => { setAddingRoot(true); setNewName(''); setAddingSubToId(null); }}
+              className="flex items-center justify-center w-8 h-8 md:w-auto md:px-3 md:py-1.5 bg-primary-50 text-primary-600 hover:bg-primary-100 border border-transparent hover:border-primary-200 rounded-xl text-xs font-bold transition-all active:scale-95"
             >
-              <Plus size={18} />
-              {t('modals:createNewCollection')}
+              <FolderPlus size={16} strokeWidth={2.5} className="shrink-0 min-w-[16px] min-h-[16px]" />
+              <span className="hidden md:inline ml-1.5">{t('common:add', 'Add')}</span>
             </button>
-          )}
+            <button onClick={onClose} className="p-2 text-gray-400 hover:bg-gray-100 rounded-full transition-colors"><X size={20} className="shrink-0" /></button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-1">
+           {addingRoot && (
+             <div className="flex items-center gap-2 p-3 bg-primary-50 rounded-xl border border-primary-100 mb-4 animate-fade-in shadow-sm">
+               <Folder size={18} className="text-primary-600 shrink-0" />
+               <input autoFocus type="text" placeholder={t('modals:collectionNamePlaceholder', 'Collection name...')} value={newName}
+                 onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddRoot()}
+                 className="flex-1 bg-white border border-primary-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary-500"
+               />
+               <button onClick={handleAddRoot} className="p-1.5 bg-primary-600 text-white rounded-lg"><Check size={16} className="shrink-0" /></button>
+               <button onClick={() => setAddingRoot(false)} className="p-1.5 text-gray-400"><X size={16} className="shrink-0" /></button>
+             </div>
+           )}
+
+           {customFolders.length === 0 && !addingRoot && (
+              <div className="text-center py-12 border-2 border-dashed border-gray-100 rounded-2xl bg-gray-50/50 mt-2">
+                <Folder size={40} className="mx-auto text-gray-300 mb-3" />
+                <p className="text-gray-400 text-sm font-medium">{t('modals:noCollectionsYet', 'No collections yet')}</p>
+              </div>
+           )}
+
+           {customFolders.map(folder => (
+              <div key={folder.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden mb-2">
+                {renderFolderRow(folder)}
+                {folder.subFolders && folder.subFolders.length > 0 && (
+                  <div className="bg-gray-50/30 border-t border-gray-100 pb-1">
+                    {folder.subFolders.map(sub => <div key={sub.id}>{renderFolderRow(sub as FolderType, true)}</div>)}
+                  </div>
+                )}
+              </div>
+           ))}
+        </div>
+
+        <div className="p-4 border-t border-gray-100 bg-gray-50/50 rounded-b-2xl flex justify-between items-center">
+           <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{customFolders.length} {t('modals:collections', 'collections')}</span>
+           <button onClick={onClose} className="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl shadow-sm hover:bg-gray-50 transition-all text-sm active:scale-95">
+             {t('common:done', 'Done')}
+           </button>
         </div>
       </div>
     </div>
