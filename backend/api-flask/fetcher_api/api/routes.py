@@ -296,7 +296,7 @@ def import_share():
         author_name = metadata.get("username", "") or ""
         
         # Create preview record in local file (for fast UI feedback)
-        gcs_paths = generate_gcs_paths(shortcode, platform_id)
+        gcs_paths = generate_gcs_paths(shortcode, platform_id, user_id=user_id)
         
         preview_record = {
             "process_id": process_id,

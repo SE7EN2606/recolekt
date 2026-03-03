@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Button } from './Button';

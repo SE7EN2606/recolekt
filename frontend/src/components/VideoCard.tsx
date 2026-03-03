@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Heart, Globe, Loader2, CheckCircle2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
@@ -13,8 +14,6 @@ interface VideoCardProps {
   selectionMode?: boolean;
 }
 
-const RAW_API_BASE = (import.meta.env.VITE_API_BASE ?? import.meta.env.VITE_API_URL ?? '') as string;
-const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
 
 function joinUrl(base: string, path: string) {
   const p = String(path || '').replace(/^\/+/, '');

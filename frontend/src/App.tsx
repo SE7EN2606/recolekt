@@ -1,3 +1,4 @@
+import { API_BASE } from "./utils/api";
 import React, { useState, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { I18nextProvider, useTranslation } from 'react-i18next';

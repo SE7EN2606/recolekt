@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 // src/types.ts
 
 import React from 'react';

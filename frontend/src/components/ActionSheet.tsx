@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 

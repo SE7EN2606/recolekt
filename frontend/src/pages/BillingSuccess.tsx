@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, Sparkles } from 'lucide-react';

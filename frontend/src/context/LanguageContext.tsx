@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 

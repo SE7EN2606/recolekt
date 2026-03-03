@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import Dexie, { Table } from 'dexie';
 
 // Interfaces

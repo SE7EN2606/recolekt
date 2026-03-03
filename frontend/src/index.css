@@ -2,21 +2,26 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap");
 @import "tailwindcss";
 
+/* 1. Ensure the html always has a scrollbar area so it never disappears */
 html {
-  /* 🔥 CRITICAL: Forces scrollbar space to always exist, stopping the jitter */
-  scrollbar-gutter: stable;
-  overflow-y: scroll; 
-  font-family: 'Inter', sans-serif;
+  overflow-y: scroll !important;
+  scrollbar-gutter: stable !important;
 }
 
-body {
-  width: 100%;
-  overflow-x: hidden;
-}
-
-/* Prevents library-injected margin-right shifts */
-body[style] {
+/* 2. The Kill Switch: When a modal opens, Radix adds 'data-scroll-locked'. 
+      We force the padding back to ZERO so it cannot shift the content. */
+body[data-scroll-locked], 
+body[style*="padding-right"] {
+  padding-right: 0px !important;
   margin-right: 0px !important;
+  overflow: hidden !important;
+}
+
+/* 3. If you use a fixed Header, it might also be jumping. 
+      Apply this to your Header class if it shifts. */
+.fixed-header {
+  padding-right: 0px !important;
+  right: 0px !important;
 }
 
 @theme {

@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React from 'react';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next'; // 🔥 IMPORT

@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, UserCircle, Settings, Crown, CreditCard, LogOut, User } from 'lucide-react';

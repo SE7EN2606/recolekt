@@ -414,10 +414,11 @@ def get_reel(process_id):
             shortcode = process_id.split("-")[0]
         shortcode = shortcode.rstrip("-")
 
+        # 🔥 FIXED SQL: No dots! Fully spelled out with user_id included.
         row = fetch_one(
             """
             SELECT
-                id, source_url, folder_id, is_favorite, status,
+                id, user_id, source_url, folder_id, is_favorite, status,
                 summary_category, summary_title, summary_topic, summary_text,
                 summary_bullets, summary_hashtags, summary_emojis,
                 content_type, created_at, caption, author_name,

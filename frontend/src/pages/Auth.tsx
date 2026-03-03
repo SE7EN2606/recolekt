@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, User, ArrowLeft, AlertCircle, KeyRound } from 'lucide-react';
@@ -7,12 +8,8 @@ import { useTranslation } from 'react-i18next';
 
 import LogoWhite from '../assets/recolekt_logo_white.png';
 
-const RAW_API_BASE =
-  import.meta.env.VITE_API_BASE ||
-  import.meta.env.VITE_API_URL ||
   'http://localhost:5001';
 
-const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
 
 function joinUrl(base: string, path: string) {
   const b = String(base || '').replace(/\/+$/, '');

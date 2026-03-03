@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, {
   createContext,
   useContext,
@@ -36,13 +37,6 @@ interface DataContextType {
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
-
-const RAW_API_BASE = (
-  import.meta.env.VITE_API_BASE ??
-  import.meta.env.VITE_API_URL ??
-  ''
-) as string;
-const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
 
 function joinUrl(base: string, path: string) {
   const p = String(path || '').replace(/^\/+/, '');

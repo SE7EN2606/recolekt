@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 // src/components/RecipeComponents.tsx
 
 import React from 'react';

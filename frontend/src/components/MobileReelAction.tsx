@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 // src/components/MobileReelAction.tsx
 
 import React, { useEffect, useState } from 'react';

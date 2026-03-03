@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 // components/AISummaryCard.tsx
 
 import React, { useEffect, useMemo, useRef } from 'react';

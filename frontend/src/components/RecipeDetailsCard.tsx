@@ -1,5 +1,3 @@
-// components/RecipeDetailsCard.tsx
-
 import React from 'react';
 import { ChefHat, Clock, Flame, Users, Lightbulb } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -37,6 +35,9 @@ export interface RecipeDetailsCardProps {
   servingScale?: number;
   scaleQuantity?: (qty: string, scale: number) => string;
   onServingScaleChange?: (next: number) => void;
+  // 🔥 FIXED: Added the missing props so the component actually knows about the button
+  useMetric?: boolean;
+  onToggleMetric?: (val: boolean) => void;
 }
 
 /* ------------ helpers ------------ */
@@ -64,7 +65,6 @@ function parseIngredientString(text: string) {
   let quantity = '';
   let unit = '';
 
-  // Only extract unit if there is a number FIRST
   if (parts.length && /^\d/.test(parts[0])) {
     quantity = parts.shift() || '';
     if (parts.length && !/^\d/.test(parts[0]) && parts[0].length <= 12) {
@@ -88,6 +88,37 @@ function formatQuantity(q: string): string {
   return String(Math.round(n * 100) / 100);
 }
 
+// 🔥 FIXED: Real Conversion Logic added here
+function convertUnits(qtyStr: string, unitStr: string, toMetric: boolean) {
+  if (!qtyStr || !unitStr) return { q: qtyStr, u: unitStr };
+  const qty = parseFloat(qtyStr.replace(',', '.'));
+  if (isNaN(qty)) return { q: qtyStr, u: unitStr };
+
+  const u = unitStr.toLowerCase().trim().replace(/s$/, '');
+
+  if (toMetric) {
+    if (u === 'cup') return { q: formatQuantity(String(qty * 240)), u: 'ml' };
+    if (u === 'tbsp' || u === 'tablespoon') return { q: formatQuantity(String(qty * 15)), u: 'ml' };
+    if (u === 'tsp' || u === 'teaspoon') return { q: formatQuantity(String(qty * 5)), u: 'ml' };
+    if (u === 'oz' || u === 'ounce') return { q: formatQuantity(String(qty * 28.35)), u: 'g' };
+    if (u === 'lb' || u === 'pound') return { q: formatQuantity(String(qty * 453.6)), u: 'g' };
+    if (u === 'fl oz' || u === 'fluid ounce') return { q: formatQuantity(String(qty * 29.57)), u: 'ml' };
+    if (u === 'pint') return { q: formatQuantity(String(qty * 473.18)), u: 'ml' };
+    if (u === 'quart') return { q: formatQuantity(String(qty * 946.35)), u: 'ml' };
+    if (u === 'gallon') return { q: formatQuantity(String(qty * 3.785)), u: 'L' };
+  } else {
+    if (u === 'ml' || u === 'milliliter') {
+      if (qty >= 240) return { q: formatQuantity(String(qty / 240)), u: 'cups' };
+      if (qty >= 15) return { q: formatQuantity(String(qty / 15)), u: 'tbsp' };
+      return { q: formatQuantity(String(qty / 5)), u: 'tsp' };
+    }
+    if (u === 'l' || u === 'liter' || u === 'litre') return { q: formatQuantity(String(qty * 4.22675)), u: 'cups' };
+    if (u === 'g' || u === 'gram') return { q: formatQuantity(String(qty / 28.35)), u: 'oz' };
+    if (u === 'kg' || u === 'kilogram') return { q: formatQuantity(String(qty * 2.20462)), u: 'lbs' };
+  }
+  return { q: qtyStr, u: unitStr };
+}
+
 interface IngredientRowProps {
   id: string;
   raw: RawIngredient;
@@ -95,6 +126,7 @@ interface IngredientRowProps {
   scaleQuantity?: (qty: string, scale: number) => string;
   checked: boolean;
   onToggle: (id: string) => void;
+  useMetric: boolean;
 }
 
 const IngredientRow: React.FC<IngredientRowProps> = ({
@@ -104,6 +136,7 @@ const IngredientRow: React.FC<IngredientRowProps> = ({
   scaleQuantity,
   checked,
   onToggle,
+  useMetric
 }) => {
   let base: any = {};
   let emoji = '';
@@ -132,10 +165,8 @@ const IngredientRow: React.FC<IngredientRowProps> = ({
     }
   }
 
-  let quantity =
-    base.quantity !== undefined && base.quantity !== null
-      ? String(base.quantity).trim()
-      : '';
+  let quantity = base.quantity !== undefined && base.quantity !== null ? String(base.quantity).trim() : '';
+  let unit = base.unit !== undefined && base.unit !== null ? String(base.unit).trim() : '';
 
   if (quantity && servingScale !== 1 && scaleQuantity) {
     const scaled = scaleQuantity(quantity, servingScale);
@@ -144,26 +175,26 @@ const IngredientRow: React.FC<IngredientRowProps> = ({
     }
   }
 
-  if (quantity) {
+  // Apply Metric Conversion
+  if (quantity && unit) {
+    const converted = convertUnits(quantity, unit, useMetric);
+    quantity = converted.q;
+    unit = converted.u;
+  } else if (quantity) {
     quantity = formatQuantity(quantity);
   }
-
-  const unit =
-    base.unit !== undefined && base.unit !== null
-      ? String(base.unit).trim()
-      : '';
 
   const rowClass =
     'recipe-ingredient-row flex items-start gap-3 py-1 cursor-pointer select-none' +
     (checked ? ' recipe-ingredient-row--checked opacity-60 line-through' : '');
 
-  // ✅ RESTORED EXACT ORIGINAL CSS CLASSES
   return (
     <li className={rowClass} onClick={() => onToggle(id)}>
-      <div className="mt-1.5 min-w-[16px]">
+      {/* 🔥 TIGHTER ALIGNMENT: Reduced to w-6 (24px) so text sits closer to bullets */}
+      <div className="w-6 flex justify-center flex-shrink-0 mt-1.5">
         <div className="recipe-ingredient-bullet" />
       </div>
-      <div className="text-sm font-medium leading-relaxed flex flex-wrap items-baseline">
+      <div className="text-sm font-medium leading-relaxed flex flex-wrap items-baseline flex-1">
         {emoji && <span className="mr-1.5 text-base leading-none select-none">{emoji}</span>}
         {quantity && <span className="recipe-ingredient-qty mr-1">{quantity}</span>}
         {unit && <span className="recipe-ingredient-unit mr-1.5">{unit}</span>}
@@ -181,6 +212,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   servingScale = 1,
   scaleQuantity,
   onServingScaleChange,
+  useMetric = true,
+  onToggleMetric
 }) => {
   const { t } = useTranslation(['videoDetail']);
 
@@ -193,7 +226,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const hasGroups = groups.length > 0;
   const hasFlat = !hasGroups && flat.length > 0;
 
-  // ✅ NEW: Sequential Mapper to bypass AI translation mistakes
   const totalGroupItems = groups.reduce((acc, g) => acc + (g.items?.length || 0), 0);
   const canSequentialMap = totalGroupItems === flat.length && flat.length > 0;
   let globalIndex = 0; 
@@ -243,11 +275,24 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
   return (
     <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
-      <div className="bg-tertiary-50/50 p-5 border-b border-gray-50 flex items-center gap-3">
-        <ChefHat className="recipe-header-icon" size={20} />
-        <h3 className="font-bold text-gray-900 text-lg">
-          {t('videoDetail:recipeDetails')}
-        </h3>
+      
+      {/* 🔥 MODERN GLASS BUTTON: Centered beautifully with the title */}
+      <div className="bg-tertiary-50/50 p-4 md:p-5 border-b border-gray-50 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <ChefHat className="recipe-header-icon" size={20} />
+          <h3 className="font-bold text-gray-900 text-lg">
+            {t('videoDetail:recipeDetails')}
+          </h3>
+        </div>
+        
+        {onToggleMetric && (
+          <button 
+            onClick={() => onToggleMetric(!useMetric)}
+            className="px-3 py-1.5 bg-white/60 backdrop-blur-md border border-white/60 text-gray-700 rounded-xl text-xs font-bold shadow-sm hover:bg-white/90 hover:shadow transition-all"
+          >
+            {useMetric ? 'Imperial' : 'Metric'}
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-3 divide-x divide-gray-50 border-b border-gray-50">
@@ -287,8 +332,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                 <ul className="space-y-1">
                   {(group.items ?? []).map((it, itemIdx) => {
                     const id = `g${groupIdx}-i${itemIdx}`;
-                    
-                    // ✅ Extract the rich object using the sequential map or string match
                     let enriched = it;
                     if (typeof it === 'string' && flat.length > 0) {
                       if (canSequentialMap) {
@@ -313,6 +356,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                         scaleQuantity={scaleQuantity}
                         checked={checkedIds.has(id)}
                         onToggle={handleToggle}
+                        useMetric={useMetric}
                       />
                     );
                   })}
@@ -333,6 +377,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                     scaleQuantity={scaleQuantity}
                     checked={checkedIds.has(id)}
                     onToggle={handleToggle}
+                    useMetric={useMetric}
                   />
                 );
               })}
@@ -352,15 +397,16 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               return (
                 <div
                   key={i}
-                  className={`flex gap-4 items-start cursor-pointer select-none transition-opacity ${isChecked ? 'opacity-60' : ''}`}
+                  /* 🔥 TIGHTER ALIGNMENT: Gap reduced to gap-3 */
+                  className={`flex items-start gap-3 cursor-pointer select-none transition-opacity ${isChecked ? 'opacity-60' : ''}`}
                   onClick={() => handleStepToggle(i)}
                 >
-                  <div className="flex-shrink-0 pt-[0.1rem]">
+                  <div className="w-6 flex justify-center flex-shrink-0 pt-[0.1rem]">
                     <div className="recipe-step-number-circle">
                       <span className="recipe-step-number">{i + 1}</span>
                     </div>
                   </div>
-                  <p className={`text-sm font-medium text-gray-600 leading-relaxed ${isChecked ? 'line-through' : ''}`}>
+                  <p className={`text-sm font-medium text-gray-600 leading-relaxed pt-[2px] ${isChecked ? 'line-through' : ''}`}>
                     {step}
                   </p>
                 </div>
@@ -382,9 +428,12 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
             {tips.length > 0 && (
               <ul className="space-y-2">
                 {tips.map((tip, i) => (
-                  <li key={`tip-${i}`} className="flex items-start gap-2 text-sm text-gray-700">
-                    <span className="text-yellow-500 font-bold">•</span>
-                    <span className="italic">{tip}</span>
+                  /* 🔥 TIGHTER ALIGNMENT: Gap reduced to gap-3 */
+                  <li key={`tip-${i}`} className="flex items-start gap-3 text-sm text-gray-700">
+                    <div className="w-6 flex justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-yellow-500 font-bold text-lg leading-none">•</span>
+                    </div>
+                    <span className="italic flex-1 pt-[1px]">{tip}</span>
                   </li>
                 ))}
               </ul>

@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Trash2, ChevronDown, Heart, FolderInput, AlertCircle, X, EllipsisVertical, Archive, Hash, AlignLeft, Pencil, Plus, Save, Globe } from 'lucide-react';
@@ -13,6 +14,7 @@ import { getCategory, getTopic } from '../utils/videoUtils';
 import { scaleQuantity } from '../utils/conversionUtils';
 import { RecipeDetailsCard } from '../components/RecipeDetailsCard';
 import { VideoDetailMobile } from '../components/VideoDetailMobile';
+import { IS_DEV } from '../utils/runtime';
 
 /* ─── CONDENSED ICONS ─── */
 const CustomMessageSquareMoreIcon = ({ size=16, className="" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/><path d="M12 11h.01"/><path d="M16 11h.01"/><path d="M8 11h.01"/></svg>;
@@ -24,12 +26,10 @@ const TagsIcon = ({ size=24, className="" }) => <svg width={size} height={size} 
 const PlatformIcon = ({ platform }: { platform: string }) => platform === 'fb' ? <FacebookExternalIcon size={12} className="text-blue-600 flex-shrink-0" /> : <InstagramExternalIcon size={12} className="text-pink-500 flex-shrink-0" />;
 
 /* ─── API & HELPERS ─── */
-const RAW_API_BASE = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_BASE || import.meta.env.VITE_API_URL || 'http://localhost:5001';
-const API_BASE = String(RAW_API_BASE ?? '').trim().replace(/\/+$/, '');
 function apiUrl(path: string) { return API_BASE ? `${API_BASE}/${path.replace(/^\/+/, '')}` : `/${path.replace(/^\/+/, '')}`; }
 
 async function fetchGcsJson<T = any>(url: string): Promise<T> {
-  const finalUrl = import.meta.env.DEV ? url.replace('https://storage.googleapis.com', '/gcs-proxy') : url;
+  const finalUrl = IS_DEV ? url.replace('https://storage.googleapis.com', '/gcs-proxy') : url;
   const res = await fetch(finalUrl, { method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store' });
   if (!res.ok) throw new Error(`GCS HTTP ${res.status}`);
   return res.json() as Promise<T>;

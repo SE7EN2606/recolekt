@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 type AnyObj = Record<string, any>;
 
 export function safeStr(v: any): string {

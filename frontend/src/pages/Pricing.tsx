@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Star, Infinity, Search, Bot, FolderOpen, Check, HelpCircle, ChevronDown, ShieldCheck } from 'lucide-react';

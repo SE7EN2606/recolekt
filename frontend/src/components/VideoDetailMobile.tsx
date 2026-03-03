@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,

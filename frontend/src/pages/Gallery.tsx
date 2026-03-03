@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { VideoCard } from '../components/VideoCard';
@@ -9,8 +10,6 @@ import { useTranslation } from 'react-i18next';
 import { MoveCollectionModal } from '../components/MoveCollectionModal';
 
 // API Configuration from your current version
-const RAW_API_BASE = (import.meta.env.VITE_API_BASE ?? import.meta.env.VITE_API_URL ?? '') as string;
-const API_BASE = String(RAW_API_BASE).replace(/\/+$/, '');
 
 // Custom Icon: Calendar Arrow Up (Newest/Desc)
 const CalendarArrowUp = ({ size = 20 }) => (

@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next'; // 🔥 IMPORT i18n
 
@@ -22,15 +23,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const getApiBase = () => {
-  if (import.meta.env.MODE === 'production') {
-    return import.meta.env.VITE_API_BASE || '';
-  }
-  return import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_BASE || 'http://localhost:5001';
-};
-
-const API_BASE = getApiBase();
 
 function joinUrl(base: string, path: string) {
   const b = String(base || '').replace(/\/+$/, '');

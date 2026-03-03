@@ -1,6 +1,7 @@
+import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, Globe, Check } from 'lucide-react';
+import { Globe, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Button } from './Button';
 import { MobileMenu } from './MobileMenu';
@@ -26,13 +27,30 @@ export const Header: React.FC = () => {
   const { user, isAuthenticated, loading } = useAuth();
   const { t, i18n } = useTranslation(['header', 'common', 'gallery']);
 
+  // 🔥 Scroll & Resize Listeners
   useEffect(() => {
     const handleScroll = () => {
       const scrolled = window.scrollY > 20;
       setIsScrolled(prev => prev !== scrolled ? scrolled : prev);
     };
+
+    // Auto-close mobile menu if window resizes to desktop view (768px is Tailwind's 'md')
+    const handleResize = () => {
+      if (window.innerWidth >= 768) {
+        setIsMobileMenuOpen(false);
+      }
+    };
+
     window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    window.addEventListener('resize', handleResize);
+    
+    // Check initial size on mount
+    handleResize();
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
 
   const meta = (user as any)?.user_metadata;
@@ -85,14 +103,13 @@ export const Header: React.FC = () => {
     <>
       <header
         className={`
-          fixed top-0 left-0 right-0 z-40
+          fixed top-0 left-0 right-0 z-[110]
           transition-all duration-500 ease-[cubic-bezier(0.25,0.8,0.25,1)]
           ${isScrolled
             ? 'glass-header py-3 shadow-sm h-[65px] md:h-[70px]'
             : 'bg-transparent py-6 h-[80px] md:h-[95px]'}
         `}
       >
-        {/* ✅ ALIGNMENT FIX: Switched from px-4 md:px-6 to px-6 md:px-8 to perfectly match App.tsx! */}
         <div className="max-w-[1280px] mx-auto px-6 md:px-8 h-full">
           <div className="h-full flex items-center justify-between">
 
@@ -193,27 +210,41 @@ export const Header: React.FC = () => {
 
             <div className="flex items-center gap-4 md:hidden z-50">
                {showSignedOutUI && (
-                  <div className="relative">
-                    <button onClick={() => setIsMobileLangMenuOpen(!isMobileLangMenuOpen)} className="flex items-center gap-1 text-gray-500 hover:text-gray-900 font-bold text-xs uppercase transition-colors">
-                      <Globe size={18} /><span>{currentLang}</span>
-                    </button>
-                    {isMobileLangMenuOpen && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setIsMobileLangMenuOpen(false)} />
-                        <div className="absolute top-full mt-4 right-0 w-40 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 z-50 animate-fade-in">
-                          <button onClick={() => handleLanguageChange('en')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'en' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}>
-                            English {currentLang === 'en' && <Check size={16} />}
-                          </button>
-                          <button onClick={() => handleLanguageChange('fr')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'fr' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}>
-                            Français {currentLang === 'fr' && <Check size={16} />}
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
+                 <div className="relative">
+                   <button onClick={() => setIsMobileLangMenuOpen(!isMobileLangMenuOpen)} className="flex items-center gap-1 text-gray-500 hover:text-gray-900 font-bold text-xs uppercase transition-colors">
+                     <Globe size={18} /><span>{currentLang}</span>
+                   </button>
+                   {isMobileLangMenuOpen && (
+                     <>
+                       <div className="fixed inset-0 z-40" onClick={() => setIsMobileLangMenuOpen(false)} />
+                       <div className="absolute top-full mt-4 right-0 w-40 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 z-50 animate-fade-in">
+                         <button onClick={() => handleLanguageChange('en')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'en' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}>
+                           English {currentLang === 'en' && <Check size={16} />}
+                         </button>
+                         <button onClick={() => handleLanguageChange('fr')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'fr' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}>
+                           Français {currentLang === 'fr' && <Check size={16} />}
+                         </button>
+                       </div>
+                     </>
+                   )}
+                 </div>
                )}
-              <button className="p-2.5 text-gray-800 hover:bg-gray-100 rounded-full transition-colors active:scale-95" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
-                {isMobileMenuOpen ? <X size={24} /> : <Menu size={26} strokeWidth={2.5} />}
+              
+              <button
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="w-10 h-10 rounded-full flex flex-col items-center justify-center relative z-50 transition-colors active:scale-95 hover:bg-gray-100"
+                aria-label="Toggle menu"
+              >
+                <span
+                  className={`absolute w-5 h-[2px] bg-gray-900 rounded-full transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+                    isMobileMenuOpen ? 'rotate-45 translate-y-0' : '-translate-y-[4px]'
+                  }`}
+                />
+                <span
+                  className={`absolute w-5 h-[2px] bg-gray-900 rounded-full transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+                    isMobileMenuOpen ? '-rotate-45 translate-y-0' : 'translate-y-[4px]'
+                  }`}
+                />
               </button>
             </div>
           </div>

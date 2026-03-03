@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React from 'react';
 import topicIcon from '../assets/topic-icon.svg';
 import categoryIcon from '../assets/category-icon.svg';

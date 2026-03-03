@@ -6,5 +6,6 @@
   "processingFailed": "Échec du traitement",
   "defaultError": "Un problème est survenu. Veuillez réessayer.",
   "showingLanguage": "Affichage en {{lang}}",
+  "tryAgain": "Nouvel essai",
   "showingEnglish": "Affichage en Anglais"
 }

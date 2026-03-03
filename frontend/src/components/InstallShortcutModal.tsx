@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, { useState } from 'react';
 import { X, Copy, Check, ExternalLink } from 'lucide-react';
 

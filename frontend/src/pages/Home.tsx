@@ -1,3 +1,4 @@
+import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Wand2, AlertCircle, Loader2 } from "lucide-react";
@@ -11,13 +12,6 @@ export const Home: React.FC = () => {
   const [pendingUrl, setPendingUrl] = useState("");
   const navigate = useNavigate();
   const { t } = useTranslation(['home', 'common']);
-
-  const RAW_API_BASE =
-    (import.meta as any).env?.VITE_API_BASE ||
-    (import.meta as any).env?.VITE_API_URL ||
-    "http://localhost:5001";
-
-  const API_BASE = String(RAW_API_BASE).replace(/\/+$/, "");
 
   const joinUrl = (base: string, path: string) =>
     `${String(base).replace(/\/+$/, "")}/${String(path).replace(/^\/+/, "")}`;

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
-  X, Search, Folder, Plus, LayoutGrid, Heart, Archive, Share2,
+  Search, Folder, Plus, LayoutGrid, Heart, Archive, Share2,
   ChevronRight, HelpCircle, BookOpen, FolderPlus, User, Settings, LogOut
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -11,6 +11,7 @@ import { InputModal } from './InputModal';
 import { ManageCollectionsModal } from './ManageCollectionsModal';
 import { useTranslation } from 'react-i18next';
 import LogoBlack from '../assets/recolekt_logo_black.png';
+import { useScrollLock } from '../utils/useScrollLock';
 
 const FolderIcon = ({ size = 22, className = '' }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -41,32 +42,16 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   const displayPicture = user?.picture || meta?.avatar_url;
   const initials = (displayName?.charAt?.(0) || 'U').toUpperCase();
 
-  // 🔥 FLAWLESS SCROLL LOCK (KILLS JITTER & BACKGROUND SCROLL)
+  useScrollLock(isOpen);
+
   useEffect(() => {
     if (isOpen) {
       setShouldRender(true);
       requestAnimationFrame(() => requestAnimationFrame(() => setAnimateOpen(true)));
-      
-      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-      const scrollY = window.scrollY;
-      
-      document.body.style.position = 'fixed';
-      document.body.style.top = `-${scrollY}px`;
-      document.body.style.width = '100%';
-      document.body.style.overflow = 'hidden';
-      if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
-      
     } else {
       setAnimateOpen(false);
       const timer = setTimeout(() => {
         setShouldRender(false);
-        const scrollY = document.body.style.top;
-        document.body.style.position = '';
-        document.body.style.top = '';
-        document.body.style.width = '';
-        document.body.style.overflow = '';
-        document.body.style.paddingRight = '';
-        if (scrollY) window.scrollTo(0, parseInt(scrollY || '0') * -1);
       }, 500);
       return () => clearTimeout(timer);
     }
@@ -104,42 +89,32 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     <>
       <div
         className={`
-          fixed inset-0 w-full z-[100] overflow-hidden overscroll-none
-          bg-[#f9fafb] transform-gpu
+          fixed inset-0 w-full z-[100] overflow-hidden
+          bg-[#f9fafb]/95 backdrop-blur-xl transform-gpu
           transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
           ${animateOpen ? 'translate-y-0' : '-translate-y-full'}
         `}
       >
         <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4">
 
-          {/* Header - EXACT structure from your old code to ensure search and cross align properly */}
-          <div className="h-[80px] md:h-[90px] flex items-center justify-between flex-shrink-0 border-b border-gray-200 gap-4">
+          {/* 🔥 FIXED: Margins added so it sits perfectly between Logo and X button */}
+          <div className="h-[80px] md:h-[95px] flex items-center flex-shrink-0 border-b border-gray-200">
             {showAuthedUI && (
-              <div className="relative flex-1">
+              <div className="relative w-full ml-[48px] mr-[56px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                 <input
                   type="text"
                   placeholder={t('common:search', 'Search...')}
-                  className="w-full bg-white border border-gray-200 rounded-xl py-3 pl-10 pr-4 text-sm font-medium focus:ring-4 focus:ring-primary-600/10 focus:border-primary-600 outline-none transition-all shadow-sm"
+                  className="w-full bg-white/80 border border-gray-200 rounded-xl py-2.5 pl-10 pr-4 text-sm font-medium focus:ring-4 focus:ring-primary-600/10 focus:border-primary-600 outline-none transition-all shadow-sm"
                 />
               </div>
             )}
             {!showAuthedUI && <div className="flex-1" />}
-
-            {/* 🔥 Restored Cross Icon exactly as you requested */}
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-500 bg-white rounded-full transition-colors shadow-sm border border-gray-200 hover:bg-gray-50 flex-shrink-0"
-            >
-              <X size={24} />
-            </button>
           </div>
 
-          {/* Content */}
           <div className="flex-1 overflow-y-auto py-8">
             <div className={`transition-opacity duration-500 delay-100 ${animateOpen ? 'opacity-100' : 'opacity-0'} flex flex-col min-h-full`}>
 
-              {/* ---- PUBLIC (Logged Out) ---- */}
               {!showAuthedUI && (
                 <div className="flex flex-col h-full space-y-8 px-2">
                   <div className="space-y-2">
@@ -184,11 +159,9 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                 </div>
               )}
 
-              {/* ---- PROTECTED (Logged In) ---- */}
               {showAuthedUI && (
                 <div className="flex-1 space-y-8">
 
-                  {/* 🔥 RESTORED AVATAR EXACTLY AS PROVIDED */}
                   <div className="flex items-center gap-4 px-2">
                     <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border border-gray-200 shadow-sm">
                       {displayPicture ? (
@@ -205,7 +178,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     </div>
                   </div>
 
-                  {/* Library */}
                   <section>
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
                       {t('sidebar:library', 'Library')}
@@ -234,7 +206,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     </div>
                   </section>
 
-                  {/* Collections */}
                   <section>
                     <div className="flex items-center justify-between px-4 mb-3">
                       <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
@@ -337,7 +308,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     </div>
                   </section>
 
-                  {/* Account */}
                   <section>
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
                       {t('common:account', 'Account')}
@@ -366,7 +336,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     </div>
                   </section>
 
-                  {/* Resources */}
                   <section>
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
                       {t('common:resources', 'Resources')}
@@ -395,7 +364,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     </div>
                   </section>
 
-                  {/* Sign Out */}
                   <button
                     onClick={handleLogout}
                     className="w-full flex items-center justify-center gap-2 p-5 bg-white border border-red-200 text-red-600 rounded-[28px] font-bold shadow-sm hover:bg-red-50 transition-colors"
@@ -406,7 +374,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                 </div>
               )}
 
-              {/* Logo at bottom */}
               <div className="py-8 mt-auto flex justify-center">
                 <img src={LogoBlack} alt="Recolekt" className="h-8 opacity-60" />
               </div>
