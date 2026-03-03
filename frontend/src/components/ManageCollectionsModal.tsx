@@ -1,12 +1,12 @@
 import { API_BASE } from "../utils/api";
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  X, FolderClosed, FolderOpen, ChevronRight,
-  Trash2, Edit2, Plus, Check, Folder
+  X, FolderClosed, ChevronRight,
+  Trash2, Edit2, Plus, Check, Folder, CornerDownRight
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { Folder as FolderType } from '../types';
-import { useTranslation } from 'react-i18next'; // 🔥 IMPORTED
+import { useTranslation } from 'react-i18next';
 
 interface ManageCollectionsModalProps {
   isOpen: boolean;
@@ -61,8 +61,8 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { folders, addFolder, updateFolder, deleteFolder } = useData();
-  const { t } = useTranslation(['modals', 'common']); // 🔥 INITIALIZED
+  const { folders, addFolder, updateFolder, deleteFolder, videos } = useData();
+  const { t } = useTranslation(['modals', 'common']);
 
   const [isVisible, setIsVisible] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -83,7 +83,15 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
     [cleanedFolders],
   );
 
-  // Visibility animation
+  // Recursive count: includes videos in subfolders
+  const getVideoCount = (folderId: string) => {
+    const directCount = (videos || []).filter((v: any) => v.folderId === folderId).length;
+    const folder = (folders || []).find((f: any) => f.id === folderId);
+    const subFolderCount = (folder?.subFolders || []).reduce((acc: number, sub: any) => 
+      acc + (videos || []).filter((v: any) => v.folderId === sub.id).length, 0);
+    return directCount + subFolderCount;
+  };
+
   useEffect(() => {
     if (isOpen) {
       setIsVisible(true);
@@ -100,7 +108,6 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
     }
   }, [isOpen]);
 
-  // Auto-expand folders with children on open
   useEffect(() => {
     if (!isOpen) return;
     setExpanded((prev) => {
@@ -158,7 +165,9 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
     const isExpanded = !!expanded[folder.id];
     const isEditing = editingId === folder.id;
     const isDeleting = deleteConfirmId === folder.id;
-    const Icon = depth === 0 ? FolderClosed : FolderOpen;
+    
+    // Use CornerDownRight for subfolders to match sidebar
+    const Icon = depth === 0 ? FolderClosed : CornerDownRight;
 
     return (
       <div key={folder.id}>
@@ -182,7 +191,11 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
 
           {/* Icon + Name / Input */}
           <div className="flex-1 flex items-center gap-2 min-w-0 mr-3">
-            <Icon size={16} className="text-primary-600 flex-shrink-0" />
+            <Icon 
+              size={16} 
+              className={depth > 0 ? 'text-gray-300' : 'text-primary-600'} 
+              strokeWidth={depth > 0 ? 2.5 : 2}
+            />
 
             {isEditing ? (
               <input
@@ -197,7 +210,7 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
             ) : (
               <div className="min-w-0">
                 <div className="font-bold text-sm text-gray-900 truncate">{folder.name}</div>
-                <div className="text-[10px] text-gray-400 font-medium">{folder.itemCount ?? 0} {t('modals:items')}</div>
+                <div className="text-[10px] text-gray-400 font-medium">{getVideoCount(folder.id)} {t('modals:items')}</div>
               </div>
             )}
           </div>
@@ -315,26 +328,27 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
         <div className="p-4 border-t border-white/20 bg-white/30 rounded-b-2xl backdrop-blur-sm">
           {isCreating ? (
             <div className="space-y-3">
-              {/* Parent selector */}
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
                   {t('modals:parentCollection')}
                 </label>
-                <select
-                  className="w-full bg-white/60 border border-white/40 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 backdrop-blur-sm"
-                  value={parentForNew ?? ''}
-                  onChange={(e) => setParentForNew(e.target.value || null)}
-                >
-                  <option value="">{t('modals:noParent')}</option>
-                  {parentOptions.map(({ folder, depth }) => (
-                    <option key={folder.id} value={folder.id}>
-                      {`${'— '.repeat(depth)}${folder.name}`}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    className="w-full bg-white/60 border border-white/40 rounded-xl px-3 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 backdrop-blur-sm appearance-none cursor-pointer"
+                    value={parentForNew ?? ''}
+                    onChange={(e) => setParentForNew(e.target.value || null)}
+                  >
+                    <option value="">{t('modals:noParent')}</option>
+                    {parentOptions.map(({ folder, depth }) => (
+                      <option key={folder.id} value={folder.id}>
+                        {`${'— '.repeat(depth)}${folder.name}`}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 rotate-90 text-gray-400 pointer-events-none" />
+                </div>
               </div>
 
-              {/* Name + actions */}
               <div className="flex gap-2">
                 <input
                   autoFocus
@@ -363,7 +377,10 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
           ) : (
             <button
               onClick={() => { setParentForNew(null); setIsCreating(true); }}
-              className="w-full py-2.5 flex items-center justify-center gap-2 text-primary-600 font-bold hover:bg-white/50 border border-transparent hover:border-white/40 rounded-xl transition-all"
+              className="w-full py-2.5 flex items-center justify-center gap-2 text-primary-600 font-bold 
+                        bg-white/20 border border-white/40 rounded-xl transition-all duration-300
+                        hover:bg-white/60 hover:border-white hover:shadow-lg hover:shadow-primary-500/10 
+                        active:scale-[0.97] active:bg-white/80"
             >
               <Plus size={18} />
               {t('modals:createNewCollection')}

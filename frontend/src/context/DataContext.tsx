@@ -28,10 +28,11 @@ interface DataContextType {
   addFolder: (name: string, parentId?: string | null) => void;
   updateFolder: (id: string, name: string) => void;
   deleteFolder: (id: string) => void;
-  toggleFavorite: (videoId: string) => void;
-  moveVideos: (videoIds: string[], targetFolderId: string) => void;
+  toggleFavorite: (videoId: string) => Promise<void>;
+  moveVideos: (videoIds: string[], targetFolderId: string) => Promise<void>;
+  updateVideo: (id: string, updates: any) => Promise<void>; // ✅ Added to support VideoDetail edits
   deleteVideos: (videoIds: string[]) => Promise<void>;
-  addVideo: (url: string, forceRetry?: boolean) => Promise<AddVideoResult>; // ✅ Added flag to interface
+  addVideo: (url: string, forceRetry?: boolean) => Promise<AddVideoResult>;
   refreshVideos: () => Promise<void>;
   refreshFolders: () => Promise<void>;
 }
@@ -56,7 +57,7 @@ function stripRawForCache(videos: any[]): any[] {
   });
 }
 
-// 🛑 THE TITANIUM THROTTLE (Now completely silent)
+// 🛑 THE TITANIUM THROTTLE
 let globalLastFetchTime = 0;
 let isFetchingGlobal = false;
 
@@ -95,21 +96,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (Array.isArray(parsed)) {
         setVideos(parsed);
       }
-    } catch (e) {
-      // Silently ignore cache read errors
-    }
+    } catch (e) {}
   }, [user?.id]);
 
   const fetchVideos = useCallback(async () => {
     if (!user) return;
     
-    // 🛑 GLOBAL LOOP BREAKER: Absolutely NO network requests allowed within 2000ms of each other.
     const now = Date.now();
     if (now - globalLastFetchTime < 2000 || isFetchingGlobal) {
-      return; // Silently block
+      return; 
     }
     
-    // Lock the gate globally
     globalLastFetchTime = now;
     isFetchingGlobal = true;
     setIsLoading(true);
@@ -134,8 +131,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const summary = r.summary || {};
           const status = String(r.status || '');
           const isDone = status === 'done' || status === 'completed';
-          
-          // ✅ FIX: Backend sends 'error', map it correctly
           const isFailed = status === 'failed' || status === 'error';
 
           let finalCategory = summary.category || 'General';
@@ -177,7 +172,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             transcription: r.transcription,
             originalUrl: r.source_url,
             isFavorite: r.is_favorite,
-            folderId: r.folder_id || 'default',
+            folderId: r.folder_id || 'default', // ✅ This is where it reads from DB!
             content_type: r.content_type,
             recipe: r.recipe,
             workout: r.workout,
@@ -216,7 +211,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
           const result = Array.from(uniqueById.values());
 
-          // The State Bouncer
           let changed = false;
           if (prevVideos.length !== result.length) {
             changed = true;
@@ -226,7 +220,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 prevVideos[i].id !== result[i].id || 
                 prevVideos[i].status !== result[i].status || 
                 prevVideos[i].category !== result[i].category ||
-                prevVideos[i].thumbnailUrl !== result[i].thumbnailUrl // Catch early thumbnails
+                prevVideos[i].folderId !== result[i].folderId || // ✅ Ensure folder changes trigger re-render
+                prevVideos[i].thumbnailUrl !== result[i].thumbnailUrl
               ) {
                 changed = true;
                 break;
@@ -234,15 +229,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }
           }
 
-          if (!changed) {
-            return prevVideos; 
-          }
+          if (!changed) return prevVideos; 
 
           try {
             const cacheKey = makeCacheKey(user);
-            if (cacheKey) {
-              localStorage.setItem(cacheKey, JSON.stringify(stripRawForCache(result as any[])));
-            }
+            if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(stripRawForCache(result as any[])));
           } catch (e) {}
 
           return result;
@@ -255,7 +246,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
     } catch (error) {
-      // Silently ignore network failures to prevent UI stutter
     } finally {
       isFetchingGlobal = false;
       setIsLoading(false);
@@ -270,16 +260,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         headers: getAuthHeaders(),
         credentials: 'include',
       });
-
       if (!response.ok) return;
-
       const data = await response.json();
       const fetchedFolders: Folder[] = data?.folders || [];
-
       setFolders((prev) => {
         const merged = [...(prev || [])];
         let changed = false;
-        
         for (const bf of fetchedFolders) {
           if (!merged.find((f) => f.id === bf.id)) {
             merged.push(bf);
@@ -300,7 +286,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!initRef.current) {
       initRef.current = true;
       refreshFolders();
-      globalLastFetchTime = 0; // Force first load
+      globalLastFetchTime = 0;
       fetchVideos();
     }
   }, [user?.id, refreshFolders, fetchVideos]);
@@ -319,11 +305,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addVideo = useCallback(async (url: string, forceRetry: boolean = false): Promise<AddVideoResult> => {
     const cleanUrl = (url || '').trim().split('?')[0];
-
     const currentVideos = videosRef.current;
     const existing = currentVideos.find((v: any) => v.originalUrl === cleanUrl);
     
-    // ✅ Only block adding if the reel exists AND is NOT in an error state (unless forced)
     if (!forceRetry && existing && existing.status !== 'error' && existing.category !== 'Failed') {
       return {
         clientTempId: existing.id,
@@ -335,20 +319,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       };
     }
 
-    // 🚀 FIX: Send as a pure JSON payload to prevent multipart header mismatches!
-    const payload = {
-      url: cleanUrl,
-      force_retry: forceRetry ? "true" : "false"
-    };
+    const payload = { url: cleanUrl, force_retry: forceRetry ? "true" : "false" };
 
     const response = await fetch(joinUrl(API_BASE, '/api/summarize'), {
       method: 'POST',
       body: JSON.stringify(payload),
       credentials: 'include',
-      headers: {
-        ...getAuthHeaders(),
-        'Content-Type': 'application/json' // Explicitly declare JSON
-      },
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
     });
 
     if (response.status === 409) throw new Error('This video has already been saved.');
@@ -358,9 +335,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     let result: any = null;
-    try {
-      result = await response.json();
-    } catch {}
+    try { result = await response.json(); } catch {}
 
     if (!response.ok) throw new Error(result?.error || 'Failed to import video.');
 
@@ -388,7 +363,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     setVideos((prev) => {
-      // Remove the old failed version if we are retrying
       const filtered = (prev || []).filter((v: any) => v.originalUrl !== cleanUrl);
       const merged = [newVideo, ...filtered];
       try {
@@ -413,6 +387,70 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, [user, fetchVideos]);
 
+  // ✅ FIXED: Now updates Database!
+  const moveVideos = useCallback(async (videoIds: string[], targetFolderId: string) => {
+    // 1. Optimistic UI update (feels instant to the user)
+    setVideos((prev) => prev.map((v: any) => videoIds.includes(v.id) ? { ...v, folderId: targetFolderId } : v));
+
+    // 2. Tell the Backend
+    try {
+      await Promise.all(
+        videoIds.map(async (id) => {
+          const url = joinUrl(API_BASE, `/api/reel/${encodeURIComponent(String(id))}`);
+          await fetch(url, {
+            method: 'PUT',
+            credentials: 'include',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folder_id: targetFolderId }) // Python expects snake_case
+          });
+        })
+      );
+    } catch (error) {
+      console.error("Failed to save move to DB:", error);
+      fetchVideos(); // Refresh to undo the UI change if it failed
+    }
+  }, [fetchVideos]);
+
+  // ✅ FIXED: Now updates Database!
+  const toggleFavorite = useCallback(async (videoId: string) => {
+    const currentVideos = videosRef.current;
+    const video = currentVideos.find(v => v.id === videoId);
+    if (!video) return;
+    const newFav = !video.isFavorite;
+
+    // 1. Optimistic update
+    setVideos((prev) => prev.map((v: any) => (v.id === videoId ? { ...v, isFavorite: newFav } : v)));
+
+    // 2. Tell Backend
+    try {
+      const url = joinUrl(API_BASE, `/api/reel/${encodeURIComponent(String(videoId))}`);
+      await fetch(url, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_favorite: newFav }) 
+      });
+    } catch (error) {
+      fetchVideos(); 
+    }
+  }, [fetchVideos]);
+
+  // ✅ RESTORED: Saves Video edits!
+  const updateVideo = useCallback(async (id: string, updates: any) => {
+    setVideos((prev) => prev.map((v) => v.id === id ? { ...v, ...updates } : v));
+    try {
+      const url = joinUrl(API_BASE, `/api/reel/${encodeURIComponent(String(id))}`);
+      await fetch(url, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+    } catch (error) {
+      fetchVideos();
+    }
+  }, [fetchVideos]);
+
   const deleteVideos = useCallback(async (videoIds: string[]): Promise<void> => {
     if (!videoIds?.length) return;
     const currentVideos = videosRef.current;
@@ -424,10 +462,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const processId = v?.__raw?.process_id;
           return !idsToDelete.has(v.id) && !(processId && idsToDelete.has(processId));
         });
-        try {
-          const cacheKey = makeCacheKey(user);
-          if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(stripRawForCache(filtered)));
-        } catch (e) {}
         return filtered;
       });
 
@@ -439,15 +473,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             credentials: 'include',
             headers: getAuthHeaders(),
           });
-          if (res.status === 404) return;
           if (res.status === 401) {
             localStorage.removeItem('auth_token');
             throw new Error('Not authenticated');
           }
-          if (!res.ok) throw new Error(`Delete failed (${res.status})`);
         })
       );
-
       globalLastFetchTime = 0;
       await fetchVideos();
     } catch (error) {
@@ -463,8 +494,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (parentId) {
       const addToParent = (list: Folder[]): Folder[] =>
         (list || []).map((f) => {
-          if (f.id === parentId)
-            return { ...f, subFolders: [...(f.subFolders || []), newFolder] };
+          if (f.id === parentId) return { ...f, subFolders: [...(f.subFolders || []), newFolder] };
           if (f.subFolders?.length) return { ...f, subFolders: addToParent(f.subFolders) };
           return f;
         });
@@ -492,20 +522,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setFolders((prev) => rec(prev));
   }, []);
 
-  const toggleFavorite = useCallback((videoId: string) => {
-    setVideos((prev) => {
-      const next = prev.map((v: any) => (v.id === videoId ? { ...v, isFavorite: !v.isFavorite } : v));
-      return next;
-    });
-  }, []);
-
-  const moveVideos = useCallback((videoIds: string[], targetFolderId: string) => {
-    setVideos((prev) => {
-      const next = prev.map((v: any) => videoIds.includes(v.id) ? { ...v, folderId: targetFolderId } : v);
-      return next;
-    });
-  }, []);
-
   const refreshVideos = useCallback(async () => {
     await fetchVideos(); 
   }, [fetchVideos]);
@@ -520,6 +536,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       deleteFolder,
       toggleFavorite,
       moveVideos,
+      updateVideo,
       deleteVideos,
       addVideo,
       refreshVideos,
@@ -534,6 +551,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       deleteFolder,
       toggleFavorite,
       moveVideos,
+      updateVideo,
       deleteVideos,
       addVideo,
       refreshVideos,

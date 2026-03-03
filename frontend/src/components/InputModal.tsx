@@ -2,6 +2,7 @@ import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from 'react';
 import { X, ChevronDown } from 'lucide-react';
 import { Button } from './Button';
+import { useTranslation } from 'react-i18next'; // ✅ Fixed: Added import
 
 
 interface InputModalProps {
@@ -24,6 +25,7 @@ export const InputModal: React.FC<InputModalProps> = ({
   confirmLabel = "Create",
   parentOptions = []
 }) => {
+  const { t } = useTranslation(['common', 'modals']); // ✅ Fixed: Initialized hook
   const [value, setValue] = useState('');
   const [parentId, setParentId] = useState('');
   const [isVisible, setIsVisible] = useState(false);
@@ -35,7 +37,7 @@ export const InputModal: React.FC<InputModalProps> = ({
       setParentId('');
       document.body.style.overflow = 'hidden';
       // Delayed focus prevents iOS zoom on mount
-      setTimeout(() => document.getElementById('modal-input')?.focus(), 100);
+      setTimeout(() => document.getElementById('collection-input-field')?.focus(), 100);
     } else {
       const timer = setTimeout(() => setIsVisible(false), 300);
       document.body.style.overflow = 'unset';
@@ -93,7 +95,7 @@ export const InputModal: React.FC<InputModalProps> = ({
               {parentOptions.length > 0 && (
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                    Location
+                    {t('modals:location', 'Location')}
                   </label>
                   <div className="relative">
                     <select
@@ -102,10 +104,10 @@ export const InputModal: React.FC<InputModalProps> = ({
                       className="w-full appearance-none px-4 py-3 bg-white/50 border border-white/40 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-gray-900 font-medium cursor-pointer backdrop-blur-sm"
                       style={{ fontSize: '16px' }}
                     >
-                      <option value="">New Main Collection</option>
+                      <option value="">{t('modals:newMainCollection', 'New Main Collection')}</option>
                       {parentOptions.map((opt) => (
                         <option key={opt.id} value={opt.id}>
-                          Inside "{opt.name}"
+                          {t('modals:inside', 'Inside')} "{opt.name}"
                         </option>
                       ))}
                     </select>
@@ -117,28 +119,43 @@ export const InputModal: React.FC<InputModalProps> = ({
                 </div>
               )}
 
-              {/* Name Input */}
+              {/* Name Input - Fixed 1Password trigger */}
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                  Name
+                  {t('common:name')}
                 </label>
                 <input
-                  id="modal-input"
+                  id="collection-input-field" 
+                  name="collection-title-generic" 
+                  autoComplete="off" 
+                  data-1p-ignore 
                   type="text"
                   value={value}
                   onChange={(e) => setValue(e.target.value)}
                   placeholder={placeholder}
-                  className="w-full px-4 py-3 bg-white/50 border border-white/40 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-gray-900 placeholder-gray-400 backdrop-blur-sm"
+                  className="w-full px-4 py-3 bg-white/50 border border-white/40 rounded-xl 
+                            focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent 
+                            outline-none transition-all text-gray-900 placeholder-gray-400 backdrop-blur-sm"
                   style={{ fontSize: '16px' }}
                 />
               </div>
             </div>
 
             <div className="flex justify-end gap-3">
-              <Button type="button" variant="ghost" onClick={onClose}>
-                Cancel
+              <Button 
+                type="button" 
+                variant="ghost" 
+                onClick={onClose}
+                className="hover:bg-white/50 transition-all active:scale-95"
+              >
+                {t('common:cancel')}
               </Button>
-              <Button type="submit" variant="primary" disabled={!value.trim()}>
+              <Button 
+                type="submit" 
+                variant="primary" 
+                disabled={!value.trim()}
+                className="bg-primary-600 text-white hover:bg-primary-700 hover:shadow-lg hover:shadow-primary-500/20 active:scale-95 transition-all"
+              >
                 {confirmLabel}
               </Button>
             </div>
