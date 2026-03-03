@@ -23,7 +23,7 @@ auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000").rstrip("/")
 
-# ✅ BULLETPROOF SECRET KEY: Force it to match your .env.local exactly
+# ✅ BULLETPROOF SECRET KEY
 JWT_SECRET = os.getenv('SECRET_KEY')
 if not JWT_SECRET:
     JWT_SECRET = 'your-secret-key'
@@ -47,10 +47,7 @@ def create_jwt_token(user_id: str, email: str) -> str:
         'exp': datetime.now(timezone.utc) + timedelta(days=7),
         'iat': datetime.now(timezone.utc)
     }
-    token = jwt.encode(payload, JWT_SECRET, algorithm='HS256')
-    if isinstance(token, bytes):
-        return token.decode('utf-8')
-    return token
+    return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
 
 # ---------------------------------------------------------
 # GOOGLE OAUTH ROUTES
@@ -59,26 +56,25 @@ def create_jwt_token(user_id: str, email: str) -> str:
 def google_login():
     google = get_google_client()
     
-    # Use the variable you set in Railway (https://recolekt-staging.up.railway.app/api/auth/google/callback)
+    # ✅ FIX: Use Railway Env Var so staging stays on staging
     redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
     
-    # Fallback for local dev only
     if not redirect_uri:
         redirect_uri = url_for('auth.google_callback', _external=True, _scheme='http')
     
-    logger.info(f"🚀 OAuth Start - Redirecting to Google with URI: {redirect_uri}")
+    logger.info(f"🚀 OAuth Start - Redirecting with URI: {redirect_uri}")
     return google.authorize_redirect(redirect_uri)
 
 @auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
     try:
-        # Force HTTPS for the callback validation
-        if not request.is_secure and os.getenv('RAILWAY_ENVIRONMENT'):
-            from werkzeug.middleware.proxy_fix import ProxyFix
-            # This helps Authlib realize it's on HTTPS
+        # ✅ FIX: Force HTTPS scheme in request environment for Railway/Authlib state validation
+        if os.getenv('RAILWAY_ENVIRONMENT'):
             request.environ['wsgi.url_scheme'] = 'https'
             
         google = get_google_client()
+        
+        # This is where the MismatchingStateError usually happens if cookies aren't found
         token = google.authorize_access_token()
         user_info = token.get('userinfo') or google.get('https://www.googleapis.com/oauth2/v3/userinfo').json()
         
@@ -120,6 +116,7 @@ def google_callback():
         session['email'] = email
         session.permanent = True
         
+        # ✅ FIX: Ensure we redirect back to the STAGING frontend
         return redirect(f'{FRONTEND_BASE_URL}/gallery?token={jwt_token}')
         
     except Exception as e:
@@ -131,9 +128,7 @@ def google_callback():
 # ---------------------------------------------------------
 @auth_bp.route("/register", methods=["POST", "OPTIONS"])
 def register():
-    if request.method == 'OPTIONS':
-        return '', 200
-
+    if request.method == 'OPTIONS': return '', 200
     data = request.get_json() or {}
     email = (data.get('email') or '').strip().lower()
     password = data.get('password') or ''
@@ -151,10 +146,7 @@ def register():
         password_hash = generate_password_hash(password)
         
         execute(
-            """
-            INSERT INTO users (user_id, email, name, password_hash, verified, created_at)
-            VALUES (%s, %s, %s, %s, FALSE, NOW());
-            """,
+            "INSERT INTO users (user_id, email, name, password_hash, verified, created_at) VALUES (%s, %s, %s, %s, FALSE, NOW());",
             (user_id, email, name, password_hash),
             commit=True
         )
@@ -164,10 +156,7 @@ def register():
         expires = datetime.now(timezone.utc) + timedelta(minutes=10)
         
         execute(
-            """
-            INSERT INTO verification_codes (user_id, code, expires_at) VALUES (%s, %s, %s)
-            ON CONFLICT (user_id) DO UPDATE SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at;
-            """,
+            "INSERT INTO verification_codes (user_id, code, expires_at) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at;",
             (user_id, code, expires),
             commit=True
         )
@@ -180,11 +169,10 @@ def register():
                     "subject": "Verify your Recolekt account",
                     "html": f"<h1>Welcome to Recolekt!</h1><p>Code: <b>{code}</b></p>"
                 })
-            except Exception:
-                print(f"DEBUG: {email} verification code is {code}")
+            except Exception: pass
 
         return jsonify({
-            'message': 'Registered successfully. Please verify your email.',
+            'message': 'Registered successfully.',
             'token': jwt_token,
             'user': {'id': user_id, 'email': email, 'name': name}
         }), 201
@@ -193,24 +181,15 @@ def register():
 
 @auth_bp.route("/login", methods=["POST", "OPTIONS"])
 def login():
-    if request.method == 'OPTIONS':
-        return '', 200
-
+    if request.method == 'OPTIONS': return '', 200
     data = request.get_json() or {}
     email = (data.get('email') or '').strip().lower()
     password = data.get('password') or ''
 
-    if not email or not password:
-        return jsonify({'error': 'Email and password required'}), 400
-
     try:
-        user = fetch_one(
-            "SELECT user_id, email, name, picture, password_hash, language FROM users WHERE email = %s;", 
-            (email,)
-        )
-
+        user = fetch_one("SELECT user_id, email, name, picture, password_hash, language FROM users WHERE email = %s;", (email,))
         if not user:
-            return jsonify({'error': 'No account found with this email address.'}), 401
+            return jsonify({'error': 'No account found.'}), 401
 
         user_dict = dict(user) if isinstance(user, dict) else {
             'user_id': user[0], 'email': user[1], 'name': user[2], 'picture': user[3], 
@@ -229,21 +208,18 @@ def login():
         session.permanent = True
 
         return jsonify({
-            'message': 'Login successful',
             'token': jwt_token,
             'user': {
-                'id': user_dict['user_id'], 
-                'email': user_dict['email'], 
-                'name': user_dict['name'], 
-                'picture': user_dict['picture'],
+                'id': user_dict['user_id'], 'email': user_dict['email'], 
+                'name': user_dict['name'], 'picture': user_dict['picture'],
                 'language': user_dict.get('language') or 'en'
             }
         }), 200
     except Exception as e:
-        return jsonify({'error': f"Backend Crash: {str(e)}"}), 500
+        return jsonify({'error': str(e)}), 500
 
 # ---------------------------------------------------------
-# PASSWORD RESET & VERIFICATION ROUTES
+# HELPERS & OTHER ROUTES
 # ---------------------------------------------------------
 @auth_bp.route('/forgot-password', methods=['POST', 'OPTIONS'])
 def forgot_password():
@@ -293,27 +269,19 @@ def logout():
     session.clear()
     return jsonify({"status": "logged_out"}), 200
 
-# ---------------------------------------------------------
-# ✅ ME ROUTE: DUAL AUTHENTICATION (BEARER + SESSION)
-# ---------------------------------------------------------
 @auth_bp.route("/me", methods=["GET", "OPTIONS"])
 def get_current_user():
-    if request.method == 'OPTIONS':
-        return '', 200
+    if request.method == 'OPTIONS': return '', 200
     try:
         user_id = None
-        
-        # 1. Try Bearer Token (For iOS Shortcut)
         auth_header = request.headers.get('Authorization')
         if auth_header and auth_header.startswith('Bearer '):
             token = auth_header.split(" ")[1]
             try:
                 payload = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
                 user_id = payload.get('user_id')
-            except Exception as e:
-                logger.warning(f"Bearer token decode failed: {e}")
+            except: pass
 
-        # 2. Try Session (For Web Browser)
         if not user_id:
             user_id = session.get('user_id')
 
@@ -321,8 +289,7 @@ def get_current_user():
             return jsonify({'authenticated': False}), 401
         
         user = fetch_one("SELECT user_id, email, name, picture, language FROM users WHERE user_id = %s", (user_id,))
-        if not user:
-            return jsonify({'authenticated': False}), 401
+        if not user: return jsonify({'authenticated': False}), 401
         
         user_dict = dict(user) if isinstance(user, dict) else {
             'user_id': user[0], 'email': user[1], 'name': user[2], 'picture': user[3], 'language': user[4]
@@ -331,22 +298,18 @@ def get_current_user():
         return jsonify({
             'authenticated': True,
             'user': {
-                'id': user_dict['user_id'],
-                'email': user_dict.get('email'),
-                'name': user_dict.get('name'),
-                'picture': user_dict.get('picture'),
+                'id': user_dict['user_id'], 'email': user_dict['email'],
+                'name': user_dict['name'], 'picture': user_dict['picture'],
                 'language': user_dict.get('language') or 'en'
             }
         }), 200
     except Exception as e:
-        logger.error(f"❌ AUTH ME ERROR: {traceback.format_exc()}")
         return jsonify({'error': "Backend error"}), 500
 
 @auth_bp.route("/language", methods=["PUT", "OPTIONS"])
 def update_language():
     if request.method == 'OPTIONS': return '', 200
     try:
-        # Fallback helper for easy user_id extraction
         user_id = get_user_id_from_request()
         if not user_id: return jsonify({'error': 'Unauthorized'}), 401
         data = request.get_json() or {}
