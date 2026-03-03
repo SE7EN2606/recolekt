@@ -25,7 +25,7 @@ export const Auth: React.FC = () => {
   }, [user, navigate]);
 
   // ==========================================
-  // ☢️ STAGING ADMIN UI: ONLY EMAIL/PASSWORD LOGIN
+  // ☢️ STAGING ADMIN UI: BRUTALLY SIMPLE
   // ==========================================
   if (isStaging) {
     const handleAdminSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -38,9 +38,9 @@ export const Auth: React.FC = () => {
       try {
         const res = await loginUser(email, password);
         if (res) {
-          navigate('/gallery');
+          window.location.href = '/gallery';
         } else {
-          throw new Error("Invalid admin credentials");
+          alert("Invalid admin credentials");
         }
       } catch (error: any) {
         alert(error.message || "Authentication failed");
@@ -50,38 +50,25 @@ export const Auth: React.FC = () => {
     };
 
     return (
-      <div className="min-h-screen w-full bg-[#0B0F19] flex items-center justify-center px-4 relative">
-        <div className="absolute top-8 left-8">
-          <Link to="/" className="inline-block hover:opacity-80 transition-opacity">
-            <img src={LogoWhite} alt="recolekt" className="h-8 object-contain opacity-50" />
-          </Link>
-        </div>
-        
-        <div className="w-full max-w-sm bg-white p-8 rounded-2xl shadow-2xl">
+      <div className="min-h-screen w-full bg-black flex items-center justify-center px-4">
+        <div className="w-full max-w-sm bg-gray-900 p-8 rounded-2xl border-2 border-red-600 shadow-2xl shadow-red-900/50">
           <div className="flex flex-col items-center mb-8">
-            <ShieldAlert size={40} className="text-red-600 mb-3" />
-            <h2 className="text-2xl font-black text-gray-900 tracking-widest uppercase text-center">Admin Login</h2>
-            <p className="text-gray-500 text-sm mt-1 font-medium text-center">Staging Environment</p>
+            <ShieldAlert size={48} className="text-red-500 mb-3" />
+            <h2 className="text-2xl font-black text-white tracking-widest uppercase text-center">STAGING ADMIN</h2>
           </div>
 
-          <form onSubmit={handleAdminSubmit} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Email</label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input type="email" name="email" required className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-red-100 focus:border-red-500 text-sm font-medium" />
-              </div>
+          <form onSubmit={handleAdminSubmit} className="space-y-6">
+            <div>
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Admin Email</label>
+              <input type="email" name="email" required className="mt-1 w-full bg-black border border-gray-700 text-white rounded-lg py-3 px-4 outline-none focus:border-red-500" />
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Password</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input type="password" name="password" required className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-red-100 focus:border-red-500 text-sm font-medium" />
-              </div>
+            <div>
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Password</label>
+              <input type="password" name="password" required className="mt-1 w-full bg-black border border-gray-700 text-white rounded-lg py-3 px-4 outline-none focus:border-red-500" />
             </div>
 
-            <button type="submit" disabled={loading} className="w-full h-12 mt-6 text-sm font-black shadow-xl rounded-xl bg-red-600 hover:bg-red-700 text-white transition-colors border-none disabled:opacity-50">
+            <button type="submit" disabled={loading} className="w-full h-12 text-sm font-black tracking-widest rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50">
               {loading ? 'AUTHENTICATING...' : 'SECURE LOGIN'}
             </button>
           </form>
@@ -140,10 +127,6 @@ export const Auth: React.FC = () => {
               </span>
             </h1>
             <p className="text-gray-400 text-lg leading-relaxed font-medium">{t('auth:creatorsJoin')}</p>
-          </div>
-          <div className="flex gap-4 text-xs font-black uppercase tracking-widest text-gray-500">
-            <span>© 2026 recolekt</span>
-            <Link to="/help" className="hover:text-white transition-colors">{t('auth:help')}</Link>
           </div>
         </div>
 
