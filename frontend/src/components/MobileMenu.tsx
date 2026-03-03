@@ -85,14 +85,14 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
   if (!shouldRender) return null;
 
-  return (
+return (
     <>
       <div
         className={`
           fixed inset-0 w-full z-[100] overflow-hidden
           bg-[#f9fafb]/95 backdrop-blur-xl transform-gpu
-          transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
-          ${animateOpen ? 'translate-y-0' : '-translate-y-full'}
+          transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
+          ${animateOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}
         `}
       >
         <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4">
