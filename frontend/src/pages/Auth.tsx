@@ -62,7 +62,7 @@ export const Auth: React.FC = () => {
     try {
       if (view === 'login') {
         const res = await loginUser(email, password);
-        if (res) setTimeout(() => window.location.href = '/gallery', 100);
+        if (res) navigate('/gallery');
         else throw new Error("Authentication failed");
         
       } else if (view === 'register') {

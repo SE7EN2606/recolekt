@@ -30,7 +30,7 @@ interface DataContextType {
   deleteFolder: (id: string) => void;
   toggleFavorite: (videoId: string) => Promise<void>;
   moveVideos: (videoIds: string[], targetFolderId: string) => Promise<void>;
-  updateVideo: (id: string, updates: any) => Promise<void>; // ✅ Added to support VideoDetail edits
+  updateVideo: (id: string, updates: any) => Promise<void>;
   deleteVideos: (videoIds: string[]) => Promise<void>;
   addVideo: (url: string, forceRetry?: boolean) => Promise<AddVideoResult>;
   refreshVideos: () => Promise<void>;
@@ -64,11 +64,23 @@ let isFetchingGlobal = false;
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
 
-  const [videos, setVideos] = useState<Video[]>([]);
+  // ✅ FIXED: Both state initializers are now safely intact
+  const [videos, setVideos] = useState<Video[]>(() => {
+    if (user?.id) {
+      const cacheKey = `reels_cache_${user.id}`;
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        try { return JSON.parse(raw); } catch (e) {}
+      }
+    }
+    return [];
+  });
+
   const [folders, setFolders] = useState<Folder[]>(() => {
     const saved = localStorage.getItem('custom_folders');
     return saved ? JSON.parse(saved) : [];
   });
+  
   const [isLoading, setIsLoading] = useState(false);
 
   const videosRef = useRef<Video[]>([]);
@@ -172,7 +184,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             transcription: r.transcription,
             originalUrl: r.source_url,
             isFavorite: r.is_favorite,
-            folderId: r.folder_id || 'default', // ✅ This is where it reads from DB!
+            folderId: r.folder_id || 'default',
             content_type: r.content_type,
             recipe: r.recipe,
             workout: r.workout,
@@ -220,7 +232,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 prevVideos[i].id !== result[i].id || 
                 prevVideos[i].status !== result[i].status || 
                 prevVideos[i].category !== result[i].category ||
-                prevVideos[i].folderId !== result[i].folderId || // ✅ Ensure folder changes trigger re-render
+                prevVideos[i].folderId !== result[i].folderId ||
                 prevVideos[i].thumbnailUrl !== result[i].thumbnailUrl
               ) {
                 changed = true;
@@ -387,12 +399,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, [user, fetchVideos]);
 
-  // ✅ FIXED: Now updates Database!
   const moveVideos = useCallback(async (videoIds: string[], targetFolderId: string) => {
-    // 1. Optimistic UI update (feels instant to the user)
     setVideos((prev) => prev.map((v: any) => videoIds.includes(v.id) ? { ...v, folderId: targetFolderId } : v));
-
-    // 2. Tell the Backend
     try {
       await Promise.all(
         videoIds.map(async (id) => {
@@ -401,27 +409,23 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             method: 'PUT',
             credentials: 'include',
             headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ folder_id: targetFolderId }) // Python expects snake_case
+            body: JSON.stringify({ folder_id: targetFolderId })
           });
         })
       );
     } catch (error) {
       console.error("Failed to save move to DB:", error);
-      fetchVideos(); // Refresh to undo the UI change if it failed
+      fetchVideos();
     }
   }, [fetchVideos]);
 
-  // ✅ FIXED: Now updates Database!
   const toggleFavorite = useCallback(async (videoId: string) => {
     const currentVideos = videosRef.current;
     const video = currentVideos.find(v => v.id === videoId);
     if (!video) return;
     const newFav = !video.isFavorite;
 
-    // 1. Optimistic update
     setVideos((prev) => prev.map((v: any) => (v.id === videoId ? { ...v, isFavorite: newFav } : v)));
-
-    // 2. Tell Backend
     try {
       const url = joinUrl(API_BASE, `/api/reel/${encodeURIComponent(String(videoId))}`);
       await fetch(url, {
@@ -435,7 +439,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [fetchVideos]);
 
-  // ✅ RESTORED: Saves Video edits!
   const updateVideo = useCallback(async (id: string, updates: any) => {
     setVideos((prev) => prev.map((v) => v.id === id ? { ...v, ...updates } : v));
     try {

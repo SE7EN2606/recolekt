@@ -58,18 +58,27 @@ def create_jwt_token(user_id: str, email: str) -> str:
 @auth_bp.route("/google", methods=["GET"])
 def google_login():
     google = get_google_client()
-    is_local = os.getenv('FLASK_ENV') == 'development' or not os.getenv('RAILWAY_ENVIRONMENT')
     
-    if is_local:
+    # Use the GOOGLE_REDIRECT_URI from your Railway variables
+    # fallback to local if not found
+    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+    
+    if not redirect_uri:
+        # Fallback for local development
         redirect_uri = url_for('auth.google_callback', _external=True, _scheme='http')
-    else:
-        redirect_uri = "https://recolekt.app/api/auth/google/callback"
-        
+    
+    logger.info(f"🚀 Redirecting to Google with URI: {redirect_uri}")
     return google.authorize_redirect(redirect_uri)
 
 @auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
     try:
+        # Force HTTPS for the callback validation
+        if not request.is_secure and os.getenv('RAILWAY_ENVIRONMENT'):
+            from werkzeug.middleware.proxy_fix import ProxyFix
+            # This helps Authlib realize it's on HTTPS
+            request.environ['wsgi.url_scheme'] = 'https'
+            
         google = get_google_client()
         token = google.authorize_access_token()
         user_info = token.get('userinfo') or google.get('https://www.googleapis.com/oauth2/v3/userinfo').json()

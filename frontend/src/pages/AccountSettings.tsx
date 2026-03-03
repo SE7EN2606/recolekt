@@ -1,13 +1,11 @@
 import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ExternalLink, Trash2, TriangleAlert, Loader2, SquarePen, Save, Check } from 'lucide-react';
+import { ExternalLink, Trash2, TriangleAlert, Loader2, SquarePen, Check } from 'lucide-react';
 import { useAuth, getAuthHeaders } from '../context/AuthContext';
 import { InstallShortcutModal } from '../components/InstallShortcutModal';
 import shortcutsIcon from '/assets/shortcuts_icon.png';
 import { useTranslation } from 'react-i18next';
-
-
 
 interface TokenInfo {
   has_token: boolean;
@@ -79,6 +77,9 @@ export const AccountSettings: React.FC = () => {
   const [shortcutData, setShortcutData] = useState<any>(null);
   const [isLoadingShortcut, setIsLoadingShortcut] = useState(false);
 
+  // ✅ Bulletproof image fallback state
+  const [imgError, setImgError] = useState(false);
+
   useEffect(() => {
     if (user) {
       setEmail(user.email || '');
@@ -94,9 +95,7 @@ export const AccountSettings: React.FC = () => {
   }, [loading, isAuthenticated, navigate]);
 
   useEffect(() => {
-    if (user) {
-      fetchTokenInfo();
-    }
+    if (user) fetchTokenInfo();
   }, [user]);
 
   useEffect(() => {
@@ -115,7 +114,6 @@ export const AccountSettings: React.FC = () => {
         headers: getAuthHeaders(),
         credentials: 'include',
       });
-      
       if (response.ok) {
         const data = await response.json();
         setTokenInfo(data);
@@ -142,10 +140,7 @@ export const AccountSettings: React.FC = () => {
       if (!response.ok) throw new Error('Failed to generate token');
       
       const data = await response.json();
-      const copyToken = confirm(
-        `${t('account:tokenGenerated')}\n\n${data.token}\n\n` +
-        `${t('account:tokenWarning')}`
-      );
+      const copyToken = confirm(`${t('account:tokenGenerated')}\n\n${data.token}\n\n${t('account:tokenWarning')}`);
       
       if (copyToken) {
         await navigator.clipboard.writeText(data.token);
@@ -182,7 +177,6 @@ export const AccountSettings: React.FC = () => {
   };
 
   const handleSaveInfo = async () => {
-    // Add logic here to sync state with your Neon DB via /api/user/profile update
     setIsEditing(false);
   };
 
@@ -198,28 +192,29 @@ export const AccountSettings: React.FC = () => {
 
   return (
     <div className="w-full pt-6 md:pt-0 pb-0 md:pb-6 animate-fade-in">
-      <div className="flex flex-col gap-4 md:gap-6 mb-6 md:mb-8 px-4 md:px-0">
+      <div className="flex flex-col gap-4 md:gap-6 mb-6 md:mb-8">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-            {t('account:personalInfo')}
-          </h1>
-          <p className="text-gray-500 text-xs md:text-sm mt-1">
-            {t('account:manageIdentity')}
-          </p>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">{t('account:personalInfo')}</h1>
+          <p className="text-gray-500 text-xs md:text-sm mt-1">{t('account:manageIdentity')}</p>
         </div>
       </div>
 
-      <div className="space-y-5 md:space-y-6 px-4 md:px-0">
+      <div className="space-y-5 md:space-y-6">
         
         {/* Personal Info Card */}
         <div className="bg-white rounded-2xl md:rounded-3xl shadow-sm p-5 md:p-8 border border-gray-100">
-          
-          {/* Header with Avatar, Name, and Edit Button aligned to the right */}
           <div className="flex items-center justify-between mb-8 pb-8 border-b border-gray-50">
             <div className="flex items-center gap-4 md:gap-5">
               <div className="w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br from-primary-600 to-primary-700 rounded-full flex items-center justify-center text-white text-lg md:text-2xl font-black shadow-lg overflow-hidden border-2 border-white">
-                {user.picture ? (
-                   <img src={user.picture} alt={displayName} className="w-full h-full object-cover" />
+                {/* ✅ FIXED: If the image breaks or doesn't exist, instantly show the letter */}
+                {user.picture && !imgError ? (
+                  <img 
+                    src={user.picture.replace('http://', 'https://')} 
+                    alt={displayName} 
+                    className="w-full h-full object-cover" 
+                    referrerPolicy="no-referrer"
+                    onError={() => setImgError(true)}
+                  />
                 ) : (
                   <span>{displayName.charAt(0).toUpperCase()}</span>
                 )}
@@ -229,7 +224,6 @@ export const AccountSettings: React.FC = () => {
               </h2>
             </div>
 
-            {/* ✅ Edit/Save Button aligned to the right */}
             <button 
               onClick={() => isEditing ? handleSaveInfo() : setIsEditing(true)}
               className="flex items-center gap-2 bg-white border border-gray-200 px-3 md:px-4 py-2 md:py-2.5 rounded-xl text-primary-600 font-black text-xs uppercase shadow-sm hover:bg-primary-50 hover:border-primary-200 transition-all active:scale-95"
@@ -290,70 +284,23 @@ export const AccountSettings: React.FC = () => {
         {/* iOS/macOS Shortcuts Section */}
         <div className="bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 rounded-2xl md:rounded-3xl border border-purple-100/50 p-5 md:p-8 shadow-sm">
           <div className="flex items-start gap-3 md:gap-4 mb-5 md:mb-6">
-            <img 
-              src={shortcutsIcon}
-              alt="Recolekt Shortcut" 
-              className="w-12 h-12 md:w-14 md:h-14 rounded-2xl shadow-lg"
-            />
-            
+            <img src={shortcutsIcon} alt="Recolekt Shortcut" className="w-12 h-12 md:w-14 md:h-14 rounded-2xl shadow-lg" />
             <div className="flex-1">
-              <h3 className="text-lg md:text-xl font-bold text-gray-900 tracking-tight mb-1">
-                {t('account:shortcutTitle')}
-              </h3>
-              <p className="text-xs md:text-sm text-gray-600 font-medium">
-                {t('account:shortcutDesc')}
-              </p>
+              <h3 className="text-lg md:text-xl font-bold text-gray-900 tracking-tight mb-1">{t('account:shortcutTitle')}</h3>
+              <p className="text-xs md:text-sm text-gray-600 font-medium">{t('account:shortcutDesc')}</p>
             </div>
           </div>
 
-          <button
-            onClick={handleInstallShortcut}
-            disabled={isLoadingShortcut}
-            className="
-              inline-flex items-center justify-center
-              rounded-xl font-black uppercase tracking-widest
-              transition-all duration-200 focus:outline-none
-              disabled:opacity-50 disabled:cursor-not-allowed
-              bg-primary-600 text-white hover:bg-primary-700
-              shadow-lg shadow-primary-600/20
-              w-full px-6 md:px-8 py-4 md:py-5
-              text-sm md:text-base
-              mb-5 md:mb-6
-            "
-          >
+          <button onClick={handleInstallShortcut} disabled={isLoadingShortcut} className="inline-flex items-center justify-center rounded-xl font-black uppercase tracking-widest transition-all duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed bg-primary-600 text-white hover:bg-primary-700 shadow-lg shadow-primary-600/20 w-full px-6 md:px-8 py-4 md:py-5 text-sm md:text-base mb-5 md:mb-6">
             {isLoadingShortcut ? (
-              <>
-                <Loader2 className="w-5 h-5 md:w-6 md:h-6 animate-spin mr-3" />
-                {t('common:loading')}
-              </>
+              <><Loader2 className="w-5 h-5 md:w-6 md:h-6 animate-spin mr-3" />{t('common:loading')}</>
             ) : (
-              <>
-                <svg 
-                  xmlns="http://www.w3.org/2000/svg" 
-                  width="20" 
-                  height="20" 
-                  viewBox="0 0 24 24" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  className="w-5 h-5 md:w-6 md:h-6 mr-3"
-                >
-                  <path d="M12 15V3"></path>
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <path d="m7 10 5 5 5-5"></path>
-                </svg>
-                {t('account:installShortcut')}
-              </>
+              <><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 md:w-6 md:h-6 mr-3"><path d="M12 15V3"></path><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path></svg>{t('account:installShortcut')}</>
             )}
           </button>
 
           <div className="bg-white/60 backdrop-blur-sm rounded-xl p-4 border border-white/50">
-            <h4 className="font-bold text-gray-900 text-[11px] md:text-xs uppercase tracking-wider mb-3 flex items-center gap-2">
-              <span className="w-1 h-4 bg-gradient-to-b from-[#8b5cf6] to-[#7c3aed] rounded-full"></span>
-              {t('account:howToUse')}
-            </h4>
+            <h4 className="font-bold text-gray-900 text-[11px] md:text-xs uppercase tracking-wider mb-3 flex items-center gap-2"><span className="w-1 h-4 bg-gradient-to-b from-[#8b5cf6] to-[#7c3aed] rounded-full"></span>{t('account:howToUse')}</h4>
             <ol className="list-decimal list-inside space-y-1.5 text-xs md:text-sm text-gray-700 font-medium">
               <li>{t('account:step1')}</li>
               <li>{t('account:step2')}</li>
@@ -364,42 +311,19 @@ export const AccountSettings: React.FC = () => {
           </div>
         </div>
 
-        {/* ✅ RESTORED Payment Section */}
+        {/* Payment Section */}
         <div className="bg-white rounded-2xl md:rounded-3xl shadow-sm p-5 md:p-8 border border-gray-100">
           <div className="flex items-center justify-between mb-6 md:mb-8">
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
-              {t('account:paymentMethod')}
-            </h3>
-            <span className="text-[10px] font-black text-primary-600 bg-primary-50 px-3 py-1 rounded-full uppercase tracking-widest">
-              {t('account:viaStripe')}
-            </span>
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{t('account:paymentMethod')}</h3>
+            <span className="text-[10px] font-black text-primary-600 bg-primary-50 px-3 py-1 rounded-full uppercase tracking-widest">{t('account:viaStripe')}</span>
           </div>
           
           <div className="p-4 md:p-6 bg-gray-50 rounded-2xl md:rounded-3xl border border-gray-100 flex items-center justify-between group hover:border-primary-200 transition-colors">
             <div className="flex items-center gap-3 md:gap-4">
-              <div className="w-10 h-7 md:w-12 md:h-8 bg-white border border-gray-200 rounded-lg flex items-center justify-center font-black italic text-[9px] md:text-[10px] text-gray-400 shadow-sm">
-                VISA
-              </div>
-              <div>
-                <span className="block font-black text-gray-900 tracking-tight text-sm md:text-base">
-                  •••• 4242
-                </span>
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                  {t('account:expires')} 12/26
-                </span>
-              </div>
+              <div className="w-10 h-7 md:w-12 md:h-8 bg-white border border-gray-200 rounded-lg flex items-center justify-center font-black italic text-[9px] md:text-[10px] text-gray-400 shadow-sm">VISA</div>
+              <div><span className="block font-black text-gray-900 tracking-tight text-sm md:text-base">•••• 4242</span><span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{t('account:expires')} 12/26</span></div>
             </div>
-            <button 
-              onClick={() => window.open('https://billing.stripe.com/p/login/test_portal', '_blank')}
-              className="
-                flex items-center gap-2
-                bg-white px-4 md:px-5 py-2 md:py-2.5
-                rounded-lg md:rounded-xl
-                text-xs font-black text-gray-900
-                border border-gray-200 shadow-sm
-                hover:shadow-md transition-all active:scale-95
-              "
-            >
+            <button onClick={() => window.open('https://billing.stripe.com/p/login/test_portal', '_blank')} className="flex items-center gap-2 bg-white px-4 md:px-5 py-2 md:py-2.5 rounded-lg md:rounded-xl text-xs font-black text-gray-900 border border-gray-200 shadow-sm hover:shadow-md transition-all active:scale-95">
               {t('account:manage')} <ExternalLink size={14} />
             </button>
           </div>
@@ -408,38 +332,19 @@ export const AccountSettings: React.FC = () => {
         {/* Danger Zone: Centered */}
         <div className="bg-red-50 rounded-2xl md:rounded-[32px] border border-red-100 p-8 flex flex-col items-center text-center">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 bg-white rounded-xl text-red-500 shadow-sm">
-              <TriangleAlert size={24} />
-            </div>
+            <div className="p-2.5 bg-white rounded-xl text-red-500 shadow-sm"><TriangleAlert size={24} /></div>
             <h3 className="text-lg md:text-xl font-black text-red-900 m-0 tracking-tight">{t('account:dangerZone')}</h3>
           </div>
-          
-          <p className="text-red-700/80 text-xs md:text-sm font-medium mb-8 max-w-md leading-relaxed">
-            {t('account:deleteWarning')}
-          </p>
-          
-          <button 
-            className="flex items-center gap-2 px-10 py-3.5 bg-white border border-red-200 text-red-600 rounded-xl font-black text-sm hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-95"
-            onClick={() => {
-              if (confirm(t('account:deleteConfirm'))) {
-                // Delete logic
-              }
-            }}
-          >
+          <p className="text-red-700/80 text-xs md:text-sm font-medium mb-8 max-w-md leading-relaxed">{t('account:deleteWarning')}</p>
+          <button className="flex items-center gap-2 px-10 py-3.5 bg-white border border-red-200 text-red-600 rounded-xl font-black text-sm hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-95">
             <Trash2 size={18} /> {t('account:deleteAccount')}
           </button>
         </div>
 
       </div>
 
-      {/* Install Modal */}
       {shortcutData && (
-        <InstallShortcutModal
-          isOpen={showShortcutModal}
-          onClose={() => setShowShortcutModal(false)}
-          apiToken={shortcutData.api_token}
-          shortcutUrl={shortcutData.shortcut_url}
-        />
+        <InstallShortcutModal isOpen={showShortcutModal} onClose={() => setShowShortcutModal(false)} apiToken={shortcutData.api_token} shortcutUrl={shortcutData.shortcut_url} />
       )}
     </div>
   );

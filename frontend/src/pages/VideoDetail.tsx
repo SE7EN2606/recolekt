@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, ChevronDown, Heart, FolderInput, AlertCircle, X, EllipsisVertical, Archive, AlignLeft, Pencil, Save, Globe } from 'lucide-react';
+import { ArrowLeft, Trash2, ChevronDown, Heart, FolderInput, AlertCircle, X, Settings2, Archive, AlignLeft, Pencil, Save, Globe } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { getAuthHeaders } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -102,8 +102,6 @@ export const VideoDetail: React.FC = () => {
     isDeleteConfirmOpen
   );
 
-  const getShortcode = (fullId: string) => (fullId || '').split('--')[0];
-
   const fetchBackendJsonNoStore = useCallback(async (url: string) => {
     const res = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'include', headers: { ...getAuthHeaders() } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -111,37 +109,43 @@ export const VideoDetail: React.FC = () => {
   }, []);
 
   const enrichVideo = useCallback(async () => {
-  if (!id) return;
-  try {
-    const dbResult = await fetchBackendJsonNoStore(apiUrl(`api/reel/${encodeURIComponent(id)}`));
-    
-    if (!dbResult) {
+    if (!id) return;
+    try {
+      const dbResult = await fetchBackendJsonNoStore(apiUrl(`api/reel/${encodeURIComponent(id)}`));
+      
+      if (!dbResult) {
+        setLoading(false);
+        return;
+      }
+
+      if (dbResult.status === 'processing' || dbResult.category === 'Processing' || dbResult.status === 'error' || dbResult.status === 'failed') {
+        setVideo({ ...dbResult, __raw: dbResult });
+        setLoading(false);
+        return;
+      }
+
+      const short = id.includes('--') ? id.split('--')[0] : id.split('_')[0];
+      const ownerId = dbResult.user_id || "default_id"; 
+      
+      const isFB = id.includes('FB') || short.length > 12;
+      const folder = isFB ? 'FB_reels' : 'IG_reels';
+      
+      const folderName = ownerId ? `${short}_${ownerId}` : short;
+      const modernPath = `https://storage.googleapis.com/recolekt-storage/media/${folder}/${folderName}/${short}_result.json`;
+      const legacyPath = `https://storage.googleapis.com/recolekt-storage/media/${folder}/${short}/${short}_result.json`;
+
+      let gcsResult = await fetchGcsJson(`${modernPath}?v=${Date.now()}`);
+      
+      if (!gcsResult && folderName !== short) {
+         gcsResult = await fetchGcsJson(`${legacyPath}?v=${Date.now()}`);
+      }
+
+      setVideo({ ...dbResult, ...(gcsResult || {}), __raw: dbResult });
+    } catch (err) {
+      console.error("Enrichment error", err);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const short = id.includes('--') ? id.split('--')[0] : id.split('_')[0];
-    const ownerId = dbResult.user_id || "default_id"; 
-    
-    const isFB = id.includes('FB') || short.length > 12;
-    const folder = isFB ? 'FB_reels' : 'IG_reels';
-    
-    const folderName = ownerId ? `${short}_${ownerId}` : short;
-    const modernPath = `https://storage.googleapis.com/recolekt-storage/media/${folder}/${folderName}/${short}_result.json`;
-    const legacyPath = `https://storage.googleapis.com/recolekt-storage/media/${folder}/${short}/${short}_result.json`;
-
-    let gcsResult = await fetchGcsJson(`${modernPath}?v=${Date.now()}`);
-    
-    if (!gcsResult && folderName !== short) {
-       gcsResult = await fetchGcsJson(`${legacyPath}?v=${Date.now()}`);
-    }
-
-    setVideo({ ...dbResult, ...(gcsResult || {}), __raw: dbResult });
-  } catch (err) {
-    console.error("Enrichment error", err);
-  } finally {
-    setLoading(false);
-  }
   }, [id, fetchBackendJsonNoStore]);
 
   useEffect(() => {
@@ -218,6 +222,15 @@ export const VideoDetail: React.FC = () => {
         else if (v.transcript.text) extractedTranscript = v.transcript.text;
     }
 
+    // ✅ FIXED: Ensure it never defaults to OG
+    let langCode = 'EN';
+    if (v.transcription?.detected_language) {
+      langCode = String(v.transcription.detected_language).toUpperCase();
+    } else if (v.language) {
+      langCode = String(v.language).toUpperCase();
+    }
+    if (langCode === 'OG') langCode = 'EN';
+
     return {
       id: v.id,
       title: safeString(langBlock?.title || v.title || 'Saved Reel'),
@@ -235,7 +248,7 @@ export const VideoDetail: React.FC = () => {
       platform: safeString(v.source_url || v.originalUrl || '').includes('facebook') ? 'facebook' : 'instagram',
       savedAt: safeString(v.savedAt || (v.created_at ? new Date(v.created_at).toLocaleDateString() : '')),
       hasTranslation: !!(summaryObj.english && summaryObj.original),
-      languageCode: (v.transcription?.detected_language || 'en').toUpperCase(),
+      languageCode: langCode,
       duration: formatDuration(v.duration)
     };
   }, [video, editedVideo, isEditing, showOriginal]);
@@ -267,7 +280,10 @@ export const VideoDetail: React.FC = () => {
                       <button onClick={() => setIsEditing(false)} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center"><X size={20} /></button>
                     </>
                   ) : (
-                    <button onClick={() => setIsActionSheetOpen(true)} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center transition-colors"><EllipsisVertical size={20} /></button>
+                    // ✅ FIXED: Using Settings2 icon matching the Gallery styles
+                    <button onClick={() => setIsActionSheetOpen(true)} className="w-9 h-9 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center hover:bg-white/40 transition-colors">
+                      <Settings2 size={18} />
+                    </button>
                   )}
                 </div>
              </div>
@@ -494,7 +510,7 @@ export const VideoDetail: React.FC = () => {
       </div>
 
       <ActionSheet isOpen={isActionSheetOpen} onClose={() => setIsActionSheetOpen(false)} title="Settings" actions={actionItems} />  
-      <MoveCollectionModal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} onMove={(id) => { moveVideos([video.id], id); setIsMoveModalOpen(false); }} />
+      <MoveCollectionModal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} onMove={(id) => { moveVideos([video.id], id); setIsMoveModalOpen(false); }} count={1} />
       <ConfirmModal isOpen={isDeleteConfirmOpen} onClose={() => setIsDeleteConfirmOpen(false)} onConfirm={handleDelete} title="Delete this reel?" message="This action cannot be undone." confirmLabel="Delete" variant="danger" />
       <ReportModal isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)} url={window.location.href} />
     </div>

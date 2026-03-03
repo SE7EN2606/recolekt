@@ -31,7 +31,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const { user, loading } = useAuth();
   const { t } = useTranslation(['common']);
-  const { addVideo, isLoading } = useData();
+  const { addVideo } = useData();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [globalAuthOpen, setGlobalAuthOpen] = useState(false);
@@ -52,22 +52,16 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const mainBottomPadding = user && !showFooter ? 'pb-24' : 'pb-6';
   const footerBottomPadding = user ? 'pb-[120px] md:pb-8' : 'pb-12 md:pb-8';
 
-  const handleAddVideo = async (url: string) => {
-    await addVideo(url);
-    setIsAddModalOpen(false);
-  };
-
   return (
-    // ✅ ADDED overflow-y-scroll here to prevent the page from jumping left/right!
-    <div className="min-h-screen flex flex-col font-sans text-gray-900 selection:bg-primary-100 selection:text-primary-900 overflow-y-scroll">
+    <div className="min-h-screen flex flex-col font-sans text-gray-900 selection:bg-primary-100 selection:text-primary-900 overflow-x-hidden">
       {!isAuthPage && <Header />}
 
       <main 
-        className={`flex-1 w-full mx-auto ${isAuthPage ? 'pt-0 pb-0 !max-w-none !px-0' : `max-w-[1280px] px-6 md:px-8 ${mainBottomPadding} md:pb-0 pt-[80px] md:pt-[110px]`}`}
+        className={`flex-1 w-full mx-auto ${isAuthPage ? 'pt-0 pb-0 !max-w-none !px-0' : `max-w-[1280px] px-4 md:px-8 ${mainBottomPadding} md:pb-0 pt-[80px] md:pt-[110px]`}`}
       >
-        <div className={`flex gap-6 lg:gap-8 ${isAuthPage ? 'pt-0' : ''}`}>
+        <div className={`flex gap-6 ${isAuthPage ? 'pt-0' : ''}`}>
           {showSidebar && (
-            <div className="hidden md:block w-[240px] lg:w-[260px] flex-shrink-0">
+            <div className="hidden md:block w-[280px] flex-shrink-0">
               <Sidebar />
             </div>
           )}
@@ -183,4 +177,4 @@ function App() {
   );
 }
 
-export default App;console.log('🧪 Netlify staging test')
+export default App;
