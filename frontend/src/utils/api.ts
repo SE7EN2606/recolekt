@@ -1,7 +1,20 @@
 // frontend/src/utils/api.ts
 import { assertEnv } from './assertEnv';
 
-const raw = import.meta.env.VITE_BACKEND_URL || 'https://api.recolekt.app';
+// 1. Try to get the environment variable first
+let raw = import.meta.env.VITE_BACKEND_URL;
+
+// 2. Smart Fallback: If no env var is found, check the URL
+if (!raw) {
+  if (typeof window !== 'undefined' && window.location.hostname.includes('staging')) {
+    // Force staging backend if we are on the staging website
+    raw = 'https://recolekt-staging.up.railway.app';
+  } else {
+    // Default to production
+    raw = 'https://api.recolekt.app';
+  }
+}
+
 assertEnv('VITE_BACKEND_URL', raw);
 
 export const API_BASE = raw.replace(/\/+$/, '');
