@@ -10,6 +10,7 @@ from fetcher_api.api.routes.billing import billing_bp
 from fetcher_api.api.routes.admin import admin_bp
 from fetcher_api.api.routes.api_token import api_bp
 from fetcher_api.api.routes.cleanup import cleanup_bp
+from fetcher_api.api.routes.folders import folders_bp  # ✅ Added
 
 __all__ = [
     'main_bp',
@@ -20,4 +21,5 @@ __all__ = [
     'admin_bp',
     'api_bp',
     'cleanup_bp',
+    'folders_bp',  # ✅ Added
 ]

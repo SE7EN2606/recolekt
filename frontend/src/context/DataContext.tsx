@@ -25,9 +25,9 @@ interface DataContextType {
   videos: Video[];
   folders: Folder[];
   isLoading: boolean;
-  addFolder: (name: string, parentId?: string | null) => void;
-  updateFolder: (id: string, name: string) => void;
-  deleteFolder: (id: string) => void;
+  addFolder: (name: string, parentId?: string | null) => Promise<void>;
+  updateFolder: (id: string, name: string) => Promise<void>;
+  deleteFolder: (id: string) => Promise<void>;
   toggleFavorite: (videoId: string) => Promise<void>;
   moveVideos: (videoIds: string[], targetFolderId: string) => Promise<void>;
   updateVideo: (id: string, updates: any) => Promise<void>;
@@ -64,7 +64,6 @@ let isFetchingGlobal = false;
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
 
-  // ✅ FIXED: Both state initializers are now safely intact
   const [videos, setVideos] = useState<Video[]>(() => {
     if (user?.id) {
       const cacheKey = `reels_cache_${user.id}`;
@@ -76,25 +75,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return [];
   });
 
-  const [folders, setFolders] = useState<Folder[]>(() => {
-    const saved = localStorage.getItem('custom_folders');
-    return saved ? JSON.parse(saved) : [];
-  });
-  
+  // ✅ Changed to initialize empty. We now fetch folders from the DB!
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const videosRef = useRef<Video[]>([]);
   videosRef.current = videos;
 
   useEffect(() => {
-    localStorage.setItem('custom_folders', JSON.stringify(folders));
-  }, [folders]);
-
-  useEffect(() => {
     if (!user) {
       setVideos([]);
-      const saved = localStorage.getItem('custom_folders');
-      setFolders(saved ? JSON.parse(saved) : []);
+      setFolders([]);
       return;
     }
 
@@ -275,18 +266,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (!response.ok) return;
       const data = await response.json();
       const fetchedFolders: Folder[] = data?.folders || [];
-      setFolders((prev) => {
-        const merged = [...(prev || [])];
-        let changed = false;
-        for (const bf of fetchedFolders) {
-          if (!merged.find((f) => f.id === bf.id)) {
-            merged.push(bf);
-            changed = true;
-          }
-        }
-        return changed ? merged : prev; 
-      });
-    } catch (error) {}
+      
+      // We directly set the folders from the server now
+      setFolders(fetchedFolders);
+    } catch (error) {
+      console.error("Failed to fetch folders:", error);
+    }
   }, [user?.id]);
 
   const initRef = useRef(false);
@@ -492,38 +477,56 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user, fetchVideos]);
 
-  const addFolder = useCallback((name: string, parentId: string | null = null) => {
-    const newFolder: Folder = { id: Date.now().toString(), name, subFolders: [] };
-    if (parentId) {
-      const addToParent = (list: Folder[]): Folder[] =>
-        (list || []).map((f) => {
-          if (f.id === parentId) return { ...f, subFolders: [...(f.subFolders || []), newFolder] };
-          if (f.subFolders?.length) return { ...f, subFolders: addToParent(f.subFolders) };
-          return f;
-        });
-      setFolders((prev) => addToParent(prev));
-    } else {
-      setFolders((prev) => [...(prev || []), newFolder]);
-    }
-  }, []);
-
-  const updateFolder = useCallback((id: string, name: string) => {
-    const rec = (list: Folder[]): Folder[] =>
-      (list || []).map((f) => {
-        if (f.id === id) return { ...f, name };
-        if (f.subFolders?.length) return { ...f, subFolders: rec(f.subFolders) };
-        return f;
+  // ✅ DATABASE-BACKED FOLDER OPERATIONS
+  const addFolder = useCallback(async (name: string, parentId: string | null = null) => {
+    try {
+      const response = await fetch(joinUrl(API_BASE, '/api/folders'), {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, parent_id: parentId })
       });
-    setFolders((prev) => rec(prev));
-  }, []);
+      if (response.ok) {
+        await refreshFolders();
+      } else {
+        console.error("Failed to create folder in database");
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, [refreshFolders]);
 
-  const deleteFolder = useCallback((id: string) => {
-    const rec = (list: Folder[]): Folder[] =>
-      (list || [])
-        .filter((f) => f.id !== id)
-        .map((f) => ({ ...f, subFolders: f.subFolders ? rec(f.subFolders) : [] }));
-    setFolders((prev) => rec(prev));
-  }, []);
+  const updateFolder = useCallback(async (id: string, name: string) => {
+    try {
+      const response = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
+        method: 'PUT',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      if (response.ok) {
+        await refreshFolders();
+      } else {
+        console.error("Failed to update folder in database");
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, [refreshFolders]);
+
+  const deleteFolder = useCallback(async (id: string) => {
+    try {
+      const response = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      if (response.ok) {
+        await refreshFolders();
+      } else {
+        console.error("Failed to delete folder in database");
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, [refreshFolders]);
 
   const refreshVideos = useCallback(async () => {
     await fetchVideos(); 

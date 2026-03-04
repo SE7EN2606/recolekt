@@ -4,7 +4,6 @@ API Package - Register all route blueprints
 """
 from flask import Flask
 
-
 def register_blueprints(app: Flask):
     """Register all API blueprints with /api prefix"""
     
@@ -17,6 +16,7 @@ def register_blueprints(app: Flask):
         admin_bp,
         api_bp,
         cleanup_bp,
+        folders_bp,  # ✅ ADD THIS
     )
     
     # Register all blueprints
@@ -26,5 +26,6 @@ def register_blueprints(app: Flask):
     app.register_blueprint(reel_bp, url_prefix="/api")
     app.register_blueprint(billing_bp, url_prefix="/api")
     app.register_blueprint(admin_bp, url_prefix="/api")
-    app.register_blueprint(api_bp)  # ✅ Already has /api_token prefix
-    app.register_blueprint(cleanup_bp)  # ✅ Already has /api prefix in routes
+    app.register_blueprint(folders_bp) # ✅ ADD THIS (Prefix is inside folders.py)
+    app.register_blueprint(api_bp)  
+    app.register_blueprint(cleanup_bp)
