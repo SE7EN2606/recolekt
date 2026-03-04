@@ -5,6 +5,7 @@ import { Mail, Lock, User, ArrowLeft, AlertCircle, KeyRound } from 'lucide-react
 import { Button } from '../components/Button';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
+import { useGoogleLogin } from '@react-oauth/google'; // ✅ Added this
 import LogoWhite from '../assets/recolekt_logo_white.png';
 
 function joinUrl(base: string, path: string) {
@@ -26,13 +27,31 @@ export const Auth: React.FC = () => {
   const [regPassword, setRegPassword] = useState('');
 
   const navigate = useNavigate();
-  const { user, signInWithGoogle, loginUser, registerUser } = useAuth();
+  // ✅ Using verifyGoogleToken instead of signInWithGoogle
+  const { user, verifyGoogleToken, loginUser, registerUser } = useAuth();
 
   useEffect(() => {
     if (user && view !== 'verify') {
       navigate('/gallery', { replace: true });
     }
   }, [user, navigate, view]);
+
+  // ✅ NEW: Google Login Hook configuration
+  const loginWithGoogle = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      setLoading(true);
+      try {
+        await verifyGoogleToken(tokenResponse.access_token);
+        navigate('/gallery');
+      } catch (err) {
+        console.error("Google login failed", err);
+        alert("Google authentication failed.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    onError: () => alert("Google login was cancelled or failed.")
+  });
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -117,11 +136,13 @@ export const Auth: React.FC = () => {
                 </div>
 
                 <button 
-                  onClick={signInWithGoogle} 
-                  className="group w-full flex items-center justify-center gap-3 p-3 mb-4 bg-white/40 hover:bg-white/80 text-gray-800 font-bold rounded-xl transition-all border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1"
+                  type="button" // Important
+                  onClick={() => loginWithGoogle()} // ✅ Attached the hook here
+                  disabled={loading}
+                  className="group w-full flex items-center justify-center gap-3 p-3 mb-4 bg-white/40 hover:bg-white/80 text-gray-800 font-bold rounded-xl transition-all border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 disabled:opacity-50"
                 >
                   <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
-                  <span>{t('auth:googleContinue')}</span>
+                  <span>{loading ? t('common:processing') : t('auth:googleContinue')}</span>
                 </button>
                 
                 <div className="relative mb-6">
