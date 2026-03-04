@@ -1,7 +1,8 @@
-import { API_BASE } from "./utils/api";
+import { API_BASE, GOOGLE_CLIENT_ID } from "./utils/api"; // ✅ Added GOOGLE_CLIENT_ID
 import React, { useState, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { I18nextProvider, useTranslation } from 'react-i18next';
+import { GoogleOAuthProvider } from '@react-oauth/google'; // ✅ Added import
 import i18n from './i18n';
 
 import { LanguageProvider } from './context/LanguageContext';
@@ -148,30 +149,33 @@ function App() {
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
         </div>
       }>
-        <LanguageProvider>
-          <Router>
-            <Layout>
-              <Routes>
-                <Route path="/" element={<Home />} />
-                <Route path="/features" element={<Features />} />
-                <Route path="/auth" element={<Auth />} />
-                <Route path="/help" element={<HelpSupport />} />
-                <Route path="/billing" element={<BillingPage />} />
-                
-                <Route path="/gallery" element={<Gallery />} />
-                <Route path="/gallery/:folderId" element={<Gallery />} />
-                <Route path="/video/:id" element={<VideoDetail />} />
-                <Route path="/reel/:id" element={<VideoDetail />} />
-                <Route path="/settings/app" element={<AppSettings />} />
-                <Route path="/settings/account" element={<AccountSettings />} />
-                <Route path="/settings" element={<Navigate to="/settings/app" replace />} />
-                <Route path="/subscribe" element={<SubscribePage />} />
-                <Route path="/billing/success" element={<BillingSuccess />} />
-                <Route path="/billing/cancel" element={<BillingCancel />} />
-              </Routes>
-            </Layout>
-          </Router>
-        </LanguageProvider>
+        {/* ✅ Wrapped with GoogleOAuthProvider */}
+        <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+          <LanguageProvider>
+            <Router>
+              <Layout>
+                <Routes>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/features" element={<Features />} />
+                  <Route path="/auth" element={<Auth />} />
+                  <Route path="/help" element={<HelpSupport />} />
+                  <Route path="/billing" element={<BillingPage />} />
+                  
+                  <Route path="/gallery" element={<Gallery />} />
+                  <Route path="/gallery/:folderId" element={<Gallery />} />
+                  <Route path="/video/:id" element={<VideoDetail />} />
+                  <Route path="/reel/:id" element={<VideoDetail />} />
+                  <Route path="/settings/app" element={<AppSettings />} />
+                  <Route path="/settings/account" element={<AccountSettings />} />
+                  <Route path="/settings" element={<Navigate to="/settings/app" replace />} />
+                  <Route path="/subscribe" element={<SubscribePage />} />
+                  <Route path="/billing/success" element={<BillingSuccess />} />
+                  <Route path="/billing/cancel" element={<BillingCancel />} />
+                </Routes>
+              </Layout>
+            </Router>
+          </LanguageProvider>
+        </GoogleOAuthProvider>
       </Suspense>
     </I18nextProvider>
   );

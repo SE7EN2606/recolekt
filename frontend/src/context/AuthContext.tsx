@@ -14,7 +14,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   error: string | null;
-  signInWithGoogle: () => void;
+  verifyGoogleToken: (accessToken: string) => Promise<void>; // ✅ RESTORED
   signOut: () => Promise<void>;
   isAuthenticated: boolean;
   registerUser: (email: string, password: string, name: string) => Promise<User | null>;
@@ -76,16 +76,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [token, setToken] = useState<string | null>(localStorage.getItem('auth_token') || localStorage.getItem('token'));
   
   const userRef = useRef<User | null>(user);
   userRef.current = user;
-  const abortRef = useRef<AbortController | null>(null);
 
   const clearAuthEverywhere = () => {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('token');
+    localStorage.removeItem('i18nextLng');
     clearCachedUser();
     setUser(null);
+    setToken(null);
     setIsAuthenticated(false);
     setLoading(false);
   };
@@ -100,6 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const response = await fetch(joinUrl(API_BASE, '/api/auth/me'), {
         headers: getAuthHeaders(),
+        credentials: 'omit',
       });
 
       if (response.ok) {
@@ -122,6 +125,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // ✅ Hitting the correct stateless backend endpoint!
+  const verifyGoogleToken = async (accessToken: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(joinUrl(API_BASE, '/api/auth/google/verify'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access_token: accessToken }),
+        credentials: 'omit', 
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Google login failed');
+      }
+
+      const data = await response.json();
+      
+      localStorage.setItem('auth_token', data.token);
+      localStorage.setItem('token', data.token);
+      setToken(data.token);
+      setUser(data.user);
+      setIsAuthenticated(true);
+      saveCachedUser(data.user);
+
+      if (data.user.language) {
+        i18n.changeLanguage(data.user.language);
+        localStorage.setItem('i18nextLng', data.user.language);
+      }
+    } catch (err: any) {
+      console.error(' Google Verify Error:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const loginUser = async (email: string, password: string) => {
     setLoading(true);
     try {
@@ -129,14 +170,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
+        credentials: 'omit',
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Login failed');
       
       localStorage.setItem('auth_token', data.token);
+      localStorage.setItem('token', data.token);
+      setToken(data.token);
       setUser(data.user);
       setIsAuthenticated(true);
       saveCachedUser(data.user);
+      if (data.user.language) i18n.changeLanguage(data.user.language);
       return data.user;
     } catch (err: any) {
       setError(err.message);
@@ -153,6 +198,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, name }),
+        credentials: 'omit',
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Registration failed');
@@ -173,16 +219,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify({ language: lang }),
+        credentials: 'omit',
       });
       setUser(prev => prev ? { ...prev, language: lang } : null);
     } catch (e) {
       console.error(e);
     }
-  };
-
-  const signInWithGoogle = () => {
-    // ✅ Use the dynamic API_BASE resolved at runtime
-    window.location.href = `${API_BASE}/api/auth/google`;
   };
 
   const signOut = async () => {
@@ -192,16 +234,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    if (token) {
-      localStorage.setItem('auth_token', token);
+    const urlToken = params.get('token');
+    if (urlToken) {
+      localStorage.setItem('auth_token', urlToken);
+      localStorage.setItem('token', urlToken);
       window.history.replaceState({}, '', window.location.pathname);
     }
     fetchMe();
   }, []);
 
   const value = useMemo(() => ({
-    user, loading, error, signInWithGoogle, signOut, 
+    user, loading, error, verifyGoogleToken, signOut, 
     isAuthenticated, registerUser, loginUser, updateUserLanguage
   }), [user, loading, error, isAuthenticated]);
 
@@ -214,4 +257,5 @@ export const useAuth = () => {
   return context;
 };
 
+// ✅ EXPORTED TO CLEAR TS ERRORS
 export { getAuthHeaders };
