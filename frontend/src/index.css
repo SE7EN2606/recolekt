@@ -368,27 +368,41 @@ body {
    ========================================================= */
 .favorite-heart {
   cursor: pointer;
-  z-index: 40;
+  /* Reduced to 10 so it sits behind Nav (z-30) and Menu (z-100) */
+  z-index: 10; 
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .favorite-heart svg {
-  width: 24px;
-  height: 24px;
+  /* Smaller, more elegant size */
+  width: 20px;
+  height: 20px;
   stroke-width: 2;
-  stroke: #ff2c00;
+  /* Softer red for the outline */
+  stroke: #ef4444; 
   fill: transparent;
-  transition: all 0.25s ease;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.favorite-heart:hover svg { opacity: 0.9; }
+.favorite-heart:hover svg { 
+  opacity: 0.8; 
+  transform: scale(1.1);
+}
 
 .favorite-heart svg.favorited {
-  stroke: #ff2c00 !important;
-  fill: #e63946 !important;
+  /* Matching softer red for filled state */
+  stroke: #ef4444 !important;
+  fill: #ef4444 !important;
   opacity: 1 !important;
+  /* Subtle drop shadow to make it pop without being neon */
+  filter: drop-shadow(0 2px 4px rgba(239, 68, 68, 0.2));
 }
 
-.heart-animate { animation: heartBeatOnce 0.35s ease-out; }
+.heart-animate { 
+  animation: heartBeatOnce 0.35s ease-out; 
+}
 
 /* =========================================================
    SELECTION RADIO (PURPLE)
