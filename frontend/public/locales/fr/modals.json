@@ -18,5 +18,6 @@
   "noParent": "Aucun parent (niveau principal)",
   "subCollectionNamePlaceholder": "Nom du sous-dossier...",
   "collectionNamePlaceholder": "Nom de la collection...",
+  "folderExists": "Un dossier '{{name}}' existe déjà",
   "createNewCollection": "Créer une nouvelle collection"
 }

@@ -3,7 +3,8 @@ import React, { useMemo } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutGrid, Heart, Archive, Share2,
-  Download, SquarePen, FolderPlus, CornerDownRight, FolderClosed
+  Download, SquarePen, FolderPlus, CornerDownRight, FolderClosed, Inbox,
+  FolderOpen // ✅ Imported FolderOpen
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { Button } from './Button';
@@ -12,7 +13,7 @@ import { ManageCollectionsModal } from './ManageCollectionsModal';
 import { AddVideoModal } from './AddVideoModal';
 import { useTranslation } from 'react-i18next';
 
-const SYSTEM_FOLDER_IDS = new Set(['all', 'favorites', 'shared', 'archive', 'default']);
+const SYSTEM_FOLDER_IDS = new Set(['all', 'favorites', 'shared', 'archive', 'default', 'unsorted']);
 
 const isSystemOrAllVideos = (folder: any) => {
   const name = String(folder?.name || '').trim().toLowerCase();
@@ -33,7 +34,12 @@ export const Sidebar: React.FC = () => {
     [folders]
   );
 
-  const getDirectVideoCount = (folderId: string) => (videos || []).filter((v: any) => v.folderId === folderId).length;
+  const getDirectVideoCount = (folderId: string) => {
+    if (folderId === 'unsorted') {
+      return (videos || []).filter((v: any) => !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all').length;
+    }
+    return (videos || []).filter((v: any) => v.folderId === folderId).length;
+  };
   const getFavoritesCount = () => (videos || []).filter((v: any) => v.isFavorite).length;
 
   const linkClass = (active: boolean) =>
@@ -44,6 +50,10 @@ export const Sidebar: React.FC = () => {
     }`;
 
   const headerBtnClass = "w-7 h-7 flex items-center justify-center text-gray-400 hover:text-primary-600 hover:bg-primary-100/80 rounded-md transition-all active:scale-95";
+
+  const handleAddFolderSubmit = async (name: string, pid?: string) => {
+    await addFolder(name, pid || null);
+  };
 
   return (
     <>
@@ -73,12 +83,36 @@ export const Sidebar: React.FC = () => {
             </div>
 
             <div className="space-y-1">
-              <NavLink to="/gallery" end className={({ isActive }) => linkClass(isActive && !location.pathname.includes('favorites'))}>
+              <NavLink to="/gallery" end className={({ isActive }) => linkClass(isActive && !location.pathname.includes('favorites') && !location.pathname.includes('unsorted'))}>
+                {({ isActive }) => (
+                  <div className="flex items-center gap-3">
+                    <LayoutGrid size={20} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
+                    <span className="text-sm">{t('gallery:allVideos')}</span>
+                  </div>
+                )}
+              </NavLink>
+
+              {/* ✅ ADDED ORGANIZER LINK */}
+              <NavLink to="/organizer" className={({ isActive }) => linkClass(isActive)}>
+                {({ isActive }) => (
+                  <div className="flex items-center gap-3">
+                    <FolderOpen size={20} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
+                    <span className="text-sm">{t('sidebar:organizer', 'Organizer')}</span>
+                  </div>
+                )}
+              </NavLink>
+
+              <NavLink to="/gallery/unsorted" className={({ isActive }) => linkClass(isActive)}>
                 {({ isActive }) => (
                   <>
                     <div className="flex items-center gap-3">
-                      <LayoutGrid size={20} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                      <span className="text-sm">{t('gallery:allVideos')}</span>
+                      <Inbox size={20} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
+                      <span className="text-sm">{t('sidebar:unsorted', 'Unsorted')}</span>
+                    </div>
+                    <div className="w-7 flex justify-center flex-shrink-0">
+                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-primary-100 text-primary-600">
+                        {getDirectVideoCount('unsorted')}
+                      </span>
                     </div>
                   </>
                 )}
@@ -198,7 +232,7 @@ export const Sidebar: React.FC = () => {
       <InputModal
         isOpen={isInputModalOpen}
         onClose={() => setIsInputModalOpen(false)}
-        onSubmit={(name, pid) => { addFolder(name, pid); setIsInputModalOpen(false); }}
+        onSubmit={handleAddFolderSubmit}
         title={t('sidebar:newCollection')}
         parentOptions={customFolders.map((f: any) => ({ id: f.id, name: f.name }))}
       />

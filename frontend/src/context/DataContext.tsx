@@ -57,14 +57,13 @@ function stripRawForCache(videos: any[]): any[] {
   });
 }
 
-// 🛑 THE TITANIUM THROTTLE
 let globalLastFetchTime = 0;
 let isFetchingGlobal = false;
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
 
-  const [videos, setVideos] = useState<Video[]>(() => {
+  const [_videos, _setVideos] = useState<Video[]>(() => {
     if (user?.id) {
       const cacheKey = `reels_cache_${user.id}`;
       const raw = localStorage.getItem(cacheKey);
@@ -75,17 +74,38 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return [];
   });
 
-  // ✅ Changed to initialize empty. We now fetch folders from the DB!
-  const [folders, setFolders] = useState<Folder[]>([]);
+  const setVideos = useCallback((updater: React.SetStateAction<Video[]>) => {
+    _setVideos((prev) => {
+      const next = typeof updater === 'function' ? (updater as any)(prev) : updater;
+      try {
+        const cacheKey = user?.id ? `reels_cache_${user.id}` : null;
+        if (cacheKey) {
+          localStorage.setItem(cacheKey, JSON.stringify(stripRawForCache(next)));
+        }
+      } catch (e) {}
+      return next;
+    });
+  }, [user?.id]);
+
+  const [folders, setFolders] = useState<Folder[]>(() => {
+    const saved = localStorage.getItem('custom_folders');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
   const [isLoading, setIsLoading] = useState(false);
 
   const videosRef = useRef<Video[]>([]);
-  videosRef.current = videos;
+  videosRef.current = _videos;
+
+  useEffect(() => {
+    localStorage.setItem('custom_folders', JSON.stringify(folders));
+  }, [folders]);
 
   useEffect(() => {
     if (!user) {
       setVideos([]);
-      setFolders([]);
+      const saved = localStorage.getItem('custom_folders');
+      setFolders(saved ? JSON.parse(saved) : []);
       return;
     }
 
@@ -100,15 +120,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setVideos(parsed);
       }
     } catch (e) {}
-  }, [user?.id]);
+  }, [user?.id, setVideos]);
 
   const fetchVideos = useCallback(async () => {
     if (!user) return;
     
     const now = Date.now();
-    if (now - globalLastFetchTime < 2000 || isFetchingGlobal) {
-      return; 
-    }
+    if (now - globalLastFetchTime < 2000 || isFetchingGlobal) return; 
     
     globalLastFetchTime = now;
     isFetchingGlobal = true;
@@ -160,6 +178,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             r.transcription?.transcript ||
             r.transcript || '';
 
+          const rawFolderId = r.folder_id || 'unsorted';
+          const normalizedFolderId = (rawFolderId === 'default' || rawFolderId === 'all') ? 'unsorted' : rawFolderId;
+
           return {
             id: r.id,
             title: displayTitle,
@@ -175,7 +196,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             transcription: r.transcription,
             originalUrl: r.source_url,
             isFavorite: r.is_favorite,
-            folderId: r.folder_id || 'default',
+            folderId: normalizedFolderId,
             content_type: r.content_type,
             recipe: r.recipe,
             workout: r.workout,
@@ -233,12 +254,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
 
           if (!changed) return prevVideos; 
-
-          try {
-            const cacheKey = makeCacheKey(user);
-            if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(stripRawForCache(result as any[])));
-          } catch (e) {}
-
           return result;
         });
         return;
@@ -253,7 +268,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       isFetchingGlobal = false;
       setIsLoading(false);
     }
-  }, [user?.id]);
+  }, [user, setVideos]);
 
   const refreshFolders = useCallback(async () => {
     if (!user) return;
@@ -265,12 +280,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
       if (!response.ok) return;
       const data = await response.json();
-      const fetchedFolders: Folder[] = data?.folders || [];
       
-      // We directly set the folders from the server now
-      setFolders(fetchedFolders);
+      setFolders(data?.folders || []);
     } catch (error) {
-      console.error("Failed to fetch folders:", error);
+      console.error("Failed to refresh folders", error);
     }
   }, [user?.id]);
 
@@ -333,41 +346,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     let result: any = null;
     try { result = await response.json(); } catch {}
-
     if (!response.ok) throw new Error(result?.error || 'Failed to import video.');
 
     const createdAt = new Date().toISOString();
     const videoId = result?.reel_id || `temp_${cleanUrl.split('/').pop()}_${Date.now()}`;
 
     const newVideo: any = {
-      id: videoId,
-      title: 'Processing...',
-      author: result?.author_name || 'Instagram User',
-      platform: 'instagram',
-      thumbnailUrl: result?.preview_url ?? '',
-      duration: '',
-      savedAt: createdAt,
-      category: 'Processing',
-      tags: [],
-      summary: {},
-      transcript: '',
-      transcription: null,
-      originalUrl: cleanUrl,
-      isFavorite: false,
-      folderId: 'default',
-      status: 'processing',
-      errorMessage: null,
+      id: videoId, title: 'Processing...', author: result?.author_name || 'Instagram User', platform: 'instagram',
+      thumbnailUrl: result?.preview_url ?? '', duration: '', savedAt: createdAt, category: 'Processing',
+      tags: [], summary: {}, transcript: '', transcription: null, originalUrl: cleanUrl, isFavorite: false,
+      folderId: 'unsorted', status: 'processing', errorMessage: null,
     };
 
-    setVideos((prev) => {
-      const filtered = (prev || []).filter((v: any) => v.originalUrl !== cleanUrl);
-      const merged = [newVideo, ...filtered];
-      try {
-        const cacheKey = makeCacheKey(user);
-        if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(stripRawForCache(merged)));
-      } catch (e) {}
-      return merged;
-    });
+    setVideos((prev) => [newVideo, ...(prev || []).filter((v: any) => v.originalUrl !== cleanUrl)]);
 
     window.setTimeout(() => {
       globalLastFetchTime = 0;
@@ -375,21 +366,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, 5000);
 
     return {
-      clientTempId: `temp_${Date.now()}`,
-      processId: videoId,
-      status: 'processing',
-      sourceUrl: cleanUrl,
-      createdAt,
-      previewUrl: result?.preview_url ?? null,
+      clientTempId: `temp_${Date.now()}`, processId: videoId, status: 'processing',
+      sourceUrl: cleanUrl, createdAt, previewUrl: result?.preview_url ?? null,
     };
-  }, [user, fetchVideos]);
+  }, [user, fetchVideos, setVideos]);
 
   const moveVideos = useCallback(async (videoIds: string[], targetFolderId: string) => {
+    // Optimistic UI update
     setVideos((prev) => prev.map((v: any) => videoIds.includes(v.id) ? { ...v, folderId: targetFolderId } : v));
+    
     try {
       await Promise.all(
         videoIds.map(async (id) => {
-          const url = joinUrl(API_BASE, `/api/reel/${encodeURIComponent(String(id))}`);
+          const url = joinUrl(API_BASE, `/api/update/${encodeURIComponent(String(id))}`);
           await fetch(url, {
             method: 'PUT',
             credentials: 'include',
@@ -400,19 +389,20 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       );
     } catch (error) {
       console.error("Failed to save move to DB:", error);
-      fetchVideos();
+      fetchVideos(); // Revert optimistic UI on failure
     }
-  }, [fetchVideos]);
+  }, [setVideos, fetchVideos]);
 
   const toggleFavorite = useCallback(async (videoId: string) => {
-    const currentVideos = videosRef.current;
-    const video = currentVideos.find(v => v.id === videoId);
+    const video = videosRef.current.find(v => v.id === videoId);
     if (!video) return;
     const newFav = !video.isFavorite;
 
+    // Optimistically update UI
     setVideos((prev) => prev.map((v: any) => (v.id === videoId ? { ...v, isFavorite: newFav } : v)));
+    
     try {
-      const url = joinUrl(API_BASE, `/api/reel/${encodeURIComponent(String(videoId))}`);
+      const url = joinUrl(API_BASE, `/api/update/${encodeURIComponent(String(videoId))}`);
       await fetch(url, {
         method: 'PUT',
         credentials: 'include',
@@ -422,12 +412,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (error) {
       fetchVideos(); 
     }
-  }, [fetchVideos]);
+  }, [setVideos, fetchVideos]);
 
   const updateVideo = useCallback(async (id: string, updates: any) => {
     setVideos((prev) => prev.map((v) => v.id === id ? { ...v, ...updates } : v));
     try {
-      const url = joinUrl(API_BASE, `/api/reel/${encodeURIComponent(String(id))}`);
+      const url = joinUrl(API_BASE, `/api/update/${encodeURIComponent(String(id))}`);
       await fetch(url, {
         method: 'PUT',
         credentials: 'include',
@@ -437,104 +427,88 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (error) {
       fetchVideos();
     }
-  }, [fetchVideos]);
+  }, [setVideos, fetchVideos]);
 
   const deleteVideos = useCallback(async (videoIds: string[]): Promise<void> => {
     if (!videoIds?.length) return;
-    const currentVideos = videosRef.current;
+    
+    setVideos((prev) => {
+      const idsToDelete = new Set(videoIds);
+      return (prev || []).filter((v: any) => !idsToDelete.has(v.id));
+    });
 
     try {
-      setVideos((prev) => {
-        const idsToDelete = new Set(videoIds);
-        const filtered = (prev || []).filter((v: any) => {
-          const processId = v?.__raw?.process_id;
-          return !idsToDelete.has(v.id) && !(processId && idsToDelete.has(processId));
-        });
-        return filtered;
-      });
-
       await Promise.all(
         videoIds.map(async (id) => {
           const url = joinUrl(API_BASE, `/api/reel/${encodeURIComponent(String(id))}`);
-          const res = await fetch(url, {
+          await fetch(url, {
             method: 'DELETE',
             credentials: 'include',
             headers: getAuthHeaders(),
           });
-          if (res.status === 401) {
-            localStorage.removeItem('auth_token');
-            throw new Error('Not authenticated');
-          }
         })
       );
-      globalLastFetchTime = 0;
-      await fetchVideos();
     } catch (error) {
-      setVideos(currentVideos);
-      globalLastFetchTime = 0;
-      await fetchVideos();
-      throw error as any;
+      fetchVideos();
     }
-  }, [user, fetchVideos]);
+  }, [user, setVideos, fetchVideos]);
 
-  // ✅ DATABASE-BACKED FOLDER OPERATIONS
   const addFolder = useCallback(async (name: string, parentId: string | null = null) => {
-    try {
-      const response = await fetch(joinUrl(API_BASE, '/api/folders'), {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, parent_id: parentId })
-      });
-      if (response.ok) {
-        await refreshFolders();
-      } else {
-        console.error("Failed to create folder in database");
-      }
-    } catch (error) {
-      console.error(error);
+    const res = await fetch(joinUrl(API_BASE, '/api/folders'), {
+      method: 'POST', credentials: 'include',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, parent_id: parentId })
+    });
+    
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || "Failed to create folder");
     }
+    await refreshFolders();
   }, [refreshFolders]);
 
   const updateFolder = useCallback(async (id: string, name: string) => {
-    try {
-      const response = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
-        method: 'PUT',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
-      });
-      if (response.ok) {
-        await refreshFolders();
-      } else {
-        console.error("Failed to update folder in database");
-      }
-    } catch (error) {
-      console.error(error);
+    const res = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
+      method: 'PUT', credentials: 'include',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || "Failed to rename folder");
     }
+    await refreshFolders();
   }, [refreshFolders]);
 
   const deleteFolder = useCallback(async (id: string) => {
+    // 🚨 LIMBO FIX: Rescue any videos inside this folder and move them to 'unsorted' instantly.
+    setVideos((prev) => prev.map(v => v.folderId === id ? { ...v, folderId: 'unsorted' } : v));
+
     try {
-      const response = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
-        method: 'DELETE',
+      const res = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
+        method: 'DELETE', credentials: 'include',
         headers: getAuthHeaders(),
       });
-      if (response.ok) {
+      if (res.ok) {
         await refreshFolders();
+        fetchVideos();
       } else {
-        console.error("Failed to delete folder in database");
+        fetchVideos(); // Revert UI if server fails
       }
     } catch (error) {
-      console.error(error);
+      console.error("Folder deletion failed:", error);
+      fetchVideos();
     }
-  }, [refreshFolders]);
+  }, [refreshFolders, fetchVideos, setVideos]);
 
   const refreshVideos = useCallback(async () => {
-    await fetchVideos(); 
+    fetchVideos(); 
   }, [fetchVideos]);
 
   const value = useMemo<DataContextType>(
     () => ({
-      videos,
+      videos: _videos,
       folders,
       isLoading,
       addFolder,
@@ -548,21 +522,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       refreshVideos,
       refreshFolders,
     }),
-    [
-      videos,
-      folders,
-      isLoading,
-      addFolder,
-      updateFolder,
-      deleteFolder,
-      toggleFavorite,
-      moveVideos,
-      updateVideo,
-      deleteVideos,
-      addVideo,
-      refreshVideos,
-      refreshFolders,
-    ]
+    [_videos, folders, isLoading, addFolder, updateFolder, deleteFolder, toggleFavorite, moveVideos, updateVideo, deleteVideos, addVideo, refreshVideos, refreshFolders]
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

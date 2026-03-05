@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Search, Folder, Plus, LayoutGrid, Heart, Archive, Share2,
-  ChevronRight, HelpCircle, BookOpen, FolderPlus, User, Settings, LogOut
+  ChevronRight, HelpCircle, BookOpen, FolderPlus, User, Settings, LogOut,
+  FolderOpen, Inbox, CreditCard // ✅ Added CreditCard
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -57,8 +58,8 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     }
   }, [isOpen]);
 
-  const handleNewCollection = (name: string, parentId?: string) => {
-    addFolder(name, parentId);
+  const handleNewCollection = async (name: string, parentId?: string) => {
+    await addFolder(name, parentId);
     setIsModalOpen(false);
   };
 
@@ -85,7 +86,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
   if (!shouldRender) return null;
 
-return (
+  return (
     <>
       <div
         className={`
@@ -97,7 +98,7 @@ return (
       >
         <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4">
 
-          {/* 🔥 FIXED: Margins added so it sits perfectly between Logo and X button */}
+          {/* Header / Search */}
           <div className="h-[80px] md:h-[95px] flex items-center flex-shrink-0 border-b border-gray-200">
             {showAuthedUI && (
               <div className="relative w-full ml-[48px] mr-[56px]">
@@ -112,56 +113,12 @@ return (
             {!showAuthedUI && <div className="flex-1" />}
           </div>
 
-          <div className="flex-1 overflow-y-auto py-8">
+          <div className="flex-1 overflow-y-auto py-8 pb-32">
             <div className={`transition-opacity duration-500 delay-100 ${animateOpen ? 'opacity-100' : 'opacity-0'} flex flex-col min-h-full`}>
 
-              {!showAuthedUI && (
-                <div className="flex flex-col h-full space-y-8 px-2">
-                  <div className="space-y-2">
-                    {[
-                      { label: t('header:home', 'Home'), path: '/' },
-                      { label: t('common:features', 'Features'), path: '/features' },
-                      { label: t('common:pricing', 'Pricing'), path: '/billing' },
-                      { label: t('common:support', 'Support'), path: '/help?section=contact' },
-                    ].map((link) => (
-                      <Link
-                        key={link.path}
-                        to={link.path}
-                        onClick={onClose}
-                        className={`block text-3xl font-black tracking-tight hover:text-primary-600 transition-colors py-2 ${
-                          location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'
-                        }`}
-                      >
-                        {link.label}
-                      </Link>
-                    ))}
-                  </div>
-
-                  <div className="pt-8 border-t border-gray-200 space-y-4">
-                    <Button
-                      fullWidth
-                      variant="primary"
-                      onClick={() => handleNav('/auth')}
-                      className="h-14 text-base font-bold shadow-xl shadow-primary-600/20"
-                    >
-                      {t('common:signIn', 'Sign In')}
-                    </Button>
-                    <p className="text-center text-gray-500 text-sm font-medium">
-                      {t('common:noAccount', "Don't have an account?")}{' '}
-                      <button
-                        onClick={() => handleNav('/auth')}
-                        className="text-primary-600 font-bold hover:underline"
-                      >
-                        {t('common:signUp', 'Sign Up')}
-                      </button>
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {showAuthedUI && (
+              {showAuthedUI ? (
                 <div className="flex-1 space-y-8">
-
+                  {/* User Profile Summary */}
                   <div className="flex items-center gap-4 px-2">
                     <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border border-gray-200 shadow-sm">
                       {displayPicture ? (
@@ -178,225 +135,138 @@ return (
                     </div>
                   </div>
 
+                  {/* Library Section */}
                   <section>
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
                       {t('sidebar:library', 'Library')}
                     </h3>
                     <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
-                      <button
-                        onClick={() => handleNav('/gallery')}
-                        className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50"
-                      >
+                      <button onClick={() => handleNav('/gallery')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
                         <LayoutGrid size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">
-                          {t('gallery:allVideos', 'All Videos')}
-                        </span>
-                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:allVideos', 'All Videos')}</span>
+                        <ChevronRight size={18} className="text-gray-300" />
                       </button>
-                      <button
-                        onClick={() => handleNav('/gallery/favorites')}
-                        className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50"
-                      >
+                      <button onClick={() => handleNav('/organizer')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
+                        <FolderOpen size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('sidebar:organizer', 'Organizer')}</span>
+                        <ChevronRight size={18} className="text-gray-300" />
+                      </button>
+                      <button onClick={() => handleNav('/gallery/unsorted')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
+                        <Inbox size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('sidebar:unsorted', 'Unsorted')}</span>
+                        <ChevronRight size={18} className="text-gray-300" />
+                      </button>
+                      <button onClick={() => handleNav('/gallery/favorites')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50">
                         <Heart size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">
-                          {t('gallery:favorites', 'Favorites')}
-                        </span>
-                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300 transition-colors" />
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:favorites', 'Favorites')}</span>
+                        <ChevronRight size={18} className="text-gray-300" />
                       </button>
                     </div>
                   </section>
 
+                  {/* Collections Section */}
                   <section>
                     <div className="flex items-center justify-between px-4 mb-3">
-                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
-                        {t('sidebar:collections', 'Collections')}
-                      </h3>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{t('sidebar:collections', 'Collections')}</h3>
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setIsManageModalOpen(true)}
-                          className="text-primary-600 text-xs font-bold uppercase tracking-wider"
-                        >
-                          {t('common:edit', 'Edit')}
-                        </button>
-                        <button
-                          onClick={() => setIsModalOpen(true)}
-                          className="text-primary-600 active:scale-95 transition-transform"
-                        >
-                          <FolderPlus size={24} />
-                        </button>
+                        <button onClick={() => setIsManageModalOpen(true)} className="text-primary-600 text-xs font-bold uppercase tracking-wider">{t('common:edit', 'Edit')}</button>
+                        <button onClick={() => setIsModalOpen(true)} className="text-primary-600 active:scale-95 transition-transform"><FolderPlus size={24} /></button>
                       </div>
                     </div>
-
                     <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
                       {customFolders.map((folder: any) => (
                         <div key={folder.id} className="border-b border-gray-100 last:border-0">
-                          <div className="flex items-center w-full pr-4 group transition-all hover:bg-gray-50">
-                            <button
-                              onClick={() => handleNav(`/gallery/${folder.id}`)}
-                              className="flex-1 flex items-center justify-between p-5"
-                            >
-                              <div className="flex items-center gap-4">
-                                <Folder size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                                <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">
-                                  {folder.name}
-                                </span>
-                              </div>
-                              <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md tracking-wider group-hover:bg-primary-50 group-hover:text-primary-600 transition-colors">
-                                {folder.itemCount ?? 0}
-                              </span>
-                            </button>
-                          </div>
-
-                          {folder.subFolders && folder.subFolders.length > 0 && (
-                            <div className="bg-gray-50/50">
-                              {folder.subFolders.map((sub: any) => (
-                                <div key={sub.id} className="flex items-center w-full pr-4 group transition-all hover:bg-gray-100">
-                                  <button
-                                    onClick={() => handleNav(`/gallery/${sub.id}`)}
-                                    className="flex-1 flex items-center gap-3 pl-14 pr-2 py-3 text-sm"
-                                  >
-                                    <FolderIcon size={18} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                                    <span className="text-gray-600 font-medium group-hover:text-primary-600 transition-colors">
-                                      {sub.name}
-                                    </span>
-                                  </button>
-                                </div>
-                              ))}
+                          <button onClick={() => handleNav(`/gallery/${folder.id}`)} className="w-full flex items-center justify-between p-5 group transition-all hover:bg-gray-50">
+                            <div className="flex items-center gap-4">
+                              <Folder size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                              <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{folder.name}</span>
                             </div>
-                          )}
+                            <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md">{folder.itemCount ?? 0}</span>
+                          </button>
                         </div>
                       ))}
-
-                      {customFolders.length === 0 && (
-                        <button
-                          onClick={() => setIsModalOpen(true)}
-                          className="w-full p-5 text-sm text-gray-400 font-medium hover:text-primary-600 transition-colors"
-                        >
-                          + {t('sidebar:createCollection', 'Create a collection')}
-                        </button>
-                      )}
-
-                      <div className="border-t border-gray-100">
-                        <button
-                          onClick={() => handleNav('/gallery/shared')}
-                          className="w-full flex items-center justify-between p-5 group transition-all hover:bg-gray-50"
-                        >
-                          <div className="flex items-center gap-4">
-                            <Share2 size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                            <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">
-                              {t('sidebar:shared', 'Shared with Me')}
-                            </span>
-                          </div>
-                          <ChevronRight size={18} className="text-gray-300" />
-                        </button>
-                      </div>
-
-                      <div className="border-t border-gray-100">
-                        <button
-                          onClick={() => handleNav('/gallery/archive')}
-                          className="w-full flex items-center justify-between p-5 group transition-all hover:bg-gray-50"
-                        >
-                          <div className="flex items-center gap-4">
-                            <Archive size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                            <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">
-                              {t('sidebar:archive', 'Archive')}
-                            </span>
-                          </div>
-                          <ChevronRight size={18} className="text-gray-300" />
-                        </button>
-                      </div>
+                      <button onClick={() => handleNav('/gallery/shared')} className="w-full flex items-center justify-between p-5 border-t border-gray-100 group transition-all hover:bg-gray-50">
+                        <div className="flex items-center gap-4"><Share2 size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{t('sidebar:shared', 'Shared with Me')}</span></div>
+                        <ChevronRight size={18} className="text-gray-300" />
+                      </button>
+                      <button onClick={() => handleNav('/gallery/archive')} className="w-full flex items-center justify-between p-5 border-t border-gray-100 group transition-all hover:bg-gray-50">
+                        <div className="flex items-center gap-4"><Archive size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{t('sidebar:archive', 'Archive')}</span></div>
+                        <ChevronRight size={18} className="text-gray-300" />
+                      </button>
                     </div>
                   </section>
 
+                  {/* Account Section - MERGED */}
                   <section>
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
                       {t('common:account', 'Account')}
                     </h3>
                     <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
-                      <button
-                        onClick={() => handleNav('/settings/account')}
-                        className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50"
-                      >
+                      <button onClick={() => handleNav('/settings/account')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
                         <User size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">
-                          {t('common:myAccount', 'My Account')}
-                        </span>
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:myAccount', 'My Account')}</span>
                         <ChevronRight size={18} className="text-gray-300" />
                       </button>
-                      <button
-                        onClick={() => handleNav('/settings/app')}
-                        className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50"
-                      >
+                      <button onClick={() => handleNav('/billing')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
+                        <CreditCard size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:billingPlan', 'Billing & Plan')}</span>
+                        <ChevronRight size={18} className="text-gray-300" />
+                      </button>
+                      <button onClick={() => handleNav('/settings/app')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50">
                         <Settings size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">
-                          {t('header:settings', 'App Settings')}
-                        </span>
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('header:settings', 'App Settings')}</span>
                         <ChevronRight size={18} className="text-gray-300" />
                       </button>
                     </div>
                   </section>
 
+                  {/* Resources Section */}
                   <section>
-                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
-                      {t('common:resources', 'Resources')}
-                    </h3>
+                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">{t('common:resources', 'Resources')}</h3>
                     <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
-                      <button
-                        onClick={() => handleNav('/help?section=how-to')}
-                        className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50"
-                      >
+                      <button onClick={() => handleNav('/help?section=how-to')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
                         <BookOpen size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">
-                          {t('common:guide', 'Guide')}
-                        </span>
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:guide', 'Guide')}</span>
                         <ChevronRight size={18} className="text-gray-300" />
                       </button>
-                      <button
-                        onClick={() => handleNav('/help?section=contact')}
-                        className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50"
-                      >
+                      <button onClick={() => handleNav('/help?section=contact')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50">
                         <HelpCircle size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">
-                          {t('common:support', 'Support')}
-                        </span>
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:support', 'Support')}</span>
                         <ChevronRight size={18} className="text-gray-300" />
                       </button>
                     </div>
                   </section>
 
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center justify-center gap-2 p-5 bg-white border border-red-200 text-red-600 rounded-[28px] font-bold shadow-sm hover:bg-red-50 transition-colors"
-                  >
+                  <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 p-5 bg-white border border-red-200 text-red-600 rounded-[28px] font-bold shadow-sm active:scale-95 transition-transform">
                     <LogOut size={20} />
                     {t('common:signOut', 'Sign Out')}
                   </button>
+                </div>
+              ) : (
+                /* Unauthenticated UI */
+                <div className="flex flex-col h-full space-y-8 px-2">
+                  <div className="space-y-2">
+                    {[{ label: t('header:home', 'Home'), path: '/' }, { label: t('common:features', 'Features'), path: '/features' }, { label: t('common:pricing', 'Pricing'), path: '/billing' }, { label: t('common:support', 'Support'), path: '/help?section=contact' }].map((link) => (
+                      <Link key={link.path} to={link.path} onClick={onClose} className={`block text-3xl font-black tracking-tight hover:text-primary-600 transition-colors py-2 ${location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'}`}>{link.label}</Link>
+                    ))}
+                  </div>
+                  <div className="pt-8 border-t border-gray-200 space-y-4">
+                    <Button fullWidth variant="primary" onClick={() => handleNav('/auth')} className="h-14 text-base font-bold shadow-xl shadow-primary-600/20">{t('common:signIn', 'Sign In')}</Button>
+                    <p className="text-center text-gray-500 text-sm font-medium">{t('common:noAccount', "Don't have an account?")} <button onClick={() => handleNav('/auth')} className="text-primary-600 font-bold hover:underline">{t('common:signUp', 'Sign Up')}</button></p>
+                  </div>
                 </div>
               )}
 
               <div className="py-8 mt-auto flex justify-center">
                 <img src={LogoBlack} alt="Recolekt" className="h-8 opacity-60" />
               </div>
-
-              <div className="h-20 md:h-0" />
             </div>
           </div>
         </div>
       </div>
 
-      <InputModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSubmit={handleNewCollection}
-        title={t('sidebar:newCollection', 'New Collection')}
-        placeholder={t('sidebar:travelIdeas', 'Name your collection...')}
-        parentOptions={parentOptions}
-      />
-
-      <ManageCollectionsModal
-        isOpen={isManageModalOpen}
-        onClose={() => setIsManageModalOpen(false)}
-      />
+      <InputModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSubmit={handleNewCollection} title={t('sidebar:newCollection', 'New Collection')} placeholder={t('sidebar:travelIdeas', 'Name your collection...')} parentOptions={parentOptions} />
+      <ManageCollectionsModal isOpen={isManageModalOpen} onClose={() => setIsManageModalOpen(false)} />
     </>
   );
 };

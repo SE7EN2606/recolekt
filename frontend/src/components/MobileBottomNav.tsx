@@ -1,8 +1,7 @@
-import { API_BASE } from "../utils/api";
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutGrid, User, Plus } from 'lucide-react';
-import { ProfileMenu } from './ProfileMenu';
+import { Plus, FolderTree } from 'lucide-react'; // ✅ Swapped User for FolderKanban
+import { MobileMenu } from './MobileMenu';
 import { useTranslation } from 'react-i18next';
 
 interface MobileBottomNavProps {
@@ -10,26 +9,7 @@ interface MobileBottomNavProps {
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) => {
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const { t } = useTranslation(['modals']);
-
-  // ✅ Fix: Scroll Lock when Profile Menu is open
-  useEffect(() => {
-    if (isProfileOpen) {
-      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-      if (scrollbarWidth > 0) {
-        document.body.style.paddingRight = `${scrollbarWidth}px`;
-      }
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.paddingRight = '';
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.paddingRight = '';
-      document.body.style.overflow = '';
-    };
-  }, [isProfileOpen]);
+  const { t } = useTranslation(['modals', 'sidebar']);
 
   return (
     <>
@@ -39,49 +19,75 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
           glass border-t border-white/40
           px-6 pb-6 pt-2
           transition-transform duration-300
-          ${isProfileOpen ? 'translate-y-full' : 'translate-y-0'}
         `}
       >
         <div className="flex items-end justify-between">
 
-          {/* Left: Collections */}
+          {/* Left: Collections (TV/Play Icon) */}
           <NavLink
             to="/gallery"
             className={({ isActive }) =>
               `flex flex-col items-center gap-1 min-w-[64px] transition-colors ${
-                isActive ? 'text-primary-600' : 'text-gray-500 hover:text-gray-700'
+                isActive ? 'text-primary-600' : 'text-gray-500'
               }`
             }
           >
-            <LayoutGrid size={24} strokeWidth={2} />
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              width="24" 
+              height="24" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+            >
+              <path d="M7 2h10"/>
+              <path d="M5 6h14"/>
+              <rect width="18" height="12" x="3" y="10" rx="2"/>
+              <path d="M10 13l5 3-5 3v-6z" />
+            </svg>
             <span className="text-[10px] font-medium">{t('modals:collections')}</span>
           </NavLink>
 
-          {/* Center: Add Button (Floating) */}
+          {/* Center: Add Button (Floating + Glass Animation) */}
           <div className="relative -top-6">
             <button
               onClick={onAddClick}
-              className="w-14 h-14 rounded-full flex items-center justify-center bg-primary-600 text-white shadow-xl shadow-primary-600/40 border border-white/20 transition-all hover:bg-primary-700 hover:ring-4 hover:ring-white/60 active:scale-95 group"
+              className={`
+                w-14 h-14 rounded-full flex items-center justify-center 
+                bg-primary-600 text-white shadow-xl shadow-primary-600/40 
+                border border-white/20 transition-all duration-200
+                active:scale-90 active:bg-primary-700
+                relative overflow-hidden
+                after:content-[''] after:absolute after:inset-0 after:bg-white/30 after:opacity-0 active:after:opacity-100 after:transition-opacity
+                group
+              `}
             >
-              <Plus size={28} strokeWidth={2.5} className="group-hover:rotate-90 transition-transform duration-300" />
+              <Plus 
+                size={28} 
+                strokeWidth={2.5} 
+                className="group-hover:rotate-90 transition-transform duration-300 relative z-10" 
+              />
             </button>
           </div>
 
-          {/* Right: Profile */}
-          <button
-            className={`flex flex-col items-center gap-1 min-w-[64px] transition-colors ${
-              isProfileOpen ? 'text-primary-600' : 'text-gray-500 hover:text-gray-700'
-            }`}
-            onClick={() => setIsProfileOpen(true)}
+          {/* Right: Organizer (NEW) */}
+          <NavLink
+            to="/organizer"
+            className={({ isActive }) =>
+              `flex flex-col items-center gap-1 min-w-[64px] transition-colors ${
+                isActive ? 'text-primary-600' : 'text-gray-500'
+              }`
+            }
           >
-            <User size={24} strokeWidth={2} />
-            <span className="text-[10px] font-medium">{t('modals:myProfile')}</span>
-          </button>
+            <FolderTree size={24} strokeWidth={2} />
+            <span className="text-[10px] font-medium">{t('sidebar:Organizer')}</span>
+          </NavLink>
 
         </div>
       </div>
-
-      <ProfileMenu isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
     </>
   );
 };

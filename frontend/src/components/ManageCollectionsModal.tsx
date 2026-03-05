@@ -35,6 +35,7 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
   const [addingSubToId, setAddingSubToId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const customFolders = useMemo(() => 
     (folders || []).filter(f => f && !isSystemOrAllVideos(f)),
@@ -60,6 +61,7 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
     setAddingSubToId(null);
     setNewName('');
     setDeleteConfirmId(null);
+    setActionError(null);
   };
 
   const getVideoCount = (folderId: string) => {
@@ -70,27 +72,42 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
     return directCount + subFolderCount;
   };
 
-  const handleAddRoot = () => {
+  const handleAddRoot = async () => {
     if (newName.trim()) {
-      addFolder(newName.trim());
-      setNewName('');
-      setAddingRoot(false);
+      try {
+        await addFolder(newName.trim());
+        setNewName('');
+        setAddingRoot(false);
+        setActionError(null);
+      } catch (error: any) {
+        setActionError(error.message || t('modals:folderExists', { name: newName.trim(), defaultValue: `Un dossier '${newName.trim()}' existe déjà.` }));
+      }
     }
   };
 
-  const handleAddSub = (parentId: string) => {
+  const handleAddSub = async (parentId: string) => {
     if (newName.trim()) {
-      addFolder(newName.trim(), parentId);
-      setNewName('');
-      setAddingSubToId(null);
+      try {
+        await addFolder(newName.trim(), parentId);
+        setNewName('');
+        setAddingSubToId(null);
+        setActionError(null);
+      } catch (error: any) {
+        setActionError(error.message || t('modals:folderExists', { name: newName.trim(), defaultValue: `Un dossier '${newName.trim()}' existe déjà.` }));
+      }
     }
   };
 
-  const handleUpdate = (id: string) => {
+  const handleUpdate = async (id: string) => {
     if (editName.trim()) {
-      updateFolder(id, editName.trim());
-      setEditingId(null);
-      setEditName('');
+      try {
+        await updateFolder(id, editName.trim());
+        setEditingId(null);
+        setEditName('');
+        setActionError(null);
+      } catch (error: any) {
+        setActionError(error.message || t('modals:folderExists', { name: editName.trim(), defaultValue: `Un dossier '${editName.trim()}' existe déjà.` }));
+      }
     }
   };
 
@@ -117,14 +134,23 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
              </div>
              
              {isEditing ? (
-               <input 
-                 autoFocus
-                 type="text" 
-                 value={editName}
-                 onChange={(e) => setEditName(e.target.value)}
-                 onKeyDown={(e) => e.key === 'Enter' && handleUpdate(folder.id)}
-                 className="flex-1 bg-white border border-gray-200 rounded-lg px-2 py-1 text-sm font-bold text-gray-900 focus:ring-2 focus:ring-primary-500 outline-none min-w-0"
-               />
+               <div className="flex-1 min-w-0">
+                 <input 
+                   autoFocus
+                   type="text" 
+                   value={editName}
+                   onChange={(e) => { setEditName(e.target.value); setActionError(null); }}
+                   onKeyDown={(e) => e.key === 'Enter' && handleUpdate(folder.id)}
+                   className={`w-full bg-white border rounded-lg px-2 py-1 text-sm font-bold text-gray-900 outline-none min-w-0 ${actionError ? 'border-red-400 focus:ring-2 focus:ring-red-500' : 'border-gray-200 focus:ring-2 focus:ring-primary-500'}`}
+                 />
+                 {/* ✅ Perfect Spacing inside the edit box */}
+                 {actionError && (
+                   <div className="flex items-center gap-1.5 text-red-500 text-xs font-bold mt-2 animate-fade-in">
+                     <AlertTriangle size={14} className="shrink-0" />
+                     <span>{actionError}</span>
+                   </div>
+                 )}
+               </div>
              ) : (
                <div className="min-w-0 flex-1">
                  <div className="font-bold text-sm text-gray-900 truncate transition-colors group-hover:text-primary-900">{folder.name}</div>
@@ -141,7 +167,7 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
                 <button onClick={() => handleUpdate(folder.id)} className="p-1.5 text-green-600 hover:bg-green-100 rounded-lg transition-colors">
                   <Check size={16} className="shrink-0" />
                 </button>
-                <button onClick={() => setEditingId(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors">
+                <button onClick={() => { setEditingId(null); setActionError(null); }} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors">
                   <X size={16} className="shrink-0" />
                 </button>
               </>
@@ -149,7 +175,7 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
               <div className={`flex items-center gap-0.5 ${isDeleting ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'} transition-all`}>
                 {!isSub && (
                   <button 
-                    onClick={() => { setAddingSubToId(folder.id); setNewName(''); setAddingRoot(false); }} 
+                    onClick={() => { setAddingSubToId(folder.id); setNewName(''); setAddingRoot(false); setActionError(null); }} 
                     className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-100/50 rounded-lg transition-colors"
                   >
                     <Plus size={16} className="shrink-0" />
@@ -157,7 +183,7 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
                 )}
                 
                 <button 
-                  onClick={() => { setEditingId(folder.id); setEditName(folder.name); setDeleteConfirmId(null); }} 
+                  onClick={() => { setEditingId(folder.id); setEditName(folder.name); setDeleteConfirmId(null); setActionError(null); }} 
                   className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-100/50 rounded-lg transition-colors"
                   title={t('common:rename', 'Rename')}
                 >
@@ -189,16 +215,25 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
         )}
 
         {isAddingSub && (
-          <div className="ml-8 mr-2 mt-1 mb-2 flex items-center gap-2 p-2 bg-primary-50/50 rounded-xl border border-primary-100 animate-fade-in">
-            <CornerDownRight size={16} className="text-primary-400 ml-1 shrink-0" />
-            <input 
-              autoFocus type="text" placeholder={t('modals:subCollectionNamePlaceholder', 'Sub-folder name...')} value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAddSub(folder.id)}
-              className="flex-1 bg-white border border-primary-200 rounded-lg px-3 py-1.5 text-sm font-medium outline-none focus:ring-2 focus:ring-primary-500"
-            />
-            <button onClick={() => handleAddSub(folder.id)} className="p-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Check size={14} className="shrink-0" /></button>
-            <button onClick={() => setAddingSubToId(null)} className="p-1.5 text-gray-400 hover:bg-white rounded-lg"><X size={14} className="shrink-0" /></button>
+          <div className="ml-8 mr-2 mt-1 mb-2">
+            <div className="flex items-center gap-2 p-2 bg-primary-50/50 rounded-xl border border-primary-100 animate-fade-in">
+              <CornerDownRight size={16} className="text-primary-400 ml-1 shrink-0" />
+              <input 
+                autoFocus type="text" placeholder={t('modals:subCollectionNamePlaceholder', 'Sub-folder name...')} value={newName}
+                onChange={(e) => { setNewName(e.target.value); setActionError(null); }}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddSub(folder.id)}
+                className={`flex-1 bg-white border rounded-lg px-3 py-1.5 text-sm font-medium outline-none transition-all ${actionError ? 'border-red-400 focus:ring-2 focus:ring-red-500' : 'border-primary-200 focus:ring-2 focus:ring-primary-500'}`}
+              />
+              <button onClick={() => handleAddSub(folder.id)} className="p-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700"><Check size={14} className="shrink-0" /></button>
+              <button onClick={() => { setAddingSubToId(null); setActionError(null); }} className="p-1.5 text-gray-400 hover:bg-white rounded-lg"><X size={14} className="shrink-0" /></button>
+            </div>
+            {/* ✅ Spaced directly under the subfolder input */}
+            {actionError && (
+              <div className="flex items-center gap-1.5 text-red-500 text-xs font-bold mt-2 ml-2 animate-fade-in">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>{actionError}</span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -220,7 +255,7 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <button 
-              onClick={() => { setAddingRoot(true); setNewName(''); setAddingSubToId(null); }}
+              onClick={() => { setAddingRoot(true); setNewName(''); setAddingSubToId(null); setActionError(null); }}
               className="flex items-center justify-center w-8 h-8 md:w-auto md:px-3 md:py-1.5 bg-primary-50 text-primary-600 hover:bg-primary-100 border border-transparent hover:border-primary-200 rounded-xl text-xs font-bold transition-all active:scale-95"
             >
               <FolderPlus size={16} strokeWidth={2.5} className="shrink-0 min-w-[16px] min-h-[16px]" />
@@ -232,14 +267,26 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
 
         <div className="flex-1 overflow-y-auto p-4 space-y-1">
            {addingRoot && (
-             <div className="flex items-center gap-2 p-3 bg-primary-50 rounded-xl border border-primary-100 mb-4 animate-fade-in shadow-sm">
-               <Folder size={18} className="text-primary-600 shrink-0" />
-               <input autoFocus type="text" placeholder={t('modals:collectionNamePlaceholder', 'Collection name...')} value={newName}
-                 onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddRoot()}
-                 className="flex-1 bg-white border border-primary-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary-500"
-               />
-               <button onClick={handleAddRoot} className="p-1.5 bg-primary-600 text-white rounded-lg"><Check size={16} className="shrink-0" /></button>
-               <button onClick={() => setAddingRoot(false)} className="p-1.5 text-gray-400"><X size={16} className="shrink-0" /></button>
+             <div className="mb-4">
+               <div className="p-3 bg-primary-50 rounded-xl border border-primary-100 animate-fade-in shadow-sm">
+                 <div className="flex items-center gap-2">
+                   <Folder size={18} className="text-primary-600 shrink-0" />
+                   <input autoFocus type="text" placeholder={t('modals:collectionNamePlaceholder', 'Collection name...')} value={newName}
+                     onChange={(e) => { setNewName(e.target.value); setActionError(null); }} 
+                     onKeyDown={(e) => e.key === 'Enter' && handleAddRoot()}
+                     className={`flex-1 bg-white border rounded-lg px-3 py-1.5 text-sm outline-none transition-all ${actionError ? 'border-red-400 focus:ring-2 focus:ring-red-500' : 'border-primary-200 focus:ring-2 focus:ring-primary-500'}`}
+                   />
+                   <button onClick={handleAddRoot} className="p-1.5 bg-primary-600 text-white rounded-lg"><Check size={16} className="shrink-0" /></button>
+                   <button onClick={() => { setAddingRoot(false); setActionError(null); }} className="p-1.5 text-gray-400"><X size={16} className="shrink-0" /></button>
+                 </div>
+                 {/* ✅ Perfect Spacing inside the add block */}
+                 {actionError && (
+                   <div className="flex items-center gap-1.5 text-red-500 text-xs font-bold mt-3 ml-1 animate-fade-in">
+                     <AlertTriangle size={14} className="shrink-0" />
+                     <span>{actionError}</span>
+                   </div>
+                 )}
+               </div>
              </div>
            )}
 
@@ -262,6 +309,7 @@ export const ManageCollectionsModal: React.FC<ManageCollectionsModalProps> = ({
            ))}
         </div>
 
+        {/* Footer */}
         <div className="p-4 border-t border-gray-100 bg-gray-50/50 rounded-b-2xl flex justify-between items-center">
            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{customFolders.length} {t('modals:collections', 'collections')}</span>
            <button onClick={onClose} className="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl shadow-sm hover:bg-gray-50 transition-all text-sm active:scale-95">

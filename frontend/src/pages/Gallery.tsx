@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { VideoCard } from '../components/VideoCard';
 import { Button } from '../components/Button';
-import { Search, Settings2, Trash2, Loader2 } from 'lucide-react'; // ✅ Settings2 imported!
+import { Search, Settings2, Trash2, Loader2 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -47,11 +47,13 @@ export const Gallery: React.FC = () => {
 
   const isFavoritesView = folderId === 'favorites';
   const isAllView = !folderId || folderId === 'all';
+  const isUnsortedView = folderId === 'unsorted';
 
   const displayedVideos = useMemo(() => {
     let filtered = videos.filter((v: any) => {
       if (isFavoritesView) return v.isFavorite;
       if (isAllView) return true;
+      if (isUnsortedView) return !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all';
       return v.folderId === folderId;
     });
 
@@ -71,7 +73,7 @@ export const Gallery: React.FC = () => {
       const dateB = new Date(b.savedAt || b.created_at || 0).getTime();
       return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
     });
-  }, [videos, folderId, isFavoritesView, isAllView, searchQuery, sortOrder]);
+  }, [videos, folderId, isFavoritesView, isAllView, isUnsortedView, searchQuery, sortOrder]);
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -104,6 +106,8 @@ export const Gallery: React.FC = () => {
   const getFolderTitle = () => {
     if (isFavoritesView) return t('gallery:favorites');
     if (isAllView) return t('gallery:allVideos');
+    if (isUnsortedView) return t('sidebar:unsorted', 'Unsorted');
+    
     const foundFolder = folders.find((f: any) => f.id === folderId);
     if (foundFolder) return foundFolder.name;
     for (const f of folders) {
@@ -157,10 +161,9 @@ export const Gallery: React.FC = () => {
                   </button>
                 </>
               ) : (
-                // ✅ FIXED: Using Settings2 here as requested!
                 <button 
                   onClick={() => setSelectionMode(true)} 
-                  className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors" 
+                  className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-primary-100 hover:text-primary-600 active:scale-90 active:bg-primary-200 transition-all duration-200 shadow-sm" 
                   title={t('gallery:selectVideos', 'Select Videos')}
                 >
                   <Settings2 size={18} />

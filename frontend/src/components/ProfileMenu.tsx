@@ -1,7 +1,16 @@
 import { API_BASE } from "../utils/api";
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, UserCircle, Settings, Crown, CreditCard, LogOut, User } from 'lucide-react';
+import { 
+  X, 
+  UserCircle, 
+  Settings, 
+  Crown, 
+  CreditCard, 
+  LogOut, 
+  User, 
+  ChevronRight // <--- Add this one!
+} from 'lucide-react';
 import { Button } from './Button';
 import { AuthModal } from './AuthModal';
 import { useAuth } from '../context/AuthContext';
@@ -118,45 +127,48 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({ isOpen, onClose }) => 
                   <div className="glass-card rounded-[24px] overflow-hidden shadow-sm">
                     <button
                       onClick={() => handleNav('/settings/account')}
-                      className="w-full flex items-center justify-between p-5 hover:bg-white/40 border-b border-white/20 transition-colors"
+                      className="w-full flex items-center justify-between p-5 hover:bg-white/40 border-b border-white/20 transition-colors group"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="p-2 bg-white/50 rounded-xl text-gray-500">
+                        {/* Changed bg to primary-50 and text to primary-600 when it's the main profile link */}
+                        <div className="p-2 bg-primary-50 rounded-xl text-primary-600">
                           <UserCircle size={22} />
                         </div>
-                        <span className="font-bold text-gray-900">
+                        <span className="font-bold text-gray-900 group-hover:text-primary-600 transition-colors">
                           {t('header:accountSettings', 'Personal Info')}
                         </span>
                       </div>
-                      <X size={16} className="text-gray-300 rotate-45" />
+                      <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300" />
                     </button>
+
                     <button
                       onClick={() => handleNav('/settings/app')}
-                      className="w-full flex items-center justify-between p-5 hover:bg-white/40 border-b border-white/20 transition-colors"
+                      className="w-full flex items-center justify-between p-5 hover:bg-white/40 border-b border-white/20 transition-colors group"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="p-2 bg-white/50 rounded-xl text-gray-500">
+                        <div className="p-2 bg-white/50 rounded-xl text-gray-500 group-hover:text-primary-600">
                           <Settings size={22} />
                         </div>
-                        <span className="font-bold text-gray-900">
+                        <span className="font-bold text-gray-900 group-hover:text-primary-600 transition-colors">
                           {t('header:settings', 'App Settings')}
                         </span>
                       </div>
-                      <X size={16} className="text-gray-300 rotate-45" />
+                      <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300" />
                     </button>
+
                     <button
                       onClick={() => handleNav('/billing')}
-                      className="w-full flex items-center justify-between p-5 hover:bg-white/40 transition-colors"
+                      className="w-full flex items-center justify-between p-5 hover:bg-white/40 transition-colors group"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="p-2 bg-white/50 rounded-xl text-gray-500">
+                        <div className="p-2 bg-white/50 rounded-xl text-gray-500 group-hover:text-primary-600">
                           <CreditCard size={22} />
                         </div>
-                        <span className="font-bold text-gray-900">
+                        <span className="font-bold text-gray-900 group-hover:text-primary-600 transition-colors">
                           {t('common:billingPlan', 'Billing & Plan')}
                         </span>
                       </div>
-                      <X size={16} className="text-gray-300 rotate-45" />
+                      <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-300" />
                     </button>
                   </div>
                 </div>

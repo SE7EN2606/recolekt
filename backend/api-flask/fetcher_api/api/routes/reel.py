@@ -352,47 +352,40 @@ def update_reel(process_id):
             return jsonify({"error": "No data provided"}), 400
 
         updates = []
-        params = {}
+        params = []
 
         if data.get("folder_id") is not None:
-            updates.append("folder_id = %(folder_id)s")
-            params["folder_id"] = data["folder_id"]
+            updates.append("folder_id = %s")
+            params.append(data["folder_id"])
 
         if data.get("is_favorite") is not None:
-            updates.append("is_favorite = %(is_favorite)s")
-            params["is_favorite"] = data["is_favorite"]
+            updates.append("is_favorite = %s")
+            params.append(data["is_favorite"])
 
         if not updates:
             return jsonify({"error": "No valid fields to update"}), 400
 
-        updates.append("updated_at = NOW()")
-        params["process_id"] = process_id
-        params["user_id"] = user_id
+        # Build the SQL parameters
+        params.append(process_id)
+        params.append(user_id)
 
         sql = f"""
             UPDATE reels
-            SET {', '.join(updates)}
-            WHERE id = %(process_id)s AND user_id = %(user_id)s
-            RETURNING id, folder_id, is_favorite
+            SET {', '.join(updates)}, updated_at = NOW()
+            WHERE id = %s AND user_id = %s
         """
 
-        result = fetch_all(sql, params)
+        # 🔥 FIXED: Use execute with commit=True instead of fetch_all
+        execute(sql, tuple(params), commit=True)
 
-        if not result:
-            return jsonify({"error": "Reel not found"}), 404
+        logger.info(f"✅ Successfully saved to NeonDB - Reel {process_id}: {data}")
 
-        updated = dict(result[0]) if hasattr(result[0], "keys") else result[0]._asdict()
-
-        logger.info(f"✅ Updated reel {process_id}: {data}")
-
-        return jsonify(
-            {
-                "status": "updated",
-                "id": updated.get("id"),
-                "folder_id": updated.get("folder_id"),
-                "is_favorite": updated.get("is_favorite"),
-            }
-        )
+        return jsonify({
+            "status": "updated",
+            "id": process_id,
+            "folder_id": data.get("folder_id"),
+            "is_favorite": data.get("is_favorite")
+        })
 
     except Exception as e:
         logger.error(f"Error updating reel {process_id}: {e}", exc_info=True)

@@ -18,5 +18,6 @@
   "noParent": "No parent (top level)",
   "subCollectionNamePlaceholder": "Sub-collection name...",
   "collectionNamePlaceholder": "Collection name...",
+  "folderExists": "A folder named '{{name}}' already exists",
   "createNewCollection": "Create New Collection"
 }

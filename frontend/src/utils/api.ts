@@ -1,20 +1,29 @@
-// frontend/src/utils/api.ts
 import { assertEnv } from './assertEnv';
 
-// 1. Try to get the environment variable first
-let raw = import.meta.env.VITE_BACKEND_URL;
+// 1. Try to get the environment variable (check both names just in case!)
+let raw = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL;
 
 // 2. Smart Fallback: If no env var is found, check the URL
 if (!raw) {
-  if (typeof window !== 'undefined' && window.location.hostname.includes('staging')) {
-    // Force staging backend if we are on the staging website
-    raw = 'https://recolekt-staging.up.railway.app';
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    
+    if (hostname.includes('staging')) {
+      // Force staging backend if we are on the staging website
+      raw = 'https://recolekt-staging.up.railway.app';
+    } else if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      // Force local Python backend if we are running the frontend locally!
+      raw = 'http://127.0.0.1:5001';
+    } else {
+      // Default to production
+      raw = 'https://api.recolekt.app';
+    }
   } else {
-    // Default to production
     raw = 'https://api.recolekt.app';
   }
 }
 
+// Disable assertEnv for local dev if it's strict, or pass the resolved 'raw'
 assertEnv('VITE_BACKEND_URL', raw);
 
 export const API_BASE = raw.replace(/\/+$/, '');

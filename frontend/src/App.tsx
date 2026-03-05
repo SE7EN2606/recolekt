@@ -1,8 +1,8 @@
-import { API_BASE, GOOGLE_CLIENT_ID } from "./utils/api"; // ✅ Added GOOGLE_CLIENT_ID
+import { API_BASE, GOOGLE_CLIENT_ID } from "./utils/api";
 import React, { useState, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { I18nextProvider, useTranslation } from 'react-i18next';
-import { GoogleOAuthProvider } from '@react-oauth/google'; // ✅ Added import
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import i18n from './i18n';
 
 import { LanguageProvider } from './context/LanguageContext';
@@ -22,6 +22,8 @@ import { Auth } from './pages/Auth';
 import { AccountSettings } from './pages/AccountSettings';
 import { AppSettings } from './pages/AppSettings';
 import { HelpSupport } from './pages/HelpSupport';
+// ✅ IMPORT THE NEW ORGANIZER
+import { Organizer } from './pages/Organizer'; 
 import { useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
 import { useData } from './context/DataContext';
@@ -44,6 +46,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return <Navigate to="/gallery" replace />;
   }
 
+  // ✅ Added /organizer to full width exceptions so it gets the sidebar
   const fullWidthPages = ['/', '/billing', '/billing/success', '/billing/cancel', '/subscribe', '/auth', '/features'];
   const showSidebar = user && !fullWidthPages.includes(location.pathname);
   
@@ -149,7 +152,6 @@ function App() {
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
         </div>
       }>
-        {/* ✅ Wrapped with GoogleOAuthProvider */}
         <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
           <LanguageProvider>
             <Router>
@@ -161,6 +163,9 @@ function App() {
                   <Route path="/help" element={<HelpSupport />} />
                   <Route path="/billing" element={<BillingPage />} />
                   
+                  {/* ✅ ADDED ORGANIZER ROUTE */}
+                  <Route path="/organizer" element={<Organizer />} />
+
                   <Route path="/gallery" element={<Gallery />} />
                   <Route path="/gallery/:folderId" element={<Gallery />} />
                   <Route path="/video/:id" element={<VideoDetail />} />

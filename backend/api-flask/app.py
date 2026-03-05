@@ -1,40 +1,28 @@
-# api-flask/app.py
-
-# ============================================
-# LOAD ENVIRONMENT VARIABLES FIRST
-# ============================================
 import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-# ✅ Detect environment: Railway > Docker > Local
+# ============================================
+# 1. ENVIRONMENT LOADING
+# ============================================
 IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
 IS_DOCKER = os.path.exists("/app/.env") or IS_RAILWAY
 IS_LOCAL = not IS_DOCKER
 
-print(f"🔍 Environment: {'RAILWAY' if IS_RAILWAY else 'DOCKER' if IS_DOCKER else 'LOCAL DEVELOPMENT'}")
-
 if IS_LOCAL:
     env_local = Path(__file__).parent / ".env.local"
     if env_local.exists():
-        print(f"✅ Loading local environment: {env_local}")
         load_dotenv(env_local, override=True)
-    else:
-        print("⚠️ WARNING: .env.local not found in local mode!")
 elif IS_DOCKER and not IS_RAILWAY:
-    ROOT_ENV = Path("/app/.env")
-    if ROOT_ENV.exists():
-        print(f"✅ Loading production environment: {ROOT_ENV}")
-        load_dotenv(ROOT_ENV, override=True)
+    root_env = Path("/app/.env")
+    if root_env.exists():
+        load_dotenv(root_env, override=True)
 
-# ============================================
-# NOW IMPORT EVERYTHING ELSE
-# ============================================
 import logging
 import warnings
+import hashlib
 import tempfile
-import subprocess
 from datetime import datetime, timedelta
 
 from flask import send_from_directory, request, jsonify, render_template
@@ -42,40 +30,17 @@ from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 import requests
-import numpy as np
-from PIL import Image
-
 from google.cloud import vision
 
-# Add backend root to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-os.environ.setdefault("MISTRAL_API_KEY", os.getenv("MISTRAL_API_KEY", ""))
 
 warnings.filterwarnings("ignore")
 os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
-from fetcher_api.services.ai_service import ai_service
-
-# -------------------------------------------------
-# ⚙️ Flask setup
-# -------------------------------------------------
-from fetcher_api import create_app
-
-app = create_app()
-if not app:
-    raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
-
-# ✅ Tell Flask where templates live
-app.template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fetcher_api", "templates")
-
-# ✅ Tell Flask it's behind a secure Railway load balancer
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-
-# -------------------------------------------------
-# 🧾 Logging
-# -------------------------------------------------
+# ============================================
+# 2. LOGGING CONFIG
+# ============================================
 werkzeug_log = logging.getLogger("werkzeug")
 werkzeug_log.setLevel(logging.WARNING)
 
@@ -84,23 +49,69 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("app")
 
-# -------------------------------------------------
-# Configure Native Flask Session
-# -------------------------------------------------
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
-app.config["SESSION_PERMANENT"] = True
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
-app.config["SESSION_COOKIE_NAME"] = "recolekt_session"
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SECURE"] = not IS_LOCAL
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_PATH"] = "/"
+# ============================================
+# 3. FLASK APP INITIALIZATION
+# ============================================
+from fetcher_api import create_app
 
-# -------------------------------------------------
-# 🌐 CORS - Environment-aware
-# -------------------------------------------------
+app = create_app()
+if not app:
+    raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
+
+# ✅ THE CORS INTERCEPTOR: This forces perfectly formatted headers on all preflight requests 
+# and overrides the broken manual `OPTIONS` handlers in your blueprint files!
+@app.before_request
+def intercept_options():
+    if request.method == "OPTIONS":
+        from flask import jsonify
+        response = jsonify({"ok": True})
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers.add("Access-Control-Allow-Origin", origin)
+            response.headers.add("Access-Control-Allow-Credentials", "true")
+        
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, Pragma")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        return response, 200
+
+# ✅ PROXY FIX: Critical for Railway Load Balancer HTTPS detection
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+
+# ============================================
+# 4. SESSION & COOKIE CONFIG (THE FIX)
+# ============================================
+# Ensure SECRET_KEY is stable from Railway env
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    # If missing, we force a crash so you know it's misconfigured in Railway
+    raise RuntimeError("FATAL: SECRET_KEY not set in Railway environment variables.")
+
+app.config.update(
+    SECRET_KEY=SECRET_KEY,
+    SESSION_PERMANENT=True,
+    PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+    SESSION_COOKIE_NAME="recolekt_auth_session",
+    SESSION_COOKIE_HTTPONLY=True,
+    # ✅ CRITICAL: SameSite=None + Secure=True is required for Google OAuth redirects
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="None",
+    SESSION_COOKIE_PATH="/",
+    # Letting Domain default to None is safer for subdomains
+    SESSION_COOKIE_DOMAIN=None, 
+)
+
+# Template folder for admin pages
+app.template_folder = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "fetcher_api",
+    "templates",
+)
+
+# ============================================
+# 5. CORS CONFIGURATION
+# ============================================
 def _norm_origin(o: str) -> str:
     return (o or "").strip().rstrip("/")
 
@@ -112,29 +123,31 @@ if IS_LOCAL:
         "http://127.0.0.1:5173",
     ]
 else:
-    env_frontend = _norm_origin(os.getenv("FRONTEND_BASE_URL", ""))
     cors_origins = [
         "https://recolekt.app",
         "https://www.recolekt.app",
+        "https://staging.recolekt.app",
     ]
+    env_frontend = _norm_origin(os.getenv("FRONTEND_BASE_URL", ""))
     if env_frontend:
         cors_origins.append(env_frontend)
 
-cors_origins = sorted({ _norm_origin(o) for o in cors_origins if _norm_origin(o) })
+cors_origins = list(set(_norm_origin(o) for o in cors_origins if o))
 
+# ✅ FIXED: Adding resources={r"/*":...} ensures CORS headers are attached even to 404/500 errors!
 CORS(
     app,
-    origins=cors_origins,
+    resources={r"/*": {"origins": cors_origins}},
     supports_credentials=True,
     allow_headers=["Content-Type", "Authorization", "Cache-Control", "Pragma"],
-    expose_headers=["Set-Cookie", "Content-Type"],
+    expose_headers=["Set-Cookie"],
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    max_age=3600
+    max_age=3600,
 )
 
-# -------------------------------------------------
-# 🔐 Initialize OAuth
-# -------------------------------------------------
+# ============================================
+# 6. OAUTH INITIALIZATION
+# ============================================
 from authlib.integrations.flask_client import OAuth
 
 oauth = OAuth(app)
@@ -145,34 +158,38 @@ oauth.register(
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={"scope": "openid email profile"},
 )
-
 app.config["oauth"] = oauth
 logger.info("✅ OAuth initialized with Google provider")
 
-# -------------------------------------------------
-# Register all blueprints
-# -------------------------------------------------
+# ============================================
+# 7. BLUEPRINT REGISTRATION
+# ============================================
 from fetcher_api.api import register_blueprints
 register_blueprints(app)
 
+# ✅ EXPLICITLY REGISTER FOLDERS: Prevents the 404 "Missing Route" CORS illusion
+try:
+    from fetcher_api.api.routes.folders import folders_bp
+    # check if not already registered by register_blueprints
+    if 'folders' not in app.blueprints:
+        app.register_blueprint(folders_bp)
+        logger.info("✅ Folders blueprint registered explicitly")
+except Exception as e:
+    logger.error(f"❌ Failed to register folders blueprint: {e}")
+
 # ============================================
-# 🚀 Rate Limits Endpoint
+# 8. UTILITY & ADMIN ROUTES
 # ============================================
 from fetcher_api.services.rate_monitor import get_mistral_limits
 
 @app.route("/api/rate-limits", methods=["GET"])
 def rate_limits():
-    """Control panel: current Mistral rate limit status."""
     return jsonify(get_mistral_limits())
 
-# ============================================
-# 🔐 ADMIN API ENDPOINT
-# ============================================
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "change-me-in-env")
 
 @app.route("/api/admin/dashboard", methods=["GET"])
 def admin_dashboard():
-    """Super admin dashboard JSON - protected by secret key."""
     key = request.args.get("key", "")
     if key != ADMIN_SECRET:
         return jsonify({"error": "Unauthorized"}), 401
@@ -183,266 +200,81 @@ def admin_dashboard():
     usage = get_usage()
     limits = get_mistral_limits()
 
-    total_users = active_users_today = total_reels = reels_today = "n/a"
-    last_reel_at = None
-    newest_users = []
-
     try:
         with get_db_connection() as conn:
             cur = conn.cursor()
-
             cur.execute("SELECT COUNT(*) FROM users")
             total_users = cur.fetchone()[0]
-
-            cur.execute("""
-                SELECT COUNT(DISTINCT user_id) FROM reels
-                WHERE created_at >= NOW() - INTERVAL '24 hours'
-            """)
+            cur.execute("SELECT COUNT(DISTINCT user_id) FROM reels WHERE created_at >= NOW() - INTERVAL '24 hours'")
             active_users_today = cur.fetchone()[0]
-
             cur.execute("SELECT COUNT(*) FROM reels")
             total_reels = cur.fetchone()[0]
-
-            cur.execute("""
-                SELECT COUNT(*) FROM reels
-                WHERE created_at >= NOW() - INTERVAL '24 hours'
-            """)
+            cur.execute("SELECT COUNT(*) FROM reels WHERE created_at >= NOW() - INTERVAL '24 hours'")
             reels_today = cur.fetchone()[0]
-
             cur.execute("SELECT MAX(created_at) FROM reels")
             last_reel_at = cur.fetchone()[0]
             if last_reel_at:
                 last_reel_at = last_reel_at.isoformat()
-
-            cur.execute("""
-                SELECT email, created_at FROM users
-                ORDER BY created_at DESC LIMIT 5
-            """)
-            rows = cur.fetchall()
-            newest_users = [{"email": r[0], "joined": r[1].isoformat()} for r in rows]
-
+            cur.execute("SELECT email, created_at FROM users ORDER BY created_at DESC LIMIT 5")
+            newest_users = [{"email": r[0], "joined": r[1].isoformat()} for r in cur.fetchall()]
             cur.close()
-
     except Exception as e:
         logger.error("Admin DB query failed: %s", e)
+        total_users = active_users_today = total_reels = reels_today = "n/a"
+        last_reel_at = None
+        newest_users = []
 
     return jsonify({
         "status": "online",
         "environment": "RAILWAY" if IS_RAILWAY else "LOCAL",
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "mistral": {
-            "calls_today": usage["calls_today"],
-            "calls_total": usage["calls_total"],
-            "estimated_remaining": max(0, 200 - usage["calls_today"]),
-            "tokens_estimated_today": usage["tokens_estimated_today"],
-            "remaining_tokens_month": limits.get("remaining_tokens_month"),
-            "errors_today": usage["errors_today"],
-            "last_call_at": usage["last_call_at"],
+            "calls_today": usage.get("calls_today"),
+            "tokens_estimated_today": usage.get("tokens_estimated_today"),
+            "errors_today": usage.get("errors_today"),
+            "limits": limits,
         },
-        "users": {
-            "total": total_users,
-            "active_today": active_users_today,
-            "newest": newest_users,
-        },
-        "reels": {
-            "total": total_reels,
-            "processed_today": reels_today,
-            "last_processed_at": last_reel_at,
-        },
-        "server": {
-            "extractor_version": "universal-v15-guides",
-            "python_version": sys.version.split(" ")[0],
-        },
+        "users": {"total": total_users, "active_today": active_users_today, "newest": newest_users},
+        "reels": {"total": total_reels, "processed_today": reels_today, "last_processed_at": last_reel_at},
     })
 
-
-# ============================================
-# 📧 ADMIN DAILY DIGEST ENDPOINT
-# ============================================
-DIGEST_SECRET = os.getenv("ADMIN_DIGEST_SECRET", "")
-
-@app.route("/api/admin/digest", methods=["POST", "GET"])
-def admin_digest():
-    """Trigger daily digest email — protected by ADMIN_DIGEST_SECRET."""
-    secret = request.args.get("secret", "") or request.headers.get("X-Cron-Secret", "")
-    if not DIGEST_SECRET or secret != DIGEST_SECRET:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    try:
-        from fetcher_api.services.digest import get_daily_stats, send_admin_digest_email
-        stats = get_daily_stats()
-        sent = send_admin_digest_email(stats)
-        return jsonify({
-            "status": "ok" if sent else "email_failed",
-            "stats": stats,
-        })
-    except Exception as e:
-        logger.error("Digest failed: %s", e)
-        return jsonify({"error": str(e)}), 500
-
-
-# ============================================
-# 🖥️ ADMIN HTML PAGE
-# ============================================
 @app.route("/admin", methods=["GET"])
 def admin_page():
-    """Visual admin dashboard - protected by secret key."""
     key = request.args.get("key", "")
     if key != ADMIN_SECRET:
         return render_template("admin_login.html"), 401
     return render_template("admin.html", admin_key=key)
 
-# -------------------------------------------------
-# ✅ Global Error Handlers
-# -------------------------------------------------
 @app.errorhandler(Exception)
 def handle_error(e):
     code = 500
     message = str(e)
-    error_type = type(e).__name__
-
     if isinstance(e, HTTPException):
         code = e.code
         message = e.description
+    logger.error("❌ Error %s: %s", code, message, exc_info=True)
+    return jsonify({"error": message, "code": code}), code
 
-    logger.error(f"❌ Error {code} ({error_type}): {message}", exc_info=True)
-    return jsonify({"error": message, "code": code, "type": error_type}), code
-
-@app.errorhandler(404)
-def not_found(e):
-    return jsonify({"error": "Endpoint not found", "code": 404, "path": request.path}), 404
-
-# -------------------------------------------------
-# 🔎 OCR helpers
-# -------------------------------------------------
-def _download_to_file(url: str, out_path: str, timeout: int = 30) -> None:
-    r = requests.get(url, stream=True, timeout=timeout)
-    r.raise_for_status()
-    with open(out_path, "wb") as f:
-        for chunk in r.iter_content(chunk_size=1024 * 1024):
-            if chunk:
-                f.write(chunk)
-
-def _run_ffmpeg_extract_frames(video_path: str, out_dir: str, times) -> list:
-    frame_paths = []
-    for i, t in enumerate(times):
-        frame_path = os.path.join(out_dir, f"frame_{i}.jpg")
-        cmd = [
-            "ffmpeg", "-hide_banner", "-loglevel", "error",
-            "-ss", str(t), "-i", video_path,
-            "-frames:v", "1", "-q:v", "2", frame_path,
-        ]
-        subprocess.run(cmd, check=True)
-        frame_paths.append(frame_path)
-    return frame_paths
-
-def _image_to_gray_array(path: str, max_size: int = 640) -> np.ndarray:
-    img = Image.open(path).convert("RGB")
-    w, h = img.size
-    scale = min(1.0, max_size / max(w, h))
-    if scale < 1.0:
-        img = img.resize((int(w * scale), int(h * scale)))
-    gray = img.convert("L")
-    arr = np.asarray(gray, dtype=np.float32) / 255.0
-    return arr
-
-def _mean_abs_diff(a: np.ndarray, b: np.ndarray) -> float:
-    if a.shape != b.shape:
-        h, w = min(a.shape[0], b.shape[1]), min(a.shape[1], b.shape[1])
-        a, b = a[:h, :w], b[:h, :w]
-    return float(np.mean(np.abs(a - b)))
-
-def _is_static_frames(frame_paths: list, diff_threshold: float = 0.01):
-    arrays = [_image_to_gray_array(p) for p in frame_paths]
-    diffs = []
-    for i in range(len(arrays) - 1):
-        diffs.append(_mean_abs_diff(arrays[i], arrays[i + 1]))
-    is_static = all(d <= diff_threshold for d in diffs)
-    return is_static, {"diffs": diffs, "threshold": diff_threshold}
-
-def _vision_ocr_from_bytes(image_bytes: bytes, mode: str = "document") -> str:
-    client = vision.ImageAnnotatorClient()
-    image = vision.Image(content=image_bytes)
-
-    mode = (mode or "document").lower().strip()
-    if mode == "text":
-        response = client.text_detection(image=image)
-        texts = response.text_annotations
-        ocr_text = texts[0].description if texts else ""
-    else:
-        response = client.document_text_detection(image=image)
-        ocr_text = response.full_text_annotation.text if response.full_text_annotation else ""
-
-    if response.error.message:
-        raise RuntimeError(response.error.message)
-    return (ocr_text or "").strip()
-
-# -------------------------------------------------
-# 🧾 OCR endpoint
-# -------------------------------------------------
-@app.route("/api/ocr", methods=["POST", "OPTIONS"])
-def api_ocr():
-    if request.method == "OPTIONS":
-        return "", 200
-
-    payload = request.get_json(silent=True) or {}
-    thumbnail_url = (payload.get("thumbnail_url") or "").strip()
-    video_url = (payload.get("video_url") or "").strip()
-    mode = (payload.get("mode") or "document").strip()
-    force_ocr = bool(payload.get("force_ocr", False))
-
-    if not thumbnail_url and not video_url:
-        return jsonify({"error": "Provide thumbnail_url or video_url"}), 400
-
-    try:
-        with tempfile.TemporaryDirectory() as tmp:
-            if thumbnail_url and not video_url:
-                img_path = os.path.join(tmp, "thumb.jpg")
-                _download_to_file(thumbnail_url, img_path)
-                with open(img_path, "rb") as f:
-                    ocr_text = _vision_ocr_from_bytes(f.read(), mode=mode)
-                return jsonify({"is_static": True, "ocr_text": ocr_text, "used_source": "thumbnail"})
-
-            video_path = os.path.join(tmp, "input.mp4")
-            _download_to_file(video_url, video_path)
-            frames_dir = os.path.join(tmp, "frames")
-            os.makedirs(frames_dir, exist_ok=True)
-
-            times = [0.2, 1.0, 2.0]
-            frame_paths = _run_ffmpeg_extract_frames(video_path, frames_dir, times)
-            is_static, dbg = _is_static_frames(frame_paths, diff_threshold=0.01)
-
-            if not is_static and not force_ocr:
-                return jsonify({"is_static": False, "ocr_text": "", "used_source": "frame", "debug": dbg})
-
-            chosen = frame_paths[1]
-            with open(chosen, "rb") as f:
-                ocr_text = _vision_ocr_from_bytes(f.read(), mode=mode)
-
-            return jsonify({"is_static": is_static, "ocr_text": ocr_text, "used_source": "frame", "debug": dbg})
-
-    except Exception as e:
-        logger.exception("OCR failed")
-        return jsonify({"error": f"OCR failed: {e}"}), 500
-
-# -------------------------------------------------
-# 🎨 Serve frontend (production only)
-# -------------------------------------------------
+# ============================================
+# 9. FRONTEND SERVING (PRODUCTION)
+# ============================================
 if not IS_LOCAL:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    frontend_dir = os.path.join(base_dir, "frontend")
 
-    @app.route("/")
-    def index():
-        return send_from_directory(FRONTEND_DIR, "index.html")
+    @app.route("/", defaults={"path": ""})
+    @app.route("/<path:path>")
+    def serve(path):
+        if path.startswith("api/"):
+            return jsonify({"error": "Not Found"}), 404
+        if path != "" and os.path.exists(os.path.join(frontend_dir, path)):
+            return send_from_directory(frontend_dir, path)
+        return send_from_directory(frontend_dir, "index.html")
 
-    @app.route("/frontend/<path:path>")
-    def frontend_static(path):
-        return send_from_directory(FRONTEND_DIR, path)
-
-# -------------------------------------------------
-# 🚀 Entry point
-# -------------------------------------------------
+# ============================================
+# 10. MAIN ENTRY POINT
+# ============================================
 if __name__ == "__main__":
+    # ✅ FIXED: Default to 5001 so it perfectly matches your React frontend config!
     port = int(os.environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port, debug=IS_LOCAL, threaded=True)
