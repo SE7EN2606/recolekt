@@ -209,13 +209,28 @@ export const Gallery: React.FC = () => {
           }
 
           return (
-            <VideoCard 
-              key={videoId} 
-              video={video} 
-              selectionMode={selectionMode}
-              selected={selectedIds.has(videoId)}
-              onToggleSelect={() => toggleSelect(videoId)}
-            />
+            <div 
+              key={videoId}
+              draggable={!selectionMode}
+              onDragStart={(e) => {
+                // ✅ MULTI-DRAG SUPPORT: Bundle all selected IDs into JSON
+                let idsToMove = [videoId];
+                if (selectedIds.has(videoId)) {
+                  idsToMove = Array.from(selectedIds);
+                }
+                e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
+                e.dataTransfer.setData('sourceId', video.folderId || 'unsorted');
+                e.dataTransfer.effectAllowed = 'move';
+              }}
+              className={!selectionMode ? "cursor-grab active:cursor-grabbing" : ""}
+            >
+              <VideoCard 
+                video={video} 
+                selectionMode={selectionMode}
+                selected={selectedIds.has(videoId)}
+                onToggleSelect={() => toggleSelect(videoId)}
+              />
+            </div>
           );
         })}
       </div>

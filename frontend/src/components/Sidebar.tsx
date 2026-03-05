@@ -72,20 +72,29 @@ export const Sidebar: React.FC = () => {
     e.preventDefault();
     e.currentTarget.classList.remove('bg-primary-50', 'scale-[1.02]', 'shadow-sm', 'border-primary-200');
     
-    const videoId = e.dataTransfer.getData('videoId');
+    // ✅ MULTI-DRAG LOGIC: Parse the JSON array of IDs
+    const videoIdsStr = e.dataTransfer.getData('videoIds');
+    const oldSingleVideoId = e.dataTransfer.getData('videoId'); // Fallback
     const sourceId = e.dataTransfer.getData('sourceId');
     
-    if (videoId && sourceId !== targetFolderId) {
-      await moveVideos([videoId], targetFolderId);
+    let idsToMove: string[] = [];
+    if (videoIdsStr) {
+      try { idsToMove = JSON.parse(videoIdsStr); } catch (err) {}
+    } else if (oldSingleVideoId) {
+      idsToMove = [oldSingleVideoId];
+    }
+    
+    if (idsToMove.length > 0 && sourceId !== targetFolderId) {
+      await moveVideos(idsToMove, targetFolderId);
       window.dispatchEvent(new CustomEvent('app-video-moved', {
-        detail: { videoIds: [videoId], fromFolderId: sourceId, toFolderId: targetFolderId }
+        detail: { videoIds: idsToMove, fromFolderId: sourceId, toFolderId: targetFolderId }
       }));
     }
   };
 
   return (
     <>
-      <aside className="hidden md:flex flex-col w-[280px] h-[calc(100vh-110px)] sticky top-24 overflow-y-auto no-scrollbar glass-sidebar rounded-3xl p-4 pb-6">
+      <aside className="hidden md:flex flex-col w-[280px] h-[calc(100vh-110px)] sticky top-24 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] glass-sidebar rounded-3xl p-4 pb-6">
         
         <div className="mb-8 px-0.5">
           <Button
@@ -127,7 +136,6 @@ export const Sidebar: React.FC = () => {
                 )}
               </NavLink>
 
-              {/* ✅ DRAG EVENTS COMPLETELY REMOVED FROM UNSORTED */}
               <NavLink to="/gallery/unsorted" className={({ isActive }) => linkClass(isActive)}>
                 {({ isActive }) => (
                   <>

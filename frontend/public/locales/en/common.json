@@ -28,5 +28,15 @@
   "footerSlogan": "Save and organize your favorite reels.",
   "tryAgain": "Try again",
   "remove": "Remove",
-  "footerCopyright": "© 2025 Recolekt."
+  "footerCopyright": "© 2025 Recolekt.",
+  "account": "Account",
+  "myAccount": "My Account",
+  "billingPlan": "Billing & Plan",
+  "preferences": "Preferences",
+  "resources": "Resources",
+  "guide": "Guide",
+  "support": "Support",
+  "freeMember": "Free Member",
+  "upgradePro": "Upgrade to Pro",
+  "edit": "Edit"
 }
