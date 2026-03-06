@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Search, Folder, Plus, LayoutGrid, Heart, Archive, Share2,
   ChevronRight, HelpCircle, BookOpen, FolderPlus, User, Settings, LogOut,
-  FolderOpen, Inbox, CreditCard // ✅ Added CreditCard
+  FolderOpen, Inbox, CreditCard, FolderClosed, CornerDownRight
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -14,12 +14,6 @@ import { useTranslation } from 'react-i18next';
 import LogoBlack from '../assets/recolekt_logo_black.png';
 import { useScrollLock } from '../utils/useScrollLock';
 
-const FolderIcon = ({ size = 22, className = '' }: { size?: number; className?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>
-  </svg>
-);
-
 interface MobileMenuProps {
   isOpen: boolean;
   onClose: () => void;
@@ -27,7 +21,7 @@ interface MobileMenuProps {
 
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   const { user, isAuthenticated, loading, logout } = useAuth();
-  const { folders, addFolder } = useData();
+  const { folders, addFolder, videos } = useData();
   const { t } = useTranslation(['common', 'sidebar', 'gallery', 'header', 'modals']);
 
   const [shouldRender, setShouldRender] = useState(false);
@@ -74,11 +68,21 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     navigate('/');
   };
 
-  const SYSTEM_FOLDER_IDS = new Set(['all', 'favorites', 'shared', 'archive', 'default']);
+  const getDirectVideoCount = (folderId: string) => {
+    if (folderId === 'unsorted') {
+      return (videos || []).filter((v: any) => !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all').length;
+    }
+    return (videos || []).filter((v: any) => v.folderId === folderId).length;
+  };
+  
+  const getFavoritesCount = () => (videos || []).filter((v: any) => v.isFavorite).length;
+
+  const SYSTEM_FOLDER_IDS = new Set(['all', 'favorites', 'shared', 'archive', 'default', 'unsorted']);
+  
   const customFolders = (folders || []).filter((f: any) => {
     const id = String(f?.id || '');
     const name = String(f?.name || '').trim().toLowerCase();
-    return !SYSTEM_FOLDER_IDS.has(id) && !f?.isSystem && name !== 'all videos';
+    return !SYSTEM_FOLDER_IDS.has(id) && !f?.isSystem && name !== 'all videos' && name !== 'my videos';
   });
 
   const parentOptions = customFolders.map((f: any) => ({ id: f.id, name: f.name }));
@@ -118,6 +122,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
               {showAuthedUI ? (
                 <div className="flex-1 space-y-8">
+                  
                   {/* User Profile Summary */}
                   <div className="flex items-center gap-4 px-2">
                     <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border border-gray-200 shadow-sm">
@@ -143,23 +148,32 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
                       <button onClick={() => handleNav('/gallery')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
                         <LayoutGrid size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:allVideos', 'All Videos')}</span>
-                        <ChevronRight size={18} className="text-gray-300" />
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:myVideos', 'My videos')}</span>
+                        <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider transition-colors">
+                          {videos.length}
+                        </span>
                       </button>
+
                       <button onClick={() => handleNav('/organizer')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
                         <FolderOpen size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('sidebar:organizer', 'Organizer')}</span>
-                        <ChevronRight size={18} className="text-gray-300" />
+                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
+
                       <button onClick={() => handleNav('/gallery/unsorted')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
                         <Inbox size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('sidebar:unsorted', 'Unsorted')}</span>
-                        <ChevronRight size={18} className="text-gray-300" />
+                        <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider transition-colors">
+                          {getDirectVideoCount('unsorted')}
+                        </span>
                       </button>
-                      <button onClick={() => handleNav('/gallery/favorites')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50">
-                        <Heart size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:favorites', 'Favorites')}</span>
-                        <ChevronRight size={18} className="text-gray-300" />
+
+                      <button onClick={() => handleNav('/gallery/favorites')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-red-50">
+                        <Heart size={22} className="text-gray-400 group-hover:text-red-500 transition-colors" />
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-red-600 transition-colors">{t('gallery:favorites', 'Favorites')}</span>
+                        <span className="text-[10px] font-black bg-gray-100 text-gray-500 group-hover:bg-red-100 group-hover:text-red-600 px-2 py-1 rounded-md tracking-wider transition-colors">
+                          {getFavoritesCount()}
+                        </span>
                       </button>
                     </div>
                   </section>
@@ -169,34 +183,73 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     <div className="flex items-center justify-between px-4 mb-3">
                       <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{t('sidebar:collections', 'Collections')}</h3>
                       <div className="flex items-center gap-2">
-                        <button onClick={() => setIsManageModalOpen(true)} className="text-primary-600 text-xs font-bold uppercase tracking-wider">{t('common:edit', 'Edit')}</button>
-                        <button onClick={() => setIsModalOpen(true)} className="text-primary-600 active:scale-95 transition-transform"><FolderPlus size={24} /></button>
+                        <button onClick={() => setIsManageModalOpen(true)} className="text-primary-600 text-xs font-bold uppercase tracking-wider hover:text-primary-700 transition-colors">{t('common:edit', 'Edit')}</button>
+                        <button onClick={() => setIsModalOpen(true)} className="text-primary-600 active:scale-95 hover:text-primary-700 transition-colors"><FolderPlus size={24} /></button>
                       </div>
                     </div>
                     <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
-                      {customFolders.map((folder: any) => (
-                        <div key={folder.id} className="border-b border-gray-100 last:border-0">
-                          <button onClick={() => handleNav(`/gallery/${folder.id}`)} className="w-full flex items-center justify-between p-5 group transition-all hover:bg-gray-50">
-                            <div className="flex items-center gap-4">
-                              <Folder size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                              <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{folder.name}</span>
-                            </div>
-                            <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md">{folder.itemCount ?? 0}</span>
-                          </button>
-                        </div>
-                      ))}
+                      
+                      {customFolders.length === 0 && (
+                        <button
+                          onClick={() => setIsModalOpen(true)}
+                          className="w-full p-5 text-sm text-gray-400 font-medium hover:text-primary-600 hover:bg-gray-50 transition-colors"
+                        >
+                          + {t('sidebar:createCollection', 'Create a collection')}
+                        </button>
+                      )}
+
+                      {customFolders.map((folder: any) => {
+                        const hasSubs = !!(folder.subFolders && folder.subFolders.length > 0);
+                        return (
+                          <div key={folder.id} className="border-b border-gray-100 last:border-0">
+                            <button onClick={() => handleNav(`/gallery/${folder.id}`)} className="w-full flex items-center justify-between p-5 group transition-all hover:bg-gray-50">
+                              <div className="flex items-center gap-4">
+                                <FolderClosed size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                                <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{folder.name}</span>
+                              </div>
+                              <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md tracking-wider group-hover:bg-primary-100 group-hover:text-primary-600 transition-colors">
+                                {getDirectVideoCount(folder.id)}
+                              </span>
+                            </button>
+
+                            {/* Nested Sub-folders */}
+                            {hasSubs && (
+                              <div className="bg-gray-50/50">
+                                {folder.subFolders.map((sub: any) => (
+                                  <button
+                                    key={sub.id}
+                                    onClick={() => handleNav(`/gallery/${sub.id}`)}
+                                    className="w-full flex items-center justify-between pl-14 pr-5 py-4 group transition-all hover:bg-white hover:shadow-sm"
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <CornerDownRight size={18} strokeWidth={2.5} className="text-gray-300 group-hover:text-primary-500 transition-colors" />
+                                      <span className="text-gray-600 font-medium group-hover:text-primary-600 transition-colors">
+                                        {sub.name}
+                                      </span>
+                                    </div>
+                                    <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md tracking-wider group-hover:bg-primary-100 group-hover:text-primary-600 transition-colors">
+                                      {getDirectVideoCount(sub.id)}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
                       <button onClick={() => handleNav('/gallery/shared')} className="w-full flex items-center justify-between p-5 border-t border-gray-100 group transition-all hover:bg-gray-50">
                         <div className="flex items-center gap-4"><Share2 size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{t('sidebar:shared', 'Shared with Me')}</span></div>
-                        <ChevronRight size={18} className="text-gray-300" />
+                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
                       <button onClick={() => handleNav('/gallery/archive')} className="w-full flex items-center justify-between p-5 border-t border-gray-100 group transition-all hover:bg-gray-50">
                         <div className="flex items-center gap-4"><Archive size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{t('sidebar:archive', 'Archive')}</span></div>
-                        <ChevronRight size={18} className="text-gray-300" />
+                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
                     </div>
                   </section>
 
-                  {/* Account Section - MERGED */}
+                  {/* Account Section */}
                   <section>
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
                       {t('common:account', 'Account')}
@@ -205,17 +258,17 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       <button onClick={() => handleNav('/settings/account')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
                         <User size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:myAccount', 'My Account')}</span>
-                        <ChevronRight size={18} className="text-gray-300" />
+                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
                       <button onClick={() => handleNav('/billing')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
                         <CreditCard size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:billingPlan', 'Billing & Plan')}</span>
-                        <ChevronRight size={18} className="text-gray-300" />
+                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
                       <button onClick={() => handleNav('/settings/app')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50">
                         <Settings size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('header:settings', 'App Settings')}</span>
-                        <ChevronRight size={18} className="text-gray-300" />
+                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
                     </div>
                   </section>
@@ -227,39 +280,63 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       <button onClick={() => handleNav('/help?section=how-to')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
                         <BookOpen size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:guide', 'Guide')}</span>
-                        <ChevronRight size={18} className="text-gray-300" />
+                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
                       <button onClick={() => handleNav('/help?section=contact')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50">
                         <HelpCircle size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:support', 'Support')}</span>
-                        <ChevronRight size={18} className="text-gray-300" />
+                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
                     </div>
                   </section>
 
-                  <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 p-5 bg-white border border-red-200 text-red-600 rounded-[28px] font-bold shadow-sm active:scale-95 transition-transform">
+                  <button 
+                    onClick={handleLogout} 
+                    className="w-full flex items-center justify-center gap-2 p-5 bg-white border border-gray-200 text-red-600 rounded-[28px] font-bold shadow-sm active:scale-95 hover:bg-red-50 hover:border-red-100 hover:text-red-700 transition-all"
+                  >
                     <LogOut size={20} />
                     {t('common:signOut', 'Sign Out')}
                   </button>
                 </div>
               ) : (
-                /* Unauthenticated UI */
                 <div className="flex flex-col h-full space-y-8 px-2">
                   <div className="space-y-2">
-                    {[{ label: t('header:home', 'Home'), path: '/' }, { label: t('common:features', 'Features'), path: '/features' }, { label: t('common:pricing', 'Pricing'), path: '/billing' }, { label: t('common:support', 'Support'), path: '/help?section=contact' }].map((link) => (
-                      <Link key={link.path} to={link.path} onClick={onClose} className={`block text-3xl font-black tracking-tight hover:text-primary-600 transition-colors py-2 ${location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'}`}>{link.label}</Link>
+                    {[
+                      { label: t('header:home', 'Home'), path: '/' },
+                      { label: t('common:features', 'Features'), path: '/features' },
+                      { label: t('common:pricing', 'Pricing'), path: '/billing' },
+                      { label: t('common:support', 'Support'), path: '/help?section=contact' },
+                    ].map((link) => (
+                      <Link 
+                        key={link.path} 
+                        to={link.path} 
+                        onClick={onClose} 
+                        className={`block text-3xl font-black tracking-tight hover:text-primary-600 transition-colors py-2 ${location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'}`}
+                      >
+                        {link.label}
+                      </Link>
                     ))}
                   </div>
+
                   <div className="pt-8 border-t border-gray-200 space-y-4">
-                    <Button fullWidth variant="primary" onClick={() => handleNav('/auth')} className="h-14 text-base font-bold shadow-xl shadow-primary-600/20">{t('common:signIn', 'Sign In')}</Button>
-                    <p className="text-center text-gray-500 text-sm font-medium">{t('common:noAccount', "Don't have an account?")} <button onClick={() => handleNav('/auth')} className="text-primary-600 font-bold hover:underline">{t('common:signUp', 'Sign Up')}</button></p>
+                    <Button fullWidth variant="primary" onClick={() => handleNav('/auth')} className="h-14 text-base font-bold shadow-xl shadow-primary-600/20">
+                      {t('common:signIn', 'Sign In')}
+                    </Button>
+                    <p className="text-center text-gray-500 text-sm font-medium">
+                      {t('common:noAccount', "Don't have an account?")}{' '}
+                      <button onClick={() => handleNav('/auth')} className="text-primary-600 font-bold hover:underline">
+                        {t('common:signUp', 'Sign Up')}
+                      </button>
+                    </p>
                   </div>
                 </div>
               )}
 
               <div className="py-8 mt-auto flex justify-center">
-                <img src={LogoBlack} alt="Recolekt" className="h-8 opacity-60" />
+                <img src={LogoBlack} alt="Recolekt" className="h-8" />
               </div>
+
+              <div className="h-20 md:h-0" />
             </div>
           </div>
         </div>

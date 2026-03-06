@@ -136,17 +136,6 @@ export const Organizer: React.FC = () => {
     return () => window.removeEventListener('app-video-moved', handleVideoMoved);
   }, []);
 
-  const getVideoCount = (folderId: string) => {
-    if (folderId === 'unsorted') {
-        return videos.filter((v: any) => !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all').length;
-    }
-    const directCount = videos.filter((v: any) => v.folderId === folderId).length;
-    const folder = folders.find((f: any) => f.id === folderId);
-    const subFolderCount = (folder?.subFolders || []).reduce((acc: number, sub: any) => 
-      acc + videos.filter((v: any) => v.folderId === sub.id).length, 0);
-    return directCount + subFolderCount;
-  };
-
   const selectedFolder = folders.find(f => f.id === selectedFolderId) || 
                          folders.flatMap(f => f.subFolders || []).find(f => f.id === selectedFolderId);
 
@@ -205,16 +194,15 @@ export const Organizer: React.FC = () => {
     }
   };
 
-  // ✅ REDUCED ICON SIZES TO 18 TO MATCH NEW TEXT-BASE SIZE
   const mainSelectorOptions: DropdownOption[] = [
-    { value: 'all', label: t('organizer:allVideos'), icon: <LayoutGrid size={18} className="text-primary-600" /> },
+    { value: 'all', label: t('organizer:myVideos', 'My videos'), icon: <LayoutGrid size={18} className="text-primary-600" /> },
     { value: 'unsorted', label: t('organizer:unsorted'), icon: <Inbox size={18} className="text-primary-600" /> },
     { value: 'favorites', label: t('organizer:favorites'), icon: <Heart size={18} className="text-primary-600" /> },
     { divider: true, value: 'div1', label: '' },
     ...folders.flatMap(f => [
       { value: f.id, label: f.name, icon: <Folders size={18} className="text-primary-600" /> },
       ...(f.subFolders || []).map(sub => ({
-         value: sub.id, label: sub.name, icon: <FolderOpen size={18} className="text-gray-400 group-hover:text-primary-500" />, isSub: true
+         value: sub.id, label: sub.name, icon: <CornerDownRight size={14} strokeWidth={2.5} className="text-gray-400 group-hover:text-primary-500" />, isSub: true
       }))
     ])
   ];
@@ -225,7 +213,7 @@ export const Organizer: React.FC = () => {
     ...folders.filter(f => !['all', 'favorites', 'archive', 'unsorted'].includes(f.id)).flatMap(f => [
       { value: f.id, label: f.name, icon: <Folders size={18} className="text-primary-600" /> },
       ...(f.subFolders || []).map(sub => ({
-         value: sub.id, label: sub.name, icon: <FolderOpen size={18} className="text-gray-400 group-hover:text-primary-500" />, isSub: true
+         value: sub.id, label: sub.name, icon: <CornerDownRight size={14} strokeWidth={2.5} className="text-gray-400 group-hover:text-primary-500" />, isSub: true
       }))
     ])
   ];
@@ -241,7 +229,6 @@ export const Organizer: React.FC = () => {
   return (
     <div className="flex flex-col w-full h-full pt-4 md:pt-0">
       
-      {/* ✅ TITLE BLOCK CLEANED UP */}
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-bold text-gray-900">{t('organizer:title')}</h1>
       </div>
@@ -269,7 +256,6 @@ export const Organizer: React.FC = () => {
                   {t('organizer:selectFolder')}
                 </span>
 
-                {/* ✅ REDUCED TEXT SIZE: text-base instead of text-lg */}
                 <CustomDropdown 
                   value={selectedFolderId}
                   onChange={setSelectedFolderId}
@@ -279,13 +265,24 @@ export const Organizer: React.FC = () => {
                 />
 
                 {!['all', 'unsorted', 'favorites', 'archive'].includes(selectedFolderId) && (
-                  <button 
-                    type="button"
-                    onClick={() => { setRenameValue(selectedFolder?.name || ''); setIsRenaming(true); }}
-                    className="text-gray-400 hover:text-primary-600 hover:bg-primary-50 p-1.5 rounded-lg transition-colors"
-                  >
-                    <Edit2 size={16} />
-                  </button>
+                  <div className="flex items-center gap-1 ml-1 shrink-0">
+                    <button 
+                      type="button"
+                      onClick={() => { setRenameValue(selectedFolder?.name || ''); setIsRenaming(true); }}
+                      className="text-gray-400 hover:text-primary-600 hover:bg-primary-50 p-1.5 rounded-lg transition-colors"
+                      title={t('common:rename', 'Rename')}
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={handleDeleteFolder}
+                      className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
+                      title={t('organizer:deleteFolder')}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -355,21 +352,10 @@ export const Organizer: React.FC = () => {
                <button 
                  type="button"
                  onClick={() => { setIsCreating(!isCreating); setActionError(null); setNewFolderName(''); setCreationParentId(selectedFolderId === 'unsorted' || selectedFolderId === 'all' ? '' : selectedFolderId); }}
-                 className="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold text-xs rounded-xl transition-all shadow-sm active:scale-95 whitespace-nowrap"
+                 className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl transition-all shadow-sm active:scale-95 whitespace-nowrap"
                >
-                 <Plus size={14} className="text-gray-500" />
-                 <span>{t('organizer:newFolder')}</span>
-               </button>
-             )}
-
-             {!['all', 'unsorted', 'favorites', 'archive'].includes(selectedFolderId) && selectedVideoIds.size === 0 && (
-               <button 
-                 type="button"
-                 onClick={handleDeleteFolder}
-                 className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white border border-gray-200 text-red-600 text-xs font-bold rounded-xl hover:bg-red-50 hover:border-red-200 transition-all shadow-sm"
-               >
-                 <Trash2 size={14} />
-                 <span className="hidden md:inline">{t('organizer:deleteFolder')}</span>
+                 <Plus size={16} className="text-gray-500 shrink-0" />
+                 <span className="hidden sm:inline font-bold text-xs">{t('organizer:newFolder')}</span>
                </button>
              )}
 
@@ -438,31 +424,6 @@ export const Organizer: React.FC = () => {
 
         {/* Content Area */}
         <div className="flex-1 p-4 md:p-6 bg-gray-50/10 min-h-[50vh] relative z-0">
-          
-          {selectedFolder?.subFolders && selectedFolder.subFolders.length > 0 && (
-            <div className="mb-8">
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">{t('organizer:subfolders')}</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {selectedFolder.subFolders.map(sub => (
-                  <div 
-                    key={sub.id}
-                    onClick={() => setSelectedFolderId(sub.id)}
-                    className="group p-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md hover:border-primary-200 transition-all cursor-pointer flex flex-col items-center text-center gap-3"
-                  >
-                    <div className="w-12 h-12 bg-primary-50 text-primary-500 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <FolderOpen size={24} />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-gray-900 text-sm truncate max-w-[120px]">{sub.name}</h4>
-                      <p className="text-xs text-gray-400">
-                        {t('organizer:itemsCount', { count: getVideoCount(sub.id) })}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div>
             {folderVideos.length === 0 ? (
@@ -500,13 +461,14 @@ export const Organizer: React.FC = () => {
                       hover:-translate-y-1 active:cursor-grabbing
                     `}
                   >
+                    {/* ✅ SCALED DOWN SELECTION CIRCLES (w-5 h-5 / size=12) */}
                     {viewMode === 'grid' ? (
-                      <div className={`absolute top-3 left-3 z-10 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm ${selectedVideoIds.has(video.id) ? 'bg-primary-500 border-primary-500' : 'bg-black/30 border-white/80 hover:bg-black/40'}`}>
-                        {selectedVideoIds.has(video.id) && <Check size={14} className="text-white" strokeWidth={3} />}
+                      <div className={`absolute top-3 left-3 z-10 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm ${selectedVideoIds.has(video.id) ? 'bg-primary-500 border-primary-500' : 'bg-black/30 border-white/80 hover:bg-black/40'}`}>
+                        {selectedVideoIds.has(video.id) && <Check size={12} className="text-white" strokeWidth={3} />}
                       </div>
                     ) : (
-                      <div className={`relative z-10 w-6 h-6 shrink-0 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm ml-1 ${selectedVideoIds.has(video.id) ? 'bg-primary-500 border-primary-500' : 'bg-gray-100 border-gray-300 hover:bg-gray-200'}`}>
-                        {selectedVideoIds.has(video.id) && <Check size={14} className="text-white" strokeWidth={3} />}
+                      <div className={`relative z-10 w-5 h-5 shrink-0 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm ml-1 ${selectedVideoIds.has(video.id) ? 'bg-primary-500 border-primary-500' : 'bg-gray-100 border-gray-300 hover:bg-gray-200'}`}>
+                        {selectedVideoIds.has(video.id) && <Check size={12} className="text-white" strokeWidth={3} />}
                       </div>
                     )}
 

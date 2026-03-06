@@ -18,7 +18,7 @@ const SYSTEM_FOLDER_IDS = new Set(['all', 'favorites', 'shared', 'archive', 'def
 const isSystemOrAllVideos = (folder: any) => {
   const name = String(folder?.name || '').trim().toLowerCase();
   const id = String(folder?.id || '');
-  return SYSTEM_FOLDER_IDS.has(id) || Boolean(folder?.isSystem) || name === 'all videos';
+  return SYSTEM_FOLDER_IDS.has(id) || Boolean(folder?.isSystem) || name === 'all videos' || name === 'my videos';
 };
 
 export const Sidebar: React.FC = () => {
@@ -40,6 +40,7 @@ export const Sidebar: React.FC = () => {
     }
     return (videos || []).filter((v: any) => v.folderId === folderId).length;
   };
+  
   const getFavoritesCount = () => (videos || []).filter((v: any) => v.isFavorite).length;
 
   const linkClass = (active: boolean) =>
@@ -47,6 +48,14 @@ export const Sidebar: React.FC = () => {
       active
         ? 'bg-primary-50 text-primary-900 font-bold border-primary-100 shadow-sm'
         : 'bg-transparent text-gray-600 border-transparent hover:bg-white/60 hover:text-primary-900'
+    }`;
+
+  // ✅ UPDATED: Neutral background (white/transparent), text is red on active/hover
+  const favLinkClass = (active: boolean) =>
+    `group flex items-center justify-between w-full p-3 rounded-xl transition-all duration-200 border ${
+      active
+        ? 'bg-white text-red-600 font-bold border-gray-200 shadow-sm'
+        : 'bg-transparent text-gray-600 border-transparent hover:bg-white/60 hover:text-red-500'
     }`;
 
   const headerBtnClass = "w-7 h-7 flex items-center justify-center text-gray-400 hover:text-primary-600 hover:bg-primary-100/80 rounded-md transition-all active:scale-95";
@@ -72,9 +81,8 @@ export const Sidebar: React.FC = () => {
     e.preventDefault();
     e.currentTarget.classList.remove('bg-primary-50', 'scale-[1.02]', 'shadow-sm', 'border-primary-200');
     
-    // ✅ MULTI-DRAG LOGIC: Parse the JSON array of IDs
     const videoIdsStr = e.dataTransfer.getData('videoIds');
-    const oldSingleVideoId = e.dataTransfer.getData('videoId'); // Fallback
+    const oldSingleVideoId = e.dataTransfer.getData('videoId');
     const sourceId = e.dataTransfer.getData('sourceId');
     
     let idsToMove: string[] = [];
@@ -94,7 +102,7 @@ export const Sidebar: React.FC = () => {
 
   return (
     <>
-      <aside className="hidden md:flex flex-col w-[280px] h-[calc(100vh-110px)] sticky top-24 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] glass-sidebar rounded-3xl p-4 pb-6">
+      <aside className="hidden md:flex flex-col w-[280px] h-fit min-h-[calc(100vh-110px)] sticky top-24 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] glass-sidebar rounded-3xl p-4 pb-6">
         
         <div className="mb-8 px-0.5">
           <Button
@@ -120,10 +128,17 @@ export const Sidebar: React.FC = () => {
             <div className="space-y-1">
               <NavLink to="/gallery" end className={({ isActive }) => linkClass(isActive && !location.pathname.includes('favorites') && !location.pathname.includes('unsorted'))}>
                 {({ isActive }) => (
-                  <div className="flex items-center gap-3">
-                    <LayoutGrid size={20} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                    <span className="text-sm">{t('gallery:allVideos')}</span>
-                  </div>
+                  <>
+                    <div className="flex items-center gap-3">
+                      <LayoutGrid size={20} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
+                      <span className="text-sm">{t('gallery:myVideos', 'My videos')}</span>
+                    </div>
+                    <div className="w-7 flex justify-center flex-shrink-0">
+                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-primary-100 text-primary-600">
+                        {videos.length}
+                      </span>
+                    </div>
+                  </>
                 )}
               </NavLink>
 
@@ -152,15 +167,15 @@ export const Sidebar: React.FC = () => {
                 )}
               </NavLink>
 
-              <NavLink to="/gallery/favorites" className={({ isActive }) => linkClass(isActive)}>
+              <NavLink to="/gallery/favorites" className={({ isActive }) => favLinkClass(isActive)}>
                 {({ isActive }) => (
                   <>
                     <div className="flex items-center gap-3">
-                      <Heart size={20} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
+                      <Heart size={20} className={isActive ? 'text-red-500' : 'text-gray-400 group-hover:text-red-500'} />
                       <span className="text-sm">{t('gallery:favorites')}</span>
                     </div>
                     <div className="w-7 flex justify-center flex-shrink-0">
-                      <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-primary-100 text-primary-600">
+                      <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md transition-colors ${isActive ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500 group-hover:bg-red-50 group-hover:text-red-600'}`}>
                         {getFavoritesCount()}
                       </span>
                     </div>
