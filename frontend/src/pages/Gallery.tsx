@@ -8,6 +8,7 @@ import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { MoveCollectionModal } from '../components/MoveCollectionModal';
+import { resolveTitle } from '../utils/titleUtils'; // ← ADD
 
 const CalendarArrowUp = ({ size = 20 }) => ( <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 18 4-4 4 4"/><path d="M16 2v4"/><path d="M18 22v-8"/><path d="M21 11.343V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2-2v14a2 2 0 0 0 2 2h9"/><path d="M3 10h18"/><path d="M8 2v4"/></svg> );
 const CalendarArrowDown = ({ size = 20 }) => ( <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 18 4 4 4-4"/><path d="M16 2v4"/><path d="M18 14v8"/><path d="M21 11.354V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2-2v14a2 2 0 0 0 2 2h7.343"/><path d="M3 10h18"/><path d="M8 2v4"/></svg> );
@@ -57,23 +58,29 @@ export const Gallery: React.FC = () => {
       return v.folderId === folderId;
     });
 
+    // Inject resolved title so VideoCard's passedTitle is correct
+    filtered = filtered.map((v: any) => {
+      const { english } = resolveTitle(v, t);
+      return { ...v, title: english };
+    });
+
     if (searchQuery) {
       filtered = filtered.filter((v: any) =>
-        v.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        v.author?.toLowerCase().includes(searchQuery.toLowerCase())
+        v.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (v.author_name || v.author || '').toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
 
     return filtered.sort((a: any, b: any) => {
-      const aProcessing = a.category === 'Processing' || a.status === 'processing';
-      const bProcessing = b.category === 'Processing' || b.status === 'processing';
+      const aProcessing = a.status === 'processing';
+      const bProcessing = b.status === 'processing';
       if (aProcessing && !bProcessing) return -1;
       if (!aProcessing && bProcessing) return 1;
-      const dateA = new Date(a.savedAt || a.created_at || 0).getTime();
-      const dateB = new Date(b.savedAt || b.created_at || 0).getTime();
+      const dateA = new Date(a.created_at || 0).getTime();
+      const dateB = new Date(b.created_at || 0).getTime();
       return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
     });
-  }, [videos, folderId, isFavoritesView, isAllView, isUnsortedView, searchQuery, sortOrder]);
+  }, [videos, folderId, isFavoritesView, isAllView, isUnsortedView, searchQuery, sortOrder, t]);
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -107,17 +114,12 @@ export const Gallery: React.FC = () => {
     if (isFavoritesView) return t('gallery:favorites');
     if (isAllView) return t('gallery:allVideos');
     if (isUnsortedView) return t('sidebar:unsorted', 'Unsorted');
-    
     const foundFolder = folders.find((f: any) => f.id === folderId);
     if (foundFolder) return foundFolder.name;
-    for (const f of folders) {
-      const sub = f.subFolders?.find((s: any) => s.id === folderId);
-      if (sub) return sub.name;
-    }
     return folderId ? folderId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : t('gallery:gallery');
   };
 
-  const getThumbnail = (video: any): string => video?.thumbnailUrl || video?.thumbnail_url || video?.gcs_urls?.preview_thumbnail || video?.gcsUrls?.previewThumbnail || '';
+  const getThumbnail = (v: any): string => v?.gcs_urls?.preview_thumbnail || v?.thumbnail_url || v?.thumbnailUrl || '';
 
   const showSkeleton = authLoading || (dataLoading && videos.length === 0);
 
@@ -139,7 +141,6 @@ export const Gallery: React.FC = () => {
       <div className="flex flex-col gap-6 mb-8">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">{getFolderTitle()}</h1>
-          
           <div className="flex items-center gap-2">
             {!selectionMode && (
               <p className="text-gray-500 text-xs font-medium whitespace-nowrap">
@@ -161,9 +162,9 @@ export const Gallery: React.FC = () => {
                   </button>
                 </>
               ) : (
-                <button 
-                  onClick={() => setSelectionMode(true)} 
-                  className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-primary-100 hover:text-primary-600 active:scale-90 active:bg-primary-200 transition-all duration-200 shadow-sm" 
+                <button
+                  onClick={() => setSelectionMode(true)}
+                  className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-primary-100 hover:text-primary-600 active:scale-90 active:bg-primary-200 transition-all duration-200 shadow-sm"
                   title={t('gallery:selectVideos', 'Select Videos')}
                 >
                   <Settings2 size={18} />
@@ -175,7 +176,7 @@ export const Gallery: React.FC = () => {
 
         <div className="hidden md:flex items-center gap-3">
           <div className="relative flex-1">
-            <input 
+            <input
               type="text" placeholder={t('common:search')} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none shadow-sm transition-all hover:bg-white/80"
             />
@@ -189,10 +190,10 @@ export const Gallery: React.FC = () => {
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-24 md:mb-12">
         {displayedVideos.map((video: any) => {
-          const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
+          const videoId = video?.id ?? video?.process_id ?? '';
           const thumb = getThumbnail(video);
-          
-          if (video.category === 'Processing' || video.status === 'processing') {
+
+          if (video.status === 'processing') {
             return (
               <div key={videoId} className="relative aspect-[9/16] rounded-2xl bg-black overflow-hidden cursor-default">
                 {thumb ? (
@@ -209,23 +210,19 @@ export const Gallery: React.FC = () => {
           }
 
           return (
-            <div 
+            <div
               key={videoId}
               draggable={!selectionMode}
               onDragStart={(e) => {
-                // ✅ MULTI-DRAG SUPPORT: Bundle all selected IDs into JSON
-                let idsToMove = [videoId];
-                if (selectedIds.has(videoId)) {
-                  idsToMove = Array.from(selectedIds);
-                }
+                let idsToMove = selectedIds.has(videoId) ? Array.from(selectedIds) : [videoId];
                 e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
                 e.dataTransfer.setData('sourceId', video.folderId || 'unsorted');
                 e.dataTransfer.effectAllowed = 'move';
               }}
               className={!selectionMode ? "cursor-grab active:cursor-grabbing" : ""}
             >
-              <VideoCard 
-                video={video} 
+              <VideoCard
+                video={video}
                 selectionMode={selectionMode}
                 selected={selectedIds.has(videoId)}
                 onToggleSelect={() => toggleSelect(videoId)}

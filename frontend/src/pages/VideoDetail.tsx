@@ -16,7 +16,6 @@ import { getCategory, getTopic } from '../utils/videoUtils';
 import { API_BASE } from '../utils/api';
 import { useScrollLock } from '../utils/useScrollLock';
 
-/* ─── IMPORTED EXTERNAL ICONS ─── */
 import { 
   CustomMessageSquareMoreIcon, 
   IOSShareIcon, 
@@ -27,13 +26,16 @@ import {
   PlatformIconBtn 
 } from '../components/CustomIcons';
 
-/* ─── LOCAL HELPERS ─── */
-const formatDuration = (seconds: number | string | undefined): string => {
-  if (!seconds) return '0:00';
-  const totalSeconds = typeof seconds === 'string' ? parseInt(seconds, 10) : seconds;
-  if (isNaN(totalSeconds)) return '0:00';
-  const mins = Math.floor(totalSeconds / 60);
-  const secs = Math.floor(totalSeconds % 60);
+const formatDuration = (val: number | string | undefined): string => {
+  if (!val) return '0:00';
+  if (typeof val === 'string') {
+    if (val.includes(':')) return val; 
+    const parsed = parseInt(val, 10);
+    if (isNaN(parsed)) return '0:00';
+    val = parsed;
+  }
+  const mins = Math.floor(val / 60);
+  const secs = Math.floor(val % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
@@ -42,12 +44,12 @@ function apiUrl(path: string) {
   return API_BASE ? `${API_BASE}/${p}` : `/${p}`;
 }
 
-async function fetchGcsJson<T = any>(url: string): Promise<T | null> {
+async function fetchGcsJson(url: string) {
+  if (!url) return null;
   try {
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const finalUrl = isLocalhost ? url.replace('https://storage.googleapis.com', '/gcs-proxy') : url;
-    
-    const res = await fetch(finalUrl, { method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store' });
+    const res = await fetch(url + `?v=${Date.now()}`, { 
+      method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store' 
+    });
     if (!res.ok) return null;
     return await res.json();
   } catch (e) {
@@ -63,7 +65,6 @@ const safeString = (val: any): string => {
   return String(val);
 };
 
-/* ─── SKELETON LOADER ─── */
 const VideoDetailSkeleton = () => (
   <div className="animate-pulse relative w-full px-0 pb-12">
     <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-12 items-start">
@@ -95,12 +96,7 @@ export const VideoDetail: React.FC = () => {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
-  useScrollLock(
-    isActionSheetOpen ||
-    isMoveModalOpen ||
-    isReportModalOpen ||
-    isDeleteConfirmOpen
-  );
+  useScrollLock(isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen);
 
   const fetchBackendJsonNoStore = useCallback(async (url: string) => {
     const res = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'include', headers: { ...getAuthHeaders() } });
@@ -112,32 +108,11 @@ export const VideoDetail: React.FC = () => {
     if (!id) return;
     try {
       const dbResult = await fetchBackendJsonNoStore(apiUrl(`api/reel/${encodeURIComponent(id)}`));
-      
-      if (!dbResult) {
-        setLoading(false);
-        return;
-      }
+      if (!dbResult) { setLoading(false); return; }
 
-      if (dbResult.status === 'processing' || dbResult.category === 'Processing' || dbResult.status === 'error' || dbResult.status === 'failed') {
-        setVideo({ ...dbResult, __raw: dbResult });
-        setLoading(false);
-        return;
-      }
-
-      const short = id.includes('--') ? id.split('--')[0] : id.split('_')[0];
-      const ownerId = dbResult.user_id || "default_id"; 
-      
-      const isFB = id.includes('FB') || short.length > 12;
-      const folder = isFB ? 'FB_reels' : 'IG_reels';
-      
-      const folderName = ownerId ? `${short}_${ownerId}` : short;
-      const modernPath = `https://storage.googleapis.com/recolekt-storage/media/${folder}/${folderName}/${short}_result.json`;
-      const legacyPath = `https://storage.googleapis.com/recolekt-storage/media/${folder}/${short}/${short}_result.json`;
-
-      let gcsResult = await fetchGcsJson(`${modernPath}?v=${Date.now()}`);
-      
-      if (!gcsResult && folderName !== short) {
-         gcsResult = await fetchGcsJson(`${legacyPath}?v=${Date.now()}`);
+      let gcsResult = null;
+      if (dbResult.gcs_urls?.result_json) {
+        gcsResult = await fetchGcsJson(dbResult.gcs_urls.result_json);
       }
 
       setVideo({ ...dbResult, ...(gcsResult || {}), __raw: dbResult });
@@ -171,8 +146,8 @@ export const VideoDetail: React.FC = () => {
       if (field === 'title') { next.title = value; summaryObj[langKey].title = value; }
       else if (field === 'summary') { next.summary_text = value; summaryObj[langKey].summary = value; }
       else if (field === 'bullets') { next.bullets = value; summaryObj[langKey].headlines = value; }
-      else if (field === 'category') { next.category = value; }
-      else if (field === 'topic') { next.topic = value; next.subCategory = value; }
+      else if (field === 'category') { next.category = value; next.summary_category = value; }
+      else if (field === 'topic') { next.topic = value; next.summary_topic = value; next.subCategory = value; }
       else if (field === 'tags') { next.tags = value; summaryObj[langKey].hashtags = value; }
       next.summary = summaryObj;
       return next;
@@ -203,7 +178,9 @@ export const VideoDetail: React.FC = () => {
     if (typeof summaryObj === 'string') { try { summaryObj = JSON.parse(summaryObj); } catch(e) { summaryObj = {}; } }
     if (!summaryObj) summaryObj = {};
 
-    const langBlock = (showOriginal && summaryObj.original) ? summaryObj.original : (summaryObj.english || summaryObj);
+    const englishData = summaryObj.english || {};
+    const originalData = summaryObj.original || {};
+    const langBlock = (showOriginal && Object.keys(originalData).length > 0) ? originalData : (Object.keys(englishData).length > 0 ? englishData : summaryObj);
     
     let recipeData = v.recipe;
     if (typeof recipeData === 'string') { try { recipeData = JSON.parse(recipeData); } catch (e) { recipeData = null; } }
@@ -213,33 +190,39 @@ export const VideoDetail: React.FC = () => {
 
     let extractedTranscript = '';
     if (v.transcription) {
-        if (typeof v.transcription === 'string') extractedTranscript = v.transcription;
-        else if (v.transcription.transcript) extractedTranscript = v.transcription.transcript;
-        else if (v.transcription.text) extractedTranscript = v.transcription.text;
-    } 
-    if (!extractedTranscript && v.transcript) {
-        if (typeof v.transcript === 'string') extractedTranscript = v.transcript;
-        else if (v.transcript.text) extractedTranscript = v.transcript.text;
+        let rawTrans = v.transcription.transcript || v.transcription.text || (typeof v.transcription === 'string' ? v.transcription : '');
+        if (typeof rawTrans === 'string' && rawTrans.trim().startsWith('{')) {
+            try {
+                const parsed = JSON.parse(rawTrans);
+                extractedTranscript = parsed.transcript || rawTrans;
+            } catch (e) { extractedTranscript = rawTrans; }
+        } else {
+            extractedTranscript = rawTrans;
+        }
+    } else if (v.transcript) {
+        extractedTranscript = typeof v.transcript === 'string' ? v.transcript : (v.transcript.text || '');
     }
 
-    // ✅ FIXED: Ensure it never defaults to OG
     let langCode = 'EN';
-    if (v.transcription?.detected_language) {
-      langCode = String(v.transcription.detected_language).toUpperCase();
-    } else if (v.language) {
-      langCode = String(v.language).toUpperCase();
-    }
+    if (v.transcription?.detected_language) langCode = String(v.transcription.detected_language).toUpperCase();
+    else if (v.language) langCode = String(v.language).toUpperCase();
     if (langCode === 'OG') langCode = 'EN';
 
+    const displayTitle = langBlock.title || summaryObj.title || v.summary_title || v.title || (v.caption ? v.caption.split('\n')[0].substring(0, 56) : 'Saved Reel');
+    const displaySummary = langBlock.summary || summaryObj.summary || v.summary_text || '';
+    
+    let tags = Array.isArray(langBlock.hashtags) ? langBlock.hashtags : (Array.isArray(v.summary_hashtags) ? v.summary_hashtags : (Array.isArray(v.tags) ? v.tags : []));
+    let bullets = Array.isArray(langBlock.headlines) ? langBlock.headlines : (Array.isArray(v.summary_bullets) ? v.summary_bullets : (Array.isArray(v.bullets) ? v.bullets : []));
+
     return {
-      id: v.id,
-      title: safeString(langBlock?.title || v.title || 'Saved Reel'),
+      id: v.id || v.process_id,
+      title: safeString(displayTitle),
       author: safeString(v.author_name || v.author || 'Unknown'),
-      category: safeString(v.category || getCategory(v) || 'General'),
-      subCategory: safeString(v.subCategory || v.topic || getTopic(v) || ''),
-      summary: safeString(langBlock?.summary || v.summary_text || ''),
-      bullets: Array.isArray(langBlock?.headlines || v.bullets) ? (langBlock?.headlines || v.bullets) : [],
-      tags: Array.isArray(langBlock?.hashtags || v.tags) ? (langBlock?.hashtags || v.tags) : [],
+      category: safeString(v.category || v.summary_category || getCategory(v) || 'General'),
+      subCategory: safeString(v.subCategory || v.summary_topic || v.topic || getTopic(v) || ''),
+      summary: safeString(displaySummary),
+      bullets,
+      tags,
       transcript: extractedTranscript.trim(),
       caption: typeof v.caption === 'string' ? v.caption.trim() : (v.caption?.text || v.caption?.caption || '').trim(),
       recipe: activeRecipe,
@@ -249,7 +232,7 @@ export const VideoDetail: React.FC = () => {
       savedAt: safeString(v.savedAt || (v.created_at ? new Date(v.created_at).toLocaleDateString() : '')),
       hasTranslation: !!(summaryObj.english && summaryObj.original),
       languageCode: langCode,
-      duration: formatDuration(v.duration)
+      duration: formatDuration(v.duration || v.duration_seconds)
     };
   }, [video, editedVideo, isEditing, showOriginal]);
 
@@ -280,7 +263,6 @@ export const VideoDetail: React.FC = () => {
                       <button onClick={() => setIsEditing(false)} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center"><X size={20} /></button>
                     </>
                   ) : (
-                    // ✅ FIXED: Using Settings2 icon matching the Gallery styles
                     <button onClick={() => setIsActionSheetOpen(true)} className="w-9 h-9 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center hover:bg-white/40 transition-colors">
                       <Settings2 size={18} />
                     </button>
@@ -412,10 +394,10 @@ export const VideoDetail: React.FC = () => {
         </div>
 
         {/* ======================= RIGHT COLUMN (DESKTOP) ======================= */}
-        <div className="hidden md:block w-full space-y-6 md:space-y-8 mt-6 md:mt-0">
-          <div className="space-y-6">
+        {/* ✅ FIXED: Removed automated flex-gap completely. Replaced with strictly controlled bottom margins (mb) to align optical gaps perfectly */}
+        <div className="hidden md:block w-full mt-6 md:mt-0">
             
-            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col mb-6">
                 <div className="p-5 flex flex-col gap-2 hover:bg-gray-50/50 transition-colors border-b border-gray-50">
                    <div className="flex items-center gap-2">
                       <div className="p-1.5 bg-violet-50 text-violet-600 rounded-md">
@@ -451,22 +433,20 @@ export const VideoDetail: React.FC = () => {
                       .hashtag-links a:hover { background-color: #bae6fd !important; border-color: #38bdf8 !important; box-shadow: 0 2px 6px rgba(8, 145, 178, 0.25) !important; transform: translateY(-1px); }
                    `}</style>
                    <div className="hashtag-links flex flex-wrap gap-2">
-                     <div className="flex flex-wrap gap-2">
-                       {isEditing ? (
-                          <EditableHashtags hashtags={viewModel.tags} isEditMode={true} value={viewModel.tags} onChange={val => handleEditField('tags', val)} />
-                       ) : (
-                          viewModel.tags.map((tag: string, idx: number) => {
-                             const cleanTag = safeString(tag).replace('#', '');
-                             return <a key={idx} href={`https://www.instagram.com/explore/tags/${cleanTag}/`} target="_blank" rel="noopener noreferrer">#{cleanTag}</a>
-                          })
-                       )}
-                     </div>
+                     {viewModel.tags && viewModel.tags.length > 0 ? (
+                        viewModel.tags.map((tag: string, idx: number) => {
+                           const cleanTag = safeString(tag).replace('#', '');
+                           return <a key={idx} href={`https://www.instagram.com/explore/tags/${cleanTag}/`} target="_blank" rel="noopener noreferrer">#{cleanTag}</a>
+                        })
+                     ) : (
+                        <span className="text-gray-400 text-xs italic">No tags</span>
+                     )}
                    </div>
                 </div>
             </div>
 
             {viewModel.transcript && (
-              <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+              <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col mb-5">
                  <button onClick={() => setTranscriptOpen(!transcriptOpen)} className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition-colors">
                     <div className="flex items-center gap-2">
                        <div className="p-1.5 bg-gray-100 text-gray-600 rounded-md">
@@ -487,16 +467,16 @@ export const VideoDetail: React.FC = () => {
             )}
 
             {viewModel.originalUrl && (
-              <div className="space-y-3">
-                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Original Link</h4>
+              <div className="flex flex-col mt-1">
+                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider pl-1 mb-3">Original Link</h4>
                  <a href={viewModel.originalUrl} target="_blank" rel="noreferrer" className="block">
                     {viewModel.platform === 'facebook' ? (
-                      <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-white font-bold text-sm shadow-md transition bg-[#1877F2] hover:bg-[#166FE5]">
+                      <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-white font-bold text-sm shadow-sm transition bg-[#1877F2] hover:bg-[#166FE5]">
                         <PlatformIconBtn platform="facebook" />
                         View on Facebook
                       </button>
                     ) : (
-                      <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-white font-bold text-sm shadow-md transition bg-gradient-to-r from-[#F58529] via-[#DD2A7B] to-[#8134AF] hover:opacity-90">
+                      <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-white font-bold text-sm shadow-sm transition bg-gradient-to-r from-[#F58529] via-[#DD2A7B] to-[#8134AF] hover:opacity-90">
                         <PlatformIconBtn platform="instagram" />
                         View on Instagram
                       </button>
@@ -505,7 +485,6 @@ export const VideoDetail: React.FC = () => {
               </div>
             )}
             
-          </div>
         </div>
       </div>
 

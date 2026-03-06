@@ -20,25 +20,43 @@ const safeStr = (v: any): string => {
   return String(v);
 };
 
+// ✅ THE ULTIMATE TITLE RESOLVER
 function resolveTitle(video: any, t: any): { english: string; original: string; hasTwoLanguages: boolean } {
-  const DEFAULT = t('videoCard:untitledVideo');
-  const summary = video?.summary ?? video?.raw?.summary ?? {};
-  const summaryObj = summary?.english || summary?.original ? summary : summary?.summary ?? summary;
-  const englishBlock = summaryObj?.english ?? summaryObj?.EN ?? summaryObj?.en ?? {};
-  const originalBlock = summaryObj?.original ?? summaryObj?.OG ?? summaryObj?.og ?? {};
+  const DEFAULT = t('videoCard:untitledVideo', 'Saved Video');
 
-  const engTitle = safeStr(englishBlock?.title).trim();
-  const origTitle = safeStr(originalBlock?.title).trim();
-  const topLevelTitle = safeStr(video?.summary_title ?? video?.summaryTitle).trim();
+  // 1. Extract from Summary (if available)
+  let summaryObj = video?.summary ?? video?.summary_text ?? video?.raw?.summary ?? {};
+  if (typeof summaryObj === 'string') {
+    try { summaryObj = JSON.parse(summaryObj); } catch(e) { summaryObj = {}; }
+  }
+  const sumEngTitle = safeStr(summaryObj?.english?.title).trim();
+  const sumOrigTitle = safeStr(summaryObj?.original?.title).trim();
 
-  const recipe = video?.recipe;
-  const recipeObj = recipe && typeof recipe === 'object' ? recipe : null;
-  const recipeEngTitle = safeStr(recipeObj?.english?.title).trim();
-  const recipeOrigTitle = safeStr(recipeObj?.original?.title).trim();
+  // 2. Extract from Recipe (CRITICAL: This is where old DB rows hide the title!)
+  let recipeObj = video?.recipe ?? video?.raw?.recipe ?? {};
+  if (typeof recipeObj === 'string') {
+    try { recipeObj = JSON.parse(recipeObj); } catch(e) { recipeObj = {}; }
+  }
+  if (recipeObj?.recipe) recipeObj = recipeObj.recipe; // Handle double nesting
+  
+  const recEngTitle = safeStr(recipeObj?.english?.title).trim();
+  const recOrigTitle = safeStr(recipeObj?.original?.title).trim();
 
-  const english = engTitle || topLevelTitle || recipeEngTitle || safeStr(video?.title).trim() || safeStr(video?.caption ?? '').split('\n')[0].trim() || DEFAULT;
-  const original = origTitle || recipeOrigTitle || safeStr(video?.title).trim() || english;
-  const hasTwoLanguages = !!(engTitle && origTitle) && engTitle !== origTitle;
+  // 3. Extract from flat DB columns
+  const dbTitle = safeStr(video?.summary_title ?? video?.summaryTitle).trim();
+
+  // 4. Reject bad fallback titles (If Gallery passed down the cut-off caption, ignore it)
+  let passedTitle = safeStr(video?.title).trim();
+  const captionCutoff = safeStr(video?.caption ?? '').split('\n')[0].substring(0, 56).trim();
+  if (passedTitle === captionCutoff || passedTitle.length === 56) {
+    passedTitle = ''; // Ignore the cut-off string so we can find the real title
+  }
+
+  // PRIORITY CHAIN: AI Summary -> AI Recipe -> DB Column -> Passed Title -> Fallback Caption
+  const english = sumEngTitle || recEngTitle || dbTitle || passedTitle || summaryObj?.title || safeStr(video?.caption ?? '').split('\n')[0].trim() || DEFAULT;
+  const original = sumOrigTitle || recOrigTitle || dbTitle || passedTitle || summaryObj?.title || english;
+
+  const hasTwoLanguages = !!(sumEngTitle && sumOrigTitle) || !!(recEngTitle && recOrigTitle);
 
   return { english, original, hasTwoLanguages };
 }
@@ -71,7 +89,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
   const isProcessing = video?.category === 'Processing' || video?.status === 'processing';
   const isFailedStatus = video?.category === 'Failed' || video?.status === 'error' || video?.status === 'failed';
 
-  const thumbnailUrl = video?.thumbnailUrl || video?.thumbnail_url || video?.gcs_urls?.preview_thumbnail || video?.gcsUrls?.previewThumbnail || video?.preview_thumbnail || video?.raw?.gcsurls?.previewthumbnail || '';
+  const thumbnailUrl = video?.thumbnailUrl || video?.thumbnail_url || video?.gcs_urls?.preview_thumbnail || video?.gcsUrls?.previewThumbnail || video?.preview_thumbnail || '';
 
   useEffect(() => {
     if (imgRef.current && imgRef.current.complete) {
@@ -207,7 +225,6 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60 pointer-events-none z-20" />
 
-          {/* PURPLE SELECTION OVERLAY */}
           {selectionMode && selected && (
             <div className="selected-overlay" />
           )}
@@ -240,25 +257,21 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
             </div>
           )}
 
-          {/* FAVORITE HEART (Top Left) */}
           {!selectionMode && !hasError && (
             <div 
                className={`absolute top-3 left-3 favorite-heart ${animateHeart ? 'heart-animate' : ''} ${isDisabled ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`} 
                onClick={handleHeartClick}
             >
-              {/* NO TAILWIND COLOR CLASSES - Lets CSS do the work */}
               <Heart className={isFavorite ? 'favorited' : ''} />
             </div>
           )}
 
-          {/* SELECTION RADIO (Top Right) */}
           {selectionMode && (
             <div className="absolute top-3 right-3 modern-radio" onClick={(e) => { e.stopPropagation(); onToggleSelect?.(); }}>
               <div className={`radio-circle ${selected ? 'radio-active' : ''}`} />
             </div>
           )}
 
-          {/* STATUS INDICATOR (Top Right, Hidden in selection mode) */}
           {!selectionMode && !hasError && !isProcessing && (
             <div className="absolute top-3 right-3 z-30 pointer-events-none">
               <div className="w-7 h-7 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white shadow-sm">
