@@ -302,7 +302,7 @@ def import_share():
             "process_id": process_id,
             "status": "processing",
             "source_url": url,
-            "folder_id": "default",
+            "folder_id": "unsorted", # ✅ FIXED: Point this to the correct UI logic
             "caption": caption,
             "author_name": author_name,
             "summary": {"title": "Processing…"},

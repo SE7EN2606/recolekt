@@ -181,7 +181,7 @@ def list_saved_reels():
                     author_name,
                     is_long_video,
                     duration,
-                    gcs_urls::jsonb->'preview_thumbnail' as preview_thumbnail
+                    gcs_urls::jsonb as gcs_urls
                 FROM reels
                 WHERE user_id = %s
                 ORDER BY created_at DESC
@@ -237,7 +237,9 @@ def list_saved_reels():
                         },
                     }
 
-                thumb = row_dict.get("preview_thumbnail")
+                # ✅ FIX: Extract full GCS URLs natively
+                gcs_urls = json_loads_maybe(row_dict.get("gcs_urls"), default={})
+                
                 transformed_rows.append(
                     {
                         "id": row_dict["id"],
@@ -253,7 +255,7 @@ def list_saved_reels():
                         "author_name": row_dict.get("author_name") or "Unknown",
                         "is_long_video": row_dict.get("is_long_video"),
                         "duration": row_dict.get("duration"),
-                        "gcs_urls": {"preview_thumbnail": thumb if thumb else None},
+                        "gcs_urls": gcs_urls,
                         "summary": summary,
                     }
                 )
@@ -269,7 +271,7 @@ def list_saved_reels():
             return add_no_cache_headers(response)
 
         # --------------------------------------------------
-        # FULL VIEW (no DB 'summary' column assumed)
+        # FULL VIEW
         # --------------------------------------------------
         sql = """
             SELECT 
@@ -278,7 +280,7 @@ def list_saved_reels():
                 summary_bullets, summary_hashtags, summary_emojis,
                 content_type, created_at, caption, author_name,
                 is_long_video, duration, recipe, workout, transcription,
-                gcs_urls::jsonb->'preview_thumbnail' as preview_thumbnail
+                gcs_urls::jsonb as gcs_urls
             FROM reels
             WHERE user_id = %s
             ORDER BY created_at DESC
@@ -303,6 +305,7 @@ def list_saved_reels():
 
             transcription_raw = row_dict.get("transcription")
             row_dict["transcription"] = parse_transcription(transcription_raw)
+            row_dict["gcs_urls"] = json_loads_maybe(row_dict.get("gcs_urls"), default={})
 
             if isinstance(row_dict.get("recipe"), dict):
                 row_dict["recipe"] = normalize_recipe(row_dict["recipe"], caption)
@@ -315,11 +318,8 @@ def list_saved_reels():
             row_dict.pop("summary_bullets", None)
             row_dict.pop("summary_hashtags", None)
             row_dict.pop("summary_emojis", None)
-
-            thumb = row_dict.get("preview_thumbnail")
-            row_dict["gcs_urls"] = {"preview_thumbnail": thumb if thumb else None}
+            
             row_dict["author_name"] = row_dict.get("author_name") or "Unknown"
-            row_dict.pop("preview_thumbnail", None)
 
             transformed_rows.append(row_dict)
 
@@ -375,7 +375,6 @@ def update_reel(process_id):
             WHERE id = %s AND user_id = %s
         """
 
-        # 🔥 FIXED: Use execute with commit=True instead of fetch_all
         execute(sql, tuple(params), commit=True)
 
         logger.info(f"✅ Successfully saved to NeonDB - Reel {process_id}: {data}")
@@ -407,7 +406,6 @@ def get_reel(process_id):
             shortcode = process_id.split("-")[0]
         shortcode = shortcode.rstrip("-")
 
-        # 🔥 FIXED SQL: No dots! Fully spelled out with user_id included.
         row = fetch_one(
             """
             SELECT
@@ -432,7 +430,7 @@ def get_reel(process_id):
 
         row_dict["recipe"] = json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe"))
         row_dict["workout"] = json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout"))
-        row_dict["gcs_urls"] = json_loads_maybe(row_dict.get("gcs_urls"), default=row_dict.get("gcs_urls"))
+        row_dict["gcs_urls"] = json_loads_maybe(row_dict.get("gcs_urls"), default={})
         row_dict["transcription"] = parse_transcription(row_dict.get("transcription"))
 
         if isinstance(row_dict.get("recipe"), dict):
@@ -465,7 +463,7 @@ def get_reel(process_id):
 def delete_reel(process_id):
     """
     Delete reel from DB + Google Cloud Storage.
-    FIXED: Now uniquely targets the process_id folder to avoid accidental cross-deletions.
+    FIXED: Now uniquely targets the user_id mapped folder.
     """
     if request.method == "OPTIONS":
         return "", 200
@@ -496,12 +494,21 @@ def delete_reel(process_id):
 
         # 2. Delete the specific folder from Google Cloud Storage
         try:
+            from fetcher_api.services.storage import generate_gcs_paths
             storage_client = storage.Client()
             bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-analysis")
             bucket = storage_client.bucket(bucket_name)
             
-            # We prioritize the folder named after the process_id
-            target_folder = f"media/IG_reels/{actual_id}/"
+            source_url = reel_dict.get("source_url") or ""
+            is_fb = "facebook.com" in source_url.lower() or "fb." in source_url.lower()
+            p_code = "FB" if is_fb else "IG"
+            
+            shortcode = actual_id.split("--")[0] if "--" in actual_id else actual_id.split("_")[0]
+            
+            # ✅ FIX: Reconstruct the exact folder path used for saving
+            gcs_paths = generate_gcs_paths(shortcode, p_code, user_id)
+            # The paths return specific files, so we grab the base directory string by splitting
+            target_folder = "/".join(gcs_paths["video"].split("/")[:-1]) + "/"
             
             logger.info(f"🔍 Attempting to clear GCS folder: {target_folder}")
             blobs = list(bucket.list_blobs(prefix=target_folder))
@@ -510,19 +517,6 @@ def delete_reel(process_id):
                 for blob in blobs:
                     blob.delete()
                 logger.info(f"✅ Deleted {len(blobs)} files from GCS folder: {target_folder}")
-            else:
-                # FALLBACK: If the folder doesn't exist by ID, check if it's stored under the old shortcode
-                gcs_urls = json_loads_maybe(reel_dict.get("gcs_urls"), default={})
-                if isinstance(gcs_urls, dict) and gcs_urls.get("preview_thumbnail"):
-                    sample = gcs_urls["preview_thumbnail"]
-                    if "media/IG_reels/" in sample:
-                        folder_name = sample.split("media/IG_reels/")[1].split("/")[0]
-                        fallback_folder = f"media/IG_reels/{folder_name}/"
-                        
-                        fallback_blobs = list(bucket.list_blobs(prefix=fallback_folder))
-                        for fb in fallback_blobs:
-                            fb.delete()
-                        logger.info(f"✅ Deleted {len(fallback_blobs)} files from fallback GCS folder: {fallback_folder}")
 
         except Exception as gcs_error:
             logger.error(f"❌ GCS deletion error for {actual_id}: {gcs_error}")
@@ -583,6 +577,7 @@ def search_reels():
 
             transcription_raw = row_dict.get("transcription")
             row_dict["transcription"] = parse_transcription(transcription_raw)
+            row_dict["gcs_urls"] = json_loads_maybe(row_dict.get("gcs_urls"), default={})
 
             if isinstance(recipe, dict):
                 recipe = normalize_recipe(recipe, caption)
@@ -606,4 +601,3 @@ def search_reels():
     except Exception as e:
         logger.error(f"Error in /search: {e}", exc_info=True)
         return jsonify({"error": "Internal error"}), 500
-

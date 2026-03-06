@@ -8,9 +8,9 @@ from datetime import datetime
 from fetcher_api.services.transcription import transcribe_video_deepgram
 from fetcher_api.services.ai_service import analyze_instagram_video
 from fetcher_api.services.db_insert import insert_reel_into_db
-from fetcher_api.services.storage import save_video_to_gcs, save_result_json_to_gcs
+from fetcher_api.services.storage import save_video_to_gcs, save_result_json_to_gcs, generate_gcs_paths
 from fetcher_api.utils.files import cleanup_file
-from fetcher_api.adapters.db import execute, get_user_tier  # ✅ Imported get_user_tier
+from fetcher_api.adapters.db import execute, get_user_tier
 from fetcher_api.api.helpers.normalizers import (
     get_video_duration,
     json_loads_maybe,
@@ -27,7 +27,7 @@ logger = logging.getLogger("api")
 FREE_MAX_DURATION = 180  # 3 minutes
 PRO_MAX_DURATION = 360   # 6 minutes
 
-def cleanup_video_from_gcs(shortcode, platform_folder="IG_reels"):
+def cleanup_video_from_gcs(shortcode, platform_code="IG", user_id=None):
     """Delete MP4 video from GCS after processing completes (keeps thumbnails + JSONs)"""
     try:
         from fetcher_api.adapters.gcs_client import gcs_client
@@ -36,10 +36,13 @@ def cleanup_video_from_gcs(shortcode, platform_folder="IG_reels"):
             logger.warning("⚠️ GCS client not available, skipping MP4 cleanup")
             return False
 
-        bucket = gcs_client.client.bucket(gcs_client.analysis_bucket_name)
-        video_path = f"media/{platform_folder}/{shortcode}/{shortcode}_video.mp4"
+        # ✅ FIX: Use the exact path generator so we include the user_id in the folder name
+        paths = generate_gcs_paths(shortcode, platform_code, user_id)
+        video_path = paths["video"]
 
+        bucket = gcs_client.client.bucket(gcs_client.analysis_bucket_name)
         blob = bucket.blob(video_path)
+        
         if blob.exists():
             blob.delete()
             logger.info(f"🗑️ Deleted MP4 from GCS (saved space): {video_path}")
@@ -69,8 +72,10 @@ def background_process(
 
     # ✅ DYNAMICALLY ROUTE FB TO FB_reels FOLDER
     is_facebook = "facebook.com" in url.lower() or "fb." in url.lower()
-    platform_folder = "FB_reels" if is_facebook else "IG_reels"
     platform_code = "FB" if is_facebook else "IG"
+    
+    # ✅ FIX: Centralized path generator. This prevents all 404s and orphaned files.
+    gcs_paths = generate_gcs_paths(shortcode, platform_code, user_id)
 
     try:
         logger.info(f"🧵 Background worker started for {result['process_id']} ({platform_code})")
@@ -149,7 +154,8 @@ def background_process(
         if thumbnail_path and os.path.exists(thumbnail_path) and save_to_gcs and gcs_client.available:
             try:
                 bucket = gcs_client.client.bucket(gcs_client.analysis_bucket_name)
-                thumbnail_gcs_path = f"media/{platform_folder}/{shortcode}/{shortcode}_thumbnail.jpeg"
+                # ✅ FIX: Dynamic path
+                thumbnail_gcs_path = gcs_paths["preview_thumbnail"]
                 thumbnail_blob = bucket.blob(thumbnail_gcs_path)
                 thumbnail_blob.upload_from_filename(thumbnail_path, content_type="image/jpeg")
                 
@@ -188,7 +194,7 @@ def background_process(
             transcription_data = {
                 "status": "bookmark_only",
                 "transcript": "", 
-                "detected_language": "unknown"
+                "detected_language": "en" # ✅ FIX: Default to EN to prevent Spanish hallucination
             }
         else:
             raw_transcription = transcribe_video_deepgram(video_path)
@@ -199,15 +205,19 @@ def background_process(
                     transcription_data = {
                         "transcript": raw_transcription,
                         "status": "raw_text",
-                        "detected_language": "unknown",
+                        "detected_language": "en",
                     }
             elif isinstance(raw_transcription, dict):
                 transcription_data = raw_transcription
             else:
-                transcription_data = {"transcript": "", "status": "error", "detected_language": "unknown"}
+                transcription_data = {"transcript": "", "status": "error", "detected_language": "en"}
 
         transcript_text = ensure_dict(transcription_data).get("transcript", "")
         detected_lang = ensure_dict(transcription_data).get("detected_language", "unknown")
+
+        # ✅ FIX SPANISH HALLUCINATION: If Deepgram detected 'unknown' (e.g. music only), force 'en'
+        if not detected_lang or detected_lang.lower() == "unknown":
+            detected_lang = "en"
 
         # 5. OCR Merge (Now essential for long videos)
         merged_text = transcript_text
@@ -318,7 +328,8 @@ def background_process(
                 bucket = gcs_client.client.bucket(gcs_client.analysis_bucket_name)
 
                 if not thumbnail_already_uploaded and thumbnail_path and os.path.exists(thumbnail_path):
-                    thumbnail_gcs_path = f"media/{platform_folder}/{shortcode}/{shortcode}_thumbnail.jpeg"
+                    # ✅ FIX: Dynamic path
+                    thumbnail_gcs_path = gcs_paths["preview_thumbnail"]
                     thumbnail_blob = bucket.blob(thumbnail_gcs_path)
                     thumbnail_blob.upload_from_filename(thumbnail_path, content_type="image/jpeg")
                     thumbnail_url = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/{thumbnail_gcs_path}"
@@ -329,14 +340,16 @@ def background_process(
                     gcs_urls["preview_thumbnail"] = thumbnail_url
                     result["gcs_urls"] = gcs_urls
 
-                caption_json_path = f"media/{platform_folder}/{shortcode}/{shortcode}_caption.json"
+                # ✅ FIX: Dynamic paths
+                caption_json_path = gcs_paths["caption_json"]
                 caption_blob = bucket.blob(caption_json_path)
                 caption_blob.upload_from_string(
                     json.dumps({"caption": caption, "author": author_name}, indent=2, ensure_ascii=False),
                     content_type="application/json",
                 )
 
-                transcription_json_path = f"media/{platform_folder}/{shortcode}/{shortcode}_transcription.json"
+                # ✅ FIX: Dynamic paths
+                transcription_json_path = gcs_paths["transcription"]
                 transcription_blob = bucket.blob(transcription_json_path)
                 transcription_blob.upload_from_string(
                     json.dumps(transcription_data, indent=2, ensure_ascii=False),
@@ -372,13 +385,21 @@ def background_process(
                     media_folder=platform_code,
                 )
 
+                # ✅ FIX: Expose all exact URLs to the DB so the frontend doesn't have to guess
+                base_gcs = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/"
+                gcs_urls = result.get("gcs_urls", {})
+                if isinstance(gcs_urls, str): gcs_urls = json_loads_maybe(gcs_urls, default={})
+                gcs_urls = ensure_dict(gcs_urls)
+                
+                gcs_urls["result_json"] = base_gcs + gcs_paths["result_json"]
+                gcs_urls["caption_json"] = base_gcs + gcs_paths["caption_json"]
+                gcs_urls["transcription"] = base_gcs + gcs_paths["transcription"]
+
                 if video_url:
-                    gcs_urls = result.get("gcs_urls", {})
-                    if isinstance(gcs_urls, str): gcs_urls = json_loads_maybe(gcs_urls, default={})
-                    gcs_urls = ensure_dict(gcs_urls)
                     gcs_urls["video"] = video_url
-                    result["gcs_urls"] = gcs_urls
                     video_uploaded_successfully = True
+
+                result["gcs_urls"] = gcs_urls
 
             except Exception as e:
                 logger.error(f"GCS upload failed: {e}")
@@ -390,7 +411,8 @@ def background_process(
 
         # 10. Cleanup MP4 from GCS
         if video_uploaded_successfully:
-            cleanup_video_from_gcs(shortcode, platform_folder)
+            # ✅ FIX: Pass the user_id so it deletes from the correct folder
+            cleanup_video_from_gcs(shortcode, platform_code, user_id)
 
         # 11. Cleanup local files
         cleanup_file(video_path)
