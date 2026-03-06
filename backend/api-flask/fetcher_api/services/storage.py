@@ -8,7 +8,7 @@ from fetcher_api.adapters.db import fetch_one
 logger = logging.getLogger("storage")
 
 def _get_user_id_for_shortcode(shortcode: str):
-    """Auto-fetch user_id from DB so we can build the folder name correctly."""
+    """Fallback fetch user_id from DB if not provided."""
     try:
         row = fetch_one("SELECT user_id FROM reels WHERE id LIKE %s ORDER BY created_at DESC LIMIT 1", (f"{shortcode}%",))
         if row:
@@ -20,19 +20,15 @@ def _get_user_id_for_shortcode(shortcode: str):
 def generate_gcs_paths(shortcode: str, platform: str = "IG", user_id: str = None):
     shortcode = shortcode.strip()
     
-    # Auto-fetch user_id if it wasn't explicitly passed
-    if not user_id:
-        user_id = _get_user_id_for_shortcode(shortcode)
+    # Prioritize passed user_id, fallback to DB lookup
+    final_user_id = user_id or _get_user_id_for_shortcode(shortcode)
 
-    # Combine them for the exact format you requested
-    folder_name = f"{shortcode}_{user_id}" if user_id else shortcode
-    
+    folder_name = f"{shortcode}_{final_user_id}" if final_user_id else shortcode
     base_path = f"media/{platform}_reels/{folder_name}/"
+    
     return {
         "preview_thumbnail": f"{base_path}{shortcode}_thumbnail.jpeg",
         "video": f"{base_path}{shortcode}_video.mp4",
-        "caption_json": f"{base_path}{shortcode}_caption.json",
-        "transcription": f"{base_path}{shortcode}_transcription.json",
         "result_json": f"{base_path}{shortcode}_result.json"
     }
 
@@ -48,13 +44,13 @@ def _safe_upload(local_path: str, bucket: str, blob_name: str, content_type=None
         logger.error(f"Failed upload: {e}")
         return None
 
-def save_result_json_to_gcs(result: dict, process_id: str, temp_dir: str, shortcode: str = None, media_folder: str = "IG"):
+def save_result_json_to_gcs(result: dict, process_id: str, temp_dir: str, shortcode: str = None, media_folder: str = "IG", user_id: str = None):
     try:
         if not shortcode:
             shortcode = process_id.split("--")[0] if "--" in process_id else process_id.split("_")[0]
 
-        # This now automatically injects the user_id into the path
-        gcs_paths = generate_gcs_paths(shortcode, media_folder)
+        # Explicitly passing user_id prevents orphaned folders
+        gcs_paths = generate_gcs_paths(shortcode, media_folder, user_id=user_id)
         
         local_json_path = os.path.join(temp_dir, f"{process_id}_result.json")
         with open(local_json_path, "w", encoding="utf-8") as f:
@@ -70,15 +66,11 @@ def save_result_json_to_gcs(result: dict, process_id: str, temp_dir: str, shortc
         logger.error(f"Error saving result JSON: {e}")
         return None
 
-def save_video_to_gcs(video_path: str, shortcode: str, media_folder: str = "IG"):
-    gcs_paths = generate_gcs_paths(shortcode, media_folder)
+def save_video_to_gcs(video_path: str, shortcode: str, media_folder: str = "IG", user_id: str = None):
+    gcs_paths = generate_gcs_paths(shortcode, media_folder, user_id=user_id)
     return _safe_upload(video_path, gcs_client.analysis_bucket_name, gcs_paths["video"], content_type="video/mp4")
 
-def save_thumbnail_to_gcs(thumbnail_path: str, shortcode: str, media_folder: str = "IG"):
-    gcs_paths = generate_gcs_paths(shortcode, media_folder)
+# Redundant save_thumbnail functions removed/merged for simplicity
+def save_thumbnail_to_gcs(thumbnail_path: str, shortcode: str, media_folder: str = "IG", user_id: str = None):
+    gcs_paths = generate_gcs_paths(shortcode, media_folder, user_id=user_id)
     return _safe_upload(thumbnail_path, gcs_client.analysis_bucket_name, gcs_paths["preview_thumbnail"], content_type="image/jpeg")
-
-def save_preview_thumbnail_to_gcs(preview_path: str, shortcode: str):
-    gcs_paths = generate_gcs_paths(shortcode, "IG")
-    return _safe_upload(preview_path, gcs_client.analysis_bucket_name, gcs_paths["preview_thumbnail"], content_type="image/jpeg")
-    

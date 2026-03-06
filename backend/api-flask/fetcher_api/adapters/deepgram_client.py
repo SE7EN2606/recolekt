@@ -26,8 +26,7 @@ def is_song_lyrics(transcript: str) -> bool:
     # 1. Check for common song patterns
     song_indicators = [
         r'\bla la la\b', r'\bna na na\b', r'\booh+\b', r'\byeah yeah\b',
-        r'\boh oh\b', r'\bdoo doo\b', r'\bsha la la\b', r'\bah+\s+ah+\b',
-        r'\bcome fly with me\b', r'\bfly away\b', r'\bpretty inside\b', r'\bharley\b',
+        r'\boh oh\b', r'\bdoo doo\b', r'\bsha la la\b', r'\bah+\s+ah+\b'
     ]
     
     for pattern in song_indicators:
@@ -35,31 +34,26 @@ def is_song_lyrics(transcript: str) -> bool:
             logger.info(f"🎵 Song detected: pattern '{pattern}' found")
             return True
     
-    # 2. Check for short transcripts
     words = text.split()
-    if len(words) < 15:
-        incomplete_indicators = [
-            not text.endswith(('.', '!', '?')),
-            len([w for w in words if w in ['the', 'to', 'a', 'that', 'will', 'but', 'inside']]) > len(words) * 0.4,
-        ]
-        if sum(incomplete_indicators) >= 1:
-            logger.info(f"🎵 Song detected: short incomplete sentence ({len(words)} words)")
+    
+    # 2. Check for AI Hallucination loops (instead of generic repetition)
+    # ONLY block if the exact same sentence makes up > 35% of the video AND repeats 4+ times
+    sentences = [s.strip() for s in re.split(r'[.!?]\s+', text) if len(s.strip()) > 2]
+    if len(sentences) >= 5:
+        from collections import Counter
+        sentence_counts = Counter(sentences)
+        most_common_sentence, most_common_count = sentence_counts.most_common(1)[0]
+        
+        if most_common_count >= 4 and (most_common_count / len(sentences)) > 0.35:
+            logger.info(f"🎵 Song/Hallucination detected: sentence looped {most_common_count} times")
             return True
     
-    # 3. Check for excessive repetition
-    sentences = re.split(r'[.!?]\s+', text)
-    if len(sentences) >= 3:
-        sentence_counts = Counter(s.strip() for s in sentences if s.strip())
-        if any(count > 1 for count in sentence_counts.values()):
-            logger.info(f"🎵 Song detected: repeated sentences")
-            return True
-    
-    # 4. Check word repetition ratio
-    if len(words) > 15:
+    # 3. Check word repetition ratio (Lowered to 15% so normal speech easily passes)
+    if len(words) > 30:
         unique_words = len(set(words))
         repetition_ratio = unique_words / len(words)
-        if repetition_ratio < 0.5:
-            logger.info(f"🎵 Song detected: high repetition (ratio={repetition_ratio:.2f})")
+        if repetition_ratio < 0.15:
+            logger.info(f"🎵 Song detected: high word repetition (ratio={repetition_ratio:.2f})")
             return True
     
     return False
@@ -68,7 +62,7 @@ class DeepgramClient:
     def __init__(self, api_key=None):
         self.api_key = api_key or DEEPGRAM_API_KEY
         self.base_url = "https://api.deepgram.com/v1/listen"
-        self.max_file_size_mb = 2
+        self.max_file_size_mb = 50
     
     def _get_headers(self, is_audio=False):
         headers = {"Authorization": f"Token {self.api_key}"}
@@ -112,41 +106,50 @@ class DeepgramClient:
                 if session: session.close()
 
     def transcribe(self, audio_path: str, enhanced: bool = False) -> Optional[Dict[str, Any]]:
-        """File-based transcription with LANGUAGE DETECTION."""
+        """File-based transcription with LANGUAGE DETECTION and FORCED AUDIO SANITIZATION."""
         compressed_path = None
         try:
-            file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
-            if file_size_mb > self.max_file_size_mb:
-                compressed_path = self._compress_audio(audio_path)
-                if compressed_path: audio_path = compressed_path
-                else: return None
+            # ✅ THE FIX: ALWAYS run ffmpeg to extract a clean audio track.
+            # This strips away weird Facebook/TikTok video codecs that confuse Deepgram
+            # and guarantees Deepgram sees the full duration of the audio.
+            logger.info("🎵 Extracting clean audio track for Deepgram...")
+            compressed_path = self._compress_audio(audio_path)
             
-            with open(audio_path, 'rb') as audio_file:
+            # If ffmpeg successfully ripped the audio, use it. Otherwise, fallback to the raw video file.
+            file_to_send = compressed_path if compressed_path else audio_path
+            
+            with open(file_to_send, 'rb') as audio_file:
                 audio_data = audio_file.read()
             
             model = "nova-2" if not enhanced else "nova-2-general"
-            # ✅ FIXED: Removed smart_format (causes hallucinations), added diarize and filler_words
             url = f"{self.base_url}?model={model}&detect_language=true&punctuate=true&diarize=false&filler_words=false"
             
+            logger.info(f"📤 Sending {len(audio_data)} bytes to Deepgram...")
             response = self._make_request(url, data=audio_data)
             
             if response.status_code == 200:
                 result = response.json()
                 try:
                     alt = result["results"]["channels"][0]["alternatives"][0]
-                    transcript = alt["transcript"]
-                    # ✅ CAPTURE DETECTED LANGUAGE
+                    transcript = alt.get("transcript", "")
                     detected_lang = result["results"]["channels"][0].get("detected_language", "en")
                     
-                    if not transcript.strip(): return None
-                    if is_song_lyrics(transcript): return None
+                    if not transcript.strip(): 
+                        logger.warning("⚠️ Deepgram returned empty transcript")
+                        return None
+                        
+                    if is_song_lyrics(transcript): 
+                        return None
                     
                     return {
                         "transcript": transcript,
                         "detected_language": detected_lang
                     }
-                except (KeyError, IndexError): return None
-            return None
+                except (KeyError, IndexError): 
+                    return None
+            else:
+                logger.error(f"❌ Deepgram API error: {response.status_code} - {response.text}")
+                return None
                 
         except Exception as e:
             logger.error(f"Transcription error: {e}")

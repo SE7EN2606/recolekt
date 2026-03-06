@@ -21,16 +21,11 @@ elif IS_DOCKER and not IS_RAILWAY:
 
 import logging
 import warnings
-import hashlib
-import tempfile
 from datetime import datetime, timedelta
-
 from flask import send_from_directory, request, jsonify, render_template
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
-import requests
-from google.cloud import vision
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -52,7 +47,7 @@ logging.basicConfig(
 logger = logging.getLogger("app")
 
 # ============================================
-# 3. FLASK APP INITIALIZATION
+# 3. FLASK APP INITIALIZATION (ONLY ONCE)
 # ============================================
 from fetcher_api import create_app
 
@@ -60,33 +55,15 @@ app = create_app()
 if not app:
     raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
 
-# ✅ THE CORS INTERCEPTOR: This forces perfectly formatted headers on all preflight requests 
-# and overrides the broken manual `OPTIONS` handlers in your blueprint files!
-@app.before_request
-def intercept_options():
-    if request.method == "OPTIONS":
-        from flask import jsonify
-        response = jsonify({"ok": True})
-        origin = request.headers.get("Origin")
-        if origin:
-            response.headers.add("Access-Control-Allow-Origin", origin)
-            response.headers.add("Access-Control-Allow-Credentials", "true")
-        
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control, Pragma")
-        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        return response, 200
-
 # ✅ PROXY FIX: Critical for Railway Load Balancer HTTPS detection
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
 
 # ============================================
-# 4. SESSION & COOKIE CONFIG (THE FIX)
+# 4. SESSION & COOKIE CONFIG
 # ============================================
-# Ensure SECRET_KEY is stable from Railway env
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
-    # If missing, we force a crash so you know it's misconfigured in Railway
-    raise RuntimeError("FATAL: SECRET_KEY not set in Railway environment variables.")
+    raise RuntimeError("FATAL: SECRET_KEY not set in environment variables.")
 
 app.config.update(
     SECRET_KEY=SECRET_KEY,
@@ -94,15 +71,12 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=7),
     SESSION_COOKIE_NAME="recolekt_auth_session",
     SESSION_COOKIE_HTTPONLY=True,
-    # ✅ CRITICAL: SameSite=None + Secure=True is required for Google OAuth redirects
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_SAMESITE="None",
     SESSION_COOKIE_PATH="/",
-    # Letting Domain default to None is safer for subdomains
     SESSION_COOKIE_DOMAIN=None, 
 )
 
-# Template folder for admin pages
 app.template_folder = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "fetcher_api",
@@ -110,7 +84,7 @@ app.template_folder = os.path.join(
 )
 
 # ============================================
-# 5. CORS CONFIGURATION
+# 5. CORS CONFIGURATION (THE ONLY ONE)
 # ============================================
 def _norm_origin(o: str) -> str:
     return (o or "").strip().rstrip("/")
@@ -134,14 +108,16 @@ else:
 
 cors_origins = list(set(_norm_origin(o) for o in cors_origins if o))
 
-# ✅ FIXED: Adding resources={r"/*":...} ensures CORS headers are attached even to 404/500 errors!
+# ✅ THIS is all you need for Delete, Options, and fetching
 CORS(
     app,
-    resources={r"/*": {"origins": cors_origins}},
-    supports_credentials=True,
-    allow_headers=["Content-Type", "Authorization", "Cache-Control", "Pragma"],
-    expose_headers=["Set-Cookie"],
-    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    resources={r"/*": {
+        "origins": cors_origins,
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": "*",  # ✅ changed to "*" to allow cache-control, pragma, etc.
+        "supports_credentials": True,
+        "expose_headers": ["Content-Type", "Authorization"]
+    }},
     max_age=3600,
 )
 
@@ -167,10 +143,8 @@ logger.info("✅ OAuth initialized with Google provider")
 from fetcher_api.api import register_blueprints
 register_blueprints(app)
 
-# ✅ EXPLICITLY REGISTER FOLDERS: Prevents the 404 "Missing Route" CORS illusion
 try:
     from fetcher_api.api.routes.folders import folders_bp
-    # check if not already registered by register_blueprints
     if 'folders' not in app.blueprints:
         app.register_blueprint(folders_bp)
         logger.info("✅ Folders blueprint registered explicitly")
@@ -275,6 +249,5 @@ if not IS_LOCAL:
 # 10. MAIN ENTRY POINT
 # ============================================
 if __name__ == "__main__":
-    # ✅ FIXED: Default to 5001 so it perfectly matches your React frontend config!
     port = int(os.environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port, debug=IS_LOCAL, threaded=True)

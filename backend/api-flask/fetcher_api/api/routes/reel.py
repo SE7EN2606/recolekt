@@ -27,29 +27,25 @@ reel_bp = Blueprint("reels", __name__)
 def add_no_cache_headers(response):
     """Disable caching for dynamic lists"""
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
+    response.headers["Pragma"]        = "no-cache"
+    response.headers["Expires"]       = "0"
     return response
 
 
 def parse_transcription(transcription_raw):
     """
     Extract clean transcript text from DB column.
-
     Input can be:
     - JSON string: '{"status": "ok", "transcript": "...", "detected_language": "fr"}'
     - Dict: {"status": "ok", "transcript": "...", "detected_language": "fr"}
     - Plain text: "Transcript text..."
     - None
-
     Returns: Clean transcript text or None
     """
     if not transcription_raw:
         return None
-
     if isinstance(transcription_raw, dict):
         return transcription_raw.get("transcript")
-
     if isinstance(transcription_raw, str):
         try:
             parsed = json.loads(transcription_raw)
@@ -58,67 +54,52 @@ def parse_transcription(transcription_raw):
         except (json.JSONDecodeError, ValueError):
             pass
         return transcription_raw
-
     return None
 
 
 def _coerce_summary_title_string(summary_title_raw):
     """
     summary_title can be:
-    - string title (legacy)
-    - JSON string of a dict (due to older background_process saving bilingual object)
+    - string title (correct)
+    - JSON string of a dict (older background_process bug)
     - dict (rare)
     We only want a simple string title or None.
     """
     if summary_title_raw is None:
         return None
-
     if isinstance(summary_title_raw, dict):
         return None
-
     if isinstance(summary_title_raw, str):
         parsed = json_loads_maybe(summary_title_raw, default=summary_title_raw)
         if isinstance(parsed, dict):
             return None
         return summary_title_raw.strip() or None
-
     return None
 
 
 def _build_canonical_summary(row_dict, caption: str):
     """
-    Return a canonical bilingual summary object.
+    Return (summary_obj, summary_title_str, english_preview).
 
-    Preferred source: summary_text if it's already a bilingual dict.
+    Preferred source: summary_text if it's already a bilingual dict with an
+    'english' key (written by the AI pipeline).
     Fallback: build from legacy summary_text + bullets/hashtags/emojis columns.
     """
     summary_title_db = _coerce_summary_title_string(row_dict.get("summary_title"))
 
     summary_text_raw = row_dict.get("summary_text")
-    summary_text = json_loads_maybe(summary_text_raw, default=summary_text_raw)
+    summary_text     = json_loads_maybe(summary_text_raw, default=summary_text_raw)
 
     if isinstance(summary_text, dict) and "english" in summary_text:
         summary_obj = summary_text
     else:
-        bullets = json_loads_maybe(
-            row_dict.get("summary_bullets"),
-            default=row_dict.get("summary_bullets"),
-        )
-        hashtags = json_loads_maybe(
-            row_dict.get("summary_hashtags"),
-            default=row_dict.get("summary_hashtags"),
-        )
-        emojis = json_loads_maybe(
-            row_dict.get("summary_emojis"),
-            default=row_dict.get("summary_emojis"),
-        )
+        bullets  = json_loads_maybe(row_dict.get("summary_bullets"),  default=row_dict.get("summary_bullets"))
+        hashtags = json_loads_maybe(row_dict.get("summary_hashtags"), default=row_dict.get("summary_hashtags"))
+        emojis   = json_loads_maybe(row_dict.get("summary_emojis"),   default=row_dict.get("summary_emojis"))
 
-        if not isinstance(bullets, list):
-            bullets = []
-        if not isinstance(hashtags, list):
-            hashtags = []
-        if not isinstance(emojis, list):
-            emojis = []
+        if not isinstance(bullets,  list): bullets  = []
+        if not isinstance(hashtags, list): hashtags = []
+        if not isinstance(emojis,   list): emojis   = []
 
         summary_obj = build_bilingual_summary_object(
             summary_title=summary_title_db,
@@ -139,13 +120,16 @@ def _build_canonical_summary(row_dict, caption: str):
     return summary_obj, summary_title_str, english_preview
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# LIST
+# ──────────────────────────────────────────────────────────────────────────────
+
 @reel_bp.route("/saved_reels", methods=["GET"])
 def list_saved_reels():
     """
     Get paginated list of user's saved reels.
-
-    - ?view=list => lightweight payload for gallery (no recipe/workout/transcription normalization).
-    - default    => full payload.
+    - ?view=list => lightweight payload for gallery (no recipe/workout/transcription).
+    - default     => full payload.
     """
     try:
         try:
@@ -153,18 +137,16 @@ def list_saved_reels():
         except ValueError:
             return jsonify({"error": "Authentication required"}), 401
 
-        page = int(request.args.get("page", 1))
-        per_page = int(request.args.get("per_page", 30))
+        page      = int(request.args.get("page", 1))
+        per_page  = int(request.args.get("per_page", 30))
         view_mode = request.args.get("view", "full").lower().strip()
-        per_page = max(1, min(per_page, 100))
-        offset = (page - 1) * per_page
+        per_page  = max(1, min(per_page, 100))
+        offset    = (page - 1) * per_page
 
-        # --------------------------------------------------
-        # LIGHTWEIGHT LIST VIEW (for gallery / DataContext)
-        # --------------------------------------------------
+        # ── LIGHTWEIGHT LIST VIEW ──────────────────────────────────────────
         if view_mode == "list":
             sql = """
-                SELECT 
+                SELECT
                     id,
                     source_url,
                     folder_id,
@@ -174,7 +156,9 @@ def list_saved_reels():
                     summary_title,
                     summary_topic,
                     summary_text,
+                    summary_bullets,
                     summary_hashtags,
+                    summary_emojis,
                     content_type,
                     created_at,
                     caption,
@@ -198,83 +182,40 @@ def list_saved_reels():
                 else:
                     continue
 
-                caption = row_dict.get("caption") or ""
-                summary_title = row_dict.get("summary_title")
-
-                summary_text_raw = row_dict.get("summary_text")
-                summary_text = json_loads_maybe(summary_text_raw, default=summary_text_raw)
-
-                hashtags = json_loads_maybe(
-                    row_dict.get("summary_hashtags"),
-                    default=row_dict.get("summary_hashtags"),
-                )
-                if not isinstance(hashtags, list):
-                    hashtags = []
-
-                if isinstance(summary_text, dict):
-                    summary = summary_text
-                else:
-                    english_summary = summary_text if isinstance(summary_text, str) else ""
-                    summary_title_str = summary_title
-                    if not summary_title_str and caption:
-                        summary_title_str = caption[:50]
-
-                    summary = {
-                        "category": row_dict.get("summary_category", "General"),
-                        "title": summary_title_str,
-                        "topic": row_dict.get("summary_topic", ""),
-                        "english": {
-                            "summary": english_summary,
-                            "headlines": [],
-                            "hashtags": hashtags,
-                            "emojis": [],
-                        },
-                        "original": {
-                            "summary": "",
-                            "headlines": [],
-                            "hashtags": hashtags,
-                            "emojis": [],
-                        },
-                    }
-
-                # ✅ FIX: Extract full GCS URLs natively
+                caption  = row_dict.get("caption") or ""
                 gcs_urls = json_loads_maybe(row_dict.get("gcs_urls"), default={})
-                
-                transformed_rows.append(
-                    {
-                        "id": row_dict["id"],
-                        "source_url": row_dict.get("source_url"),
-                        "folder_id": row_dict.get("folder_id") or "default",
-                        "is_favorite": bool(row_dict.get("is_favorite")),
-                        "status": row_dict.get("status") or "processing",
-                        "content_type": row_dict.get("content_type"),
-                        "created_at": row_dict.get("created_at").isoformat()
-                        if row_dict.get("created_at")
-                        else None,
-                        "caption": caption,
-                        "author_name": row_dict.get("author_name") or "Unknown",
-                        "is_long_video": row_dict.get("is_long_video"),
-                        "duration": row_dict.get("duration"),
-                        "gcs_urls": gcs_urls,
-                        "summary": summary,
-                    }
-                )
 
-            response = jsonify(
-                {
-                    "reels": transformed_rows,
-                    "page": page,
-                    "per_page": per_page,
-                    "has_more": len(transformed_rows) == per_page,
-                }
-            )
+                # ← same function used by full view and single-reel GET
+                summary_obj, summary_title_str, _ = _build_canonical_summary(row_dict, caption)
+
+                transformed_rows.append({
+                    "id":            row_dict["id"],
+                    "source_url":    row_dict.get("source_url"),
+                    "folder_id":     row_dict.get("folder_id") or "default",
+                    "is_favorite":   bool(row_dict.get("is_favorite")),
+                    "status":        row_dict.get("status") or "processing",
+                    "content_type":  row_dict.get("content_type"),
+                    "created_at":    row_dict["created_at"].isoformat() if row_dict.get("created_at") else None,
+                    "caption":       caption,
+                    "author_name":   row_dict.get("author_name") or "Unknown",
+                    "is_long_video": row_dict.get("is_long_video"),
+                    "duration":      row_dict.get("duration"),
+                    "gcs_urls":      gcs_urls,
+                    "summary":       summary_obj,
+                    "title":         summary_title_str,   # flat convenience field for frontend
+                })
+
+            response = jsonify({
+                "reels":    transformed_rows,
+                "page":     page,
+                "per_page": per_page,
+                "has_more": len(transformed_rows) == per_page,
+            })
             return add_no_cache_headers(response)
 
-        # --------------------------------------------------
-        # FULL VIEW
-        # --------------------------------------------------
+        # ── FULL VIEW ──────────────────────────────────────────────────────
         sql = """
-            SELECT 
+            SELECT
                 id, source_url, folder_id, is_favorite, status,
                 summary_category, summary_title, summary_topic, summary_text,
                 summary_bullets, summary_hashtags, summary_emojis,
@@ -286,7 +227,6 @@ def list_saved_reels():
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s
         """
-
         db_rows = fetch_all(sql, (user_id, per_page, offset))
         transformed_rows = []
 
@@ -300,43 +240,43 @@ def list_saved_reels():
 
             caption = row_dict.get("caption") or ""
 
-            row_dict["recipe"] = json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe"))
-            row_dict["workout"] = json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout"))
-
-            transcription_raw = row_dict.get("transcription")
-            row_dict["transcription"] = parse_transcription(transcription_raw)
-            row_dict["gcs_urls"] = json_loads_maybe(row_dict.get("gcs_urls"), default={})
+            row_dict["recipe"]        = json_loads_maybe(row_dict.get("recipe"),  default=row_dict.get("recipe"))
+            row_dict["workout"]       = json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout"))
+            row_dict["transcription"] = parse_transcription(row_dict.get("transcription"))
+            row_dict["gcs_urls"]      = json_loads_maybe(row_dict.get("gcs_urls"), default={})
 
             if isinstance(row_dict.get("recipe"), dict):
                 row_dict["recipe"] = normalize_recipe(row_dict["recipe"], caption)
 
-            summary_obj, summary_title_str, _english_preview = _build_canonical_summary(row_dict, caption)
+            summary_obj, summary_title_str, _ = _build_canonical_summary(row_dict, caption)
             row_dict["summary_title"] = summary_title_str
-            row_dict["summary_text"] = summary_obj
-            row_dict["summary"] = summary_obj
+            row_dict["summary_text"]  = summary_obj
+            row_dict["summary"]       = summary_obj
+            row_dict["title"]         = summary_title_str   # flat convenience field
 
-            row_dict.pop("summary_bullets", None)
+            row_dict.pop("summary_bullets",  None)
             row_dict.pop("summary_hashtags", None)
-            row_dict.pop("summary_emojis", None)
-            
-            row_dict["author_name"] = row_dict.get("author_name") or "Unknown"
+            row_dict.pop("summary_emojis",   None)
 
+            row_dict["author_name"] = row_dict.get("author_name") or "Unknown"
             transformed_rows.append(row_dict)
 
-        response = jsonify(
-            {
-                "reels": transformed_rows,
-                "page": page,
-                "per_page": per_page,
-                "has_more": len(transformed_rows) == per_page,
-            }
-        )
+        response = jsonify({
+            "reels":    transformed_rows,
+            "page":     page,
+            "per_page": per_page,
+            "has_more": len(transformed_rows) == per_page,
+        })
         return add_no_cache_headers(response)
 
     except Exception as e:
         logger.error(f"Error in /saved_reels: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# UPDATE
+# ──────────────────────────────────────────────────────────────────────────────
 
 @reel_bp.route("/update/<process_id>", methods=["PUT"])
 def update_reel(process_id):
@@ -352,7 +292,7 @@ def update_reel(process_id):
             return jsonify({"error": "No data provided"}), 400
 
         updates = []
-        params = []
+        params  = []
 
         if data.get("folder_id") is not None:
             updates.append("folder_id = %s")
@@ -365,7 +305,6 @@ def update_reel(process_id):
         if not updates:
             return jsonify({"error": "No valid fields to update"}), 400
 
-        # Build the SQL parameters
         params.append(process_id)
         params.append(user_id)
 
@@ -374,22 +313,24 @@ def update_reel(process_id):
             SET {', '.join(updates)}, updated_at = NOW()
             WHERE id = %s AND user_id = %s
         """
-
         execute(sql, tuple(params), commit=True)
-
         logger.info(f"✅ Successfully saved to NeonDB - Reel {process_id}: {data}")
 
         return jsonify({
-            "status": "updated",
-            "id": process_id,
-            "folder_id": data.get("folder_id"),
-            "is_favorite": data.get("is_favorite")
+            "status":     "updated",
+            "id":         process_id,
+            "folder_id":  data.get("folder_id"),
+            "is_favorite": data.get("is_favorite"),
         })
 
     except Exception as e:
         logger.error(f"Error updating reel {process_id}: {e}", exc_info=True)
         return jsonify({"error": "Internal error"}), 500
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GET SINGLE
+# ──────────────────────────────────────────────────────────────────────────────
 
 @reel_bp.route("/reel/<process_id>", methods=["GET"])
 def get_reel(process_id):
@@ -426,44 +367,47 @@ def get_reel(process_id):
             return jsonify({"error": "Reel not found"}), 404
 
         row_dict = dict(row) if hasattr(row, "keys") else row._asdict()
-        caption = row_dict.get("caption") or ""
+        caption  = row_dict.get("caption") or ""
 
-        row_dict["recipe"] = json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe"))
-        row_dict["workout"] = json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout"))
-        row_dict["gcs_urls"] = json_loads_maybe(row_dict.get("gcs_urls"), default={})
+        row_dict["recipe"]        = json_loads_maybe(row_dict.get("recipe"),  default=row_dict.get("recipe"))
+        row_dict["workout"]       = json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout"))
+        row_dict["gcs_urls"]      = json_loads_maybe(row_dict.get("gcs_urls"), default={})
         row_dict["transcription"] = parse_transcription(row_dict.get("transcription"))
 
         if isinstance(row_dict.get("recipe"), dict):
             row_dict["recipe"] = normalize_recipe(row_dict["recipe"], caption)
 
-        summary_obj, summary_title_str, _english_preview = _build_canonical_summary(row_dict, caption)
+        summary_obj, summary_title_str, _ = _build_canonical_summary(row_dict, caption)
         row_dict["summary_title"] = summary_title_str
-        row_dict["summary_text"] = summary_obj
-        row_dict["summary"] = summary_obj
+        row_dict["summary_text"]  = summary_obj
+        row_dict["summary"]       = summary_obj
+        row_dict["title"]         = summary_title_str   # flat convenience field
 
-        row_dict.pop("summary_bullets", None)
+        row_dict.pop("summary_bullets",  None)
         row_dict.pop("summary_hashtags", None)
-        row_dict.pop("summary_emojis", None)
+        row_dict.pop("summary_emojis",   None)
 
         row_dict["author_name"] = row_dict.get("author_name") or "Unknown"
-
         if row_dict.get("created_at"):
             row_dict["created_at"] = row_dict["created_at"].isoformat()
 
         logger.info(f"✅ GET /reel/{process_id} -> {row_dict['id']}")
-        response = jsonify(row_dict)
-        return add_no_cache_headers(response)
+        return add_no_cache_headers(jsonify(row_dict))
 
     except Exception as e:
         logger.error(f"Error fetching reel {process_id}: {e}", exc_info=True)
         return jsonify({"error": "Internal error"}), 500
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# DELETE
+# ──────────────────────────────────────────────────────────────────────────────
+
 @reel_bp.route("/reel/<process_id>", methods=["DELETE", "OPTIONS"])
 def delete_reel(process_id):
     """
     Delete reel from DB + Google Cloud Storage.
-    FIXED: Now uniquely targets the user_id mapped folder.
+    Uniquely targets the user_id mapped folder.
     """
     if request.method == "OPTIONS":
         return "", 200
@@ -474,12 +418,11 @@ def delete_reel(process_id):
         except ValueError:
             return jsonify({"error": "Authentication required"}), 401
 
-        # 1. Fetch the record first to get the GCS URLs and the real ID
         reel_data = fetch_one(
             """
-            SELECT id, gcs_urls, source_url 
-            FROM reels 
-            WHERE user_id = %s AND id = %s 
+            SELECT id, gcs_urls, source_url
+            FROM reels
+            WHERE user_id = %s AND id = %s
             LIMIT 1
             """,
             (user_id, process_id),
@@ -492,27 +435,22 @@ def delete_reel(process_id):
         reel_dict = dict(reel_data) if hasattr(reel_data, "keys") else reel_data._asdict()
         actual_id = reel_dict["id"]
 
-        # 2. Delete the specific folder from Google Cloud Storage
         try:
             from fetcher_api.services.storage import generate_gcs_paths
             storage_client = storage.Client()
-            bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-analysis")
-            bucket = storage_client.bucket(bucket_name)
-            
+            bucket_name    = os.getenv("GCS_BUCKET_NAME", "recolekt-analysis")
+            bucket         = storage_client.bucket(bucket_name)
+
             source_url = reel_dict.get("source_url") or ""
-            is_fb = "facebook.com" in source_url.lower() or "fb." in source_url.lower()
-            p_code = "FB" if is_fb else "IG"
-            
-            shortcode = actual_id.split("--")[0] if "--" in actual_id else actual_id.split("_")[0]
-            
-            # ✅ FIX: Reconstruct the exact folder path used for saving
-            gcs_paths = generate_gcs_paths(shortcode, p_code, user_id)
-            # The paths return specific files, so we grab the base directory string by splitting
+            is_fb      = "facebook.com" in source_url.lower() or "fb." in source_url.lower()
+            p_code     = "FB" if is_fb else "IG"
+            shortcode  = actual_id.split("--")[0] if "--" in actual_id else actual_id.split("_")[0]
+
+            gcs_paths     = generate_gcs_paths(shortcode, p_code, user_id)
             target_folder = "/".join(gcs_paths["video"].split("/")[:-1]) + "/"
-            
+
             logger.info(f"🔍 Attempting to clear GCS folder: {target_folder}")
             blobs = list(bucket.list_blobs(prefix=target_folder))
-            
             if blobs:
                 for blob in blobs:
                     blob.delete()
@@ -521,15 +459,18 @@ def delete_reel(process_id):
         except Exception as gcs_error:
             logger.error(f"❌ GCS deletion error for {actual_id}: {gcs_error}")
 
-        # 3. Finally, delete the row from the database
         execute("DELETE FROM reels WHERE user_id = %s AND id = %s", (user_id, actual_id))
         logger.info(f"✅ Deleted reel {actual_id} from database")
-
         return jsonify({"status": "deleted", "id": actual_id}), 200
 
     except Exception as e:
         logger.error(f"❌ Error in delete_reel: {e}", exc_info=True)
         return jsonify({"error": "Internal error", "details": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SEARCH
+# ──────────────────────────────────────────────────────────────────────────────
 
 @reel_bp.route("/search", methods=["GET"])
 def search_reels():
@@ -545,7 +486,7 @@ def search_reels():
             return jsonify({"error": "Authentication required"}), 401
 
         sql = """
-            SELECT 
+            SELECT
                 id, source_url, folder_id, is_favorite, status,
                 summary_category, summary_title, summary_topic, summary_text,
                 summary_bullets, summary_hashtags, summary_emojis,
@@ -558,7 +499,6 @@ def search_reels():
             ORDER BY created_at DESC
             LIMIT 200
         """
-
         rows = fetch_all(sql, (user_id, q))
         transformed = []
 
@@ -572,28 +512,28 @@ def search_reels():
 
             caption = row_dict.get("caption") or ""
 
-            recipe = json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe"))
+            recipe  = json_loads_maybe(row_dict.get("recipe"),  default=row_dict.get("recipe"))
             workout = json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout"))
 
-            transcription_raw = row_dict.get("transcription")
-            row_dict["transcription"] = parse_transcription(transcription_raw)
-            row_dict["gcs_urls"] = json_loads_maybe(row_dict.get("gcs_urls"), default={})
+            row_dict["transcription"] = parse_transcription(row_dict.get("transcription"))
+            row_dict["gcs_urls"]      = json_loads_maybe(row_dict.get("gcs_urls"), default={})
 
             if isinstance(recipe, dict):
                 recipe = normalize_recipe(recipe, caption)
 
-            summary_obj, summary_title_str, _english_preview = _build_canonical_summary(row_dict, caption)
+            summary_obj, summary_title_str, _ = _build_canonical_summary(row_dict, caption)
             row_dict["summary_title"] = summary_title_str
-            row_dict["summary_text"] = summary_obj
-            row_dict["summary"] = summary_obj
-            row_dict.pop("summary_bullets", None)
+            row_dict["summary_text"]  = summary_obj
+            row_dict["summary"]       = summary_obj
+            row_dict["title"]         = summary_title_str
+
+            row_dict.pop("summary_bullets",  None)
             row_dict.pop("summary_hashtags", None)
-            row_dict.pop("summary_emojis", None)
+            row_dict.pop("summary_emojis",   None)
 
             row_dict["content_type"] = row_dict.get("content_type", "generic")
-            row_dict["recipe"] = recipe
-            row_dict["workout"] = workout
-
+            row_dict["recipe"]       = recipe
+            row_dict["workout"]      = workout
             transformed.append(row_dict)
 
         return jsonify(transformed)

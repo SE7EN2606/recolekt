@@ -1,8 +1,8 @@
 [
   {
-    "origin": ["http://localhost:3000", "https://recolekt-front.netlify.app"],
-    "method": ["GET", "HEAD"],
-    "responseHeader": ["Content-Type", "Access-Control-Allow-Origin"],
+    "origin": ["https://staging.recolekt.app", "http://localhost:3000", "https://recolekt.app"],
+    "method": ["GET", "HEAD", "OPTIONS"],
+    "responseHeader": ["*"],
     "maxAgeSeconds": 3600
   }
 ]

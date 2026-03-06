@@ -67,7 +67,8 @@ const safeString = (val: any): string => {
 
 const VideoDetailSkeleton = () => (
   <div className="animate-pulse relative w-full px-0 pb-12">
-    <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-12 items-start">
+    {/* ✅ Changed gap-12 to gap-6 here */}
+    <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-6 items-start">
       <div className="min-w-0 w-full">
         <div className="w-full aspect-[9/8] bg-gray-200/80 rounded-2xl mb-6 mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0"></div>
         <div className="h-10 bg-gray-200/80 rounded-lg w-3/4 mb-4"></div>
@@ -240,7 +241,8 @@ export const VideoDetail: React.FC = () => {
 
   return (
     <div className="animate-fade-in relative px-0 pb-20 md:pb-12">
-      <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-12 items-start">
+      {/* ✅ Changed gap-12 to gap-6 here to match global layout */}
+      <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-6 items-start">
         
         {/* ======================= LEFT COLUMN ======================= */}
         <div className="min-w-0 w-full flex flex-col">
@@ -394,34 +396,42 @@ export const VideoDetail: React.FC = () => {
         </div>
 
         {/* ======================= RIGHT COLUMN (DESKTOP) ======================= */}
-        {/* ✅ FIXED: Removed automated flex-gap completely. Replaced with strictly controlled bottom margins (mb) to align optical gaps perfectly */}
-        <div className="hidden md:block w-full mt-6 md:mt-0">
+        {/* ✅ FIXED: Pure flex column with strict gap-6. Original link is now wrapped in standard bg-white card. */}
+        <div className="hidden md:flex flex-col w-full gap-6 mt-6 md:mt-0">
             
-            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col mb-6">
-                <div className="p-5 flex flex-col gap-2 hover:bg-gray-50/50 transition-colors border-b border-gray-50">
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col shrink-0 divide-y divide-gray-100">
+                <div className="p-5 flex flex-col gap-3 hover:bg-gray-50/50 transition-colors">
                    <div className="flex items-center gap-2">
                       <div className="p-1.5 bg-violet-50 text-violet-600 rounded-md">
                          <CategoryIcon size={16} />
                       </div>
                       <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Category</span>
                    </div>
-                   {isEditing ? <input className="text-lg font-bold border-b border-primary-200 w-full" value={viewModel.category} onChange={e => handleEditField('category', e.target.value)} /> : <div className="text-lg font-bold text-gray-900 pl-1 leading-snug">{viewModel.category}</div>}
+                   {isEditing ? (
+                     <input className="text-lg font-bold border-b border-primary-200 w-full" value={viewModel.category} onChange={e => handleEditField('category', e.target.value)} />
+                   ) : (
+                     <div className="text-lg font-bold text-gray-900 pl-1 leading-snug">{viewModel.category}</div>
+                   )}
                 </div>
 
                 {(isEditing || viewModel.subCategory) && (
-                  <div className="p-5 border-t border-gray-50 flex flex-col gap-2 hover:bg-gray-50/50 transition-colors">
+                  <div className="p-5 flex flex-col gap-3 hover:bg-gray-50/50 transition-colors">
                      <div className="flex items-center gap-2">
                         <div className="p-1.5 bg-pink-50 text-pink-600 rounded-md">
                            <TopicIcon size={16} />
                         </div>
                         <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Topic</span>
                      </div>
-                     {isEditing ? <input className="text-lg font-bold border-b border-primary-200 w-full" value={viewModel.subCategory} onChange={e => handleEditField('topic', e.target.value)} /> : <div className="text-lg font-bold text-gray-900 pl-1 leading-snug">{viewModel.subCategory}</div>}
+                     {isEditing ? (
+                       <input className="text-lg font-bold border-b border-primary-200 w-full" value={viewModel.subCategory} onChange={e => handleEditField('topic', e.target.value)} />
+                     ) : (
+                       <div className="text-lg font-bold text-gray-900 pl-1 leading-snug">{viewModel.subCategory}</div>
+                     )}
                   </div>
                 )}
 
-                <div className="p-5 border-t border-gray-50 bg-gray-50/30">
-                   <div className="flex items-center gap-2 mb-3">
+                <div className="p-5 flex flex-col gap-3 bg-gray-50/30">
+                   <div className="flex items-center gap-2">
                       <div className="p-1.5 bg-cyan-50 text-cyan-600 rounded-md">
                          <HashtagsIcon size={16} />
                       </div>
@@ -432,7 +442,7 @@ export const VideoDetail: React.FC = () => {
                       .hashtag-links a { display: inline-flex !important; align-items: center !important; justify-content: center !important; padding: 0.375rem 0.9rem !important; border-radius: 9999px !important; background-color: #e0f2fe !important; color: #075985 !important; border: 1px solid #7dd3fc !important; font-size: 0.75rem !important; font-weight: 700 !important; box-shadow: 0 1px 2px rgba(8, 145, 178, 0.15) !important; text-decoration: none !important; }
                       .hashtag-links a:hover { background-color: #bae6fd !important; border-color: #38bdf8 !important; box-shadow: 0 2px 6px rgba(8, 145, 178, 0.25) !important; transform: translateY(-1px); }
                    `}</style>
-                   <div className="hashtag-links flex flex-wrap gap-2">
+                   <div className="hashtag-links flex flex-wrap gap-2 pl-1">
                      {viewModel.tags && viewModel.tags.length > 0 ? (
                         viewModel.tags.map((tag: string, idx: number) => {
                            const cleanTag = safeString(tag).replace('#', '');
@@ -446,7 +456,7 @@ export const VideoDetail: React.FC = () => {
             </div>
 
             {viewModel.transcript && (
-              <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col mb-5">
+              <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col shrink-0">
                  <button onClick={() => setTranscriptOpen(!transcriptOpen)} className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition-colors">
                     <div className="flex items-center gap-2">
                        <div className="p-1.5 bg-gray-100 text-gray-600 rounded-md">
@@ -467,9 +477,10 @@ export const VideoDetail: React.FC = () => {
             )}
 
             {viewModel.originalUrl && (
-              <div className="flex flex-col mt-1">
-                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider pl-1 mb-3">Original Link</h4>
-                 <a href={viewModel.originalUrl} target="_blank" rel="noreferrer" className="block">
+              // ✅ FIXED: Wrapped in standard card container so gap-6 aligns it flawlessly
+              <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden p-5 shrink-0">
+                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Original Link</h4>
+                 <a href={viewModel.originalUrl} target="_blank" rel="noreferrer" className="block w-full">
                     {viewModel.platform === 'facebook' ? (
                       <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-white font-bold text-sm shadow-sm transition bg-[#1877F2] hover:bg-[#166FE5]">
                         <PlatformIconBtn platform="facebook" />
