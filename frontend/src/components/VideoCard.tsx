@@ -20,7 +20,6 @@ const safeStr = (v: any): string => {
   return String(v);
 };
 
-// ✅ Recursively find folder name by ID
 const getFolderName = (folderId: string, folders: any[]): string | null => {
   if (!folderId || folderId === 'all' || folderId === 'unsorted' || folderId === 'default') return null;
   if (folderId === 'favorites') return 'Favorites';
@@ -49,7 +48,6 @@ function resolveTitle(video: any, t: any): { english: string; original: string; 
   if (typeof recipeObj === 'string') {
     try { recipeObj = JSON.parse(recipeObj); } catch(e) { recipeObj = {}; }
   }
-
   if (recipeObj?.recipe) recipeObj = recipeObj.recipe;
 
   const recEngTitle = safeStr(recipeObj?.english?.title).trim();
@@ -65,7 +63,6 @@ function resolveTitle(video: any, t: any): { english: string; original: string; 
 
   const english = sumEngTitle || recEngTitle || dbTitle || passedTitle || summaryObj?.title || safeStr(video?.caption ?? '').split('\n')[0].trim() || DEFAULT;
   const original = sumOrigTitle || recOrigTitle || dbTitle || passedTitle || summaryObj?.title || english;
-
   const hasTwoLanguages = !!(sumEngTitle && sumOrigTitle) || !!(recEngTitle && recOrigTitle);
 
   return { english, original, hasTwoLanguages };
@@ -74,7 +71,6 @@ function resolveTitle(video: any, t: any): { english: string; original: string; 
 const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggleSelect, selectionMode }) => {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation(['videoCard', 'common']);
-  // ✅ Added folders
   const { toggleFavorite, addVideo, deleteVideos, folders } = useData();
 
   const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
@@ -99,13 +95,10 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
   const isProcessing = video?.category === 'Processing' || video?.status === 'processing';
   const isFailedStatus = video?.category === 'Failed' || video?.status === 'error' || video?.status === 'failed';
-
   const thumbnailUrl = video?.thumbnailUrl || video?.thumbnail_url || video?.gcs_urls?.preview_thumbnail || video?.gcsUrls?.previewThumbnail || video?.preview_thumbnail || '';
 
   useEffect(() => {
-    if (imgRef.current && imgRef.current.complete) {
-      setImageLoaded(true);
-    }
+    if (imgRef.current && imgRef.current.complete) setImageLoaded(true);
   }, [thumbnailUrl]);
 
   const isDone = video?.status === 'done' || video?.status === 'completed';
@@ -115,7 +108,6 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
   const isSorted = Boolean(video.folderId && video.folderId !== 'all' && video.folderId !== 'unsorted' && video.folderId !== 'default');
 
-  // ✅ Resolve folder name from folders context
   const folderName = useMemo(
     () => getFolderName(video?.folderId || '', folders || []),
     [video?.folderId, folders]
@@ -126,7 +118,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
   let languageCode = 'EN';
   const transcriptionObj = video?.transcription ?? video?.raw?.transcription ?? video?.__raw?.transcription;
-  if (transcriptionObj && transcriptionObj.detected_language) {
+  if (transcriptionObj?.detected_language) {
     languageCode = String(transcriptionObj.detected_language).toUpperCase();
   } else if (video?.language) {
     languageCode = String(video.language).toUpperCase();
@@ -151,31 +143,17 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     e.preventDefault();
     e.stopPropagation();
     if (isDisabled) return;
-
-    if (isFavorite) {
-      setShowRemoveConfirm(true);
-      return;
-    }
-
+    if (isFavorite) { setShowRemoveConfirm(true); return; }
     setAnimateHeart(true);
     setIsFavorite(true);
     setTimeout(() => setAnimateHeart(false), 400);
-
-    try {
-      await toggleFavorite(videoId);
-    } catch (err) {
-      setIsFavorite(false);
-    }
+    try { await toggleFavorite(videoId); } catch (err) { setIsFavorite(false); }
   };
 
   const confirmRemoveFavorite = async () => {
     setIsFavorite(false);
     setShowRemoveConfirm(false);
-    try {
-      await toggleFavorite(videoId);
-    } catch (err) {
-      setIsFavorite(true);
-    }
+    try { await toggleFavorite(videoId); } catch (err) { setIsFavorite(true); }
   };
 
   const handleLanguageToggle = (e: React.MouseEvent) => {
@@ -186,15 +164,9 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
-    if (isDisabled) {
-      e.preventDefault(); e.stopPropagation(); return;
-    }
-
-    if (selectionMode) {
-      e.preventDefault(); e.stopPropagation(); onToggleSelect?.();
-    } else {
-      navigate(`/video/${videoId}`);
-    }
+    if (isDisabled) { e.preventDefault(); e.stopPropagation(); return; }
+    if (selectionMode) { e.preventDefault(); e.stopPropagation(); onToggleSelect?.(); }
+    else { navigate(`/video/${videoId}`); }
   };
 
   const handleRetry = async (e: React.MouseEvent) => {
@@ -211,7 +183,8 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     try { await deleteVideos([videoId]); } catch (err) { setIsDeleting(false); }
   };
 
-  const errorText = video?.errorMessage || video?.error_message || video?.raw?.errormessage || (isMissingThumbnail ? t('videoCard:missingThumbnailText', 'Media download failed.') : t('videoCard:defaultError'));
+  const errorText = video?.errorMessage || video?.error_message || video?.raw?.errormessage
+    || (isMissingThumbnail ? t('videoCard:missingThumbnailText', 'Media download failed.') : t('videoCard:defaultError'));
 
   return (
     <>
@@ -219,7 +192,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         onClick={handleCardClick}
         className={`relative rounded-2xl overflow-hidden aspect-[9/16] shadow-sm transition-all duration-300 bg-gray-100 cursor-pointer hover:shadow-lg ${selected ? 'ring-2 ring-primary-600 ring-offset-2' : ''} group`}
       >
-        {/* Hover overlay */}
+        {/* Fade overlay for disabled state */}
         <div className={`absolute inset-0 bg-gray-200 transition-opacity duration-200 ${isDisabled ? 'opacity-40' : 'opacity-0'}`} />
 
         {/* Thumbnail */}
@@ -318,13 +291,10 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           </div>
         )}
 
-        {/* ✅ Bottom left: folder badge (replaces globe) */}
+        {/* Folder badge — bottom left */}
         {folderName && !isDisabled && !selectionMode && (
-          <div className="absolute bottom-3 left-3 z-30">
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg"
-            >
+          <div className="absolute bottom-3 left-3 z-30" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
               <FolderIcon size={11} className="text-primary-400 flex-shrink-0" strokeWidth={2.5} />
               <span className="text-[10px] font-bold text-white uppercase tracking-wide leading-none truncate max-w-[80px]">
                 {folderName}
@@ -333,12 +303,11 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           </div>
         )}
 
-        {/* ✅ Language toggle — still available via top-left area when no heart (selectionMode) */}
-        {hasTwoLanguages && !isDisabled && !selectionMode && (
+        {/* Language toggle — bottom left, only when no folder badge, desktop only */}
+        {hasTwoLanguages && !isDisabled && !selectionMode && !folderName && (
           <button
             onClick={handleLanguageToggle}
-            className="absolute bottom-3 left-3 px-3 py-1.5 rounded-lg flex items-center gap-1.5 z-30 shadow-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors"
-            style={{ display: folderName ? 'none' : undefined }}
+            className="hidden md:flex absolute bottom-3 left-3 px-3 py-1.5 rounded-lg items-center gap-1.5 z-30 shadow-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors"
             title={`Affichage en ${showOriginal ? languageCode : 'EN'}`}
           >
             <Globe size={14} aria-hidden="true" />
@@ -346,14 +315,10 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           </button>
         )}
 
-        {/* Duration — bottom right */}
+        {/* Duration — bottom right, desktop only */}
         {duration && duration !== '0:00' && !hasError && (
-          <div className="absolute bottom-3 right-3 z-30">
-            <div className="flex items-center px-2.5 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
-              <span className="text-[10px] font-bold text-white tracking-wide leading-none">
-                {duration}
-              </span>
-            </div>
+          <div className="hidden md:block absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-medium text-white z-30">
+            {duration}
           </div>
         )}
       </div>

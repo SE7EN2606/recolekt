@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, ChevronDown, Heart, FolderInput, AlertCircle, X, EllipsisVertical, Archive, AlignLeft, Pencil, Save, Globe, Folder as FolderIcon } from 'lucide-react';
+import { ArrowLeft, Trash2, ChevronDown, Heart, FolderInput, AlertCircle, X, EllipsisVertical, Archive, AlignLeft, Pencil, Save, Globe, Folder } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { getAuthHeaders } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -16,6 +16,7 @@ import { getCategory, getTopic } from '../utils/videoUtils';
 import { API_BASE } from '../utils/api';
 import { useScrollLock } from '../utils/useScrollLock';
 
+/* ─── IMPORTED EXTERNAL ICONS ─── */
 import { 
   CustomMessageSquareMoreIcon, 
   IOSShareIcon, 
@@ -26,33 +27,11 @@ import {
   PlatformIconBtn 
 } from '../components/CustomIcons';
 
-
-// ✅ Guard against raw internal IDs like "Fld_1772743320885" or UUIDs
-const looksLikeInternalId = (str: string) =>
-  /^[A-Za-z]{0,4}_\d{6,}$/.test(str) || /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(str);
-
-const getFolderName = (folderId: string, folders: any[]): string | null => {
-  if (!folderId || folderId === 'all') return null;
-  if (folderId === 'unsorted') return 'Unsorted';
-  if (folderId === 'favorites') return 'Favorites';
-
-  // Flatten all folders + any nested subfolders into one list
-  const flatten = (arr: any[]): any[] =>
-    arr.reduce((acc, f) => {
-      acc.push(f);
-      const children = f.subFolders || f.sub_folders || f.children || [];
-      if (children.length > 0) acc.push(...flatten(children));
-      return acc;
-    }, []);
-
-  const found = flatten(folders).find((f: any) => f.id === folderId);
-  return found?.name || null;
-};
-
+/* ─── LOCAL HELPERS ─── */
 const formatDuration = (val: number | string | undefined): string => {
   if (!val) return '0:00';
   if (typeof val === 'string') {
-    if (val.includes(':')) return val; 
+    if (val.includes(':')) return val;
     const parsed = parseInt(val, 10);
     if (isNaN(parsed)) return '0:00';
     val = parsed;
@@ -70,8 +49,8 @@ function apiUrl(path: string) {
 async function fetchGcsJson(url: string) {
   if (!url) return null;
   try {
-    const res = await fetch(url + `?v=${Date.now()}`, { 
-      method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store' 
+    const res = await fetch(url + `?v=${Date.now()}`, {
+      method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store'
     });
     if (!res.ok) return null;
     return await res.json();
@@ -88,9 +67,10 @@ const safeString = (val: any): string => {
   return String(val);
 };
 
+/* ─── SKELETON LOADER ─── */
 const VideoDetailSkeleton = () => (
   <div className="animate-pulse relative w-full px-0 pb-12">
-    <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-6 items-start">
+    <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-12 items-start">
       <div className="min-w-0 w-full">
         <div className="w-full aspect-[9/8] bg-gray-200/80 rounded-2xl mb-6 mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0"></div>
         <div className="h-10 bg-gray-200/80 rounded-lg w-3/4 mb-4"></div>
@@ -99,18 +79,16 @@ const VideoDetailSkeleton = () => (
   </div>
 );
 
-
 export const VideoDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { videos, deleteVideos, moveVideos, toggleFavorite, updateVideo, folders } = useData();
-  const { showOriginal, toggleLanguage, languageCode, setLanguageCode } = useLanguage(); 
+  const { videos, folders, deleteVideos, moveVideos, toggleFavorite, updateVideo } = useData();
+  const { showOriginal, toggleLanguage } = useLanguage();
   const { t } = useTranslation(['videoDetail', 'common']);
 
   const [video, setVideo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
-  const [captionOpen, setCaptionOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editedVideo, setEditedVideo] = useState<any | null>(null);
   const [servingScale, setServingScale] = useState(1);
@@ -122,12 +100,6 @@ export const VideoDetail: React.FC = () => {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   useScrollLock(isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen);
-
-  // ✅ Uses robust getFolderName — handles Fld_xxxx internal IDs
-  const folderName = useMemo(() => {
-    if (!video) return null;
-    return getFolderName(video.folderId || video.folder_id || '', folders || []);
-  }, [video?.folderId, video?.folder_id, folders]);
 
   const fetchBackendJsonNoStore = useCallback(async (url: string) => {
     const res = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'include', headers: { ...getAuthHeaders() } });
@@ -156,23 +128,13 @@ export const VideoDetail: React.FC = () => {
 
   useEffect(() => {
     if (!id || videos.length === 0) return;
-    const cached = videos.find((v: any) => v.id === id); 
+    const cached = videos.find((v: any) => v.id === id);
     if (cached) setVideo(cached);
   }, [id, videos]);
 
   const fetchedId = useRef<string | null>(null);
   useEffect(() => { if (id && fetchedId.current !== id) { fetchedId.current = id; enrichVideo(); } }, [id, enrichVideo]);
   useEffect(() => { if (isEditing && video) setEditedVideo(JSON.parse(JSON.stringify(video))); }, [isEditing, video]);
-
-
-  useEffect(() => {
-    if (!video) return;
-    let langCode = 'EN';
-    if (video.transcription?.detected_language) langCode = String(video.transcription.detected_language).toUpperCase();
-    else if (video.language) langCode = String(video.language).toUpperCase();
-    if (langCode === 'OG') langCode = 'EN';
-    setLanguageCode(langCode);
-  }, [video, setLanguageCode]);
 
   const handleEditField = (field: string, value: any) => {
     setEditedVideo((prev: any) => {
@@ -211,10 +173,28 @@ export const VideoDetail: React.FC = () => {
     { icon: Trash2, label: t('videoDetail:deleteReel', "Delete clip"), onClick: () => setIsDeleteConfirmOpen(true), variant: 'danger' }
   ];
 
+  /* ─── FOLDER NAME (recursive) ─── */
+  const findFolderById = (targetId: string, folderList: any[]): any | null => {
+    for (const folder of folderList) {
+      if (folder.id === targetId) return folder;
+      if (folder.subFolders?.length) {
+        const found = findFolderById(targetId, folder.subFolders);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const folderName = useMemo(() => {
+    const fid = video?.folderId || video?.folder_id || video?.folderid;
+    if (!fid || fid === 'all' || fid === 'unsorted' || fid === 'default') return null;
+    return findFolderById(fid, folders || [])?.name ?? null;
+  }, [video, folders]);
+
   const viewModel = useMemo(() => {
     if (!video) return null;
     const v = isEditing && editedVideo ? editedVideo : video;
-    
+
     let summaryObj = v.summary;
     if (typeof summaryObj === 'string') { try { summaryObj = JSON.parse(summaryObj); } catch(e) { summaryObj = {}; } }
     if (!summaryObj) summaryObj = {};
@@ -222,7 +202,7 @@ export const VideoDetail: React.FC = () => {
     const englishData = summaryObj.english || {};
     const originalData = summaryObj.original || {};
     const langBlock = (showOriginal && Object.keys(originalData).length > 0) ? originalData : (Object.keys(englishData).length > 0 ? englishData : summaryObj);
-    
+
     let recipeData = v.recipe;
     if (typeof recipeData === 'string') { try { recipeData = JSON.parse(recipeData); } catch (e) { recipeData = null; } }
     if (recipeData && recipeData.recipe) recipeData = recipeData.recipe;
@@ -244,9 +224,14 @@ export const VideoDetail: React.FC = () => {
       extractedTranscript = typeof v.transcript === 'string' ? v.transcript : (v.transcript.text || '');
     }
 
+    let langCode = 'EN';
+    if (v.transcription?.detected_language) langCode = String(v.transcription.detected_language).toUpperCase();
+    else if (v.language) langCode = String(v.language).toUpperCase();
+    if (langCode === 'OG') langCode = 'EN';
+
     const displayTitle = langBlock.title || summaryObj.title || v.summary_title || v.title || (v.caption ? v.caption.split('\n')[0].substring(0, 56) : 'Saved Reel');
     const displaySummary = langBlock.summary || summaryObj.summary || v.summary_text || '';
-    
+
     let tags = Array.isArray(langBlock.hashtags) ? langBlock.hashtags : (Array.isArray(v.summary_hashtags) ? v.summary_hashtags : (Array.isArray(v.tags) ? v.tags : []));
     let bullets = Array.isArray(langBlock.headlines) ? langBlock.headlines : (Array.isArray(v.summary_bullets) ? v.summary_bullets : (Array.isArray(v.bullets) ? v.bullets : []));
 
@@ -265,10 +250,9 @@ export const VideoDetail: React.FC = () => {
       thumbnailUrl: safeString(v.thumbnailUrl || v.gcs_urls?.preview_thumbnail || v.preview || ''),
       originalUrl: safeString(v.source_url || v.originalUrl || ''),
       platform: safeString(v.source_url || v.originalUrl || '').includes('facebook') ? 'facebook' : 'instagram',
-      savedAt: (v.savedAt || v.created_at) 
-        ? new Date(v.savedAt || v.created_at).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' }) 
-        : '',
+      savedAt: safeString(v.savedAt || (v.created_at ? new Date(v.created_at).toLocaleDateString() : '')),
       hasTranslation: !!(summaryObj.english && summaryObj.original),
+      languageCode: langCode,
       duration: formatDuration(v.duration || v.duration_seconds)
     };
   }, [video, editedVideo, isEditing, showOriginal]);
@@ -277,27 +261,19 @@ export const VideoDetail: React.FC = () => {
 
   return (
     <div className="animate-fade-in relative px-0 pb-20 md:pb-12">
-      <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-6 items-start">
-        
+      <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-12 items-start">
+
         {/* ======================= LEFT COLUMN ======================= */}
         <div className="min-w-0 w-full flex flex-col">
-          
+
           <div className="relative w-full aspect-[9/8] bg-black rounded-2xl overflow-hidden shadow-sm mb-6 group mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0">
             {viewModel.thumbnailUrl && <img src={viewModel.thumbnailUrl} alt={viewModel.title} className="w-full h-full object-cover opacity-90" />}
 
-            {/* ✅ Duration badge — matches folder pill style */}
-            {viewModel.duration && viewModel.duration !== '0:00' && (
-              <div className="absolute bottom-3 right-3 z-20">
-                <div className="flex items-center px-2.5 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
-                  <span className="text-[10px] font-bold text-white tracking-wide leading-none">
-                    {viewModel.duration}
-                  </span>
-                </div>
-              </div>
-            )}
-
+            {/* Top row: back button + action button */}
             <div className="absolute top-4 left-4 right-4 flex justify-between z-20">
-              <button onClick={() => navigate(-1)} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-lg hover:bg-white/40 transition-colors"><ArrowLeft size={20} /></button>
+              <button onClick={() => navigate(-1)} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-lg hover:bg-white/40 transition-colors">
+                <ArrowLeft size={20} />
+              </button>
               <div className="flex gap-2">
                 {isEditing ? (
                   <>
@@ -305,6 +281,7 @@ export const VideoDetail: React.FC = () => {
                     <button onClick={() => setIsEditing(false)} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center"><X size={20} /></button>
                   </>
                 ) : (
+                  // ✅ Settings2 → EllipsisVertical
                   <button onClick={() => setIsActionSheetOpen(true)} className="w-9 h-9 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center hover:bg-white/40 transition-colors">
                     <EllipsisVertical size={18} />
                   </button>
@@ -312,24 +289,30 @@ export const VideoDetail: React.FC = () => {
               </div>
             </div>
 
-            {/* ✅ Folder badge — robust lookup, hides if name looks like internal ID */}
-            {folderName && folderName !== 'Unsorted' && (
-              <div className="absolute bottom-3 left-3 z-20">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
-                  <FolderIcon size={11} className="text-primary-400 flex-shrink-0" strokeWidth={2.5} />
-                  <span className="text-[10px] font-bold text-white uppercase tracking-wide leading-none truncate max-w-[120px]">
-                    {folderName}
-                  </span>
-                </div>
+            {/* Bottom row: folder badge (left) | duration (right) */}
+            <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between z-30 pointer-events-none">
+              <div className="flex items-center gap-2 pointer-events-auto">
+                {folderName && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
+                    <Folder size={12} className="text-primary-400" strokeWidth={2.5} />
+                    <span className="text-[11px] font-bold text-white uppercase tracking-wide">{folderName}</span>
+                  </div>
+                )}
               </div>
-            )}
+              {viewModel.duration && viewModel.duration !== '0:00' && (
+                <div className="bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-medium text-white">
+                  {viewModel.duration}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="mb-4">
             <EditableTitle title={viewModel.title} isEditMode={isEditing} value={viewModel.title} onChange={val => handleEditField('title', val)} />
           </div>
-          
-          <div className="mb-6 flex items-center justify-between pb-2">
+
+          {/* ✅ border-b and pb-6 removed */}
+          <div className="mb-6 flex items-center justify-between">
             <a href={viewModel.originalUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 group/author">
               <PlatformIconAuthor platform={viewModel.platform} />
               <span className="text-xs font-medium text-gray-500 truncate group-hover/author:text-gray-900 transition-colors">
@@ -344,10 +327,10 @@ export const VideoDetail: React.FC = () => {
             )}
           </div>
 
-          {/* Mobile: Category/Topic/Hashtags */}
+          {/* Mobile: category/topic/tags card */}
           <div className="md:hidden mb-6 bg-violet-50 border border-violet-200 rounded-xl overflow-hidden p-4">
-            <div className="pb-3 mb-3 border-b border-violet-200/70 flex items-center">
-              <div className="flex flex-col gap-2 flex-1">
+            <div className="pb-3 mb-3 border-b border-violet-200/70 relative flex items-center">
+              <div className="flex flex-col gap-2 pr-10 flex-1">
                 <div className="flex items-center gap-2">
                   <CategoryIcon size={14} />
                   <span className="text-xs font-bold uppercase tracking-wide truncate text-violet-600">{viewModel.category}</span>
@@ -357,7 +340,9 @@ export const VideoDetail: React.FC = () => {
                   <span className="text-xs font-bold uppercase tracking-wide truncate text-pink-600">{viewModel.subCategory}</span>
                 </div>
               </div>
+              <button onClick={() => setIsEditing(true)} className="flex items-center justify-center w-7 h-7 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition"><Pencil size={14} /></button>
             </div>
+
             <div className="mt-3 flex items-start gap-3">
               <div className="text-cyan-600 mt-[3px] flex-shrink-0">
                 <HashtagsIcon size={16} />
@@ -374,36 +359,18 @@ export const VideoDetail: React.FC = () => {
             </div>
           </div>
 
-          {/* Mobile Original Link */}
-          {viewModel.originalUrl && (
-            <div className="md:hidden mb-6">
-              <a href={viewModel.originalUrl} target="_blank" rel="noreferrer" className="block w-full">
-                {viewModel.platform === 'facebook' ? (
-                  <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-white font-bold text-sm shadow-sm transition bg-[#1877F2] hover:bg-[#166FE5]">
-                    <PlatformIconBtn platform="facebook" />
-                    View on Facebook
-                  </button>
-                ) : (
-                  <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-white font-bold text-sm shadow-sm transition bg-gradient-to-r from-[#F58529] via-[#DD2A7B] to-[#8134AF] hover:opacity-90">
-                    <PlatformIconBtn platform="instagram" />
-                    View on Instagram
-                  </button>
-                )}
-              </a>
-            </div>
-          )}
-          
           {/* AI Summary */}
           <div className="bg-primary-50 rounded-2xl p-5 md:p-6 mb-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-primary-700 font-bold text-sm uppercase tracking-wide">AI Summary</h3>
+              {/* ✅ Globe lives here only — removed from poster */}
               {viewModel.hasTranslation && !isEditing && (
                 <button
-                  onClick={toggleLanguage}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleLanguage(); }}
                   className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm bg-primary-600 hover:bg-primary-700 text-white transition-colors"
                 >
                   <Globe size={14} />
-                  <span className="text-[11px] font-bold uppercase">{showOriginal ? languageCode : 'EN'}</span>
+                  <span className="text-[11px] font-bold uppercase">{showOriginal ? viewModel.languageCode : 'EN'}</span>
                 </button>
               )}
             </div>
@@ -437,39 +404,26 @@ export const VideoDetail: React.FC = () => {
 
           {viewModel.recipe && (
             <div className="mb-6">
-              <RecipeDetailsCard 
-                recipe={viewModel.recipe} 
-                servingScale={servingScale} 
-                scaleQuantity={scaleQuantity} 
-                onServingScaleChange={setServingScale} 
-                useMetric={useMetric} 
-                onToggleMetric={setUseMetric} 
+              <RecipeDetailsCard
+                recipe={viewModel.recipe}
+                servingScale={servingScale}
+                scaleQuantity={scaleQuantity}
+                onServingScaleChange={setServingScale}
+                useMetric={useMetric}
+                onToggleMetric={setUseMetric}
               />
             </div>
           )}
 
-          {/* Caption — collapsible */}
           {viewModel.caption && (
-            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden mt-2 mb-6">
-              <button
-                onClick={() => setCaptionOpen(!captionOpen)}
-                className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-gray-100 text-gray-600 rounded-md">
-                    <AlignLeft size={16} />
-                  </div>
-                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Légende</h4>
-                </div>
-                <ChevronDown size={16} className={`text-gray-400 transition-transform duration-200 ${captionOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {captionOpen && (
-                <div className="px-5 pb-5">
-                  <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                    {viewModel.caption}
-                  </div>
-                </div>
-              )}
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden p-5 mt-2 mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="p-1.5 bg-gray-100 text-gray-600 rounded-md"><AlignLeft size={16} /></div>
+                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Légende</h4>
+              </div>
+              <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                {viewModel.caption}
+              </div>
             </div>
           )}
 
@@ -483,7 +437,7 @@ export const VideoDetail: React.FC = () => {
 
         {/* ======================= RIGHT COLUMN (DESKTOP) ======================= */}
         <div className="hidden md:flex flex-col w-full gap-6 mt-6 md:mt-0">
-            
+
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col shrink-0 divide-y divide-gray-100">
             <div className="p-5 flex flex-col gap-3 hover:bg-gray-50/50 transition-colors">
               <div className="flex items-center gap-2">
@@ -561,8 +515,8 @@ export const VideoDetail: React.FC = () => {
           )}
 
           {viewModel.originalUrl && (
-            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden p-5 shrink-0">
-              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Original Link</h4>
+            <div className="flex flex-col gap-2 shrink-0">
+              <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-widest pl-1">Original Link</h4>
               <a href={viewModel.originalUrl} target="_blank" rel="noreferrer" className="block w-full">
                 {viewModel.platform === 'facebook' ? (
                   <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-white font-bold text-sm shadow-sm transition bg-[#1877F2] hover:bg-[#166FE5]">
@@ -578,10 +532,11 @@ export const VideoDetail: React.FC = () => {
               </a>
             </div>
           )}
+
         </div>
       </div>
 
-      <ActionSheet isOpen={isActionSheetOpen} onClose={() => setIsActionSheetOpen(false)} title="Settings" actions={actionItems} />  
+      <ActionSheet isOpen={isActionSheetOpen} onClose={() => setIsActionSheetOpen(false)} title="Settings" actions={actionItems} />
       <MoveCollectionModal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} onMove={(id) => { moveVideos([video.id], id); setIsMoveModalOpen(false); }} count={1} />
       <ConfirmModal isOpen={isDeleteConfirmOpen} onClose={() => setIsDeleteConfirmOpen(false)} onConfirm={handleDelete} title="Delete this reel?" message="This action cannot be undone." confirmLabel="Delete" variant="danger" />
       <ReportModal isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)} url={window.location.href} />

@@ -8,10 +8,12 @@ import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { MoveCollectionModal } from '../components/MoveCollectionModal';
-import { resolveTitle } from '../utils/titleUtils'; // ← ADD
+import { resolveTitle } from '../utils/titleUtils';
+
 
 const CalendarArrowUp = ({ size = 20 }) => ( <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 18 4-4 4 4"/><path d="M16 2v4"/><path d="M18 22v-8"/><path d="M21 11.343V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2-2v14a2 2 0 0 0 2 2h9"/><path d="M3 10h18"/><path d="M8 2v4"/></svg> );
 const CalendarArrowDown = ({ size = 20 }) => ( <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 18 4 4 4-4"/><path d="M16 2v4"/><path d="M18 14v8"/><path d="M21 11.354V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2-2v14a2 2 0 0 0 2 2h7.343"/><path d="M3 10h18"/><path d="M8 2v4"/></svg> );
+
 
 export const Gallery: React.FC = () => {
   const { folderId } = useParams<{ folderId?: string }>();
@@ -58,7 +60,6 @@ export const Gallery: React.FC = () => {
       return v.folderId === folderId;
     });
 
-    // Inject resolved title so VideoCard's passedTitle is correct
     filtered = filtered.map((v: any) => {
       const { english } = resolveTitle(v, t);
       return { ...v, title: english };
@@ -110,13 +111,25 @@ export const Gallery: React.FC = () => {
     }
   };
 
+  // ✅ FIX: Recursive folder lookup — handles subfolders at any depth
+  const findFolderById = (targetId: string, folderList: any[]): any | null => {
+    for (const folder of folderList) {
+      if (folder.id === targetId) return folder;
+      if (folder.subFolders?.length) {
+        const found = findFolderById(targetId, folder.subFolders);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
   const getFolderTitle = () => {
     if (isFavoritesView) return t('gallery:favorites');
     if (isAllView) return t('gallery:allVideos');
     if (isUnsortedView) return t('sidebar:unsorted', 'Unsorted');
-    const foundFolder = folders.find((f: any) => f.id === folderId);
-    if (foundFolder) return foundFolder.name;
-    return folderId ? folderId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : t('gallery:gallery');
+    const foundFolder = findFolderById(folderId || '', folders || []);
+    if (foundFolder?.name) return foundFolder.name;
+    return t('gallery:gallery');
   };
 
   const getThumbnail = (v: any): string => v?.gcs_urls?.preview_thumbnail || v?.thumbnail_url || v?.thumbnailUrl || '';
