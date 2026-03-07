@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
-  Search, Folder, Plus, LayoutGrid, Heart, Archive, Share2,
-  ChevronRight, HelpCircle, BookOpen, FolderPlus, User, Settings, LogOut,
+  Search, LayoutGrid, Heart, Archive, Share2,
+  ChevronRight, BookOpen, HelpCircle, FolderPlus, User, Settings, LogOut,
   FolderOpen, Inbox, CreditCard, FolderClosed, CornerDownRight
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -14,12 +14,10 @@ import { useTranslation } from 'react-i18next';
 import LogoBlack from '../assets/recolekt_logo_black.png';
 import { useScrollLock } from '../utils/useScrollLock';
 
-
 interface MobileMenuProps {
   isOpen: boolean;
   onClose: () => void;
 }
-
 
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   const { user, isAuthenticated, loading, logout } = useAuth();
@@ -33,11 +31,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
   const navigate = useNavigate();
   const location = useLocation();
-
-  const meta = (user as any)?.user_metadata;
-  const displayName = user?.name || meta?.full_name || 'User';
-  const displayPicture = user?.picture || meta?.avatar_url;
-  const initials = (displayName?.charAt?.(0) || 'U').toUpperCase();
 
   useScrollLock(isOpen);
 
@@ -125,47 +118,30 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
               {showAuthedUI ? (
                 <div className="flex-1 space-y-8">
                   
-                  {/* User Profile Summary */}
-                  <div className="flex items-center gap-4 px-2">
-                    <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border border-gray-200 shadow-sm">
-                      {displayPicture ? (
-                        <img src={displayPicture} alt={displayName} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-primary-600 to-primary-700 flex items-center justify-center text-white font-bold text-lg">
-                          {initials}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-bold text-gray-900 text-base">{displayName}</p>
-                      <p className="text-gray-500 text-sm truncate">{user?.email}</p>
-                    </div>
-                  </div>
-
                   {/* Library Section */}
                   <section>
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
                       {t('sidebar:library', 'Library')}
                     </h3>
                     <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
-                      <button onClick={() => handleNav('/gallery')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
+                      <button onClick={() => handleNav('/gallery')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
                         <LayoutGrid size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:myVideos', 'My videos')}</span>
-                        <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider transition-colors">
+                        <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider">
                           {videos.length}
                         </span>
                       </button>
 
-                      <button onClick={() => handleNav('/organizer')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
+                      <button onClick={() => handleNav('/organizer')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
                         <FolderOpen size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('sidebar:organizer', 'Organizer')}</span>
                         <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
 
-                      <button onClick={() => handleNav('/gallery/unsorted')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
+                      <button onClick={() => handleNav('/gallery/unsorted')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
                         <Inbox size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('sidebar:unsorted', 'Unsorted')}</span>
-                        <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider transition-colors">
+                        <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider">
                           {getDirectVideoCount('unsorted')}
                         </span>
                       </button>
@@ -194,7 +170,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       {customFolders.length === 0 && (
                         <button
                           onClick={() => setIsModalOpen(true)}
-                          className="w-full p-5 text-sm text-gray-400 font-medium hover:text-primary-600 hover:bg-gray-50 transition-colors"
+                          className="w-full p-5 text-sm text-gray-400 font-medium hover:text-primary-600 hover:bg-primary-50 transition-colors"
                         >
                           + {t('sidebar:createCollection', 'Create a collection')}
                         </button>
@@ -204,25 +180,24 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                         const hasSubs = !!(folder.subFolders && folder.subFolders.length > 0);
                         return (
                           <div key={folder.id} className="border-b border-gray-100 last:border-0">
-                            <button onClick={() => handleNav(`/gallery/${folder.id}`)} className="w-full flex items-center justify-between p-5 group transition-all hover:bg-gray-50">
+                            <button onClick={() => handleNav(`/gallery/${folder.id}`)} className="w-full flex items-center justify-between p-5 group transition-all hover:bg-primary-50">
                               <div className="flex items-center gap-4">
                                 <FolderClosed size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                                 <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{folder.name}</span>
                               </div>
-                              {/* ✅ fix 5: always purple, matching desktop */}
-                              <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider transition-colors">
+                              <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider">
                                 {getDirectVideoCount(folder.id)}
                               </span>
                             </button>
 
                             {/* Nested Sub-folders */}
                             {hasSubs && (
-                              <div className="bg-gray-50/50">
+                              <div className="bg-gray-50/30">
                                 {folder.subFolders.map((sub: any) => (
                                   <button
                                     key={sub.id}
                                     onClick={() => handleNav(`/gallery/${sub.id}`)}
-                                    className="w-full flex items-center justify-between pl-14 pr-5 py-4 group transition-all hover:bg-white hover:shadow-sm"
+                                    className="w-full flex items-center justify-between pl-14 pr-5 py-4 group transition-all hover:bg-primary-50"
                                   >
                                     <div className="flex items-center gap-3">
                                       <CornerDownRight size={18} strokeWidth={2.5} className="text-gray-300 group-hover:text-primary-500 transition-colors" />
@@ -230,8 +205,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                                         {sub.name}
                                       </span>
                                     </div>
-                                    {/* ✅ fix 5: always purple for subfolders too */}
-                                    <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider transition-colors">
+                                    <span className="text-[10px] font-black bg-gray-100 text-gray-500 group-hover:bg-primary-100 group-hover:text-primary-600 px-2 py-1 rounded-md tracking-wider transition-colors">
                                       {getDirectVideoCount(sub.id)}
                                     </span>
                                   </button>
@@ -242,11 +216,11 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                         );
                       })}
 
-                      <button onClick={() => handleNav('/gallery/shared')} className="w-full flex items-center justify-between p-5 border-t border-gray-100 group transition-all hover:bg-gray-50">
+                      <button onClick={() => handleNav('/gallery/shared')} className="w-full flex items-center justify-between p-5 border-t border-gray-100 group transition-all hover:bg-primary-50">
                         <div className="flex items-center gap-4"><Share2 size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{t('sidebar:shared', 'Shared with Me')}</span></div>
                         <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
-                      <button onClick={() => handleNav('/gallery/archive')} className="w-full flex items-center justify-between p-5 border-t border-gray-100 group transition-all hover:bg-gray-50">
+                      <button onClick={() => handleNav('/gallery/archive')} className="w-full flex items-center justify-between p-5 border-t border-gray-100 group transition-all hover:bg-primary-50">
                         <div className="flex items-center gap-4"><Archive size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{t('sidebar:archive', 'Archive')}</span></div>
                         <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
@@ -259,17 +233,17 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       {t('common:account', 'Account')}
                     </h3>
                     <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
-                      <button onClick={() => handleNav('/settings/account')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
+                      <button onClick={() => handleNav('/settings/account')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
                         <User size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:myAccount', 'My Account')}</span>
                         <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
-                      <button onClick={() => handleNav('/billing')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
+                      <button onClick={() => handleNav('/billing')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
                         <CreditCard size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:billingPlan', 'Billing & Plan')}</span>
                         <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
-                      <button onClick={() => handleNav('/settings/app')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50">
+                      <button onClick={() => handleNav('/settings/app')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-primary-50">
                         <Settings size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('header:settings', 'App Settings')}</span>
                         <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
@@ -281,12 +255,12 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                   <section>
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">{t('common:resources', 'Resources')}</h3>
                     <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
-                      <button onClick={() => handleNav('/help?section=how-to')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-gray-50">
+                      <button onClick={() => handleNav('/help?section=how-to')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
                         <BookOpen size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:guide', 'Guide')}</span>
                         <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
                       </button>
-                      <button onClick={() => handleNav('/help?section=contact')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-gray-50">
+                      <button onClick={() => handleNav('/help?section=contact')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-primary-50">
                         <HelpCircle size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:support', 'Support')}</span>
                         <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
