@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Folder, Video } from '../types';
 import { 
@@ -32,6 +32,12 @@ interface DropdownOption {
   disabled?: boolean;
 }
 
+const safeStr = (v: any): string => {
+  if (typeof v === 'string') return v;
+  if (v == null) return '';
+  return String(v);
+};
+
 const CustomDropdown = ({ 
   value, 
   onChange, 
@@ -61,17 +67,17 @@ const CustomDropdown = ({
   const selected = options.find(o => o.value === value);
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative w-full">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={triggerClassName || "flex items-center justify-between w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm font-medium hover:border-primary-300 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-sm"}
       >
-        <div className="flex items-center gap-2 truncate">
+        <div className="flex items-center gap-2 truncate min-w-0">
           {selected?.icon}
           <span className="truncate">{selected ? selected.label : placeholder}</span>
         </div>
-        <ChevronDown className={`ml-2 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} size={16} />
+        <ChevronDown className={`ml-2 flex-shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} size={16} />
       </button>
 
       {isOpen && (
@@ -139,12 +145,48 @@ export const Organizer: React.FC = () => {
   const selectedFolder = folders.find(f => f.id === selectedFolderId) || 
                          folders.flatMap(f => f.subFolders || []).find(f => f.id === selectedFolderId);
 
-  const folderVideos = videos.filter(v => {
-    if (selectedFolderId === 'all') return true;
-    if (selectedFolderId === 'unsorted') return v.folderId === 'unsorted' || !v.folderId || v.folderId === 'all';
-    if (selectedFolderId === 'favorites') return v.isFavorite;
-    return v.folderId === selectedFolderId;
-  }).filter(v => v.title.toLowerCase().includes(searchQuery.toLowerCase()));
+  const folderVideos = useMemo(() => {
+    let filtered = videos.filter(v => {
+      if (selectedFolderId === 'all') return true;
+      if (selectedFolderId === 'unsorted') return v.folderId === 'unsorted' || !v.folderId || v.folderId === 'all';
+      if (selectedFolderId === 'favorites') return v.isFavorite;
+      return v.folderId === selectedFolderId;
+    });
+
+    filtered = filtered.map((v: any) => {
+      let title = '';
+      let summaryObj = v.summary ?? v.summary_text ?? v.raw?.summary ?? {};
+      if (typeof summaryObj === 'string') {
+        try { summaryObj = JSON.parse(summaryObj); } catch(e) { summaryObj = {}; }
+      }
+      
+      let recipeObj = v.recipe ?? v.raw?.recipe ?? {};
+      if (typeof recipeObj === 'string') {
+        try { recipeObj = JSON.parse(recipeObj); } catch(e) { recipeObj = {}; }
+      }
+      if (recipeObj?.recipe) recipeObj = recipeObj.recipe;
+
+      const sumEngTitle = safeStr(summaryObj?.english?.title).trim();
+      const recEngTitle = safeStr(recipeObj?.english?.title).trim();
+      const dbTitle = safeStr(v.summary_title ?? v.summaryTitle).trim();
+      
+      let passedTitle = safeStr(v.title).trim();
+      const captionCutoff = safeStr(v.caption ?? '').split('\n')[0].substring(0, 56).trim();
+      if (passedTitle === captionCutoff || passedTitle.length === 56) {
+        passedTitle = '';
+      }
+
+      title = sumEngTitle || recEngTitle || dbTitle || passedTitle || summaryObj?.title || safeStr(v.caption ?? '').split('\n')[0].trim() || t('organizer:untitledVideo', 'Saved Video');
+      
+      return { ...v, title };
+    });
+
+    if (searchQuery) {
+      filtered = filtered.filter(v => v.title.toLowerCase().includes(searchQuery.toLowerCase()));
+    }
+
+    return filtered;
+  }, [videos, selectedFolderId, searchQuery, t]);
 
   const handleCreateFolder = async () => {
     if (newFolderName.trim()) {
@@ -239,33 +281,37 @@ export const Organizer: React.FC = () => {
         <div className="h-16 border-b border-gray-100 flex items-center justify-between px-4 md:px-6 bg-white rounded-t-2xl z-50 sticky top-0 shadow-sm">
           <div className="flex items-center gap-3 md:gap-4 min-w-0 flex-1">
             {isRenaming ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 w-full">
                 <input 
                   autoFocus
-                  className="text-base font-bold text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1 focus:ring-2 focus:ring-primary-500 outline-none w-full max-w-[160px] md:max-w-xs"
+                  className="text-base font-bold text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1 flex-1 min-w-0 focus:ring-2 focus:ring-primary-500 outline-none max-w-[160px] md:max-w-xs"
                   value={renameValue}
                   onChange={e => { setRenameValue(e.target.value); setActionError(null); }}
                   onKeyDown={e => e.key === 'Enter' && handleRename()}
                 />
-                <button type="button" onClick={handleRename} className="p-1.5 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"><Check size={18} /></button>
-                <button type="button" onClick={() => { setIsRenaming(false); setActionError(null); }} className="p-1.5 text-gray-400 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"><X size={18} /></button>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button type="button" onClick={handleRename} className="p-1.5 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors flex-shrink-0"><Check size={18} /></button>
+                  <button type="button" onClick={() => { setIsRenaming(false); setActionError(null); }} className="p-1.5 text-gray-400 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"><X size={18} /></button>
+                </div>
               </div>
             ) : (
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-gray-500 font-medium text-sm hidden sm:inline-block whitespace-nowrap mr-1">
+              <div className="flex items-center gap-2 w-full min-w-0">
+                <span className="text-gray-500 font-medium text-sm hidden sm:inline-block whitespace-nowrap mr-1 flex-shrink-0">
                   {t('organizer:selectFolder')}
                 </span>
 
-                <CustomDropdown 
-                  value={selectedFolderId}
-                  onChange={setSelectedFolderId}
-                  options={mainSelectorOptions}
-                  placeholder={t('organizer:placeholderSelectFolder')}
-                  triggerClassName="appearance-none bg-transparent font-bold text-base text-gray-900 outline-none cursor-pointer truncate flex items-center hover:opacity-70 transition-opacity"
-                />
+                <div className="flex-1 min-w-0">
+                  <CustomDropdown 
+                    value={selectedFolderId}
+                    onChange={setSelectedFolderId}
+                    options={mainSelectorOptions}
+                    placeholder={t('organizer:placeholderSelectFolder')}
+                    triggerClassName="appearance-none w-full bg-transparent font-bold text-base text-gray-900 outline-none cursor-pointer flex items-center justify-between hover:opacity-70 transition-opacity"
+                  />
+                </div>
 
                 {!['all', 'unsorted', 'favorites', 'archive'].includes(selectedFolderId) && (
-                  <div className="flex items-center gap-1 ml-1 shrink-0">
+                  <div className="flex items-center gap-1 ml-1 flex-shrink-0">
                     <button 
                       type="button"
                       onClick={() => { setRenameValue(selectedFolder?.name || ''); setIsRenaming(true); }}
@@ -287,22 +333,22 @@ export const Organizer: React.FC = () => {
               </div>
             )}
             
-            <span className="md:hidden text-xs text-primary-600 font-bold px-2 py-0.5 bg-primary-50 border border-primary-100 rounded-md whitespace-nowrap">
+            <span className="md:hidden text-xs text-primary-600 font-bold px-2 py-0.5 bg-primary-50 border border-primary-100 rounded-md whitespace-nowrap flex-shrink-0">
               {t('organizer:itemsCount', { count: folderVideos.length })}
             </span>
           </div>
 
-          <div className="flex items-center gap-2 md:gap-3">
+          <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
             {selectedVideoIds.size > 0 && (
               <button
                 onClick={() => setSelectedVideoIds(new Set())}
-                className="hidden md:flex items-center gap-1 px-3 py-1 bg-red-50 text-red-600 border border-red-100 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors"
+                className="hidden md:flex items-center gap-1 px-3 py-1 bg-red-50 text-red-600 border border-red-100 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors flex-shrink-0"
               >
                 <X size={14} /> {t('organizer:cancel')}
               </button>
             )}
 
-            <span className="hidden md:inline-block text-xs text-primary-600 font-bold px-2.5 py-1 bg-primary-50 border border-primary-100 rounded-lg whitespace-nowrap mr-2">
+            <span className="hidden md:inline-block text-xs text-primary-600 font-bold px-2.5 py-1 bg-primary-50 border border-primary-100 rounded-lg whitespace-nowrap mr-2 flex-shrink-0">
               {t('organizer:itemsCount', { count: folderVideos.length })}
             </span>
 
@@ -310,13 +356,13 @@ export const Organizer: React.FC = () => {
               <button 
                 type="button"
                 onClick={handleUndo}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-bold rounded-lg hover:bg-black transition-colors shadow-sm animate-fade-in"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-bold rounded-lg hover:bg-black transition-colors shadow-sm animate-fade-in flex-shrink-0"
               >
                 <Undo2 size={14} />
                 <span className="hidden md:inline">{t('organizer:undoMove')}</span>
               </button>
             )}
-            <div className="flex bg-gray-100 p-1 rounded-lg">
+            <div className="flex bg-gray-100 p-1 rounded-lg flex-shrink-0">
               <button type="button" onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
                 <Grid size={16} />
               </button>
@@ -377,15 +423,15 @@ export const Organizer: React.FC = () => {
            </div>
         </div>
 
-        {/* 3. NEW FOLDER INLINE CREATION */}
+        {/* 3. NEW FOLDER INLINE CREATION (FIXED OVERFLOW) */}
         {isCreating && (
           <div className="relative z-50 px-4 md:px-6 py-4 bg-primary-50/80 border-b border-primary-100 flex flex-col gap-3 animate-fade-in">
             <div className="text-xs font-bold text-primary-700 uppercase tracking-wider flex items-center gap-2">
               <CornerDownRight size={14} /> {t('organizer:createFolder')}
             </div>
             
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
-              <div className="w-full sm:w-auto min-w-[220px]">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 w-full">
+              <div className="w-full sm:flex-1 min-w-0">
                 <CustomDropdown 
                   value={creationParentId}
                   onChange={(val) => { setCreationParentId(val); setActionError(null); }}
@@ -395,22 +441,24 @@ export const Organizer: React.FC = () => {
                 />
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+              <div className="flex items-center gap-2 w-full sm:flex-1 mt-2 sm:mt-0 min-w-0">
                 <input 
                   autoFocus placeholder={t('organizer:folderNamePlaceholder')} value={newFolderName}
                   onChange={e => { setNewFolderName(e.target.value); setActionError(null); }}
                   onKeyDown={e => e.key === 'Enter' && handleCreateFolder()}
-                  className={`flex-1 sm:flex-none w-full sm:w-64 bg-white border rounded-lg px-3 py-2 text-sm outline-none transition-all shadow-sm ${actionError ? 'border-red-400 focus:ring-2 focus:ring-red-500' : 'border-gray-200 focus:ring-2 focus:ring-primary-500'}`}
+                  className={`w-full flex-1 min-w-0 bg-white border rounded-lg px-3 py-2 text-sm outline-none transition-all shadow-sm ${actionError ? 'border-red-400 focus:ring-2 focus:ring-red-500' : 'border-gray-200 focus:ring-2 focus:ring-primary-500'}`}
                 />
-                <button 
-                  type="button" 
-                  onClick={handleCreateFolder} 
-                  disabled={!newFolderName.trim()}
-                  className="p-2 bg-primary-600 text-white rounded-lg shadow-sm hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Check size={18} />
-                </button>
-                <button type="button" onClick={() => { setIsCreating(false); setActionError(null); }} className="p-2 text-gray-400 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"><X size={18} /></button>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button 
+                    type="button" 
+                    onClick={handleCreateFolder} 
+                    disabled={!newFolderName.trim()}
+                    className="p-2 bg-primary-600 text-white rounded-lg shadow-sm hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                  >
+                    <Check size={18} />
+                  </button>
+                  <button type="button" onClick={() => { setIsCreating(false); setActionError(null); }} className="p-2 text-gray-400 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition-colors flex-shrink-0"><X size={18} /></button>
+                </div>
               </div>
             </div>
             {actionError && (
@@ -433,7 +481,7 @@ export const Organizer: React.FC = () => {
               </div>
             ) : (
               <div className={viewMode === 'grid' ? "grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4" : "space-y-3"}>
-                {folderVideos.map(video => (
+                {folderVideos.map((video: any) => (
                   <div 
                     key={video.id}
                     draggable
@@ -461,7 +509,6 @@ export const Organizer: React.FC = () => {
                       hover:-translate-y-1 active:cursor-grabbing
                     `}
                   >
-                    {/* ✅ SCALED DOWN SELECTION CIRCLES (w-5 h-5 / size=12) */}
                     {viewMode === 'grid' ? (
                       <div className={`absolute top-3 left-3 z-10 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm ${selectedVideoIds.has(video.id) ? 'bg-primary-500 border-primary-500' : 'bg-black/30 border-white/80 hover:bg-black/40'}`}>
                         {selectedVideoIds.has(video.id) && <Check size={12} className="text-white" strokeWidth={3} />}
@@ -474,21 +521,21 @@ export const Organizer: React.FC = () => {
 
                     {viewMode === 'grid' ? (
                       <>
-                        <img src={video.thumbnailUrl} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                        <img src={video.thumbnailUrl || video.gcs_urls?.preview_thumbnail} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80" />
                         <div className="absolute bottom-4 left-4 right-4 pointer-events-none">
                           <p className="text-white text-sm font-bold leading-snug line-clamp-2">{video.title}</p>
-                          <p className="text-gray-300 text-xs mt-1 truncate">{video.author}</p>
+                          <p className="text-gray-300 text-xs mt-1 truncate">{video.author_name || video.author}</p>
                         </div>
                       </>
                     ) : (
                       <>
                         <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100">
-                          <img src={video.thumbnailUrl} className="w-full h-full object-cover" />
+                          <img src={video.thumbnailUrl || video.gcs_urls?.preview_thumbnail} className="w-full h-full object-cover" />
                         </div>
                         <div className="flex-1 min-w-0 pr-4">
                           <h4 className={`text-base font-bold truncate ${selectedVideoIds.has(video.id) ? 'text-primary-900' : 'text-gray-900'}`}>{video.title}</h4>
-                          <p className="text-sm text-gray-500 truncate mt-0.5">{video.author}</p>
+                          <p className="text-sm text-gray-500 truncate mt-0.5">{video.author_name || video.author}</p>
                         </div>
                         <div className="text-xs text-gray-400 font-bold bg-gray-100 px-2 py-1 rounded-lg">{video.duration}</div>
                       </>

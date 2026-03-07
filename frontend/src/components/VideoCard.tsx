@@ -1,7 +1,7 @@
 import { API_BASE } from "../utils/api";
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Globe, Loader2, CheckCircle2, AlertCircle, RefreshCw, Trash2, CircleSlash2 } from 'lucide-react';
+import { Heart, Globe, Loader2, CheckCircle2, AlertCircle, RefreshCw, Trash2, CircleSlash2, Folder as FolderIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useData } from '../context/DataContext';
 import { ConfirmModal } from './ConfirmModal';
@@ -20,39 +20,49 @@ const safeStr = (v: any): string => {
   return String(v);
 };
 
-// ✅ THE ULTIMATE TITLE RESOLVER
+// ✅ Recursively find folder name by ID
+const getFolderName = (folderId: string, folders: any[]): string | null => {
+  if (!folderId || folderId === 'all' || folderId === 'unsorted' || folderId === 'default') return null;
+  if (folderId === 'favorites') return 'Favorites';
+  for (const folder of folders) {
+    if (folder.id === folderId) return folder.name;
+    if (folder.subFolders) {
+      const sub = getFolderName(folderId, folder.subFolders);
+      if (sub) return sub;
+    }
+  }
+  return null;
+};
+
 function resolveTitle(video: any, t: any): { english: string; original: string; hasTwoLanguages: boolean } {
   const DEFAULT = t('videoCard:untitledVideo', 'Saved Video');
 
-  // 1. Extract from Summary (if available)
   let summaryObj = video?.summary ?? video?.summary_text ?? video?.raw?.summary ?? {};
   if (typeof summaryObj === 'string') {
     try { summaryObj = JSON.parse(summaryObj); } catch(e) { summaryObj = {}; }
   }
+
   const sumEngTitle = safeStr(summaryObj?.english?.title).trim();
   const sumOrigTitle = safeStr(summaryObj?.original?.title).trim();
 
-  // 2. Extract from Recipe (CRITICAL: This is where old DB rows hide the title!)
   let recipeObj = video?.recipe ?? video?.raw?.recipe ?? {};
   if (typeof recipeObj === 'string') {
     try { recipeObj = JSON.parse(recipeObj); } catch(e) { recipeObj = {}; }
   }
-  if (recipeObj?.recipe) recipeObj = recipeObj.recipe; // Handle double nesting
-  
+
+  if (recipeObj?.recipe) recipeObj = recipeObj.recipe;
+
   const recEngTitle = safeStr(recipeObj?.english?.title).trim();
   const recOrigTitle = safeStr(recipeObj?.original?.title).trim();
 
-  // 3. Extract from flat DB columns
   const dbTitle = safeStr(video?.summary_title ?? video?.summaryTitle).trim();
 
-  // 4. Reject bad fallback titles (If Gallery passed down the cut-off caption, ignore it)
   let passedTitle = safeStr(video?.title).trim();
   const captionCutoff = safeStr(video?.caption ?? '').split('\n')[0].substring(0, 56).trim();
   if (passedTitle === captionCutoff || passedTitle.length === 56) {
-    passedTitle = ''; // Ignore the cut-off string so we can find the real title
+    passedTitle = '';
   }
 
-  // PRIORITY CHAIN: AI Summary -> AI Recipe -> DB Column -> Passed Title -> Fallback Caption
   const english = sumEngTitle || recEngTitle || dbTitle || passedTitle || summaryObj?.title || safeStr(video?.caption ?? '').split('\n')[0].trim() || DEFAULT;
   const original = sumOrigTitle || recOrigTitle || dbTitle || passedTitle || summaryObj?.title || english;
 
@@ -64,17 +74,18 @@ function resolveTitle(video: any, t: any): { english: string; original: string; 
 const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggleSelect, selectionMode }) => {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation(['videoCard', 'common']);
-  const { toggleFavorite, addVideo, deleteVideos } = useData();
+  // ✅ Added folders
+  const { toggleFavorite, addVideo, deleteVideos, folders } = useData();
 
   const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
 
-  const [isFavorite, setIsFavorite] = useState<boolean>(Boolean(video?.isFavorite ?? video?.is_favorite ?? false));
+  const [isFavorite, setIsFavorite] = useState(Boolean(video?.isFavorite ?? video?.is_favorite ?? false));
   const [showOriginal, setShowOriginal] = useState(i18n.language.startsWith('fr'));
   const [isRetrying, setIsRetrying] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [animateHeart, setAnimateHeart] = useState(false);
-  
+
   const imgRef = useRef<HTMLImageElement>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
 
@@ -104,6 +115,12 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
   const isSorted = Boolean(video.folderId && video.folderId !== 'all' && video.folderId !== 'unsorted' && video.folderId !== 'default');
 
+  // ✅ Resolve folder name from folders context
+  const folderName = useMemo(
+    () => getFolderName(video?.folderId || '', folders || []),
+    [video?.folderId, folders]
+  );
+
   const { english: englishTitle, original: originalTitle, hasTwoLanguages } = useMemo(() => resolveTitle(video, t), [video, t]);
   const displayTitle = showOriginal ? originalTitle : englishTitle;
 
@@ -132,7 +149,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
   const handleHeartClick = async (e: React.MouseEvent) => {
     e.preventDefault();
-    e.stopPropagation(); 
+    e.stopPropagation();
     if (isDisabled) return;
 
     if (isFavorite) {
@@ -172,6 +189,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     if (isDisabled) {
       e.preventDefault(); e.stopPropagation(); return;
     }
+
     if (selectionMode) {
       e.preventDefault(); e.stopPropagation(); onToggleSelect?.();
     } else {
@@ -197,120 +215,164 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
   return (
     <>
-      <div className="group relative flex flex-col gap-3 transition-transform duration-300">
-        <div
-          onClick={handleCardClick}
-          className={`relative rounded-2xl overflow-hidden aspect-[9/16] shadow-sm transition-all duration-300 bg-gray-100 ${
-            isDisabled ? 'cursor-default' : 'cursor-pointer hover:shadow-lg'
-          } ${selected ? 'scale-[0.98]' : ''}`}
-        >
-          <div className={`absolute inset-0 bg-gray-200 transition-opacity duration-200 ${imageLoaded ? 'opacity-0' : 'opacity-100'}`} />
+      <div
+        onClick={handleCardClick}
+        className={`relative rounded-2xl overflow-hidden aspect-[9/16] shadow-sm transition-all duration-300 bg-gray-100 cursor-pointer hover:shadow-lg ${selected ? 'ring-2 ring-primary-600 ring-offset-2' : ''} group`}
+      >
+        {/* Hover overlay */}
+        <div className={`absolute inset-0 bg-gray-200 transition-opacity duration-200 ${isDisabled ? 'opacity-40' : 'opacity-0'}`} />
 
-          {thumbnailUrl ? (
-            <img
-              ref={imgRef}
-              src={thumbnailUrl}
-              alt={displayTitle}
-              onLoad={() => setImageLoaded(true)}
-              className={`absolute inset-0 w-full h-full object-cover transition-all duration-200 z-10 ${imageLoaded ? 'opacity-100' : 'opacity-0'} ${!selected ? 'group-hover:scale-105' : ''}`}
-              decoding="async"
+        {/* Thumbnail */}
+        {thumbnailUrl ? (
+          <img
+            ref={imgRef}
+            src={thumbnailUrl}
+            alt={displayTitle}
+            onLoad={() => setImageLoaded(true)}
+            className={`absolute inset-0 w-full h-full object-cover transition-all duration-200 z-10 ${imageLoaded ? 'opacity-100' : 'opacity-0'} ${!selected ? 'group-hover:scale-105' : ''}`}
+            decoding="async"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center z-10 bg-gray-50">
+            {!hasError && !isProcessing && (
+              <span className="text-gray-300 text-xs font-medium">{t('videoCard:noPreview')}</span>
+            )}
+          </div>
+        )}
+
+        {/* Gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60 pointer-events-none z-20" />
+
+        {/* Selection overlay */}
+        {selectionMode && selected && (
+          <div className="absolute inset-0 bg-primary-600/20 z-20 pointer-events-none" />
+        )}
+
+        {/* Processing state */}
+        {isProcessing && (
+          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/50 backdrop-blur-sm">
+            <Loader2 size={28} className="text-white animate-spin" />
+            <span className="text-white text-xs font-bold uppercase tracking-wider">{t('videoCard:processing')}</span>
+          </div>
+        )}
+
+        {/* Error state */}
+        {hasError && (
+          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 p-4 bg-black/60 backdrop-blur-sm">
+            <AlertCircle size={28} className="text-red-400" />
+            <div className="text-center">
+              <p className="text-white text-xs font-bold mb-1">{t('videoCard:processingFailed')}</p>
+              <p className="text-gray-300 text-[10px] leading-tight">{errorText}</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handleRetry} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-bold rounded-lg transition-colors">
+                {isRetrying ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                {t('common:tryAgain')}
+              </button>
+              <button onClick={handleDelete} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/80 hover:bg-red-500 text-white text-xs font-bold rounded-lg transition-colors">
+                {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                {t('common:remove')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Heart / Favorite */}
+        {!selectionMode && !hasError && (
+          <button
+            onClick={handleHeartClick}
+            className={`absolute top-3 left-3 favorite-heart z-30 ${animateHeart ? 'scale-125' : ''} transition-transform`}
+          >
+            <Heart
+              size={24}
+              className={isFavorite ? 'text-red-500 fill-red-500' : 'text-white drop-shadow'}
+              aria-hidden="true"
             />
-          ) : (
-            <div className={`w-full h-full flex items-center justify-center relative z-10 ${isProcessing ? '' : 'bg-gray-200'}`}>
-              {!hasError && !isProcessing && (
-                <span className="text-gray-400 text-sm">{t('videoCard:noPreview')}</span>
+          </button>
+        )}
+
+        {/* Selection checkbox */}
+        {selectionMode && (
+          <div onClick={(e) => { e.stopPropagation(); onToggleSelect?.(); }} className="absolute top-3 left-3 z-30">
+            {selected
+              ? <CheckCircle2 size={24} className="text-primary-600 fill-white" />
+              : <div className="w-6 h-6 rounded-full border-2 border-white/80 bg-black/20" />
+            }
+          </div>
+        )}
+
+        {/* Sorted / Unsorted indicator — top right */}
+        {!selectionMode && !hasError && !isProcessing && (
+          <div className="absolute top-3 right-3 z-30 pointer-events-none">
+            <div className="w-7 h-7 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white shadow-sm">
+              {isSorted ? (
+                <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center" title="sorted">
+                  <CheckCircle2 size={12} className="text-white" aria-hidden="true" />
+                </div>
+              ) : (
+                <div className="w-5 h-5 bg-gray-400/80 rounded-full flex items-center justify-center" title="unsorted">
+                  <CircleSlash2 size={12} className="text-white" aria-hidden="true" />
+                </div>
               )}
             </div>
-          )}
+          </div>
+        )}
 
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60 pointer-events-none z-20" />
-
-          {selectionMode && selected && (
-            <div className="selected-overlay" />
-          )}
-
-          {isProcessing && (
-            <div className="processing-overlay z-30">
-              <div className="scan-grid" /><div className="scan-line-seq-h" /><div className="scan-line-seq-v" />
-              <div className="flex flex-col items-center gap-3 relative z-10">
-                <Loader2 className="w-10 h-10 text-white animate-spin drop-shadow-md" />
-                <span className="text-white text-sm font-medium drop-shadow-md tracking-wide">{t('videoCard:processing')}</span>
-              </div>
-            </div>
-          )}
-
-          {hasError && (
-            <div className="absolute inset-0 bg-red-600/90 backdrop-blur-md z-40 flex flex-col items-center justify-center p-4 text-center">
-              <AlertCircle className="w-12 h-12 text-white/90 mb-3" />
-              <p className="text-white font-bold text-base mb-1">{t('videoCard:processingFailed')}</p>
-              <p className="text-white/80 text-xs mb-6 px-2 line-clamp-2">{errorText}</p>
-              <div className="flex flex-col gap-2 w-full max-w-[140px]">
-                <button onClick={handleRetry} disabled={isRetrying || isDeleting} className="flex items-center justify-center gap-2 w-full py-2.5 bg-white text-red-600 font-semibold rounded-xl text-sm hover:bg-red-50 transition-colors disabled:opacity-50 shadow-sm">
-                  {isRetrying ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-                  {t('common:tryAgain')}
-                </button>
-                <button onClick={handleDelete} disabled={isRetrying || isDeleting} className="flex items-center justify-center gap-2 w-full py-2.5 bg-red-700 text-white font-medium rounded-xl text-sm hover:bg-red-800 transition-colors disabled:opacity-50">
-                  {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                  {t('common:remove')}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!selectionMode && !hasError && (
-            <div 
-               className={`absolute top-3 left-3 favorite-heart ${animateHeart ? 'heart-animate' : ''} ${isDisabled ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''}`} 
-               onClick={handleHeartClick}
+        {/* ✅ Bottom left: folder badge (replaces globe) */}
+        {folderName && !isDisabled && !selectionMode && (
+          <div className="absolute bottom-3 left-3 z-30">
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg"
             >
-              <Heart className={isFavorite ? 'favorited' : ''} />
+              <FolderIcon size={11} className="text-primary-400 flex-shrink-0" strokeWidth={2.5} />
+              <span className="text-[10px] font-bold text-white uppercase tracking-wide leading-none truncate max-w-[80px]">
+                {folderName}
+              </span>
             </div>
-          )}
+          </div>
+        )}
 
-          {selectionMode && (
-            <div className="absolute top-3 right-3 modern-radio" onClick={(e) => { e.stopPropagation(); onToggleSelect?.(); }}>
-              <div className={`radio-circle ${selected ? 'radio-active' : ''}`} />
+        {/* ✅ Language toggle — still available via top-left area when no heart (selectionMode) */}
+        {hasTwoLanguages && !isDisabled && !selectionMode && (
+          <button
+            onClick={handleLanguageToggle}
+            className="absolute bottom-3 left-3 px-3 py-1.5 rounded-lg flex items-center gap-1.5 z-30 shadow-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors"
+            style={{ display: folderName ? 'none' : undefined }}
+            title={`Affichage en ${showOriginal ? languageCode : 'EN'}`}
+          >
+            <Globe size={14} aria-hidden="true" />
+            <span className="text-[11px] font-bold uppercase">{showOriginal ? languageCode : 'EN'}</span>
+          </button>
+        )}
+
+        {/* Duration — bottom right */}
+        {duration && duration !== '0:00' && !hasError && (
+          <div className="absolute bottom-3 right-3 z-30">
+            <div className="flex items-center px-2.5 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
+              <span className="text-[10px] font-bold text-white tracking-wide leading-none">
+                {duration}
+              </span>
             </div>
-          )}
+          </div>
+        )}
+      </div>
 
-          {!selectionMode && !hasError && !isProcessing && (
-            <div className="absolute top-3 right-3 z-30 pointer-events-none">
-              <div className="w-7 h-7 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white shadow-sm">
-                {isSorted ? (
-                  <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center" title={t('common:sorted')}>
-                    <CheckCircle2 size={12} strokeWidth={3} className="text-white" />
-                  </div>
-                ) : (
-                  <div className="w-5 h-5 bg-gray-600 rounded-full flex items-center justify-center" title={t('common:unsorted')}>
-                    <CircleSlash2 size={12} strokeWidth={3} className="text-white" />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {hasTwoLanguages && !isDisabled && !selectionMode && (
-            <button 
-              onClick={handleLanguageToggle} 
-              className="absolute bottom-3 left-3 px-3 py-1.5 rounded-lg flex items-center gap-1.5 z-30 shadow-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors" 
-              title={showOriginal ? t('videoCard:showingLanguage', { lang: languageCode }) : t('videoCard:showingEnglish')}
-            >
-              <Globe size={14} />
-              <span className="text-[11px] font-bold uppercase">{showOriginal ? languageCode : 'EN'}</span>
-            </button>
-          )}
-
-          {duration && duration !== '0:00' && !hasError && (
-            <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-medium text-white z-30">{duration}</div>
-          )}
-        </div>
-
-        <div className="px-1">
-          <h3 onClick={handleCardClick} className={`font-semibold text-gray-900 leading-tight line-clamp-2 transition-colors ${isDisabled ? 'cursor-default opacity-50' : 'hover:text-primary-600 cursor-pointer'}`} title={displayTitle}>{displayTitle}</h3>
-          <a href={profileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 mt-1.5 w-fit group/author" onClick={(e) => { e.stopPropagation(); if (isDisabled) e.preventDefault(); }}>
-            <PlatformIconAuthor platform={platform} />
-            <span className={`text-xs font-medium text-gray-500 truncate group-hover/author:text-gray-900 transition-colors ${isDisabled ? 'opacity-50' : ''}`}>{author}</span>
-          </a>
-        </div>
+      {/* Title + Author row */}
+      <div className="pt-3 px-0.5">
+        <p className="text-sm font-bold text-gray-900 leading-snug line-clamp-2 mb-1">{displayTitle}</p>
+        <a
+          href={profileUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => { e.stopPropagation(); if (isDisabled) e.preventDefault(); }}
+          className="inline-flex items-center gap-1.5 group/author"
+        >
+          <PlatformIconAuthor platform={platform} />
+          <span className="text-xs text-gray-400 font-medium truncate max-w-[140px] group-hover/author:text-gray-700 transition-colors">
+            {author}
+          </span>
+        </a>
       </div>
 
       <ConfirmModal

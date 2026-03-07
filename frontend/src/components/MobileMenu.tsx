@@ -14,10 +14,12 @@ import { useTranslation } from 'react-i18next';
 import LogoBlack from '../assets/recolekt_logo_black.png';
 import { useScrollLock } from '../utils/useScrollLock';
 
+
 interface MobileMenuProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
 
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   const { user, isAuthenticated, loading, logout } = useAuth();
@@ -207,7 +209,8 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                                 <FolderClosed size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
                                 <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{folder.name}</span>
                               </div>
-                              <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md tracking-wider group-hover:bg-primary-100 group-hover:text-primary-600 transition-colors">
+                              {/* ✅ fix 5: always purple, matching desktop */}
+                              <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider transition-colors">
                                 {getDirectVideoCount(folder.id)}
                               </span>
                             </button>
@@ -227,7 +230,8 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                                         {sub.name}
                                       </span>
                                     </div>
-                                    <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded-md tracking-wider group-hover:bg-primary-100 group-hover:text-primary-600 transition-colors">
+                                    {/* ✅ fix 5: always purple for subfolders too */}
+                                    <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider transition-colors">
                                       {getDirectVideoCount(sub.id)}
                                     </span>
                                   </button>
