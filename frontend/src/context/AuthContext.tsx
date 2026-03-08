@@ -14,7 +14,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   error: string | null;
-  verifyGoogleToken: (accessToken: string) => Promise<void>; // ✅ RESTORED
+  verifyGoogleToken: (accessToken: string) => Promise<void>;
   signOut: () => Promise<void>;
   isAuthenticated: boolean;
   registerUser: (email: string, password: string, name: string) => Promise<User | null>;
@@ -33,12 +33,8 @@ function joinUrl(base: string, path: string) {
 
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json'
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   return headers;
 }
 
@@ -49,11 +45,8 @@ function loadCachedUserUnsafeInstant(): User | null {
   try {
     const raw = localStorage.getItem(LS_USER_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed as User;
-  } catch {
-    return null;
-  }
+    return JSON.parse(raw) as User;
+  } catch { return null; }
 }
 
 function saveCachedUser(user: User) {
@@ -73,12 +66,12 @@ function clearCachedUser() {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { i18n } = useTranslation();
   const [user, setUser] = useState<User | null>(() => loadCachedUserUnsafeInstant());
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('auth_token') || localStorage.getItem('token'));
-  
-  const userRef = useRef<User | null>(user);
+  const [token, setToken] = useState(localStorage.getItem('auth_token') || localStorage.getItem('token'));
+
+  const userRef = useRef(user);
   userRef.current = user;
 
   const clearAuthEverywhere = () => {
@@ -94,26 +87,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchMe = async () => {
     const currentToken = localStorage.getItem('auth_token') || localStorage.getItem('token');
-    if (!currentToken) {
-      clearAuthEverywhere();
-      return;
-    }
-
+    if (!currentToken) { clearAuthEverywhere(); return; }
     try {
       const response = await fetch(joinUrl(API_BASE, '/api/auth/me'), {
         headers: getAuthHeaders(),
         credentials: 'omit',
       });
-
       if (response.ok) {
         const data = await response.json();
         if (data.authenticated) {
           setUser(data.user);
           setIsAuthenticated(true);
           saveCachedUser(data.user);
-          if (data.user.language) {
-            i18n.changeLanguage(data.user.language);
-          }
+          if (data.user.language) i18n.changeLanguage(data.user.language);
+        } else {
+          clearAuthEverywhere();
         }
       } else {
         clearAuthEverywhere();
@@ -125,46 +113,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // ✅ Hitting the correct stateless backend endpoint!
   const verifyGoogleToken = async (accessToken: string) => {
-    setLoading(true);
     setError(null);
     try {
       const response = await fetch(joinUrl(API_BASE, '/api/auth/google/verify'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ access_token: accessToken }),
-        credentials: 'omit', 
+        credentials: 'omit',
       });
-
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error || 'Google login failed');
       }
-
       const data = await response.json();
-      
       localStorage.setItem('auth_token', data.token);
       localStorage.setItem('token', data.token);
       setToken(data.token);
       setUser(data.user);
       setIsAuthenticated(true);
       saveCachedUser(data.user);
-
       if (data.user.language) {
         i18n.changeLanguage(data.user.language);
         localStorage.setItem('i18nextLng', data.user.language);
       }
     } catch (err: any) {
-      console.error(' Google Verify Error:', err);
       setError(err.message);
-    } finally {
-      setLoading(false);
+      throw err; // ✅ re-throw so Auth.tsx can catch it
     }
   };
 
-  const loginUser = async (email: string, password: string) => {
-    setLoading(true);
+  // ✅ Now throws on failure so Auth.tsx handleSubmit can setErrorMsg
+  const loginUser = async (email: string, password: string): Promise<User | null> => {
     try {
       const response = await fetch(joinUrl(API_BASE, '/api/auth/login'), {
         method: 'POST',
@@ -173,8 +153,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         credentials: 'omit',
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Login failed');
-      
+      if (!response.ok) {
+        // ✅ Map status codes to friendly messages
+        if (response.status === 401) {
+          throw new Error(data.error || 'Invalid email or password.');
+        }
+        if (response.status === 404) {
+          throw new Error('No account found with this email address.');
+        }
+        throw new Error(data.error || 'Login failed. Please try again.');
+      }
       localStorage.setItem('auth_token', data.token);
       localStorage.setItem('token', data.token);
       setToken(data.token);
@@ -185,14 +173,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return data.user;
     } catch (err: any) {
       setError(err.message);
-      return null;
-    } finally {
-      setLoading(false);
+      throw err; // ✅ re-throw
     }
   };
 
-  const registerUser = async (email: string, password: string, name: string) => {
-    setLoading(true);
+  // ✅ Now throws on failure
+  const registerUser = async (email: string, password: string, name: string): Promise<User | null> => {
     try {
       const response = await fetch(joinUrl(API_BASE, '/api/auth/register'), {
         method: 'POST',
@@ -201,13 +187,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         credentials: 'omit',
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Registration failed');
+      if (!response.ok) {
+        if (response.status === 409) {
+          throw new Error('An account with this email already exists.');
+        }
+        throw new Error(data.error || 'Registration failed. Please try again.');
+      }
       return data.user;
     } catch (err: any) {
       setError(err.message);
-      return null;
-    } finally {
-      setLoading(false);
+      throw err; // ✅ re-throw
     }
   };
 
@@ -222,9 +211,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         credentials: 'omit',
       });
       setUser(prev => prev ? { ...prev, language: lang } : null);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const signOut = async () => {
@@ -244,7 +231,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const value = useMemo(() => ({
-    user, loading, error, verifyGoogleToken, signOut, 
+    user, loading, error, verifyGoogleToken, signOut,
     isAuthenticated, registerUser, loginUser, updateUserLanguage
   }), [user, loading, error, isAuthenticated]);
 
@@ -257,5 +244,4 @@ export const useAuth = () => {
   return context;
 };
 
-// ✅ EXPORTED TO CLEAR TS ERRORS
 export { getAuthHeaders };

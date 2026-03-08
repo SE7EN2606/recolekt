@@ -38,5 +38,10 @@
   "support": "Support",
   "freeMember": "C Gratuit",
   "upgradePro": "Passer à Pro",
-  "edit": "Modifier"
+  "edit": "Modifier",
+  "codeSentTo": "Code envoyé à",
+  "resetDesc": "Entrez votre e-mail et nous vous enverrons un code.",
+  "resendIn": "Renvoyer dans",
+  "didntReceive": "Vous ne l'avez pas reçu ? Renvoyer"
+
 }

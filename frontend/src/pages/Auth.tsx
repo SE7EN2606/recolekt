@@ -1,11 +1,11 @@
 import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock, User, ArrowLeft, AlertCircle, KeyRound } from 'lucide-react';
+import { Mail, Lock, User, AlertCircle, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
-import { useGoogleLogin } from '@react-oauth/google'; // ✅ Added this
+import { useGoogleLogin } from '@react-oauth/google';
 import LogoWhite from '../assets/recolekt_logo_white.png';
 
 function joinUrl(base: string, path: string) {
@@ -17,69 +17,136 @@ function joinUrl(base: string, path: string) {
 
 type ViewState = 'login' | 'register' | 'forgot' | 'reset' | 'verify';
 
+const LAST_AUTH_KEY = 'last_auth_method';
+
 export const Auth: React.FC = () => {
   const [view, setView] = useState<ViewState>('login');
-  const [loading, setLoading] = useState(false);
-  const { t } = useTranslation(['auth', 'common']); 
-  
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const { t, i18n } = useTranslation(['auth', 'common']);
+
   const [resetEmail, setResetEmail] = useState('');
   const [verificationEmail, setVerificationEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
 
   const navigate = useNavigate();
-  // ✅ Using verifyGoogleToken instead of signInWithGoogle
   const { user, verifyGoogleToken, loginUser, registerUser } = useAuth();
 
-  useEffect(() => {
-    if (user && view !== 'verify') {
-      navigate('/gallery', { replace: true });
-    }
-  }, [user, navigate, view]);
+  const lastAuthMethod = localStorage.getItem(LAST_AUTH_KEY);
 
-  // ✅ NEW: Google Login Hook configuration
+  useEffect(() => {
+    if (user) navigate('/gallery', { replace: true });
+  }, [user, navigate]);
+
+  useEffect(() => {
+    setShowPassword(false);
+    setShowNewPassword(false);
+    setErrorMsg('');
+  }, [view]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setTimeout(() => setResendCooldown(prev => prev - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
+
   const loginWithGoogle = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
-      setLoading(true);
+      setGoogleLoading(true);
+      setErrorMsg('');
       try {
         await verifyGoogleToken(tokenResponse.access_token);
+        localStorage.setItem(LAST_AUTH_KEY, 'google');
         navigate('/gallery');
-      } catch (err) {
-        console.error("Google login failed", err);
-        alert("Google authentication failed.");
+      } catch (err: any) {
+        setErrorMsg(err.message || "Google authentication failed.");
       } finally {
-        setLoading(false);
+        setGoogleLoading(false);
       }
     },
-    onError: () => alert("Google login was cancelled or failed.")
+    onError: () => {
+      setErrorMsg("Google login was cancelled or failed.");
+      setGoogleLoading(false);
+    }
   });
+
+  const handleResendCode = async () => {
+    if (resendCooldown > 0 || !verificationEmail) return;
+    try {
+      const res = await fetch(joinUrl(API_BASE, '/api/auth/resend-verification'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: verificationEmail })
+      });
+      if (res.ok) {
+        setResendCooldown(60);
+      } else {
+        setErrorMsg('Failed to resend code. Please try again.');
+      }
+    } catch {
+      setErrorMsg('Failed to resend code.');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setLoading(true);
+    setEmailLoading(true);
+    setErrorMsg('');
     const formData = new FormData(e.currentTarget);
     const email = (formData.get('email') as string) || '';
     const password = (formData.get('password') as string) || '';
     const name = (formData.get('name') as string) || '';
     const code = (formData.get('code') as string) || '';
+    const lang = i18n.language || 'en';
 
     try {
       if (view === 'login') {
         const res = await loginUser(email, password);
-        if (res) navigate('/gallery');
+        if (res) {
+          localStorage.setItem(LAST_AUTH_KEY, 'email');
+          navigate('/gallery');
+        }
+
       } else if (view === 'register') {
         const res = await registerUser(email, password, name);
         if (res) {
           setVerificationEmail(email);
           setRegPassword(password);
+          setResendCooldown(60);
           setView('verify');
         }
+
       } else if (view === 'forgot') {
         const res = await fetch(joinUrl(API_BASE, '/api/auth/forgot-password'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email })
+          body: JSON.stringify({ email, lang })
         });
-        if (res.ok) { setResetEmail(email); setView('reset'); }
+        if (res.ok) {
+          setResetEmail(email);
+          setView('reset');
+        } else {
+          const data = await res.json().catch(() => ({}));
+          setErrorMsg(data.error || 'Failed to send reset code.');
+        }
+
+      } else if (view === 'reset') {
+        const res = await fetch(joinUrl(API_BASE, '/api/auth/reset-password'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: resetEmail, code, password })
+        });
+        if (res.ok) {
+          setView('login');
+        } else {
+          const data = await res.json().catch(() => ({}));
+          setErrorMsg(data.error || 'Invalid or expired code.');
+        }
+
       } else if (view === 'verify') {
         const res = await fetch(joinUrl(API_BASE, '/api/auth/verify-email'), {
           method: 'POST',
@@ -88,23 +155,32 @@ export const Auth: React.FC = () => {
         });
         if (res.ok) {
           await loginUser(verificationEmail, regPassword);
+          localStorage.setItem(LAST_AUTH_KEY, 'email');
           setTimeout(() => window.location.href = '/gallery', 100);
+        } else {
+          const data = await res.json().catch(() => ({}));
+          setErrorMsg(data.error || 'Invalid or expired code.');
         }
       }
     } catch (error: any) {
-      alert(error.message || t('common:errorOccurred'));
+      setErrorMsg(error.message || t('common:errorOccurred'));
     } finally {
-      setLoading(false);
+      setEmailLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen w-full relative bg-white flex flex-col md:flex-row">
+
+      {/* ── BACKGROUND SPLIT ── */}
       <div className="fixed inset-0 flex pointer-events-none">
-        <div className="hidden md:block w-1/2 h-full bg-[#0B0F19] relative"></div>
-        <div className="w-full md:w-1/2 h-full bg-white"></div>
+        <div className="hidden md:block w-1/2 h-full bg-[#0B0F19]" />
+        <div className="w-full md:w-1/2 h-full bg-white" />
       </div>
+
       <div className="relative z-10 w-full max-w-[1280px] mx-auto min-h-screen flex flex-col md:flex-row px-6 md:px-8">
+
+        {/* ── LEFT PANEL ── */}
         <div className="hidden md:flex w-1/2 flex-col justify-between py-16 pr-16 text-white h-full">
           <div>
             <Link to="/" className="inline-block hover:opacity-80 transition-opacity">
@@ -126,46 +202,251 @@ export const Auth: React.FC = () => {
           </div>
         </div>
 
-        <div className="w-full md:w-1/2 flex flex-col justify-start items-center h-full relative pl-0 md:pl-16 pt-24 md:pt-18">
-            <div className="w-full max-w-sm">
-                
+        {/* ── RIGHT PANEL ── */}
+        <div className="w-full md:w-1/2 flex flex-col justify-start items-center h-full relative pl-0 md:pl-16 pt-32 md:pt-28">
+
+          {/* ✅ Back to home — top-right of right panel */}
+          <div className="absolute top-8 right-0">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-1.5 text-xs font-black text-gray-400 hover:text-gray-700 transition-colors uppercase tracking-widest"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5M12 5l-7 7 7 7" />
+              </svg>
+              {t('auth:backToHome')}
+            </Link>
+          </div>
+
+
+          <div className="w-full max-w-sm">
+
+            {/* ══ VERIFY VIEW ══ */}
+            {view === 'verify' && (
+              <div className="text-center">
+                <div className="w-16 h-16 bg-primary-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <KeyRound size={28} className="text-primary-600" />
+                </div>
+                <h2 className="text-2xl font-black text-gray-900 mb-2 tracking-tight">{t('auth:verifyEmail')}</h2>
+                <p className="text-gray-500 text-sm mb-6">
+                  {t('common:codeSentTo', 'Code sent to')}<br />
+                  <span className="font-bold text-gray-800">{verificationEmail}</span>
+                </p>
+                {errorMsg && (
+                  <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 text-sm text-left">
+                    <AlertCircle size={16} className="flex-shrink-0" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
+                <form onSubmit={handleSubmit} className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:verifyAccount')}</label>
+                    <div className="relative">
+                      <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                      <input
+                        type="text" name="code" placeholder="123456" required maxLength={6}
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm tracking-widest font-bold text-center"
+                      />
+                    </div>
+                  </div>
+                  <Button type="submit" fullWidth disabled={emailLoading} className="h-12 mt-2 text-sm font-black shadow-xl rounded-xl">
+                    {emailLoading ? t('common:processing') : t('auth:verifyEmail')}
+                  </Button>
+                </form>
+                <div className="mt-4 text-center">
+                  <button
+                    type="button"
+                    onClick={handleResendCode}
+                    disabled={resendCooldown > 0}
+                    className="text-sm hover:underline disabled:opacity-40 disabled:no-underline"
+                    style={{ color: resendCooldown > 0 ? '#9ca3af' : '#f43f5e' }}
+                  >
+                    {resendCooldown > 0
+                      ? `${t('common:resendIn', 'Resend in')} ${resendCooldown}s`
+                      : t('common:didntReceive', "Didn't receive it? Resend")}
+                  </button>
+                </div>
+                <div className="mt-3 text-center">
+                  <button type="button" onClick={() => setView('register')} className="text-xs text-gray-400 hover:text-gray-600">
+                    ← {t('auth:backTo')}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ══ RESET VIEW — code + new password ══ */}
+            {view === 'reset' && (
+              <>
+                <div className="text-center mb-6">
+                  <div className="w-16 h-16 bg-primary-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <KeyRound size={28} className="text-primary-600" />
+                  </div>
+                  <h2 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">{t('auth:resetPassword')}</h2>
+                  <p className="text-gray-400 text-sm">
+                    {t('common:codeSentTo', 'Code sent to')}{' '}
+                    <span className="font-bold text-gray-700">{resetEmail}</span>
+                  </p>
+                </div>
+                {errorMsg && (
+                  <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 text-sm">
+                    <AlertCircle size={16} className="flex-shrink-0" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
+                <form onSubmit={handleSubmit} className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:verifyAccount')}</label>
+                    <div className="relative">
+                      <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                      <input
+                        type="text" name="code" placeholder="123456" required maxLength={6}
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm tracking-widest font-bold text-center"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:newPassword')}</label>
+                    <div className="relative">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        name="password" placeholder="••••••••" required
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-11 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(p => !p)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                        tabIndex={-1}
+                        aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
+                  <Button type="submit" fullWidth disabled={emailLoading} className="h-12 mt-2 text-sm font-black shadow-xl rounded-xl">
+                    {emailLoading ? t('common:processing') : t('auth:resetPassword')}
+                  </Button>
+                </form>
+                <div className="mt-4 text-center">
+                  <button type="button" onClick={() => setView('forgot')} className="text-sm hover:underline" style={{ color: '#f43f5e' }}>
+                    ← {t('auth:backTo')}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ══ FORGOT VIEW ══ */}
+            {view === 'forgot' && (
+              <>
+                <div className="text-center mb-6">
+                  <h2 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">{t('auth:resetPassword')}</h2>
+                  <p className="text-gray-400 text-sm">{t('common:resetDesc', "Enter your email and we'll send you a reset code.")}</p>
+                </div>
+                {errorMsg && (
+                  <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 text-sm">
+                    <AlertCircle size={16} className="flex-shrink-0" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
+                <form onSubmit={handleSubmit} className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:emailAddress')}</label>
+                    <div className="relative">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                      <input
+                        type="email" name="email" placeholder={t('auth:emailPlaceholder')} required
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <Button type="submit" fullWidth disabled={emailLoading} className="h-12 mt-2 text-sm font-black shadow-xl rounded-xl">
+                    {emailLoading ? t('common:processing') : t('auth:sendResetCode')}
+                  </Button>
+                </form>
+                <div className="mt-4 text-center">
+                  <button type="button" onClick={() => setView('login')} className="text-sm hover:underline" style={{ color: '#f43f5e' }}>
+                    ← {t('auth:backTo')}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ══ LOGIN / REGISTER VIEWS ══ */}
+            {(view === 'login' || view === 'register') && (
+              <>
                 <div className="text-center mb-6">
                   <h2 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">
                     {view === 'login' ? t('auth:welcome') : t('auth:createAccount')}
                   </h2>
                 </div>
 
-                <button 
-                  type="button" // Important
-                  onClick={() => loginWithGoogle()} // ✅ Attached the hook here
-                  disabled={loading}
-                  className="group w-full flex items-center justify-center gap-3 p-3 mb-4 bg-white/40 hover:bg-white/80 text-gray-800 font-bold rounded-xl transition-all border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 disabled:opacity-50"
-                >
-                  <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
-                  <span>{loading ? t('common:processing') : t('auth:googleContinue')}</span>
-                </button>
-                
-                <div className="relative mb-6">
-                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
-                  <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-4 text-gray-400 font-black tracking-widest">{t('auth:emailContinue')}</span></div>
+                {errorMsg && (
+                  <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 text-sm">
+                    <AlertCircle size={16} className="flex-shrink-0" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
+
+                {/* ✅ Google button — pill floats outside top-right */}
+                <div className="relative mb-4 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => { setGoogleLoading(true); loginWithGoogle(); }}
+                    disabled={googleLoading || emailLoading}
+                    className="w-full flex items-center justify-center gap-3 p-4 bg-white/40 hover:bg-white/80 text-gray-800 font-bold rounded-xl transition-all border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 disabled:opacity-50"
+                  >
+                    {googleLoading ? (
+                      <svg className="animate-spin w-5 h-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                      </svg>
+                    ) : (
+                      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+                    )}
+                    <span className="text-base">{googleLoading ? t('common:processing') : t('auth:googleContinue')}</span>
+                  </button>
+
+                  {/* ✅ Pill outside button — slightly above and past right edge */}
+                  {lastAuthMethod === 'google' && !googleLoading && (
+                    <span className="absolute -top-3.5 -right-1 translate-x-1 inline-flex items-center gap-1 bg-gray-900 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shadow-md pointer-events-none">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+                      {t('auth:lastUsed')}
+                    </span>
+                  )}
                 </div>
-                
+
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-100" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white px-4 text-gray-400 font-black tracking-widest">{t('auth:emailContinue')}</span>
+                  </div>
+                </div>
+
                 <form onSubmit={handleSubmit} className="space-y-3">
                   {view === 'register' && (
-                     <div className="space-y-1">
-                       <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:fullName')}</label>
-                       <div className="relative">
-                         <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                         <input type="text" name="name" placeholder="John Doe" required className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
-                       </div>
-                     </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:fullName')}</label>
+                      <div className="relative">
+                        <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                        <input
+                          type="text" name="name" placeholder={t('auth:namePlaceholder')} required
+                          className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
+                        />
+                      </div>
+                    </div>
                   )}
 
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:emailAddress')}</label>
                     <div className="relative">
                       <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input type="email" name="email" placeholder="name@example.com" required className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
+                      <input
+                        type="email" name="email" placeholder={t('auth:emailPlaceholder')} required
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
+                      />
                     </div>
                   </div>
 
@@ -173,21 +454,53 @@ export const Auth: React.FC = () => {
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:password')}</label>
                     <div className="relative">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input type="password" name="password" placeholder="••••••••" required className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        name="password" placeholder="••••••••" required
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-11 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(prev => !prev)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                        tabIndex={-1}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
                     </div>
+                    {view === 'login' && (
+                      <div className="text-right mt-1">
+                        <button
+                          type="button"
+                          onClick={() => setView('forgot')}
+                          className="text-xs hover:underline"
+                          style={{ color: '#f43f5e' }}
+                        >
+                          {t('auth:forgotPassword')}
+                        </button>
+                      </div>
+                    )}
                   </div>
 
-                  <Button type="submit" fullWidth disabled={loading} className="h-12 mt-4 text-sm font-black shadow-xl rounded-xl">
-                    {loading ? t('common:processing') : (view === 'login' ? t('common:signIn') : t('auth:createAccount'))}
+                  <Button type="submit" fullWidth disabled={emailLoading || googleLoading} className="h-12 mt-4 text-sm font-black shadow-xl rounded-xl">
+                    {emailLoading ? t('common:processing') : (view === 'login' ? t('common:signIn') : t('auth:createAccount'))}
                   </Button>
                 </form>
 
                 <div className="mt-4 text-center">
-                  <button onClick={() => setView(view === 'login' ? 'register' : 'login')} type="button" className="text-sm font-black hover:underline text-primary-600">
+                  <button
+                    onClick={() => setView(view === 'login' ? 'register' : 'login')}
+                    type="button"
+                    className="text-sm font-black hover:underline text-primary-600"
+                  >
                     {view === 'login' ? t('auth:noAccount') : t('auth:backTo')}
                   </button>
                 </div>
-            </div>
+              </>
+            )}
+
+          </div>
         </div>
       </div>
     </div>

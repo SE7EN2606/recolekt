@@ -20,7 +20,8 @@ interface MobileMenuProps {
 }
 
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
-  const { isAuthenticated, loading, logout } = useAuth();
+  // ✅ logout → signOut
+  const { isAuthenticated, loading, signOut } = useAuth();
   const { folders, addFolder, videos } = useData();
   const { t } = useTranslation(['common', 'sidebar', 'gallery', 'header', 'modals']);
 
@@ -57,8 +58,9 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     onClose();
   };
 
+  // ✅ logout() → signOut()
   const handleLogout = async () => {
-    await logout();
+    await signOut();
     onClose();
     navigate('/');
   };
@@ -69,11 +71,11 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     }
     return (videos || []).filter((v: any) => v.folderId === folderId).length;
   };
-  
+
   const getFavoritesCount = () => (videos || []).filter((v: any) => v.isFavorite).length;
 
   const SYSTEM_FOLDER_IDS = new Set(['all', 'favorites', 'shared', 'archive', 'default', 'unsorted']);
-  
+
   const customFolders = (folders || []).filter((f: any) => {
     const id = String(f?.id || '');
     const name = String(f?.name || '').trim().toLowerCase();
@@ -104,7 +106,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
               {showAuthedUI ? (
                 <div className="flex-1 space-y-8">
-                  
+
                   {/* Library Section */}
                   <section>
                     <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] px-4 mb-3 drop-shadow-sm">
@@ -154,7 +156,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       </div>
                     </div>
                     <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-[28px] overflow-hidden shadow-sm">
-                      
+
                       {customFolders.length === 0 && (
                         <button
                           onClick={() => setIsModalOpen(true)}
@@ -256,8 +258,8 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     </div>
                   </section>
 
-                  <button 
-                    onClick={handleLogout} 
+                  <button
+                    onClick={handleLogout}
                     className="w-full flex items-center justify-center gap-2 p-5 bg-white/80 backdrop-blur-md border border-white/70 text-red-600 rounded-[28px] font-bold shadow-sm active:scale-95 hover:bg-red-50 hover:border-red-100 hover:text-red-700 transition-all"
                   >
                     <LogOut size={20} />
@@ -273,10 +275,10 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       { label: t('common:pricing', 'Pricing'), path: '/billing' },
                       { label: t('common:support', 'Support'), path: '/help?section=contact' },
                     ].map((link) => (
-                      <Link 
-                        key={link.path} 
-                        to={link.path} 
-                        onClick={onClose} 
+                      <Link
+                        key={link.path}
+                        to={link.path}
+                        onClick={onClose}
                         className={`block text-3xl font-black tracking-tight hover:text-primary-600 transition-colors py-2 ${location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'}`}
                       >
                         {link.label}

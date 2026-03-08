@@ -38,5 +38,9 @@
   "support": "Support",
   "freeMember": "Free Member",
   "upgradePro": "Upgrade to Pro",
-  "edit": "Edit"
+  "edit": "Edit",
+  "codeSentTo": "Code sent to",
+  "resetDesc": "Enter your email and we'll send you a reset code.",
+  "resendIn": "Resend in",
+  "didntReceive": "Didn't receive it? Resend"
 }
