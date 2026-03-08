@@ -25,23 +25,20 @@ reel_bp = Blueprint("reels", __name__)
 
 
 def add_no_cache_headers(response):
-    """Disable caching for dynamic lists"""
+    """Disable caching for dynamic lists — gallery always gets fresh data."""
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"]        = "no-cache"
     response.headers["Expires"]       = "0"
     return response
 
 
+def add_short_cache_headers(response):
+    """Short private cache for single reel detail — instant back-navigation."""
+    response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=30"
+    return response
+
+
 def parse_transcription(transcription_raw):
-    """
-    Extract clean transcript text from DB column.
-    Input can be:
-    - JSON string: '{"status": "ok", "transcript": "...", "detected_language": "fr"}'
-    - Dict: {"status": "ok", "transcript": "...", "detected_language": "fr"}
-    - Plain text: "Transcript text..."
-    - None
-    Returns: Clean transcript text or None
-    """
     if not transcription_raw:
         return None
     if isinstance(transcription_raw, dict):
@@ -58,13 +55,6 @@ def parse_transcription(transcription_raw):
 
 
 def _coerce_summary_title_string(summary_title_raw):
-    """
-    summary_title can be:
-    - string title (correct)
-    - JSON string of a dict (older background_process bug)
-    - dict (rare)
-    We only want a simple string title or None.
-    """
     if summary_title_raw is None:
         return None
     if isinstance(summary_title_raw, dict):
@@ -78,15 +68,7 @@ def _coerce_summary_title_string(summary_title_raw):
 
 
 def _build_canonical_summary(row_dict, caption: str):
-    """
-    Return (summary_obj, summary_title_str, english_preview).
-
-    Preferred source: summary_text if it's already a bilingual dict with an
-    'english' key (written by the AI pipeline).
-    Fallback: build from legacy summary_text + bullets/hashtags/emojis columns.
-    """
     summary_title_db = _coerce_summary_title_string(row_dict.get("summary_title"))
-
     summary_text_raw = row_dict.get("summary_text")
     summary_text     = json_loads_maybe(summary_text_raw, default=summary_text_raw)
 
@@ -126,11 +108,6 @@ def _build_canonical_summary(row_dict, caption: str):
 
 @reel_bp.route("/saved_reels", methods=["GET"])
 def list_saved_reels():
-    """
-    Get paginated list of user's saved reels.
-    - ?view=list => lightweight payload for gallery (no recipe/workout/transcription).
-    - default     => full payload.
-    """
     try:
         try:
             user_id = get_user_id_from_request()
@@ -147,24 +124,11 @@ def list_saved_reels():
         if view_mode == "list":
             sql = """
                 SELECT
-                    id,
-                    source_url,
-                    folder_id,
-                    is_favorite,
-                    status,
-                    summary_category,
-                    summary_title,
-                    summary_topic,
-                    summary_text,
-                    summary_bullets,
-                    summary_hashtags,
-                    summary_emojis,
-                    content_type,
-                    created_at,
-                    caption,
-                    author_name,
-                    is_long_video,
-                    duration,
+                    id, source_url, folder_id, is_favorite, status,
+                    summary_category, summary_title, summary_topic, summary_text,
+                    summary_bullets, summary_hashtags, summary_emojis,
+                    content_type, created_at, caption, author_name,
+                    is_long_video, duration,
                     gcs_urls::jsonb as gcs_urls
                 FROM reels
                 WHERE user_id = %s
@@ -185,7 +149,6 @@ def list_saved_reels():
                 caption  = row_dict.get("caption") or ""
                 gcs_urls = json_loads_maybe(row_dict.get("gcs_urls"), default={})
 
-                # ← same function used by full view and single-reel GET
                 summary_obj, summary_title_str, _ = _build_canonical_summary(row_dict, caption)
 
                 transformed_rows.append({
@@ -202,16 +165,15 @@ def list_saved_reels():
                     "duration":      row_dict.get("duration"),
                     "gcs_urls":      gcs_urls,
                     "summary":       summary_obj,
-                    "title":         summary_title_str,   # flat convenience field for frontend
+                    "title":         summary_title_str,
                 })
 
-            response = jsonify({
+            return add_no_cache_headers(jsonify({
                 "reels":    transformed_rows,
                 "page":     page,
                 "per_page": per_page,
                 "has_more": len(transformed_rows) == per_page,
-            })
-            return add_no_cache_headers(response)
+            }))
 
         # ── FULL VIEW ──────────────────────────────────────────────────────
         sql = """
@@ -252,7 +214,7 @@ def list_saved_reels():
             row_dict["summary_title"] = summary_title_str
             row_dict["summary_text"]  = summary_obj
             row_dict["summary"]       = summary_obj
-            row_dict["title"]         = summary_title_str   # flat convenience field
+            row_dict["title"]         = summary_title_str
 
             row_dict.pop("summary_bullets",  None)
             row_dict.pop("summary_hashtags", None)
@@ -261,13 +223,12 @@ def list_saved_reels():
             row_dict["author_name"] = row_dict.get("author_name") or "Unknown"
             transformed_rows.append(row_dict)
 
-        response = jsonify({
+        return add_no_cache_headers(jsonify({
             "reels":    transformed_rows,
             "page":     page,
             "per_page": per_page,
             "has_more": len(transformed_rows) == per_page,
-        })
-        return add_no_cache_headers(response)
+        }))
 
     except Exception as e:
         logger.error(f"Error in /saved_reels: {e}", exc_info=True)
@@ -280,7 +241,6 @@ def list_saved_reels():
 
 @reel_bp.route("/update/<process_id>", methods=["PUT"])
 def update_reel(process_id):
-    """Update reel folder or favorite status"""
     try:
         try:
             user_id = get_user_id_from_request()
@@ -305,21 +265,18 @@ def update_reel(process_id):
         if not updates:
             return jsonify({"error": "No valid fields to update"}), 400
 
-        params.append(process_id)
-        params.append(user_id)
-
-        sql = f"""
-            UPDATE reels
-            SET {', '.join(updates)}, updated_at = NOW()
-            WHERE id = %s AND user_id = %s
-        """
-        execute(sql, tuple(params), commit=True)
-        logger.info(f"✅ Successfully saved to NeonDB - Reel {process_id}: {data}")
+        params.extend([process_id, user_id])
+        execute(
+            f"UPDATE reels SET {', '.join(updates)}, updated_at = NOW() WHERE id = %s AND user_id = %s",
+            tuple(params),
+            commit=True
+        )
+        logger.info(f"✅ Updated reel {process_id}: {data}")
 
         return jsonify({
-            "status":     "updated",
-            "id":         process_id,
-            "folder_id":  data.get("folder_id"),
+            "status":      "updated",
+            "id":          process_id,
+            "folder_id":   data.get("folder_id"),
             "is_favorite": data.get("is_favorite"),
         })
 
@@ -334,13 +291,14 @@ def update_reel(process_id):
 
 @reel_bp.route("/reel/<process_id>", methods=["GET"])
 def get_reel(process_id):
-    """Fetch a single reel by ID — used by VideoDetail for fast direct lookup"""
+    """Fetch a single reel by ID — used by VideoDetail for fast direct lookup."""
     try:
         try:
             user_id = get_user_id_from_request()
         except ValueError:
             return jsonify({"error": "Authentication required"}), 401
 
+        # Extract shortcode for prefix fallback
         if "--" in process_id:
             shortcode = process_id.split("--")[0]
         else:
@@ -357,10 +315,13 @@ def get_reel(process_id):
                 is_long_video, duration, recipe, workout, transcription,
                 gcs_urls
             FROM reels
-            WHERE user_id = %s AND (id = %s OR id LIKE %s OR source_url LIKE %s)
+            WHERE user_id = %s AND (id = %s OR id LIKE %s)
             LIMIT 1
             """,
-            (user_id, process_id, f"{shortcode}%", f"%{shortcode}%"),
+            # ✅ Removed source_url LIKE '%shortcode%' — leading wildcard caused full table scan.
+            # id = %s    → exact hit on reels_pkey (instant)
+            # id LIKE %s → prefix scan on idx_reels_user_id (fast)
+            (user_id, process_id, f"{shortcode}%"),
         )
 
         if not row:
@@ -381,7 +342,7 @@ def get_reel(process_id):
         row_dict["summary_title"] = summary_title_str
         row_dict["summary_text"]  = summary_obj
         row_dict["summary"]       = summary_obj
-        row_dict["title"]         = summary_title_str   # flat convenience field
+        row_dict["title"]         = summary_title_str
 
         row_dict.pop("summary_bullets",  None)
         row_dict.pop("summary_hashtags", None)
@@ -392,7 +353,9 @@ def get_reel(process_id):
             row_dict["created_at"] = row_dict["created_at"].isoformat()
 
         logger.info(f"✅ GET /reel/{process_id} -> {row_dict['id']}")
-        return add_no_cache_headers(jsonify(row_dict))
+
+        # ✅ Short cache — back-navigation is instant, data stays fresh enough
+        return add_short_cache_headers(jsonify(row_dict))
 
     except Exception as e:
         logger.error(f"Error fetching reel {process_id}: {e}", exc_info=True)
@@ -405,10 +368,6 @@ def get_reel(process_id):
 
 @reel_bp.route("/reel/<process_id>", methods=["DELETE", "OPTIONS"])
 def delete_reel(process_id):
-    """
-    Delete reel from DB + Google Cloud Storage.
-    Uniquely targets the user_id mapped folder.
-    """
     if request.method == "OPTIONS":
         return "", 200
 
@@ -419,12 +378,7 @@ def delete_reel(process_id):
             return jsonify({"error": "Authentication required"}), 401
 
         reel_data = fetch_one(
-            """
-            SELECT id, gcs_urls, source_url
-            FROM reels
-            WHERE user_id = %s AND id = %s
-            LIMIT 1
-            """,
+            "SELECT id, gcs_urls, source_url FROM reels WHERE user_id = %s AND id = %s LIMIT 1",
             (user_id, process_id),
         )
 
@@ -474,7 +428,6 @@ def delete_reel(process_id):
 
 @reel_bp.route("/search", methods=["GET"])
 def search_reels():
-    """Search user's reels using PostgreSQL full-text search"""
     q = request.args.get("q", "").strip()
     if not q:
         return jsonify([])
@@ -511,7 +464,6 @@ def search_reels():
                 continue
 
             caption = row_dict.get("caption") or ""
-
             recipe  = json_loads_maybe(row_dict.get("recipe"),  default=row_dict.get("recipe"))
             workout = json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout"))
 

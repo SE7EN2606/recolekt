@@ -56,12 +56,10 @@ function resolveTitle(video: any, t: any): { english: string; original: string; 
   const dbTitle = safeStr(video?.summary_title ?? video?.summaryTitle).trim();
 
   let passedTitle = safeStr(video?.title).trim();
-  const captionCutoff = safeStr(video?.caption ?? '').split('\n')[0].substring(0, 56).trim();
-  if (passedTitle === captionCutoff || passedTitle.length === 56) {
-    passedTitle = '';
-  }
+  const captionCutoff = safeStr(video?.caption ?? '').split('\\n')[0].substring(0, 56).trim();
+  if (passedTitle === captionCutoff || passedTitle.length === 56) passedTitle = '';
 
-  const english = sumEngTitle || recEngTitle || dbTitle || passedTitle || summaryObj?.title || safeStr(video?.caption ?? '').split('\n')[0].trim() || DEFAULT;
+  const english = sumEngTitle || recEngTitle || dbTitle || passedTitle || summaryObj?.title || safeStr(video?.caption ?? '').split('\\n')[0].trim() || DEFAULT;
   const original = sumOrigTitle || recOrigTitle || dbTitle || passedTitle || summaryObj?.title || english;
   const hasTwoLanguages = !!(sumEngTitle && sumOrigTitle) || !!(recEngTitle && recOrigTitle);
 
@@ -137,11 +135,12 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     return 'instagram';
   }, [sourceUrl]);
 
-  const profileUrl = platform === 'instagram' ? `https://www.instagram.com/${author.replace('@', '')}/` : sourceUrl || '#';
+  const profileUrl = platform === 'instagram'
+    ? `https://www.instagram.com/${author.replace('@', '')}/`
+    : sourceUrl || '#';
 
   const handleHeartClick = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     if (isDisabled) return;
     if (isFavorite) { setShowRemoveConfirm(true); return; }
     setAnimateHeart(true);
@@ -157,10 +156,9 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
   };
 
   const handleLanguageToggle = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     if (isDisabled) return;
-    setShowOriginal((prev) => !prev);
+    setShowOriginal(prev => !prev);
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
@@ -184,7 +182,9 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
   };
 
   const errorText = video?.errorMessage || video?.error_message || video?.raw?.errormessage
-    || (isMissingThumbnail ? t('videoCard:missingThumbnailText', 'Media download failed.') : t('videoCard:defaultError'));
+    || (isMissingThumbnail
+      ? t('videoCard:missingThumbnailText', 'Media download failed.')
+      : t('videoCard:defaultError'));
 
   return (
     <>
@@ -192,7 +192,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         onClick={handleCardClick}
         className={`relative rounded-2xl overflow-hidden aspect-[9/16] shadow-sm transition-all duration-300 bg-gray-100 cursor-pointer hover:shadow-lg ${selected ? 'ring-2 ring-primary-600 ring-offset-2' : ''} group`}
       >
-        {/* Fade overlay for disabled state */}
+        {/* Disabled fade */}
         <div className={`absolute inset-0 bg-gray-200 transition-opacity duration-200 ${isDisabled ? 'opacity-40' : 'opacity-0'}`} />
 
         {/* Thumbnail */}
@@ -202,8 +202,9 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
             src={thumbnailUrl}
             alt={displayTitle}
             onLoad={() => setImageLoaded(true)}
+            loading="lazy"       // ✅ only loads when scrolled into view
+            decoding="async"     // ✅ doesn't block main thread
             className={`absolute inset-0 w-full h-full object-cover transition-all duration-200 z-10 ${imageLoaded ? 'opacity-100' : 'opacity-0'} ${!selected ? 'group-hover:scale-105' : ''}`}
-            decoding="async"
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center z-10 bg-gray-50">
@@ -213,7 +214,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           </div>
         )}
 
-        {/* Gradient overlay */}
+        {/* Gradient */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60 pointer-events-none z-20" />
 
         {/* Selection overlay */}
@@ -221,7 +222,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           <div className="absolute inset-0 bg-primary-600/20 z-20 pointer-events-none" />
         )}
 
-        {/* Processing state */}
+        {/* Processing */}
         {isProcessing && (
           <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/50 backdrop-blur-sm">
             <Loader2 size={28} className="text-white animate-spin" />
@@ -229,7 +230,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           </div>
         )}
 
-        {/* Error state */}
+        {/* Error */}
         {hasError && (
           <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 p-4 bg-black/60 backdrop-blur-sm">
             <AlertCircle size={28} className="text-red-400" />
@@ -250,7 +251,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           </div>
         )}
 
-        {/* Heart / Favorite */}
+        {/* Heart */}
         {!selectionMode && !hasError && (
           <button
             onClick={handleHeartClick}
@@ -274,7 +275,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           </div>
         )}
 
-        {/* Sorted / Unsorted indicator — top right */}
+        {/* Sorted indicator */}
         {!selectionMode && !hasError && !isProcessing && (
           <div className="absolute top-3 right-3 z-30 pointer-events-none">
             <div className="w-7 h-7 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white shadow-sm">
@@ -291,7 +292,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           </div>
         )}
 
-        {/* Folder badge — bottom left */}
+        {/* Folder badge */}
         {folderName && !isDisabled && !selectionMode && (
           <div className="absolute bottom-3 left-3 z-30" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
@@ -303,7 +304,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           </div>
         )}
 
-        {/* Language toggle — bottom left, only when no folder badge, desktop only */}
+        {/* Language toggle */}
         {hasTwoLanguages && !isDisabled && !selectionMode && !folderName && (
           <button
             onClick={handleLanguageToggle}
@@ -315,7 +316,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           </button>
         )}
 
-        {/* Duration — bottom right, desktop only */}
+        {/* Duration */}
         {duration && duration !== '0:00' && !hasError && (
           <div className="hidden md:block absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-medium text-white z-30">
             {duration}
@@ -323,7 +324,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         )}
       </div>
 
-      {/* Title + Author row */}
+      {/* Title + Author */}
       <div className="pt-3 px-0.5">
         <p className="text-sm font-bold text-gray-900 leading-snug line-clamp-2 mb-1">{displayTitle}</p>
         <a
