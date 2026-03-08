@@ -114,7 +114,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
                       <button onClick={() => handleNav('/gallery')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
                         <LayoutGrid size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:allVideos', 'My videos')}</span>
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:myVideos', 'My videos')}</span>
                         <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider">
                           {videos.length}
                         </span>
@@ -134,10 +134,10 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                         </span>
                       </button>
 
-                      <button onClick={() => handleNav('/gallery/favorites')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-red-50">
-                        <Heart size={22} className="text-gray-400 group-hover:text-red-500 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-red-600 transition-colors">{t('gallery:favorites', 'Favorites')}</span>
-                        <span className="text-[10px] font-black bg-gray-100 text-gray-500 group-hover:bg-red-100 group-hover:text-red-600 px-2 py-1 rounded-md tracking-wider transition-colors">
+                      <button onClick={() => handleNav('/gallery/favorites')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-rose-50">
+                        <Heart size={22} className="text-[#f43f5e] transition-colors" />
+                        <span className="text-[#f43f5e] font-bold flex-1 text-left transition-colors">{t('gallery:favorites', 'Favorites')}</span>
+                        <span className="text-[10px] font-black bg-rose-100 text-[#f43f5e] px-2 py-1 rounded-md tracking-wider transition-colors">
                           {getFavoritesCount()}
                         </span>
                       </button>
