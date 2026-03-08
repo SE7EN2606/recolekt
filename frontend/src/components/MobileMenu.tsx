@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
-  Search, LayoutGrid, Heart, Archive, Share2,
+  LayoutGrid, Heart, Archive, Share2,
   ChevronRight, BookOpen, HelpCircle, FolderPlus, User, Settings, LogOut,
   FolderOpen, Inbox, CreditCard, FolderClosed, CornerDownRight
 } from 'lucide-react';
@@ -20,7 +20,7 @@ interface MobileMenuProps {
 }
 
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
-  const { user, isAuthenticated, loading, logout } = useAuth();
+  const { isAuthenticated, loading, logout } = useAuth();
   const { folders, addFolder, videos } = useData();
   const { t } = useTranslation(['common', 'sidebar', 'gallery', 'header', 'modals']);
 
@@ -97,22 +97,10 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
       >
         <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4">
 
-          {/* Header / Search */}
-          <div className="h-[80px] md:h-[95px] flex items-center flex-shrink-0 border-b border-gray-200">
-            {showAuthedUI && (
-              <div className="relative w-full ml-[48px] mr-[56px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input
-                  type="text"
-                  placeholder={t('common:search', 'Search...')}
-                  className="w-full bg-white/80 border border-gray-200 rounded-xl py-2.5 pl-10 pr-4 text-sm font-medium focus:ring-4 focus:ring-primary-600/10 focus:border-primary-600 outline-none transition-all shadow-sm"
-                />
-              </div>
-            )}
-            {!showAuthedUI && <div className="flex-1" />}
-          </div>
+          {/* Spacer to push content below the fixed header */}
+          <div className="h-[80px] md:h-[95px] flex-shrink-0" />
 
-          <div className="flex-1 overflow-y-auto py-8 pb-32">
+          <div className="flex-1 overflow-y-auto py-4 pb-32">
             <div className={`transition-opacity duration-500 delay-100 ${animateOpen ? 'opacity-100' : 'opacity-0'} flex flex-col min-h-full`}>
 
               {showAuthedUI ? (
@@ -126,7 +114,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
                       <button onClick={() => handleNav('/gallery')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
                         <LayoutGrid size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:myVideos', 'My videos')}</span>
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:allVideos', 'My videos')}</span>
                         <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider">
                           {videos.length}
                         </span>

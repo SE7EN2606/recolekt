@@ -1,12 +1,13 @@
 import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Globe, Check } from 'lucide-react';
+import { Globe, Check, Search } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Button } from './Button';
 import { MobileMenu } from './MobileMenu';
 import { MobileBottomNav } from './MobileBottomNav';
 import { InputModal } from './InputModal';
+import { SearchOverlay } from './SearchOverlay';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import LogoBlack from '../assets/recolekt_logo_black.png';
@@ -15,6 +16,7 @@ import LogoIcon from '../assets/recolekt_icon.png';
 export const Header: React.FC = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [hoveredPath, setHoveredPath] = useState<string | null>(null);
   
@@ -27,26 +29,19 @@ export const Header: React.FC = () => {
   const { user, isAuthenticated, loading } = useAuth();
   const { t, i18n } = useTranslation(['header', 'common', 'gallery']);
 
-  // 🔥 Scroll & Resize Listeners
   useEffect(() => {
     const handleScroll = () => {
       const scrolled = window.scrollY > 20;
       setIsScrolled(prev => prev !== scrolled ? scrolled : prev);
     };
-
-    // Auto-close mobile menu if window resizes to desktop view (768px is Tailwind's 'md')
     const handleResize = () => {
       if (window.innerWidth >= 768) {
         setIsMobileMenuOpen(false);
       }
     };
-
     window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('resize', handleResize);
-    
-    // Check initial size on mount
     handleResize();
-
     return () => {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('resize', handleResize);
@@ -76,7 +71,6 @@ export const Header: React.FC = () => {
 
   const NavPill = ({ to, label }: { to: string; label: string }) => {
     const isActive = location.pathname === to;
-
     return (
       <Link
         to={to}
@@ -129,23 +123,23 @@ export const Header: React.FC = () => {
               />
             </Link>
 
+            {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-8">
-              <nav
-                className="flex items-center"
-                onMouseLeave={() => setHoveredPath(null)}
-              >
-                {loading ? (
-                  <div className="flex items-center gap-4">
-                    <div className="h-4 w-16 bg-gray-100/50 rounded animate-pulse" />
-                    <div className="h-4 w-20 bg-gray-100/50 rounded animate-pulse" />
-                  </div>
-                ) : showAuthedUI ? (
+              <nav className="flex items-center" onMouseLeave={() => setHoveredPath(null)}>
+                {showAuthedUI ? (
                   <>
                     <NavPill to="/gallery" label={t('gallery:gallery')} />
                     <NavPill to="/gallery/favorites" label={t('gallery:favorites')} />
                     <NavPill to="/settings/app" label={t('header:settings')} />
+                    {/* Desktop Search Button */}
+                    <button 
+                      onClick={() => setIsSearchOpen(true)}
+                      className="ml-4 p-2 text-gray-500 hover:text-primary-600 transition-colors"
+                    >
+                      <Search size={22} />
+                    </button>
                   </>
-                ) : (
+                ) : !loading && (
                   <>
                     <NavPill to="/" label={t('header:home')} />
                     <NavPill to="/features" label={t('common:features')} />
@@ -174,41 +168,37 @@ export const Header: React.FC = () => {
                 ) : showSignedOutUI ? (
                   <div className="flex items-center gap-4">
                     <div className="relative">
-                      <button
-                        onClick={() => setIsLangMenuOpen(!isLangMenuOpen)}
-                        className="flex items-center gap-1.5 px-2 py-1 mr-2 text-gray-400 hover:text-primary-600 transition-colors font-bold text-xs uppercase"
-                      >
-                        <Globe size={18} />
-                        <span className="hidden lg:inline-block">{currentLang}</span>
+                      <button onClick={() => setIsLangMenuOpen(!isLangMenuOpen)} className="flex items-center gap-1.5 px-2 py-1 mr-2 text-gray-400 hover:text-primary-600 transition-colors font-bold text-xs uppercase">
+                        <Globe size={18} /><span className="hidden lg:inline-block">{currentLang}</span>
                       </button>
-
                       {isLangMenuOpen && (
                         <>
                           <div className="fixed inset-0 z-40" onClick={() => setIsLangMenuOpen(false)} />
                           <div className="absolute top-full mt-4 left-1/2 -translate-x-1/2 w-40 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 z-50 animate-fade-in">
-                            <button onClick={() => handleLanguageChange('en')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold hover:bg-gray-50 transition-colors ${currentLang === 'en' ? 'text-primary-600' : 'text-gray-700'}`}>
-                              English {currentLang === 'en' && <Check size={16} />}
-                            </button>
-                            <button onClick={() => handleLanguageChange('fr')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold hover:bg-gray-50 transition-colors ${currentLang === 'fr' ? 'text-primary-600' : 'text-gray-700'}`}>
-                              Français {currentLang === 'fr' && <Check size={16} />}
-                            </button>
+                            <button onClick={() => handleLanguageChange('en')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold hover:bg-gray-50 transition-colors ${currentLang === 'en' ? 'text-primary-600' : 'text-gray-700'}`}>English {currentLang === 'en' && <Check size={16} />}</button>
+                            <button onClick={() => handleLanguageChange('fr')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold hover:bg-gray-50 transition-colors ${currentLang === 'fr' ? 'text-primary-600' : 'text-gray-700'}`}>Français {currentLang === 'fr' && <Check size={16} />}</button>
                           </div>
                         </>
                       )}
                     </div>
-
-                    <Link to="/auth" className={`font-bold text-gray-900 hover:text-primary-600 transition-all duration-300 ${isScrolled ? 'text-[14.5px]' : 'text-[15px]'}`}>
-                      {t('common:signIn')}
-                    </Link>
-                    <Button variant="primary" size="md" className={`rounded-xl font-bold shadow-lg shadow-primary-600/20 hover:shadow-primary-600/30 hover:-translate-y-0.5 transition-all ${isScrolled ? 'px-5 py-2 text-[14px]' : 'px-6 py-2.5 text-[15px]'}`} onClick={() => navigate('/auth')}>
-                      {t('common:signUp')}
-                    </Button>
+                    <Link to="/auth" className="font-bold text-gray-900 hover:text-primary-600 transition-colors">{t('common:signIn')}</Link>
+                    <Button variant="primary" size="md" className="rounded-xl font-bold shadow-lg shadow-primary-600/20 hover:shadow-primary-600/30 hover:-translate-y-0.5 transition-all" onClick={() => navigate('/auth')}>{t('common:signUp')}</Button>
                   </div>
                 ) : null}
               </div>
             </div>
 
-            <div className="flex items-center gap-4 md:hidden z-50">
+            {/* Mobile Actions */}
+            <div className="flex items-center gap-2 md:hidden z-50">
+               {showAuthedUI && (
+                 <button 
+                   onClick={() => setIsSearchOpen(true)}
+                   className="w-10 h-10 rounded-full flex items-center justify-center text-gray-900 active:scale-95 hover:bg-gray-100 transition-all"
+                 >
+                   <Search size={22} />
+                 </button>
+               )}
+
                {showSignedOutUI && (
                  <div className="relative">
                    <button onClick={() => setIsMobileLangMenuOpen(!isMobileLangMenuOpen)} className="flex items-center gap-1 text-gray-500 hover:text-gray-900 font-bold text-xs uppercase transition-colors">
@@ -218,12 +208,8 @@ export const Header: React.FC = () => {
                      <>
                        <div className="fixed inset-0 z-40" onClick={() => setIsMobileLangMenuOpen(false)} />
                        <div className="absolute top-full mt-4 right-0 w-40 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 z-50 animate-fade-in">
-                         <button onClick={() => handleLanguageChange('en')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'en' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}>
-                           English {currentLang === 'en' && <Check size={16} />}
-                         </button>
-                         <button onClick={() => handleLanguageChange('fr')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'fr' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}>
-                           Français {currentLang === 'fr' && <Check size={16} />}
-                         </button>
+                         <button onClick={() => handleLanguageChange('en')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'en' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}>English {currentLang === 'en' && <Check size={16} />}</button>
+                         <button onClick={() => handleLanguageChange('fr')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'fr' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}>Français {currentLang === 'fr' && <Check size={16} />}</button>
                        </div>
                      </>
                    )}
@@ -235,16 +221,8 @@ export const Header: React.FC = () => {
                 className="w-10 h-10 rounded-full flex flex-col items-center justify-center relative z-50 transition-colors active:scale-95 hover:bg-gray-100"
                 aria-label="Toggle menu"
               >
-                <span
-                  className={`absolute w-5 h-[2px] bg-gray-900 rounded-full transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
-                    isMobileMenuOpen ? 'rotate-45 translate-y-0' : '-translate-y-[4px]'
-                  }`}
-                />
-                <span
-                  className={`absolute w-5 h-[2px] bg-gray-900 rounded-full transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${
-                    isMobileMenuOpen ? '-rotate-45 translate-y-0' : 'translate-y-[4px]'
-                  }`}
-                />
+                <span className={`absolute w-5 h-[2px] bg-gray-900 rounded-full transition-all duration-300 ${isMobileMenuOpen ? 'rotate-45 translate-y-0' : '-translate-y-[4px]'}`} />
+                <span className={`absolute w-5 h-[2px] bg-gray-900 rounded-full transition-all duration-300 ${isMobileMenuOpen ? '-rotate-45 translate-y-0' : 'translate-y-[4px]'}`} />
               </button>
             </div>
           </div>
@@ -252,6 +230,8 @@ export const Header: React.FC = () => {
       </header>
 
       <MobileMenu isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
+      <SearchOverlay isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
+      
       {showAuthedUI && <MobileBottomNav onAddClick={() => setIsAddModalOpen(true)} />}
 
       <InputModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} onSubmit={handleQuickAdd} title={t('header:saveNewVideo')} placeholder={t('header:pasteUrl')} confirmLabel={t('header:save')} />
