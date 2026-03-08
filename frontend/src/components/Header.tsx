@@ -10,8 +10,8 @@ import { InputModal } from './InputModal';
 import { SearchOverlay } from './SearchOverlay';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
-import LogoBlack from '../assets/recolekt_logo_black.png';
-import LogoIcon from '../assets/recolekt_icon.png';
+import LogoBlack from '../assets/recolekt_logo_black.webp';
+import LogoIcon from '../assets/recolekt_icon.webp';
 
 export const Header: React.FC = () => {
   const [isScrolled, setIsScrolled] = useState(false);

@@ -11,7 +11,7 @@ import { Button } from './Button';
 import { InputModal } from './InputModal';
 import { ManageCollectionsModal } from './ManageCollectionsModal';
 import { useTranslation } from 'react-i18next';
-import LogoBlack from '../assets/recolekt_logo_black.png';
+import LogoBlack from '../assets/recolekt_logo_black.webp';
 import { useScrollLock } from '../utils/useScrollLock';
 
 interface MobileMenuProps {
