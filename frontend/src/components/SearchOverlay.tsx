@@ -17,7 +17,6 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({ isOpen, onClose })
   const { t } = useTranslation(['common', 'gallery']);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Focus input when opened and lock background scroll
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => inputRef.current?.focus(), 100);
@@ -26,25 +25,17 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({ isOpen, onClose })
       document.body.style.overflow = 'unset';
       setQuery('');
     }
-    
-    // Cleanup on unmount
     return () => {
       document.body.style.overflow = 'unset';
     }
   }, [isOpen]);
 
-  // Deep Search Logic: Indexes EVERYTHING we know about the video
   const results = query.trim() === '' 
     ? [] 
     : (videos || []).filter((v: any) => {
-        
-        // Helper to safely extract strings
         const safeText = (text: any) => typeof text === 'string' ? text : '';
-        
-        // Combine tags array into a single string
         const tagsStr = Array.isArray(v.tags) ? v.tags.join(' ') : '';
         
-        // Build the ultimate search index string for this video
         const searchStr = [
           safeText(v.title),
           safeText(v.author),
@@ -56,7 +47,7 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({ isOpen, onClose })
         ].join(' ').toLowerCase();
         
         return searchStr.includes(query.toLowerCase());
-      }).slice(0, 8); // Limit to top 8 results for performance/UI
+      }).slice(0, 8); 
 
   const handleSelect = (videoId: string) => {
     navigate(`/video/${videoId}`);
@@ -67,90 +58,88 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({ isOpen, onClose })
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-[200] flex flex-col">
-          {/* Backdrop */}
+          {/* Subtle blurred backdrop */}
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="absolute inset-0 bg-gray-900/60 backdrop-blur-md"
+            className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm"
           />
 
-          {/* Search Container */}
           <motion.div 
             initial={{ y: -20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -20, opacity: 0 }}
             className="relative w-full max-w-2xl mx-auto mt-4 md:mt-20 px-4"
           >
-            <div className="bg-white rounded-[32px] shadow-2xl overflow-hidden border border-gray-100">
+            {/* SAFE GLASSMORPHISM CONTAINER */}
+            <div className="bg-white/85 backdrop-blur-2xl rounded-[32px] shadow-[0_16px_40px_rgba(0,0,0,0.12)] overflow-hidden border border-white/60">
               
-              {/* Input Area */}
-              <div className="flex items-center p-4 border-b border-gray-100">
-                <Search className="text-gray-400 ml-2" size={22} />
+              <div className="flex items-center p-4 border-b border-gray-200/50">
+                <Search className="text-gray-500 ml-2" size={22} />
                 <input
                   ref={inputRef}
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={t('common:search', 'Search videos, authors, tags, transcripts...')}
-                  className="flex-1 bg-transparent border-none focus:ring-0 text-lg font-medium px-4 text-gray-900 outline-none"
+                  className="flex-1 bg-transparent border-none focus:ring-0 text-lg font-medium px-4 text-gray-900 outline-none placeholder-gray-400"
                 />
                 <button 
                   onClick={onClose}
-                  className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400"
+                  className="p-2 hover:bg-black/5 rounded-full transition-colors text-gray-500"
                 >
                   <X size={20} />
                 </button>
               </div>
 
-              {/* Results Area */}
               <div className="max-h-[60vh] overflow-y-auto">
                 {query.trim() !== '' && results.length === 0 && (
                   <div className="p-12 text-center">
-                    <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Search size={24} className="text-gray-300" />
+                    <div className="w-16 h-16 bg-black/5 rounded-full flex items-center justify-center mx-auto mb-4 border border-white/40">
+                      <Search size={24} className="text-gray-400" />
                     </div>
-                    <p className="text-gray-500 font-medium">{t('gallery:noVideosFound', 'No results found')}</p>
+                    <p className="text-gray-600 font-medium">{t('gallery:noVideosFound', 'No results found')}</p>
                   </div>
                 )}
 
                 {results.length > 0 && (
                   <div className="p-2">
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-4 py-3">
+                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-4 py-3">
                       {t('common:results', 'Results')}
                     </p>
                     {results.map((video: any) => (
                       <button
                         key={video.id}
                         onClick={() => handleSelect(video.id)}
-                        className="w-full flex items-center gap-4 p-3 hover:bg-primary-50 rounded-2xl transition-all group"
+                        className="w-full flex items-center gap-4 p-3 hover:bg-white/60 rounded-2xl transition-all group"
                       >
-                        <div className="w-14 h-14 rounded-xl bg-gray-100 flex-shrink-0 overflow-hidden relative">
+                        <div className="w-14 h-14 rounded-xl bg-black/5 border border-white/40 flex-shrink-0 overflow-hidden relative shadow-sm">
                           {video.thumbnailUrl ? (
                             <img src={video.thumbnailUrl} className="w-full h-full object-cover" alt="" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-primary-100 text-primary-600">
+                            <div className="w-full h-full flex items-center justify-center text-primary-600">
                               <Play size={18} fill="currentColor" />
                             </div>
                           )}
                         </div>
                         <div className="flex-1 text-left min-w-0">
-                          <h4 className="font-bold text-gray-900 truncate group-hover:text-primary-600 transition-colors">
+                          <h4 className="font-bold text-gray-900 truncate group-hover:text-primary-600 transition-colors drop-shadow-sm">
                             {video.title || video.summary?.topic || video.caption || 'Untitled Video'}
                           </h4>
-                          <span className="flex items-center gap-1 text-xs text-gray-500 font-medium mt-0.5">
+                          <span className="flex items-center gap-1 text-xs text-gray-600 font-medium mt-0.5">
                             <User size={12} /> {video.author || 'Unknown'}
                           </span>
                         </div>
-                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 mr-2" />
+                        <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 mr-2" />
                       </button>
                     ))}
                   </div>
                 )}
 
                 {query.trim() === '' && (
-                  <div className="p-8 text-center text-gray-400 text-sm font-medium">
+                  <div className="p-8 text-center text-gray-500 text-sm font-medium">
                     {t('common:startTyping', 'Type to search your videos, transcripts, and tags...')}
                   </div>
                 )}

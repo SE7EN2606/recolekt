@@ -8,23 +8,18 @@ interface MobileBottomNavProps {
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) => {
-  // ✅ Using lowercase 'organizer' to match your JSON and loading both namespaces
   const { t } = useTranslation(['modals', 'sidebar']);
 
   return (
-    <div
-      className={`
-        md:hidden fixed bottom-0 left-0 right-0 z-30
-        /* Android-safe transparency: bg-white/70 provides the look even if blur fails */
-        bg-white/70 
-        backdrop-blur-md -webkit-backdrop-blur-md
-        border-t border-white/40
-        shadow-[0_-8px_30px_rgb(0,0,0,0.04)]
-        px-6 pb-4 pt-2
-        transition-transform duration-300
-      `}
-    >
-      <div className="flex items-center justify-between max-w-sm mx-auto w-full relative">
+    <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 transition-transform duration-300">
+      
+      {/* ISOLATED GLASS BACKGROUND 
+        Putting the blur on this absolute layer prevents Android from blurring the text/icons!
+      */}
+      <div className="absolute inset-0 bg-white/75 backdrop-blur-lg -webkit-backdrop-blur-lg border-t border-white/40 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] -z-10" />
+
+      {/* FOREGROUND CONTENT */}
+      <div className="flex items-center justify-between max-w-sm mx-auto w-full px-6 pb-4 pt-2 relative">
 
         {/* Left: Collections */}
         <NavLink
@@ -69,8 +64,8 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
             onClick={onAddClick}
             className={`
               w-14 h-14 rounded-full flex items-center justify-center 
-              bg-primary-600 text-white shadow-xl shadow-primary-600/40 
-              border-4 border-white/90 backdrop-blur-sm transition-all duration-200
+              bg-primary-600 text-white shadow-lg shadow-primary-600/30 
+              border-4 border-white transition-all duration-200
               active:scale-95 active:bg-primary-700
               relative overflow-hidden
               group
@@ -103,7 +98,6 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
                 className={`transition-transform duration-300 ${isActive ? 'scale-110' : ''}`}
               />
               <span className="text-[11px] font-medium tracking-wide mt-0.5">
-                {/* ✅ Fixed key to lowercase 'organizer' */}
                 {t('modals:organizer', 'Organizer')}
               </span>
             </>

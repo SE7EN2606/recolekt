@@ -90,14 +90,13 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
       <div
         className={`
           fixed inset-0 w-full z-[100] overflow-hidden
-          bg-[#f9fafb]/95 backdrop-blur-xl transform-gpu
+          bg-slate-50/85 backdrop-blur-2xl transform-gpu
           transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
           ${animateOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}
         `}
       >
         <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4">
 
-          {/* Spacer to push content below the fixed header */}
           <div className="h-[80px] md:h-[95px] flex-shrink-0" />
 
           <div className="flex-1 overflow-y-auto py-4 pb-32">
@@ -108,36 +107,37 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                   
                   {/* Library Section */}
                   <section>
-                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
+                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] px-4 mb-3 drop-shadow-sm">
                       {t('sidebar:library', 'Library')}
                     </h3>
-                    <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
-                      <button onClick={() => handleNav('/gallery')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
-                        <LayoutGrid size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:myVideos', 'My videos')}</span>
-                        <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider">
+                    <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-[28px] overflow-hidden shadow-sm">
+                      <button onClick={() => handleNav('/gallery')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
+                        <LayoutGrid size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:allVideos', 'My videos')}</span>
+                        <span className="text-[10px] font-black bg-primary-100/80 text-primary-700 px-2 py-1 rounded-md tracking-wider">
                           {videos.length}
                         </span>
                       </button>
 
-                      <button onClick={() => handleNav('/organizer')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
-                        <FolderOpen size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                      <button onClick={() => handleNav('/organizer')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
+                        <FolderOpen size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('sidebar:organizer', 'Organizer')}</span>
-                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
+                        <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
                       </button>
 
-                      <button onClick={() => handleNav('/gallery/unsorted')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
-                        <Inbox size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                      <button onClick={() => handleNav('/gallery/unsorted')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
+                        <Inbox size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('sidebar:unsorted', 'Unsorted')}</span>
-                        <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider">
+                        <span className="text-[10px] font-black bg-primary-100/80 text-primary-700 px-2 py-1 rounded-md tracking-wider">
                           {getDirectVideoCount('unsorted')}
                         </span>
                       </button>
 
-                      <button onClick={() => handleNav('/gallery/favorites')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-rose-50">
-                        <Heart size={22} className="text-[#f43f5e] transition-colors" />
-                        <span className="text-[#f43f5e] font-bold flex-1 text-left transition-colors">{t('gallery:favorites', 'Favorites')}</span>
-                        <span className="text-[10px] font-black bg-rose-100 text-[#f43f5e] px-2 py-1 rounded-md tracking-wider transition-colors">
+                      {/* FAVORITES (Always Pink) */}
+                      <button onClick={() => handleNav('/gallery/favorites')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-[#f43f5e]/10">
+                        <Heart size={22} className="text-[#f43f5e]" />
+                        <span className="text-[#f43f5e] font-bold flex-1 text-left">{t('gallery:favorites', 'Favorites')}</span>
+                        <span className="text-[10px] font-black bg-[#f43f5e]/10 text-[#f43f5e] px-2 py-1 rounded-md tracking-wider">
                           {getFavoritesCount()}
                         </span>
                       </button>
@@ -147,18 +147,18 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                   {/* Collections Section */}
                   <section>
                     <div className="flex items-center justify-between px-4 mb-3">
-                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{t('sidebar:collections', 'Collections')}</h3>
+                      <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] drop-shadow-sm">{t('sidebar:collections', 'Collections')}</h3>
                       <div className="flex items-center gap-2">
                         <button onClick={() => setIsManageModalOpen(true)} className="text-primary-600 text-xs font-bold uppercase tracking-wider hover:text-primary-700 transition-colors">{t('common:edit', 'Edit')}</button>
                         <button onClick={() => setIsModalOpen(true)} className="text-primary-600 active:scale-95 hover:text-primary-700 transition-colors"><FolderPlus size={24} /></button>
                       </div>
                     </div>
-                    <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
+                    <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-[28px] overflow-hidden shadow-sm">
                       
                       {customFolders.length === 0 && (
                         <button
                           onClick={() => setIsModalOpen(true)}
-                          className="w-full p-5 text-sm text-gray-400 font-medium hover:text-primary-600 hover:bg-primary-50 transition-colors"
+                          className="w-full p-5 text-sm text-gray-500 font-medium hover:text-primary-600 hover:bg-white/80 transition-colors"
                         >
                           + {t('sidebar:createCollection', 'Create a collection')}
                         </button>
@@ -167,33 +167,33 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       {customFolders.map((folder: any) => {
                         const hasSubs = !!(folder.subFolders && folder.subFolders.length > 0);
                         return (
-                          <div key={folder.id} className="border-b border-gray-100 last:border-0">
-                            <button onClick={() => handleNav(`/gallery/${folder.id}`)} className="w-full flex items-center justify-between p-5 group transition-all hover:bg-primary-50">
+                          <div key={folder.id} className="border-b border-white/50 last:border-0">
+                            <button onClick={() => handleNav(`/gallery/${folder.id}`)} className="w-full flex items-center justify-between p-5 group transition-all hover:bg-white/80">
                               <div className="flex items-center gap-4">
-                                <FolderClosed size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                                <FolderClosed size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
                                 <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{folder.name}</span>
                               </div>
-                              <span className="text-[10px] font-black bg-primary-100 text-primary-600 px-2 py-1 rounded-md tracking-wider">
+                              <span className="text-[10px] font-black bg-primary-100/80 text-primary-700 px-2 py-1 rounded-md tracking-wider">
                                 {getDirectVideoCount(folder.id)}
                               </span>
                             </button>
 
                             {/* Nested Sub-folders */}
                             {hasSubs && (
-                              <div className="bg-gray-50/30">
+                              <div className="bg-white/30">
                                 {folder.subFolders.map((sub: any) => (
                                   <button
                                     key={sub.id}
                                     onClick={() => handleNav(`/gallery/${sub.id}`)}
-                                    className="w-full flex items-center justify-between pl-14 pr-5 py-4 group transition-all hover:bg-primary-50"
+                                    className="w-full flex items-center justify-between pl-14 pr-5 py-4 group transition-all hover:bg-white/80"
                                   >
                                     <div className="flex items-center gap-3">
-                                      <CornerDownRight size={18} strokeWidth={2.5} className="text-gray-300 group-hover:text-primary-500 transition-colors" />
-                                      <span className="text-gray-600 font-medium group-hover:text-primary-600 transition-colors">
+                                      <CornerDownRight size={18} strokeWidth={2.5} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
+                                      <span className="text-gray-700 font-medium group-hover:text-primary-600 transition-colors">
                                         {sub.name}
                                       </span>
                                     </div>
-                                    <span className="text-[10px] font-black bg-gray-100 text-gray-500 group-hover:bg-primary-100 group-hover:text-primary-600 px-2 py-1 rounded-md tracking-wider transition-colors">
+                                    <span className="text-[10px] font-black bg-gray-100 text-gray-500 group-hover:bg-primary-100/80 group-hover:text-primary-700 px-2 py-1 rounded-md tracking-wider transition-colors">
                                       {getDirectVideoCount(sub.id)}
                                     </span>
                                   </button>
@@ -204,61 +204,61 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                         );
                       })}
 
-                      <button onClick={() => handleNav('/gallery/shared')} className="w-full flex items-center justify-between p-5 border-t border-gray-100 group transition-all hover:bg-primary-50">
-                        <div className="flex items-center gap-4"><Share2 size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{t('sidebar:shared', 'Shared with Me')}</span></div>
-                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
+                      <button onClick={() => handleNav('/gallery/shared')} className="w-full flex items-center justify-between p-5 border-t border-white/50 group transition-all hover:bg-white/80">
+                        <div className="flex items-center gap-4"><Share2 size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{t('sidebar:shared', 'Shared with Me')}</span></div>
+                        <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
                       </button>
-                      <button onClick={() => handleNav('/gallery/archive')} className="w-full flex items-center justify-between p-5 border-t border-gray-100 group transition-all hover:bg-primary-50">
-                        <div className="flex items-center gap-4"><Archive size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{t('sidebar:archive', 'Archive')}</span></div>
-                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
+                      <button onClick={() => handleNav('/gallery/archive')} className="w-full flex items-center justify-between p-5 border-t border-white/50 group transition-all hover:bg-white/80">
+                        <div className="flex items-center gap-4"><Archive size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{t('sidebar:archive', 'Archive')}</span></div>
+                        <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
                       </button>
                     </div>
                   </section>
 
                   {/* Account Section */}
                   <section>
-                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">
+                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] px-4 mb-3 drop-shadow-sm">
                       {t('common:account', 'Account')}
                     </h3>
-                    <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
-                      <button onClick={() => handleNav('/settings/account')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
-                        <User size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                    <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-[28px] overflow-hidden shadow-sm">
+                      <button onClick={() => handleNav('/settings/account')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
+                        <User size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:myAccount', 'My Account')}</span>
-                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
+                        <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
                       </button>
-                      <button onClick={() => handleNav('/billing')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
-                        <CreditCard size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                      <button onClick={() => handleNav('/billing')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
+                        <CreditCard size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:billingPlan', 'Billing & Plan')}</span>
-                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
+                        <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
                       </button>
-                      <button onClick={() => handleNav('/settings/app')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-primary-50">
-                        <Settings size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                      <button onClick={() => handleNav('/settings/app')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-white/80">
+                        <Settings size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('header:settings', 'App Settings')}</span>
-                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
+                        <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
                       </button>
                     </div>
                   </section>
 
                   {/* Resources Section */}
                   <section>
-                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-4 mb-3">{t('common:resources', 'Resources')}</h3>
-                    <div className="bg-white border border-gray-200 rounded-[28px] overflow-hidden shadow-sm">
-                      <button onClick={() => handleNav('/help?section=how-to')} className="w-full flex items-center gap-4 p-5 border-b border-gray-100 group transition-all hover:bg-primary-50">
-                        <BookOpen size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] px-4 mb-3 drop-shadow-sm">{t('common:resources', 'Resources')}</h3>
+                    <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-[28px] overflow-hidden shadow-sm">
+                      <button onClick={() => handleNav('/help?section=how-to')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
+                        <BookOpen size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:guide', 'Guide')}</span>
-                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
+                        <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
                       </button>
-                      <button onClick={() => handleNav('/help?section=contact')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-primary-50">
-                        <HelpCircle size={22} className="text-gray-400 group-hover:text-primary-600 transition-colors" />
+                      <button onClick={() => handleNav('/help?section=contact')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-white/80">
+                        <HelpCircle size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:support', 'Support')}</span>
-                        <ChevronRight size={18} className="text-gray-300 group-hover:text-primary-400 transition-colors" />
+                        <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
                       </button>
                     </div>
                   </section>
 
                   <button 
                     onClick={handleLogout} 
-                    className="w-full flex items-center justify-center gap-2 p-5 bg-white border border-gray-200 text-red-600 rounded-[28px] font-bold shadow-sm active:scale-95 hover:bg-red-50 hover:border-red-100 hover:text-red-700 transition-all"
+                    className="w-full flex items-center justify-center gap-2 p-5 bg-white/80 backdrop-blur-md border border-white/70 text-red-600 rounded-[28px] font-bold shadow-sm active:scale-95 hover:bg-red-50 hover:border-red-100 hover:text-red-700 transition-all"
                   >
                     <LogOut size={20} />
                     {t('common:signOut', 'Sign Out')}
@@ -298,8 +298,11 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                 </div>
               )}
 
+              {/* Clickable Logo to cancel/return to Gallery */}
               <div className="py-8 mt-auto flex justify-center">
-                <img src={LogoBlack} alt="Recolekt" className="h-8" />
+                <button onClick={() => handleNav('/gallery')} className="transition-transform active:scale-95">
+                  <img src={LogoBlack} alt="Recolekt" className="h-8" />
+                </button>
               </div>
 
               <div className="h-20 md:h-0" />
