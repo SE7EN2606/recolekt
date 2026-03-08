@@ -219,7 +219,7 @@ export const Auth: React.FC = () => {
           </div>
 
 
-          <div className="w-full max-w-sm">
+          <div className="w-full max-w-sm mx-auto px-1 md:px-0 md:max-w-sm" style={{ maxWidth: 'min(100%, 420px)' }}>
 
             {/* ══ VERIFY VIEW ══ */}
             {view === 'verify' && (
@@ -366,7 +366,7 @@ export const Auth: React.FC = () => {
                 </form>
                 <div className="mt-4 text-center">
                   <button type="button" onClick={() => setView('login')} className="text-sm hover:underline" style={{ color: '#f43f5e' }}>
-                    ← {t('auth:backTo')}
+                  {t('auth:backTo')}
                   </button>
                 </div>
               </>
@@ -375,7 +375,8 @@ export const Auth: React.FC = () => {
             {/* ══ LOGIN / REGISTER VIEWS ══ */}
             {(view === 'login' || view === 'register') && (
               <>
-                <div className="text-center mb-6">
+                {/* In login/register view */}
+                <div className="text-center mb-8 -mt-6 md:mt-0 md:mb-6">
                   <h2 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">
                     {view === 'login' ? t('auth:welcome') : t('auth:createAccount')}
                   </h2>
