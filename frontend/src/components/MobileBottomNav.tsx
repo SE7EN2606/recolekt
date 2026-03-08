@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Plus, Network } from 'lucide-react'; // ✅ Changed to Network icon
+import { Plus, Network } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface MobileBottomNavProps {
@@ -8,13 +8,18 @@ interface MobileBottomNavProps {
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) => {
+  // ✅ Using lowercase 'organizer' to match your JSON and loading both namespaces
   const { t } = useTranslation(['modals', 'sidebar']);
 
   return (
     <div
       className={`
         md:hidden fixed bottom-0 left-0 right-0 z-30
-        glass border-t border-white/40
+        /* Android-safe transparency: bg-white/70 provides the look even if blur fails */
+        bg-white/70 
+        backdrop-blur-md -webkit-backdrop-blur-md
+        border-t border-white/40
+        shadow-[0_-8px_30px_rgb(0,0,0,0.04)]
         px-6 pb-4 pt-2
         transition-transform duration-300
       `}
@@ -27,7 +32,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
           className={({ isActive }) =>
             `flex flex-col items-center justify-center gap-1 w-[84px] py-1.5 rounded-3xl transition-all duration-300 ${
               isActive 
-                ? 'text-primary-600' /* ✅ Removed the glass background/shadow from text */
+                ? 'text-primary-600' 
                 : 'text-gray-500 active:bg-gray-100/50'
             }`
           }
@@ -51,23 +56,23 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
                 <rect width="18" height="12" x="3" y="10" rx="2"/>
                 <path d="M10 13l5 3-5 3v-6z" fill={isActive ? 'currentColor' : 'none'} />
               </svg>
-              <span className="text-[11px] font-medium tracking-wide mt-0.5">{t('modals:collections')}</span>
+              <span className="text-[11px] font-medium tracking-wide mt-0.5">
+                {t('modals:collections', 'Collections')}
+              </span>
             </>
           )}
         </NavLink>
 
         {/* Center: Add Button */}
-        {/* ✅ Moved a bit higher from -top-5 to -top-8 */}
         <div className="absolute left-1/2 -translate-x-1/2 -top-8">
           <button
             onClick={onAddClick}
             className={`
               w-14 h-14 rounded-full flex items-center justify-center 
               bg-primary-600 text-white shadow-xl shadow-primary-600/40 
-              border-4 border-white/80 backdrop-blur-sm transition-all duration-200
-              active:scale-90 active:bg-primary-700
+              border-4 border-white/90 backdrop-blur-sm transition-all duration-200
+              active:scale-95 active:bg-primary-700
               relative overflow-hidden
-              after:content-[''] after:absolute after:inset-0 after:bg-white/30 after:opacity-0 active:after:opacity-100 after:transition-opacity
               group
             `}
           >
@@ -85,20 +90,22 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
           className={({ isActive }) =>
             `flex flex-col items-center justify-center gap-1 w-[84px] py-1.5 rounded-3xl transition-all duration-300 ${
               isActive 
-                ? 'text-primary-600' /* ✅ Removed the glass background/shadow from text */
+                ? 'text-primary-600' 
                 : 'text-gray-500 active:bg-gray-100/50'
             }`
           }
         >
           {({ isActive }) => (
             <>
-              {/* ✅ Used Network icon */}
               <Network 
                 size={24} 
                 strokeWidth={2.2} 
                 className={`transition-transform duration-300 ${isActive ? 'scale-110' : ''}`}
               />
-              <span className="text-[11px] font-medium tracking-wide mt-0.5">{t('sidebar:Organizer', 'Organizer')}</span>
+              <span className="text-[11px] font-medium tracking-wide mt-0.5">
+                {/* ✅ Fixed key to lowercase 'organizer' */}
+                {t('modals:organizer', 'Organizer')}
+              </span>
             </>
           )}
         </NavLink>
