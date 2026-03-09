@@ -82,11 +82,14 @@ const VideoDetailSkeleton = () => (
 export const VideoDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { videos, folders, deleteVideos, moveVideos, toggleFavorite, updateVideo } = useData();
+  // ✅ CHANGE 1: pull getVideoById
+  const { videos, folders, deleteVideos, moveVideos, toggleFavorite, updateVideo, getVideoById } = useData();
   const { showOriginal, toggleLanguage } = useLanguage();
   const { t } = useTranslation(['videoDetail', 'common']);
 
   const [video, setVideo] = useState<any>(null);
+  // ✅ CHANGE 2: dedicated thumbnail state — seeded from gallery, never clobbered by enrichVideo
+  const [galleryThumbnail, setGalleryThumbnail] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -118,7 +121,18 @@ export const VideoDetail: React.FC = () => {
         gcsResult = await fetchGcsJson(dbResult.gcs_urls.result_json);
       }
 
-      setVideo({ ...dbResult, ...(gcsResult || {}), __raw: dbResult });
+      // ✅ CHANGE 3: merge with prev so gallery thumbnail is never lost
+      setVideo((prev: any) => ({
+        ...(prev || {}),
+        ...dbResult,
+        ...(gcsResult || {}),
+        __raw: dbResult,
+        // keep gallery thumbnail if DB result doesn't have one yet
+        thumbnailUrl:
+          dbResult.thumbnailUrl ||
+          dbResult.gcs_urls?.preview_thumbnail ||
+          (prev?.thumbnailUrl || ''),
+      }));
     } catch (err) {
       console.error("Enrichment error", err);
     } finally {
@@ -126,11 +140,19 @@ export const VideoDetail: React.FC = () => {
     }
   }, [id, fetchBackendJsonNoStore]);
 
+  // Seed from gallery cache immediately (no wait for API)
   useEffect(() => {
-    if (!id || videos.length === 0) return;
-    const cached = videos.find((v: any) => v.id === id);
-    if (cached) setVideo(cached);
-  }, [id, videos]);
+    if (!id) return;
+    const cached = getVideoById(id) || videos.find((v: any) => v.id === id);
+    if (cached) {
+      setVideo(cached);
+      const thumb =
+        (cached as any).thumbnailUrl ||
+        (cached as any).thumbnail_url ||
+        (cached as any).gcs_urls?.preview_thumbnail || '';
+      if (thumb) setGalleryThumbnail(thumb);
+    }
+  }, [id, videos, getVideoById]);
 
   const fetchedId = useRef<string | null>(null);
   useEffect(() => { if (id && fetchedId.current !== id) { fetchedId.current = id; enrichVideo(); } }, [id, enrichVideo]);
@@ -213,13 +235,8 @@ export const VideoDetail: React.FC = () => {
     if (v.transcription) {
       let rawTrans = v.transcription.transcript || v.transcription.text || (typeof v.transcription === 'string' ? v.transcription : '');
       if (typeof rawTrans === 'string' && rawTrans.trim().startsWith('{')) {
-        try {
-          const parsed = JSON.parse(rawTrans);
-          extractedTranscript = parsed.transcript || rawTrans;
-        } catch (e) { extractedTranscript = rawTrans; }
-      } else {
-        extractedTranscript = rawTrans;
-      }
+        try { const parsed = JSON.parse(rawTrans); extractedTranscript = parsed.transcript || rawTrans; } catch (e) { extractedTranscript = rawTrans; }
+      } else { extractedTranscript = rawTrans; }
     } else if (v.transcript) {
       extractedTranscript = typeof v.transcript === 'string' ? v.transcript : (v.transcript.text || '');
     }
@@ -247,7 +264,8 @@ export const VideoDetail: React.FC = () => {
       transcript: extractedTranscript.trim(),
       caption: typeof v.caption === 'string' ? v.caption.trim() : (v.caption?.text || v.caption?.caption || '').trim(),
       recipe: activeRecipe,
-      thumbnailUrl: safeString(v.thumbnailUrl || v.gcs_urls?.preview_thumbnail || v.preview || ''),
+      // ✅ galleryThumbnail wins if viewModel's url is empty
+      thumbnailUrl: safeString(v.thumbnailUrl || v.gcs_urls?.preview_thumbnail || v.preview || '') || galleryThumbnail,
       originalUrl: safeString(v.source_url || v.originalUrl || ''),
       platform: safeString(v.source_url || v.originalUrl || '').includes('facebook') ? 'facebook' : 'instagram',
       savedAt: safeString(v.savedAt || (v.created_at ? new Date(v.created_at).toLocaleDateString() : '')),
@@ -255,7 +273,7 @@ export const VideoDetail: React.FC = () => {
       languageCode: langCode,
       duration: formatDuration(v.duration || v.duration_seconds)
     };
-  }, [video, editedVideo, isEditing, showOriginal]);
+  }, [video, editedVideo, isEditing, showOriginal, galleryThumbnail]);
 
   if (loading || !viewModel) return <VideoDetailSkeleton />;
 
@@ -267,7 +285,15 @@ export const VideoDetail: React.FC = () => {
         <div className="min-w-0 w-full flex flex-col">
 
           <div className="relative w-full aspect-[9/8] bg-black rounded-2xl overflow-hidden shadow-sm mb-6 group mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0">
-            {viewModel.thumbnailUrl && <img src={viewModel.thumbnailUrl} alt={viewModel.title} className="w-full h-full object-cover opacity-90" />}
+            {viewModel.thumbnailUrl && (
+              <img
+                src={viewModel.thumbnailUrl}
+                alt={viewModel.title}
+                className="w-full h-full object-cover opacity-90"
+                loading="eager"
+                decoding="async"
+              />
+            )}
 
             {/* Top row: back button + action button */}
             <div className="absolute top-4 left-4 right-4 flex justify-between z-20">
@@ -281,7 +307,6 @@ export const VideoDetail: React.FC = () => {
                     <button onClick={() => setIsEditing(false)} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center"><X size={20} /></button>
                   </>
                 ) : (
-                  // ✅ Settings2 → EllipsisVertical
                   <button onClick={() => setIsActionSheetOpen(true)} className="w-9 h-9 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center hover:bg-white/40 transition-colors">
                     <EllipsisVertical size={18} />
                   </button>
@@ -289,7 +314,7 @@ export const VideoDetail: React.FC = () => {
               </div>
             </div>
 
-            {/* Bottom row: folder badge (left) | duration (right) */}
+            {/* Bottom row: folder badge + duration */}
             <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between z-30 pointer-events-none">
               <div className="flex items-center gap-2 pointer-events-auto">
                 {folderName && (
@@ -311,7 +336,6 @@ export const VideoDetail: React.FC = () => {
             <EditableTitle title={viewModel.title} isEditMode={isEditing} value={viewModel.title} onChange={val => handleEditField('title', val)} />
           </div>
 
-          {/* ✅ border-b and pb-6 removed */}
           <div className="mb-6 flex items-center justify-between">
             <a href={viewModel.originalUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 group/author">
               <PlatformIconAuthor platform={viewModel.platform} />
@@ -321,7 +345,7 @@ export const VideoDetail: React.FC = () => {
             </a>
             {viewModel.savedAt && (
               <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-save text-gray-400" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"></path><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"></path><path d="M7 3v4a1 1 0 0 0 1 1h7"></path></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"></path><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"></path><path d="M7 3v4a1 1 0 0 0 1 1h7"></path></svg>
                 <span>{viewModel.savedAt}</span>
               </div>
             )}
@@ -342,18 +366,15 @@ export const VideoDetail: React.FC = () => {
               </div>
               <button onClick={() => setIsEditing(true)} className="flex items-center justify-center w-7 h-7 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition"><Pencil size={14} /></button>
             </div>
-
             <div className="mt-3 flex items-start gap-3">
-              <div className="text-cyan-600 mt-[3px] flex-shrink-0">
-                <HashtagsIcon size={16} />
-              </div>
+              <div className="text-cyan-600 mt-[3px] flex-shrink-0"><HashtagsIcon size={16} /></div>
               <style>{`
                 .hashtag-links a { display: inline-flex !important; align-items: center !important; justify-content: center !important; padding: 0.375rem 0.9rem !important; border-radius: 9999px !important; background-color: #e0f2fe !important; color: #075985 !important; border: 1px solid #7dd3fc !important; font-size: 0.75rem !important; font-weight: 700 !important; box-shadow: 0 1px 2px rgba(8, 145, 178, 0.15) !important; text-decoration: none !important; margin-right: 0.5rem; margin-bottom: 0.5rem; }
               `}</style>
               <div className="hashtag-links flex flex-wrap flex-1 gap-1.5">
                 {viewModel.tags.map((tag: string, idx: number) => {
                   const cleanTag = safeString(tag).replace('#', '');
-                  return <a key={idx} href={`https://www.instagram.com/explore/tags/${cleanTag}/`} target="_blank" rel="noopener noreferrer">#{cleanTag}</a>
+                  return <a key={idx} href={`https://www.instagram.com/explore/tags/${cleanTag}/`} target="_blank" rel="noopener noreferrer">#{cleanTag}</a>;
                 })}
               </div>
             </div>
@@ -363,7 +384,6 @@ export const VideoDetail: React.FC = () => {
           <div className="bg-primary-50 rounded-2xl p-5 md:p-6 mb-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-primary-700 font-bold text-sm uppercase tracking-wide">AI Summary</h3>
-              {/* ✅ Globe lives here only — removed from poster */}
               {viewModel.hasTranslation && !isEditing && (
                 <button
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleLanguage(); }}
@@ -379,7 +399,6 @@ export const VideoDetail: React.FC = () => {
             ) : (
               <div className="text-gray-700 text-sm md:text-base leading-relaxed mb-4 font-medium whitespace-pre-line">{viewModel.summary}</div>
             )}
-
             {(viewModel.bullets.length > 0 || isEditing) && (
               <div className="space-y-3 mt-4 pt-4 border-t border-primary-100/50">
                 {isEditing ? (
@@ -387,9 +406,7 @@ export const VideoDetail: React.FC = () => {
                 ) : (
                   viewModel.bullets.map((bullet: any, idx: number) => (
                     <div key={idx} className="flex items-start gap-3 text-gray-600 text-sm">
-                      {bullet.emoji && (
-                        <span className="text-base leading-none mt-0.5 flex-shrink-0">{bullet.emoji}</span>
-                      )}
+                      {bullet.emoji && <span className="text-base leading-none mt-0.5 flex-shrink-0">{bullet.emoji}</span>}
                       <span className="leading-relaxed">
                         {bullet.headline ? (
                           <><span className="font-bold text-gray-900">{bullet.headline}:</span> {bullet.text}</>
@@ -421,9 +438,7 @@ export const VideoDetail: React.FC = () => {
                 <div className="p-1.5 bg-gray-100 text-gray-600 rounded-md"><AlignLeft size={16} /></div>
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Légende</h4>
               </div>
-              <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                {viewModel.caption}
-              </div>
+              <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{viewModel.caption}</div>
             </div>
           )}
 
@@ -441,9 +456,7 @@ export const VideoDetail: React.FC = () => {
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col shrink-0 divide-y divide-gray-100">
             <div className="p-5 flex flex-col gap-3 hover:bg-gray-50/50 transition-colors">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-violet-50 text-violet-600 rounded-md">
-                  <CategoryIcon size={16} />
-                </div>
+                <div className="p-1.5 bg-violet-50 text-violet-600 rounded-md"><CategoryIcon size={16} /></div>
                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Category</span>
               </div>
               {isEditing ? (
@@ -456,9 +469,7 @@ export const VideoDetail: React.FC = () => {
             {(isEditing || viewModel.subCategory) && (
               <div className="p-5 flex flex-col gap-3 hover:bg-gray-50/50 transition-colors">
                 <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-pink-50 text-pink-600 rounded-md">
-                    <TopicIcon size={16} />
-                  </div>
+                  <div className="p-1.5 bg-pink-50 text-pink-600 rounded-md"><TopicIcon size={16} /></div>
                   <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Topic</span>
                 </div>
                 {isEditing ? (
@@ -471,9 +482,7 @@ export const VideoDetail: React.FC = () => {
 
             <div className="p-5 flex flex-col gap-3 bg-gray-50/30">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-cyan-50 text-cyan-600 rounded-md">
-                  <HashtagsIcon size={16} />
-                </div>
+                <div className="p-1.5 bg-cyan-50 text-cyan-600 rounded-md"><HashtagsIcon size={16} /></div>
                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Hashtags</span>
               </div>
               <style>{`
@@ -484,7 +493,7 @@ export const VideoDetail: React.FC = () => {
                 {viewModel.tags && viewModel.tags.length > 0 ? (
                   viewModel.tags.map((tag: string, idx: number) => {
                     const cleanTag = safeString(tag).replace('#', '');
-                    return <a key={idx} href={`https://www.instagram.com/explore/tags/${cleanTag}/`} target="_blank" rel="noopener noreferrer">#{cleanTag}</a>
+                    return <a key={idx} href={`https://www.instagram.com/explore/tags/${cleanTag}/`} target="_blank" rel="noopener noreferrer">#{cleanTag}</a>;
                   })
                 ) : (
                   <span className="text-gray-400 text-xs italic">No tags</span>
@@ -497,9 +506,7 @@ export const VideoDetail: React.FC = () => {
             <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col shrink-0">
               <button onClick={() => setTranscriptOpen(!transcriptOpen)} className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition-colors">
                 <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-gray-100 text-gray-600 rounded-md">
-                    <CustomMessageSquareMoreIcon size={16} />
-                  </div>
+                  <div className="p-1.5 bg-gray-100 text-gray-600 rounded-md"><CustomMessageSquareMoreIcon size={16} /></div>
                   <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Transcription</h4>
                 </div>
                 <ChevronDown size={16} className={`text-gray-400 transition-transform duration-200 ${transcriptOpen ? 'rotate-180' : ''}`} />

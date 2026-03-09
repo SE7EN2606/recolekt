@@ -35,6 +35,7 @@ interface DataContextType {
   addVideo: (url: string, forceRetry?: boolean) => Promise<AddVideoResult>;
   refreshVideos: () => Promise<void>;
   refreshFolders: () => Promise<void>;
+  getVideoById: (id: string) => Video | undefined;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -372,7 +373,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [user, fetchVideos, setVideos]);
 
   const moveVideos = useCallback(async (videoIds: string[], targetFolderId: string) => {
-    // Optimistic UI update
     setVideos((prev) => prev.map((v: any) => videoIds.includes(v.id) ? { ...v, folderId: targetFolderId } : v));
     
     try {
@@ -389,7 +389,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       );
     } catch (error) {
       console.error("Failed to save move to DB:", error);
-      fetchVideos(); // Revert optimistic UI on failure
+      fetchVideos();
     }
   }, [setVideos, fetchVideos]);
 
@@ -398,7 +398,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!video) return;
     const newFav = !video.isFavorite;
 
-    // Optimistically update UI
     setVideos((prev) => prev.map((v: any) => (v.id === videoId ? { ...v, isFavorite: newFav } : v)));
     
     try {
@@ -410,7 +409,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         body: JSON.stringify({ is_favorite: newFav }) 
       });
     } catch (error) {
-      fetchVideos(); 
+      fetchVideos();
     }
   }, [setVideos, fetchVideos]);
 
@@ -482,7 +481,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [refreshFolders]);
 
   const deleteFolder = useCallback(async (id: string) => {
-    // 🚨 LIMBO FIX: Rescue any videos inside this folder and move them to 'unsorted' instantly.
     setVideos((prev) => prev.map(v => v.folderId === id ? { ...v, folderId: 'unsorted' } : v));
 
     try {
@@ -494,7 +492,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await refreshFolders();
         fetchVideos();
       } else {
-        fetchVideos(); // Revert UI if server fails
+        fetchVideos();
       }
     } catch (error) {
       console.error("Folder deletion failed:", error);
@@ -505,6 +503,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const refreshVideos = useCallback(async () => {
     fetchVideos(); 
   }, [fetchVideos]);
+
+  const getVideoById = useCallback(
+    (id: string): Video | undefined => {
+      if (!id) return undefined;
+      const vids = videosRef.current || [];
+      return (
+        vids.find(v => v.id === id) ||
+        vids.find(v => (v as any).processId === id || (v as any).process_id === id) ||
+        vids.find(v => String(v.id || '').startsWith(String(id).split('--')[0].split('_')[0]))
+      );
+    },
+    []
+  );
 
   const value = useMemo<DataContextType>(
     () => ({
@@ -521,8 +532,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       addVideo,
       refreshVideos,
       refreshFolders,
+      getVideoById,
     }),
-    [_videos, folders, isLoading, addFolder, updateFolder, deleteFolder, toggleFavorite, moveVideos, updateVideo, deleteVideos, addVideo, refreshVideos, refreshFolders]
+    [_videos, folders, isLoading, addFolder, updateFolder, deleteFolder, toggleFavorite, moveVideos, updateVideo, deleteVideos, addVideo, refreshVideos, refreshFolders, getVideoById]
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
