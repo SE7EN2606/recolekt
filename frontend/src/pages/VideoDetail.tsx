@@ -82,13 +82,11 @@ const VideoDetailSkeleton = () => (
 export const VideoDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  // ✅ CHANGE 1: pull getVideoById
   const { videos, folders, deleteVideos, moveVideos, toggleFavorite, updateVideo, getVideoById } = useData();
   const { showOriginal, toggleLanguage } = useLanguage();
   const { t } = useTranslation(['videoDetail', 'common']);
 
   const [video, setVideo] = useState<any>(null);
-  // ✅ CHANGE 2: dedicated thumbnail state — seeded from gallery, never clobbered by enrichVideo
   const [galleryThumbnail, setGalleryThumbnail] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
@@ -112,6 +110,11 @@ export const VideoDetail: React.FC = () => {
 
   const enrichVideo = useCallback(async () => {
     if (!id) return;
+    if (!navigator.onLine) {
+        setLoading(false);
+        return;
+    }
+
     try {
       const dbResult = await fetchBackendJsonNoStore(apiUrl(`api/reel/${encodeURIComponent(id)}`));
       if (!dbResult) { setLoading(false); return; }
@@ -121,13 +124,11 @@ export const VideoDetail: React.FC = () => {
         gcsResult = await fetchGcsJson(dbResult.gcs_urls.result_json);
       }
 
-      // ✅ CHANGE 3: merge with prev so gallery thumbnail is never lost
       setVideo((prev: any) => ({
         ...(prev || {}),
         ...dbResult,
         ...(gcsResult || {}),
         __raw: dbResult,
-        // keep gallery thumbnail if DB result doesn't have one yet
         thumbnailUrl:
           dbResult.thumbnailUrl ||
           dbResult.gcs_urls?.preview_thumbnail ||
@@ -252,6 +253,21 @@ export const VideoDetail: React.FC = () => {
     let tags = Array.isArray(langBlock.hashtags) ? langBlock.hashtags : (Array.isArray(v.summary_hashtags) ? v.summary_hashtags : (Array.isArray(v.tags) ? v.tags : []));
     let bullets = Array.isArray(langBlock.headlines) ? langBlock.headlines : (Array.isArray(v.summary_bullets) ? v.summary_bullets : (Array.isArray(v.bullets) ? v.bullets : []));
 
+    // Format the date correctly
+    let formattedDate = '';
+    const rawDate = v.savedAt || v.created_at;
+    if (rawDate) {
+        try {
+            formattedDate = new Date(rawDate).toLocaleDateString(undefined, { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+            });
+        } catch (e) {
+            formattedDate = safeString(rawDate);
+        }
+    }
+
     return {
       id: v.id || v.process_id,
       title: safeString(displayTitle),
@@ -264,11 +280,10 @@ export const VideoDetail: React.FC = () => {
       transcript: extractedTranscript.trim(),
       caption: typeof v.caption === 'string' ? v.caption.trim() : (v.caption?.text || v.caption?.caption || '').trim(),
       recipe: activeRecipe,
-      // ✅ galleryThumbnail wins if viewModel's url is empty
       thumbnailUrl: safeString(v.thumbnailUrl || v.gcs_urls?.preview_thumbnail || v.preview || '') || galleryThumbnail,
       originalUrl: safeString(v.source_url || v.originalUrl || ''),
       platform: safeString(v.source_url || v.originalUrl || '').includes('facebook') ? 'facebook' : 'instagram',
-      savedAt: safeString(v.savedAt || (v.created_at ? new Date(v.created_at).toLocaleDateString() : '')),
+      savedAt: formattedDate,
       hasTranslation: !!(summaryObj.english && summaryObj.original),
       languageCode: langCode,
       duration: formatDuration(v.duration || v.duration_seconds)
@@ -359,10 +374,13 @@ export const VideoDetail: React.FC = () => {
                   <CategoryIcon size={14} />
                   <span className="text-xs font-bold uppercase tracking-wide truncate text-violet-600">{viewModel.category}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <TopicIcon size={14} />
-                  <span className="text-xs font-bold uppercase tracking-wide truncate text-pink-600">{viewModel.subCategory}</span>
-                </div>
+                {/* Hide topic completely if it doesn't exist */}
+                {(isEditing || viewModel.subCategory) && (
+                    <div className="flex items-center gap-2">
+                    <TopicIcon size={14} />
+                    <span className="text-xs font-bold uppercase tracking-wide truncate text-pink-600">{viewModel.subCategory}</span>
+                    </div>
+                )}
               </div>
               <button onClick={() => setIsEditing(true)} className="flex items-center justify-center w-7 h-7 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition"><Pencil size={14} /></button>
             </div>
