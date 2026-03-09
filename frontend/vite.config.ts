@@ -12,10 +12,8 @@ export default defineConfig({
       devOptions: {
         enabled: true
       },
-      // ✅ FIX: Removed the duplicate image imports. Just keep favicon.ico
-      includeAssets: ['favicon.ico', 'recolekt_icon.png'],
+      includeAssets: ['favicon.ico', 'recolekt_icon.png', 'web-app-manifest-192x192.png', 'web-app-manifest-512x512.png'],
       workbox: {
-        // This will grab the apple-touch-icon.png automatically!
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg,json}'],
         navigateFallback: '/index.html',
         runtimeCaching: [
@@ -36,12 +34,13 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: 'recolekt',
-        short_name: 'recolekt',
+        name: 'Recolekt',
+        short_name: 'Recolekt',
         description: 'Your personal video organizer',
         theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone',
+        start_url: '/',
         icons: [
           {
             src: '/web-app-manifest-192x192.png',
