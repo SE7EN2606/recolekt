@@ -22,11 +22,13 @@ import { Auth } from './pages/Auth';
 import { AccountSettings } from './pages/AccountSettings';
 import { AppSettings } from './pages/AppSettings';
 import { HelpSupport } from './pages/HelpSupport';
-// ✅ IMPORT THE NEW ORGANIZER
 import { Organizer } from './pages/Organizer'; 
 import { useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
 import { useData } from './context/DataContext';
+
+// ✅ IMPORT THE NEW PWA INSTALL PROMPT
+import { InstallPrompt } from './components/InstallPrompt';
 
 import LogoWhite from './assets/recolekt_logo_white.png';
 
@@ -46,7 +48,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return <Navigate to="/gallery" replace />;
   }
 
-  // ✅ Added /organizer to full width exceptions so it gets the sidebar
   const fullWidthPages = ['/', '/billing', '/billing/success', '/billing/cancel', '/subscribe', '/auth', '/features'];
   const showSidebar = user && !fullWidthPages.includes(location.pathname);
   
@@ -87,6 +88,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       )}
       
       <AuthModal isOpen={globalAuthOpen} onClose={() => setGlobalAuthOpen(false)} />
+
+      {/* ✅ ADD THE PWA PROMPT HERE */}
+      <InstallPrompt />
 
       {showFooter && (
         <footer className={`bg-gray-900 text-white pt-16 ${footerBottomPadding} border-t border-gray-800 mt-auto relative z-30 block w-full`}>
@@ -163,7 +167,6 @@ function App() {
                   <Route path="/help" element={<HelpSupport />} />
                   <Route path="/billing" element={<BillingPage />} />
                   
-                  {/* ✅ ADDED ORGANIZER ROUTE */}
                   <Route path="/organizer" element={<Organizer />} />
 
                   <Route path="/gallery" element={<Gallery />} />
