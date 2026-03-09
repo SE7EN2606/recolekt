@@ -16,7 +16,7 @@ export default defineConfig({
       includeAssets: ['favicon.ico'],
       workbox: {
         // This will grab the apple-touch-icon.png automatically!
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg,json}'],
         navigateFallback: '/index.html',
         runtimeCaching: [
           {
