@@ -6,13 +6,17 @@ import "./index.css";
 import { AuthProvider } from "./context/AuthContext";
 import { DataProvider } from "./context/DataContext";
 
+// @ts-ignore - This is a virtual module provided by vite-plugin-pwa
+import { registerSW } from 'virtual:pwa-register';
+
+// Register service worker for PWA offline capabilities
+registerSW({ immediate: true });
+
 const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 
 root.render(
   <React.StrictMode>
-    {/* 1. AuthProvider MUST be the outer parent */}
     <AuthProvider>
-      {/* 2. DataProvider is inside, so it can use useAuth() */}
       <DataProvider>
         <App />
       </DataProvider>
