@@ -34,22 +34,23 @@ export default defineConfig({
         ],
       },
       manifest: {
+        id: '/?v=2',
         name: 'Recolekt',
         short_name: 'Recolekt',
         description: 'Your personal video organizer',
         theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone',
-        start_url: '/',
+        start_url: '/?utm_source=pwa',
         icons: [
           {
-            src: '/web-app-manifest-192x192.png',
+            src: '/web-app-manifest-192x192.png?v=2',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any'
           },
           {
-            src: '/web-app-manifest-512x512.png',
+            src: '/web-app-manifest-512x512.png?v=2',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any'
