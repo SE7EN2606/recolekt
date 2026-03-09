@@ -601,3 +601,47 @@ body {
   background-color: #bae6fd !important;
   transform: translateY(-1px);
 }
+
+/* =========================================================
+   SUBTLE SPREADING CHEVRONS
+   ========================================================= */
+@keyframes chevron-spread {
+  0%, 100% { 
+    transform: translateX(0px); 
+    opacity: 0.4; 
+  }
+  50% { 
+    opacity: 1; 
+  }
+}
+
+/* Each arrow moves a different distance to create the "spread" */
+.animate-chevron-1 { animation: chevron-spread 2s ease-in-out infinite; transform: translateX(0px); }
+.animate-chevron-2 { animation: chevron-spread 2s ease-in-out infinite 0.2s; }
+.animate-chevron-3 { animation: chevron-spread 2s ease-in-out infinite 0.4s; }
+
+.chevron-group:hover .animate-chevron-2 { transform: translateX(4px); transition: 0.3s; }
+.chevron-group:hover .animate-chevron-3 { transform: translateX(8px); transition: 0.3s; }
+
+/* The actual spreading logic via Translate */
+.chevron-spread-2 { animation-name: spread-mid; }
+.chevron-spread-3 { animation-name: spread-end; }
+
+/* Add this to your main CSS file */
+@keyframes spread-mid {
+  0%, 100% { transform: translateX(0px); opacity: 0.4; }
+  50% { transform: translateX(4px); opacity: 1; }
+}
+
+@keyframes spread-end {
+  0%, 100% { transform: translateX(0px); opacity: 0.2; }
+  50% { transform: translateX(9px); opacity: 1; }
+}
+
+/* Base animation for the first chevron */
+@keyframes chevron-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.animate-chevron-1 { animation: chevron-pulse 2s ease-in-out infinite; }

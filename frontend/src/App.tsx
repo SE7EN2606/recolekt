@@ -12,7 +12,7 @@ import { Home } from './pages/Home';
 import { useAuth } from './context/AuthContext';
 import LogoWhite from './assets/recolekt_logo_white.png';
 
-// ✅ STANDARD IMPORTS FOR CRITICAL PROMPTS (Fixes React Error #306 and iOS Double Prompts)
+// ✅ STANDARD IMPORTS FOR CRITICAL PROMPTS
 import { InstallPrompt } from './components/InstallPrompt';
 import { IOSInstallPrompt } from './components/IOSInstallPrompt';
 
@@ -62,9 +62,11 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </Suspense>
       )}
       
-      {/* ✅ Rendered directly without Suspense */}
-      <InstallPrompt />
-      <IOSInstallPrompt />
+      {/* ✅ WRAPPED IN SUSPENSE TO FIX ERROR #306 (Translation Fetching) */}
+      <Suspense fallback={null}>
+        <InstallPrompt />
+        <IOSInstallPrompt />
+      </Suspense>
 
       {showFooter && (
         <footer className="bg-gray-900 text-white pt-16 pb-24 md:pb-8 border-t border-gray-800 mt-auto relative z-30 w-full">

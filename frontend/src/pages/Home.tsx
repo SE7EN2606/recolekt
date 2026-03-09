@@ -1,7 +1,7 @@
 import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Wand2, AlertCircle, Loader2 } from "lucide-react";
+import { ArrowRight, Wand2, AlertCircle, Loader2, ChevronRight } from "lucide-react";
 import { Button } from "../components/Button";
 import { useTranslation } from "react-i18next";
 
@@ -349,17 +349,34 @@ export const Home: React.FC = () => {
       <div className="text-center mb-10 md:mb-18">
         <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2 md:mb-3">{t('home:ctaTitle')}</h2>
         <p className="text-gray-500 mb-4 md:mb-6 text-lg">{t('home:ctaDesc')}</p>
-        <Button onClick={() => navigate('/auth')} size="lg" className="px-8 py-4 text-lg gap-2 shadow-xl shadow-primary-600/20 bg-gray-900 hover:bg-black border-transparent">
-          {t('home:signUpFree')} <ArrowRight size={20} />
+        <Button 
+          onClick={() => navigate('/auth')} 
+          size="lg" 
+          className="px-8 py-4 text-lg gap-1 shadow-xl shadow-primary-600/20 bg-gray-900 hover:bg-black border-transparent group"
+        >
+          {t('home:signUpFree')} 
+          <div className="flex items-center ml-1">
+            {/* We stack them with negative margin so they look like one icon that expands */}
+            <ChevronRight size={20} className="chevron-spread-1 animate-chevron-1" />
+            <ChevronRight size={20} className="chevron-spread-2 animate-chevron-1 -ml-3" style={{ animationName: 'spread-mid' }} />
+            <ChevronRight size={20} className="chevron-spread-3 animate-chevron-1 -ml-3" style={{ animationName: 'spread-end' }} />
+          </div>
         </Button>
       </div>
 
       <style>{`
-        @keyframes fadeOut {
-          from { opacity: 1; }
-          to { opacity: 0; }
-        }
-      `}</style>
+          @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+          }
+          @keyframes subtle-side {
+            0%, 100% { transform: translateX(0px); }
+            50% { transform: translateX(5px); }
+          }
+          .animate-subtle-side {
+            animation: subtle-side 1.5s ease-in-out infinite;
+          }
+        `}</style>
     </div>
   );
 };

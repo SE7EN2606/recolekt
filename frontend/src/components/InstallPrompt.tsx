@@ -2,34 +2,48 @@ import React, { useState, useEffect } from 'react';
 import { X, Download } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+// 1. GLOBAL TRAP: Catch the event BEFORE React even finishes loading
+let preMountPrompt: any = null;
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    preMountPrompt = e;
+    console.log("✅ PWA: Caught beforeinstallprompt globally!");
+  });
+}
+
 export const InstallPrompt: React.FC = () => {
   const { t } = useTranslation(['common']);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showPrompt, setShowPrompt] = useState(false);
 
   useEffect(() => {
-    // 1. Safety Check: Is it already installed or is it iOS?
+    // Safety Check: Is it already installed?
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
                          (window.navigator as any).standalone === true;
     
-    // DETECT IOS - If iOS, this component MUST return null 
-    // because IOSInstallPrompt will handle it.
+    // DETECT IOS - If iOS, let IOSInstallPrompt handle it.
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
     
     if (isStandalone || isIOS) return;
 
-    // 2. Android/Chrome logic
-    const handleBeforeInstallPrompt = (e: any) => {
-      console.log("✅ beforeinstallprompt fired");
+    // The function to actually show the UI
+    const triggerPrompt = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
       setShowPrompt(true);
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    // 2. CHECK THE TRAP: Did it fire before we mounted?
+    if (preMountPrompt) {
+      triggerPrompt(preMountPrompt);
+    }
+
+    // 3. LISTEN NORMALLY: In case it fires late
+    window.addEventListener('beforeinstallprompt', triggerPrompt);
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('beforeinstallprompt', triggerPrompt);
     };
   }, []);
 
@@ -41,9 +55,9 @@ export const InstallPrompt: React.FC = () => {
       setShowPrompt(false);
     }
     setDeferredPrompt(null);
+    preMountPrompt = null; // Clear the trap
   };
 
-  // VITAL: Never render for iOS or if no prompt is available
   if (!showPrompt || !deferredPrompt) return null;
 
   return (

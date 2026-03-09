@@ -44,7 +44,8 @@
   "resendIn": "Renvoyer dans",
   "didntReceive": "Vous ne l'avez pas reçu ? Renvoyer",
   "installTitle": "Installer Recolekt",
-  "installSubtitle": "Ajoutez à l'écran d'accueil pour une meilleure expérience",
+  "installSubtitle": "Ajoutez à l'écran d'accueil pour la meilleure expérience",
   "installStep1": "Appuyez sur le bouton Partager dans Safari",
-  "installStep2": "Sélectionnez \"Sur l'écran d'accueil\""
+  "installStep2": "Sélectionnez \"Sur l'écran d'accueil\"",
+  "add": "Installer l'App"
 }
