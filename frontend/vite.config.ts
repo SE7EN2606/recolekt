@@ -12,7 +12,7 @@ export default defineConfig({
       devOptions: {
         enabled: true
       },
-      includeAssets: ['favicon.ico', 'recolekt_icon.png', 'web-app-manifest-192x192.png', 'web-app-manifest-512x512.png'],
+      includeAssets: ['favicon.ico', 'recolekt_icon.png', 'icons/**/*.webp'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg,json}'],
         navigateFallback: '/index.html',
@@ -34,26 +34,31 @@ export default defineConfig({
         ],
       },
       manifest: {
-        id: '/?v=2',
+        id: '/?v=3',
         name: 'Recolekt',
         short_name: 'Recolekt',
         description: 'Your personal video organizer',
         theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone',
-        start_url: '/?utm_source=pwa',
+        start_url: '/',
         icons: [
           {
-            src: '/web-app-manifest-192x192.png?v=2',
+            src: '/icons/android/android-launchericon-192-192.webp',
             sizes: '192x192',
-            type: 'image/png',
-            purpose: 'any'
+            type: 'image/webp',
+            purpose: 'any maskable'
           },
           {
-            src: '/web-app-manifest-512x512.png?v=2',
+            src: '/icons/android/android-launchericon-512-512.webp',
             sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any'
+            type: 'image/webp',
+            purpose: 'any maskable'
+          },
+          {
+            src: '/icons/ios/180.webp',
+            sizes: '180x180',
+            type: 'image/webp'
           }
         ]
       }
