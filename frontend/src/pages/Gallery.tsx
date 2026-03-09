@@ -20,7 +20,7 @@ export const Gallery: React.FC = () => {
 
   const { user, loading: authLoading } = useAuth();
   const { videos, folders, isLoading: dataLoading, refreshVideos, moveVideos, deleteVideos } = useData();
-  const { t } = useTranslation(['gallery', 'common']);
+  const { t } = useTranslation(['gallery', 'common', 'sidebar']);
 
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -40,7 +40,6 @@ export const Gallery: React.FC = () => {
     }
   }, [searchParams, refreshVideos]);
 
-  // Ensure selection mode cancels when the route key changes (like clicking the top logo)
   useEffect(() => {
     setSelectionMode(false);
     setSelectedIds(new Set());
@@ -121,13 +120,21 @@ export const Gallery: React.FC = () => {
     return folderId ? folderId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : t('gallery:gallery');
   };
 
+  const getFolderSubtitle = () => {
+    if (isFavoritesView) return t('gallery:subtitleFavorites', 'Your most loved videos in one place');
+    if (isAllView) return t('gallery:subtitleAll', 'Browse, search, and manage all your saved videos');
+    if (isUnsortedView) return t('gallery:subtitleUnsorted', 'Videos waiting to be organized into collections');
+    return t('gallery:subtitleFolder', 'Manage videos in this collection');
+  };
+
   const getThumbnail = (video: any): string => video?.thumbnailUrl || video?.thumbnail_url || video?.gcs_urls?.preview_thumbnail || video?.gcsUrls?.previewThumbnail || '';
 
   const showSkeleton = authLoading || (dataLoading && videos.length === 0);
 
   if (showSkeleton) return (
     <div className="w-full pt-4 md:pt-0 animate-pulse">
-      <div className="h-8 bg-gray-200 rounded-lg w-48 mb-8" />
+      <div className="h-8 bg-gray-200 rounded-lg w-48 mb-2" />
+      <div className="h-4 bg-gray-100 rounded-lg w-64 mb-8" />
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="aspect-[9/16] rounded-2xl bg-gray-200/60" />
@@ -141,12 +148,15 @@ export const Gallery: React.FC = () => {
   return (
     <div className="w-full pt-4 md:pt-0 pb-0 md:pb-6 animate-fade-in">
       <div className="flex flex-col gap-6 mb-8">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">{getFolderTitle()}</h1>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">{getFolderTitle()}</h1>
+            <p className="text-gray-500 text-xs md:text-sm mt-1">{getFolderSubtitle()}</p>
+          </div>
           
           <div className="flex items-center gap-2">
             {!selectionMode && (
-              <p className="text-gray-500 text-xs font-medium whitespace-nowrap">
+              <p className="text-gray-500 text-xs font-medium whitespace-nowrap hidden sm:block">
                 {displayedVideos.length} {t('gallery:items', 'items')}
               </p>
             )}

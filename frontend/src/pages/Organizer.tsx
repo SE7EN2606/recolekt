@@ -271,8 +271,12 @@ export const Organizer: React.FC = () => {
   return (
     <div className="flex flex-col w-full h-full pt-4 md:pt-0">
       
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">{t('organizer:title')}</h1>
+      {/* IMPROVED HEADER WITH SUBTITLE */}
+      <div className="flex items-start justify-between mb-8">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">{t('organizer:title')}</h1>
+          <p className="text-gray-500 text-xs md:text-sm mt-1">{t('organizer:subtitle', 'Create collections and sort your library')}</p>
+        </div>
       </div>
 
       <div className="flex flex-col bg-white rounded-2xl border border-gray-200 shadow-sm mb-24 md:mb-8 relative z-0">
@@ -423,7 +427,7 @@ export const Organizer: React.FC = () => {
            </div>
         </div>
 
-        {/* 3. NEW FOLDER INLINE CREATION (FIXED OVERFLOW) */}
+        {/* 3. NEW FOLDER INLINE CREATION */}
         {isCreating && (
           <div className="relative z-50 px-4 md:px-6 py-4 bg-primary-50/80 border-b border-primary-100 flex flex-col gap-3 animate-fade-in">
             <div className="text-xs font-bold text-primary-700 uppercase tracking-wider flex items-center gap-2">
@@ -472,7 +476,6 @@ export const Organizer: React.FC = () => {
 
         {/* Content Area */}
         <div className="flex-1 p-4 md:p-6 bg-gray-50/10 min-h-[50vh] relative z-0">
-
           <div>
             {folderVideos.length === 0 ? (
               <div className="text-center py-24 border-2 border-dashed border-gray-100 rounded-3xl bg-white/50">

@@ -25,7 +25,7 @@
   "enterText": "Entrer le texte...",
   "backToHome": "Retour à l'accueil",
   "errorOccurred": "Une erreur est survenue.",
-  "footerSlogan": "Sauvegardez et organisez vos reels préférés.",
+  "footerSlogan": "Sauvegardez et organisez vos vidéos préférées.",
   "tryAgain": "Nouvel essai",
   "remove": "Supprimer",
   "footerCopyright": "© 2025 Recolekt.",
@@ -42,6 +42,9 @@
   "codeSentTo": "Code envoyé à",
   "resetDesc": "Entrez votre adresse e-mail pour recevoir un code de réinitialisation.",
   "resendIn": "Renvoyer dans",
-  "didntReceive": "Vous ne l'avez pas reçu ? Renvoyer"
-
+  "didntReceive": "Vous ne l'avez pas reçu ? Renvoyer",
+  "installTitle": "Installer Recolekt",
+  "installSubtitle": "Ajoutez à l'écran d'accueil pour une meilleure expérience",
+  "installStep1": "Appuyez sur le bouton Partager dans Safari",
+  "installStep2": "Sélectionnez \"Sur l'écran d'accueil\""
 }

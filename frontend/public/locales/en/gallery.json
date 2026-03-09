@@ -12,5 +12,9 @@
   "noVideosFound": "No videos found",
   "tryDifferentSearch": "Try a different search term",
   "noVideosInFolder": "No videos in this folder yet",
-  "processing": "Processing..."
+  "processing": "Processing...",
+  "subtitleAll": "Browse, search, and manage all your saved videos",
+  "subtitleFavorites": "Your most loved videos in one place",
+  "subtitleUnsorted": "Videos waiting to be organized into collections",
+  "subtitleFolder": "Manage videos in this collection"
 }

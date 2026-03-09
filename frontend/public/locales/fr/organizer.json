@@ -24,5 +24,6 @@
   "deleteConfirm": "Supprimer le dossier \"{{name}}\" et déplacer son contenu vers Non triés ?",
   "errorFolderExists": "Un dossier portant ce nom existe déjà.",
   "errorGeneric": "Une erreur est survenue.",
-  "settings": "Paramètres"
+  "settings": "Paramètres",
+  "subtitle": "Créez des collections et organisez votre bibliothèque"
 }

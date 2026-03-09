@@ -24,5 +24,6 @@
   "deleteConfirm": "Delete folder \"{{name}}\" and move contents to Unsorted?",
   "errorFolderExists": "A folder with this name already exists.",
   "errorGeneric": "An error occurred.",
-  "settings": "Settings"
+  "settings": "Settings",
+  "subtitle": "Create collections and sort your library"
 }

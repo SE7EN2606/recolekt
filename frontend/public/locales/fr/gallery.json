@@ -12,5 +12,9 @@
   "noVideosFound": "Aucune vidéo trouvée",
   "tryDifferentSearch": "Essayez un autre terme de recherche",
   "noVideosInFolder": "Aucune vidéo dans ce dossier pour le moment",
-  "processing": "Traitement en cours..."
+  "processing": "Traitement en cours...",
+  "subtitleAll": "Parcourez, recherchez et gérez toutes vos vidéos",
+  "subtitleFavorites": "Vos vidéos préférées au même endroit",
+  "subtitleUnsorted": "Vidéos en attente d'être classées dans des collections",
+  "subtitleFolder": "Gérez les vidéos de cette collection"
 }
