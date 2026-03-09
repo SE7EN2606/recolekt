@@ -12,7 +12,8 @@ export default defineConfig({
       devOptions: {
         enabled: true
       },
-      includeAssets: ['favicon.ico', 'recolekt_icon.png', 'icons/**/*.webp'],
+      // Include the new icons folder in the build assets
+      includeAssets: ['favicon.ico', 'recolekt_icon.png', 'assets/icons/**/*.webp'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg,json}'],
         navigateFallback: '/index.html',
@@ -44,19 +45,19 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: '/icons/android/android-launchericon-192-192.webp',
+            src: '/assets/icons/android/android-launchericon-192-192.webp',
             sizes: '192x192',
             type: 'image/webp',
             purpose: 'any maskable'
           },
           {
-            src: '/icons/android/android-launchericon-512-512.webp',
+            src: '/assets/icons/android/android-launchericon-512-512.webp',
             sizes: '512x512',
             type: 'image/webp',
             purpose: 'any maskable'
           },
           {
-            src: '/icons/ios/180.webp',
+            src: '/assets/icons/ios/180.webp',
             sizes: '180x180',
             type: 'image/webp'
           }
