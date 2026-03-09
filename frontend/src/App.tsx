@@ -12,9 +12,8 @@ import { Home } from './pages/Home';
 import { useAuth } from './context/AuthContext';
 import LogoWhite from './assets/recolekt_logo_white.png';
 
-// ✅ STANDARD IMPORTS FOR CRITICAL PROMPTS
+// ✅ SINGLE COMPONENT FOR BOTH PLATFORMS
 import { InstallPrompt } from './components/InstallPrompt';
-import { IOSInstallPrompt } from './components/IOSInstallPrompt';
 
 // ✅ LAZY LOAD PAGES
 const Gallery = lazy(() => import('./pages/Gallery').then(m => ({ default: m.Gallery })));
@@ -62,10 +61,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </Suspense>
       )}
       
-      {/* ✅ WRAPPED IN SUSPENSE TO FIX ERROR #306 (Translation Fetching) */}
+      {/* ✅ Handled in one place for stability */}
       <Suspense fallback={null}>
         <InstallPrompt />
-        <IOSInstallPrompt />
       </Suspense>
 
       {showFooter && (
