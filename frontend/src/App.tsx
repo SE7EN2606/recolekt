@@ -1,5 +1,5 @@
 import { API_BASE, GOOGLE_CLIENT_ID } from "./utils/api";
-import React, { useState, Suspense } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { I18nextProvider, useTranslation } from 'react-i18next';
 import { GoogleOAuthProvider } from '@react-oauth/google';
@@ -8,35 +8,34 @@ import i18n from './i18n';
 import { LanguageProvider } from './context/LanguageContext';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
+import { Home } from './pages/Home';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { AddVideoModal } from './components/AddVideoModal';
-import { Home } from './pages/Home';
-import { Gallery } from './pages/Gallery';
-import { VideoDetail } from './pages/VideoDetail';
-import { SubscribePage } from './pages/SubscribePage';
-import { BillingSuccess } from './pages/BillingSuccess';
-import { BillingCancel } from './pages/BillingCancel';
-import { BillingPage } from './pages/BillingPage';
 import { Features } from './pages/Features';
 import { Auth } from './pages/Auth';
-import { AccountSettings } from './pages/AccountSettings';
-import { AppSettings } from './pages/AppSettings';
 import { HelpSupport } from './pages/HelpSupport';
-import { Organizer } from './pages/Organizer'; 
 import { useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
 import { useData } from './context/DataContext';
-
-// ✅ IMPORT THE NEW PWA INSTALL PROMPT
 import { InstallPrompt } from './components/InstallPrompt';
 
 import LogoWhite from './assets/recolekt_logo_white.png';
+
+// ✅ LAZY LOAD HEAVY PAGES (Removed duplicate standard imports above)
+const Gallery = lazy(() => import('./pages/Gallery').then(module => ({ default: module.Gallery })));
+const VideoDetail = lazy(() => import('./pages/VideoDetail').then(module => ({ default: module.VideoDetail })));
+const Organizer = lazy(() => import('./pages/Organizer').then(module => ({ default: module.Organizer })));
+const AppSettings = lazy(() => import('./pages/AppSettings').then(module => ({ default: module.AppSettings })));
+const AccountSettings = lazy(() => import('./pages/AccountSettings').then(module => ({ default: module.AccountSettings })));
+const BillingPage = lazy(() => import('./pages/BillingPage').then(module => ({ default: module.BillingPage })));
+const SubscribePage = lazy(() => import('./pages/SubscribePage').then(module => ({ default: module.SubscribePage })));
+const BillingSuccess = lazy(() => import('./pages/BillingSuccess').then(module => ({ default: module.BillingSuccess })));
+const BillingCancel = lazy(() => import('./pages/BillingCancel').then(module => ({ default: module.BillingCancel })));
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const { user, loading } = useAuth();
   const { t } = useTranslation(['common']);
-  const { addVideo } = useData();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [globalAuthOpen, setGlobalAuthOpen] = useState(false);
@@ -88,8 +87,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       )}
       
       <AuthModal isOpen={globalAuthOpen} onClose={() => setGlobalAuthOpen(false)} />
-
-      {/* ✅ ADD THE PWA PROMPT HERE */}
       <InstallPrompt />
 
       {showFooter && (
@@ -110,7 +107,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 <ul className="space-y-3 text-sm text-gray-400">
                   <li><a href="/features" className="hover:text-white transition-colors">{t('common:features', 'Features')}</a></li>
                   <li><a href="/billing" className="hover:text-white transition-colors">{t('common:pricing', 'Pricing')}</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">{t('common:security', 'Security')}</a></li>
                 </ul>
               </div>
               
@@ -119,7 +115,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 <ul className="space-y-3 text-sm text-gray-400">
                   <li><a href="#" className="hover:text-white transition-colors">{t('common:about', 'About')}</a></li>
                   <li><a href="#" className="hover:text-white transition-colors">{t('common:blog', 'Blog')}</a></li>
-                  <li><a href="#" className="hover:text-white transition-colors">{t('common:contact', 'Contact')}</a></li>
                 </ul>
               </div>
               
@@ -134,12 +129,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             
             <div className="pt-8 border-t border-gray-800 flex flex-col md:flex-row items-center justify-between gap-4">
               <p className="text-gray-500 text-sm text-center md:text-left">
-                {t('common:footerCopyright', '© 2025 Recolekt Inc.')}
+                © 2025 Recolekt Inc.
               </p>
-              <div className="flex items-center gap-6">
-                <a href="#" className="text-gray-500 hover:text-white text-sm font-medium transition-colors">{t('common:privacy', 'Privacy')}</a>
-                <a href="#" className="text-gray-500 hover:text-white text-sm font-medium transition-colors">{t('common:terms', 'Terms')}</a>
-              </div>
             </div>
           </div>
         </footer>
@@ -166,9 +157,8 @@ function App() {
                   <Route path="/auth" element={<Auth />} />
                   <Route path="/help" element={<HelpSupport />} />
                   <Route path="/billing" element={<BillingPage />} />
-                  
-                  <Route path="/organizer" element={<Organizer />} />
 
+                  <Route path="/organizer" element={<Organizer />} />
                   <Route path="/gallery" element={<Gallery />} />
                   <Route path="/gallery/:folderId" element={<Gallery />} />
                   <Route path="/video/:id" element={<VideoDetail />} />
