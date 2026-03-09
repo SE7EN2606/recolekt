@@ -1,72 +1,41 @@
 import React, { useState, useEffect } from 'react';
-import { X, Download } from 'lucide-react';
+import { X, Share, PlusSquare } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import LogoIcon from '../assets/recolekt_icon.webp';
 
-// Global variable to catch the event if it fires early
-let capturedDeferredPrompt: any = null;
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  capturedDeferredPrompt = e;
-});
-
-export const InstallPrompt: React.FC = () => {
+export const IOSInstallPrompt: React.FC = () => {
   const { t } = useTranslation(['common']);
-  const [isStandalone, setIsStandalone] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [showPrompt, setShowPrompt] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    // 1. Standalone check
-    const isAppInstalled = window.matchMedia('(display-mode: standalone)').matches || 
-                           (window.navigator as any).standalone === true;
-    setIsStandalone(isAppInstalled);
-    if (isAppInstalled) return;
-
-    // 2. iOS Kill-switch (Prevent double prompt)
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    if (isIOS) return; 
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches 
+                        || (window.navigator as any).standalone === true;
 
-    // 3. Catch the prompt
-    if (capturedDeferredPrompt) {
-      setDeferredPrompt(capturedDeferredPrompt);
-      setShowPrompt(true);
+    // Strict check: Only show if iOS AND NOT already installed
+    if (isIOS && !isStandalone) {
+      const timer = setTimeout(() => setIsVisible(true), 3000);
+      return () => clearTimeout(timer);
     }
-
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setShowPrompt(true);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') setShowPrompt(false);
-    setDeferredPrompt(null);
-    capturedDeferredPrompt = null;
-  };
-
-  if (!showPrompt || isStandalone || !deferredPrompt) return null;
+  if (!isVisible) return null;
 
   return (
-    <div className="fixed bottom-24 left-4 right-4 z-[110] animate-in fade-in slide-in-from-bottom-5 duration-500 max-w-sm mx-auto">
-      <div className="bg-white rounded-2xl p-4 shadow-2xl border border-gray-100 flex items-start gap-4">
-        <div className="w-12 h-12 bg-primary-600 rounded-xl flex items-center justify-center shrink-0">
-          <Download className="text-white" size={24} />
+    <div className="fixed bottom-24 md:bottom-6 left-4 right-4 z-[120] animate-in fade-in slide-in-from-bottom-10 duration-500 max-w-sm mx-auto">
+      <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-5 relative">
+        <button onClick={() => setIsVisible(false)} className="absolute top-3 right-3 p-1 text-gray-400"><X size={18} /></button>
+        <div className="flex items-center gap-4 mb-4">
+          <img src={LogoIcon} alt="Recolekt" className="w-12 h-12 object-contain" />
+          <div>
+            <h3 className="font-bold text-gray-900">{t('common:installTitle', 'Install Recolekt')}</h3>
+            <p className="text-xs text-gray-500">{t('common:installSubtitle', 'Add to home screen')}</p>
+          </div>
         </div>
-        <div className="flex-1">
-          <h3 className="text-gray-900 font-bold text-sm">{t('common:installTitle', 'Install Recolekt')}</h3>
-          <p className="text-gray-500 text-xs mt-1">{t('common:installSubtitle', 'Add to home screen for the best experience')}</p>
-          <button onClick={handleInstallClick} className="mt-3 bg-primary-600 text-white text-xs font-bold px-4 py-2 rounded-lg active:scale-95 transition-all">
-            {t('common:add', 'Install App')}
-          </button>
+        <div className="space-y-3 bg-gray-50 rounded-xl p-3 text-sm text-gray-700">
+          <div className="flex items-center gap-3"><Share size={16} className="text-blue-500" /><span>{t('common:installStep1')}</span></div>
+          <div className="flex items-center gap-3"><PlusSquare size={16} /><span>{t('common:installStep2')}</span></div>
         </div>
-        <button onClick={() => setShowPrompt(false)} className="p-1 text-gray-400 hover:text-gray-600"><X size={20} /></button>
       </div>
     </div>
   );

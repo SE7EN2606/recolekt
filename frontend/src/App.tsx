@@ -12,7 +12,11 @@ import { Home } from './pages/Home';
 import { useAuth } from './context/AuthContext';
 import LogoWhite from './assets/recolekt_logo_white.png';
 
-// ✅ LAZY LOAD COMPONENTS
+// ✅ STANDARD IMPORTS FOR CRITICAL PROMPTS (Fixes React Error #306 and iOS Double Prompts)
+import { InstallPrompt } from './components/InstallPrompt';
+import { IOSInstallPrompt } from './components/IOSInstallPrompt';
+
+// ✅ LAZY LOAD PAGES
 const Gallery = lazy(() => import('./pages/Gallery').then(m => ({ default: m.Gallery })));
 const VideoDetail = lazy(() => import('./pages/VideoDetail').then(m => ({ default: m.VideoDetail })));
 const Organizer = lazy(() => import('./pages/Organizer').then(m => ({ default: m.Organizer })));
@@ -23,11 +27,9 @@ const SubscribePage = lazy(() => import('./pages/SubscribePage').then(m => ({ de
 const Features = lazy(() => import('./pages/Features').then(m => ({ default: m.Features })));
 const Auth = lazy(() => import('./pages/Auth').then(m => ({ default: m.Auth })));
 
-// ✅ LAZY LOAD OVERLAYS (Better Performance)
+// ✅ LAZY LOAD SECONDARY OVERLAYS
 const MobileBottomNav = lazy(() => import('./components/MobileBottomNav').then(m => ({ default: m.MobileBottomNav })));
 const AddVideoModal = lazy(() => import('./components/AddVideoModal').then(m => ({ default: m.AddVideoModal })));
-const InstallPrompt = lazy(() => import('./components/InstallPrompt').then(m => ({ default: m.InstallPrompt })));
-const IOSInstallPrompt = lazy(() => import('./components/IOSInstallPrompt').then(m => ({ default: m.IOSInstallPrompt })));
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
@@ -60,10 +62,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </Suspense>
       )}
       
-      <Suspense fallback={null}>
-        <InstallPrompt />
-        <IOSInstallPrompt />
-      </Suspense>
+      {/* ✅ Rendered directly without Suspense */}
+      <InstallPrompt />
+      <IOSInstallPrompt />
 
       {showFooter && (
         <footer className="bg-gray-900 text-white pt-16 pb-24 md:pb-8 border-t border-gray-800 mt-auto relative z-30 w-full">
