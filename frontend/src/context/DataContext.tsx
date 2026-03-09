@@ -126,6 +126,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const fetchVideos = useCallback(async () => {
     if (!user) return;
     
+    // ✅ OFFLINE CHECK: Abort instantly if no internet to prevent 14-second retry loop
+    if (!navigator.onLine) {
+      console.log('Offline: Skipping fetchVideos');
+      setIsLoading(false);
+      return;
+    }
+
     const now = Date.now();
     if (now - globalLastFetchTime < 2000 || isFetchingGlobal) return; 
     
@@ -191,6 +198,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             duration: r.duration || '',
             savedAt: r.created_at,
             category: finalCategory,
+            topic: summary.topic || summary.theme || '', // ✅ Ensure topic is extracted
             tags: summary.hashtags || [],
             summary,
             transcript: transcriptText,
@@ -273,6 +281,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const refreshFolders = useCallback(async () => {
     if (!user) return;
+    if (!navigator.onLine) return; // ✅ OFFLINE CHECK
+    
     try {
       const response = await fetch(joinUrl(API_BASE, '/api/folders'), {
         method: 'GET',
@@ -315,6 +325,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [user?.id, fetchVideos]);
 
   const addVideo = useCallback(async (url: string, forceRetry: boolean = false): Promise<AddVideoResult> => {
+    if (!navigator.onLine) throw new Error("You are offline."); // ✅ OFFLINE CHECK
+
     const cleanUrl = (url || '').trim().split('?')[0];
     const currentVideos = videosRef.current;
     const existing = currentVideos.find((v: any) => v.originalUrl === cleanUrl);
@@ -374,6 +386,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const moveVideos = useCallback(async (videoIds: string[], targetFolderId: string) => {
     setVideos((prev) => prev.map((v: any) => videoIds.includes(v.id) ? { ...v, folderId: targetFolderId } : v));
+    if (!navigator.onLine) return; // ✅ OFFLINE CHECK
     
     try {
       await Promise.all(
@@ -399,6 +412,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const newFav = !video.isFavorite;
 
     setVideos((prev) => prev.map((v: any) => (v.id === videoId ? { ...v, isFavorite: newFav } : v)));
+    if (!navigator.onLine) return; // ✅ OFFLINE CHECK
     
     try {
       const url = joinUrl(API_BASE, `/api/update/${encodeURIComponent(String(videoId))}`);
@@ -415,6 +429,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateVideo = useCallback(async (id: string, updates: any) => {
     setVideos((prev) => prev.map((v) => v.id === id ? { ...v, ...updates } : v));
+    if (!navigator.onLine) return; // ✅ OFFLINE CHECK
+
     try {
       const url = joinUrl(API_BASE, `/api/update/${encodeURIComponent(String(id))}`);
       await fetch(url, {
@@ -436,6 +452,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return (prev || []).filter((v: any) => !idsToDelete.has(v.id));
     });
 
+    if (!navigator.onLine) return; // ✅ OFFLINE CHECK
+
     try {
       await Promise.all(
         videoIds.map(async (id) => {
@@ -453,6 +471,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [user, setVideos, fetchVideos]);
 
   const addFolder = useCallback(async (name: string, parentId: string | null = null) => {
+    if (!navigator.onLine) throw new Error("Offline"); // ✅ OFFLINE CHECK
     const res = await fetch(joinUrl(API_BASE, '/api/folders'), {
       method: 'POST', credentials: 'include',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
@@ -467,6 +486,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [refreshFolders]);
 
   const updateFolder = useCallback(async (id: string, name: string) => {
+    if (!navigator.onLine) throw new Error("Offline"); // ✅ OFFLINE CHECK
     const res = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
       method: 'PUT', credentials: 'include',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
@@ -482,6 +502,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteFolder = useCallback(async (id: string) => {
     setVideos((prev) => prev.map(v => v.folderId === id ? { ...v, folderId: 'unsorted' } : v));
+    if (!navigator.onLine) return; // ✅ OFFLINE CHECK
 
     try {
       const res = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {

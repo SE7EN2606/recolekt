@@ -109,6 +109,7 @@ export const Header: React.FC = () => {
 
             <Link
               to={showAuthedUI ? '/gallery' : '/'}
+              aria-label="Go to Home"
               className="flex items-center z-50 group shrink-0"
             >
               <img
@@ -134,6 +135,7 @@ export const Header: React.FC = () => {
                     {/* Desktop Search Button */}
                     <button 
                       onClick={() => setIsSearchOpen(true)}
+                      aria-label={t('gallery:search', 'Search')}
                       className="ml-4 p-2 text-gray-500 hover:text-primary-600 transition-colors"
                     >
                       <Search size={22} />
@@ -152,7 +154,7 @@ export const Header: React.FC = () => {
 
               <div className="flex items-center gap-4">
                 {showAuthedUI ? (
-                  <Link to="/settings/account" className="relative group">
+                  <Link to="/settings/account" className="relative group" aria-label="Account Settings">
                     <div className="w-11 h-11 rounded-full p-[2px] bg-gradient-to-br from-white/50 to-white/20 backdrop-blur-md border border-white/40 group-hover:border-primary-300 transition-colors shadow-sm overflow-hidden">
                       <div className="w-full h-full bg-white/80 rounded-full flex items-center justify-center overflow-hidden">
                         {displayPicture ? (
@@ -168,7 +170,11 @@ export const Header: React.FC = () => {
                 ) : showSignedOutUI ? (
                   <div className="flex items-center gap-4">
                     <div className="relative">
-                      <button onClick={() => setIsLangMenuOpen(!isLangMenuOpen)} className="flex items-center gap-1.5 px-2 py-1 mr-2 text-gray-400 hover:text-primary-600 transition-colors font-bold text-xs uppercase">
+                      <button 
+                        onClick={() => setIsLangMenuOpen(!isLangMenuOpen)} 
+                        aria-label="Change Language"
+                        className="flex items-center gap-1.5 px-2 py-1 mr-2 text-gray-400 hover:text-primary-600 transition-colors font-bold text-xs uppercase"
+                      >
                         <Globe size={18} /><span className="hidden lg:inline-block">{currentLang}</span>
                       </button>
                       {isLangMenuOpen && (
@@ -193,6 +199,7 @@ export const Header: React.FC = () => {
                {showAuthedUI && (
                  <button 
                    onClick={() => setIsSearchOpen(true)}
+                   aria-label={t('gallery:search', 'Search')}
                    className="w-10 h-10 rounded-full flex items-center justify-center text-gray-900 active:scale-95 hover:bg-gray-100 transition-all"
                  >
                    <Search size={22} />
@@ -201,7 +208,11 @@ export const Header: React.FC = () => {
 
                {showSignedOutUI && (
                  <div className="relative">
-                   <button onClick={() => setIsMobileLangMenuOpen(!isMobileLangMenuOpen)} className="flex items-center gap-1 text-gray-500 hover:text-gray-900 font-bold text-xs uppercase transition-colors">
+                   <button 
+                     onClick={() => setIsMobileLangMenuOpen(!isMobileLangMenuOpen)} 
+                     aria-label="Change Language"
+                     className="flex items-center gap-1 text-gray-500 hover:text-gray-900 font-bold text-xs uppercase transition-colors"
+                   >
                      <Globe size={18} /><span>{currentLang}</span>
                    </button>
                    {isMobileLangMenuOpen && (

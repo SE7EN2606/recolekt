@@ -62,6 +62,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
         <div className="absolute left-1/2 -translate-x-1/2 -top-8">
           <button
             onClick={onAddClick}
+            aria-label={t('common:add', 'Add new video')}
             className={`
               w-14 h-14 rounded-full flex items-center justify-center 
               bg-primary-600 text-white shadow-lg shadow-primary-600/30 

@@ -18,10 +18,11 @@ import { useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
 import { useData } from './context/DataContext';
 import { InstallPrompt } from './components/InstallPrompt';
+import { IOSInstallPrompt } from './components/IOSInstallPrompt'; 
 
 import LogoWhite from './assets/recolekt_logo_white.png';
 
-// ✅ LAZY LOAD HEAVY PAGES (Removed duplicate standard imports above)
+// ✅ LAZY LOAD HEAVY PAGES
 const Gallery = lazy(() => import('./pages/Gallery').then(module => ({ default: module.Gallery })));
 const VideoDetail = lazy(() => import('./pages/VideoDetail').then(module => ({ default: module.VideoDetail })));
 const Organizer = lazy(() => import('./pages/Organizer').then(module => ({ default: module.Organizer })));
@@ -87,7 +88,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       )}
       
       <AuthModal isOpen={globalAuthOpen} onClose={() => setGlobalAuthOpen(false)} />
+      
       <InstallPrompt />
+      <IOSInstallPrompt />
 
       {showFooter && (
         <footer className={`bg-gray-900 text-white pt-16 ${footerBottomPadding} border-t border-gray-800 mt-auto relative z-30 block w-full`}>
@@ -95,7 +98,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-10 md:gap-12 mb-12">
               <div className="col-span-2 md:col-span-1">
                 <div className="flex items-center gap-2 mb-4">
-                  <img alt="recolekt" className="h-8 md:h-9 object-contain" src={LogoWhite} />
+                  <img alt="recolekt logo" className="h-8 md:h-9 object-contain" src={LogoWhite} />
                 </div>
                 <p className="text-gray-400 text-sm leading-relaxed max-w-xs">
                   {t('common:footerSlogan', 'Save, organize, and rediscover your digital inspiration.')}
@@ -142,13 +145,13 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 function App() {
   return (
     <I18nextProvider i18n={i18n}>
-      <Suspense fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-      }>
-        <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-          <LanguageProvider>
+      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+        <LanguageProvider>
+          <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center">
+              <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          }>
             <Router>
               <Layout>
                 <Routes>
@@ -172,9 +175,9 @@ function App() {
                 </Routes>
               </Layout>
             </Router>
-          </LanguageProvider>
-        </GoogleOAuthProvider>
-      </Suspense>
+          </Suspense>
+        </LanguageProvider>
+      </GoogleOAuthProvider>
     </I18nextProvider>
   );
 }
