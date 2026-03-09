@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Share, Download } from 'lucide-react';
+import { X, Download } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export const InstallPrompt: React.FC = () => {
-  const [isIOS, setIsIOS] = useState(false);
+  const { t } = useTranslation(['common']);
   const [isStandalone, setIsStandalone] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showPrompt, setShowPrompt] = useState(false);
@@ -15,17 +16,12 @@ export const InstallPrompt: React.FC = () => {
 
     if (isAppInstalled) return;
 
-    // 2. Detect iOS Safari
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    const isAppleDevice = /iphone|ipad|ipod/.test(userAgent);
-    setIsIOS(isAppleDevice);
+    // 2. DETECT IOS - If true, ABORT. 
+    // This prevents the "Double Message" bug because IOSInstallPrompt will handle it.
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    if (isIOS) return;
 
-    if (isAppleDevice) {
-      // Show iOS prompt after a slight delay
-      setTimeout(() => setShowPrompt(true), 3000);
-    }
-
-    // 3. Detect Android Chrome (Listens for the install event)
+    // 3. Android/Chrome logic
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -49,43 +45,36 @@ export const InstallPrompt: React.FC = () => {
     setDeferredPrompt(null);
   };
 
-  if (!showPrompt || isStandalone) return null;
+  // Only render for Android when the browser says "I'm ready to install"
+  if (!showPrompt || isStandalone || !deferredPrompt) return null;
 
   return (
-    <div className="fixed bottom-24 left-4 right-4 z-50 animate-fade-in">
+    <div className="fixed bottom-24 left-4 right-4 z-50 animate-fade-in max-w-sm mx-auto">
       <div className="bg-white rounded-2xl p-4 shadow-2xl border border-gray-100 flex items-start gap-4">
         
-        {/* App Icon placeholder */}
-        <div className="w-12 h-12 bg-primary-600 rounded-xl flex items-center justify-center shrink-0">
+        <div className="w-12 h-12 bg-primary-600 rounded-xl flex items-center justify-center shrink-0 shadow-sm">
           <Download className="text-white" size={24} />
         </div>
 
         <div className="flex-1">
-          <h3 className="text-gray-900 font-bold text-sm">Install recolekt</h3>
-          
-          {isIOS ? (
-             <p className="text-gray-500 text-xs mt-1">
-               To install, tap the <Share size={14} className="inline mx-1" /> share button below and select <strong>"Add to Home Screen"</strong>.
-             </p>
-          ) : (
-            <p className="text-gray-500 text-xs mt-1">
-              Add our app to your home screen for faster access.
-            </p>
-          )}
+          <h3 className="text-gray-900 font-bold text-sm">
+            {t('common:installTitle', 'Install Recolekt')}
+          </h3>
+          <p className="text-gray-500 text-xs mt-1">
+            {t('common:installSubtitle', 'Add to home screen for the best experience')}
+          </p>
 
-          {!isIOS && deferredPrompt && (
-            <button 
-              onClick={handleInstallClick}
-              className="mt-3 bg-primary-600 text-white text-xs font-bold px-4 py-2 rounded-lg active:scale-95 transition-transform"
-            >
-              Install App
-            </button>
-          )}
+          <button 
+            onClick={handleInstallClick}
+            className="mt-3 bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold px-4 py-2 rounded-lg active:scale-95 transition-all"
+          >
+            {t('common:add', 'Install App')}
+          </button>
         </div>
 
         <button 
           onClick={() => setShowPrompt(false)}
-          className="p-1 text-gray-400 hover:text-gray-600 active:scale-95"
+          className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
         >
           <X size={20} />
         </button>
