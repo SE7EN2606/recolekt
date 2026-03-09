@@ -15,10 +15,13 @@ export default defineConfig({
       },
       includeAssets: ['favicon.ico', 'assets/favicon/apple-touch-icon.png'],
       workbox: {
-        // ✅ Precache all local static assets (including new webp/png/jpg)
+        // ✅ Precache all local static assets
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg}'],
         
-        // ✅ Runtime caching for Google Storage images (so they work offline after 1st load)
+        // ✅ FIX: Redirects all offline navigation requests to index.html (defeats the Dinosaur)
+        navigateFallback: 'index.html',
+        
+        // ✅ Runtime caching for Google Storage images
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/storage\.googleapis\.com\/.*/i,
