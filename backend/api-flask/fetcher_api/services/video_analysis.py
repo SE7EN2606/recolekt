@@ -11,37 +11,37 @@ logger = logging.getLogger("video_analysis")
 
 def generate_reel_thumbnail(video_path: str, output_path: str, time_offset: float = 0.0) -> bool:
     """
-    Extracts the first frame of the video using FFmpeg.
-    This works universally for Facebook, TikTok, etc.
+    Extracts the first frame of the video using FFmpeg as a lightweight WebP.
     """
     try:
         if not os.path.exists(video_path):
             logger.error(f"❌ Video file not found for thumbnail: {video_path}")
             return False
 
-        # Run FFmpeg to extract frame at 00:00:00
+        # ✅ UPDATED: Run FFmpeg to extract frame as WebP
         cmd = [
-            'ffmpeg',
-            '-y',  # Overwrite output file if it exists
-            '-i', video_path,
-            '-vframes', '1',
-            '-ss', str(time_offset),
-            '-q:v', '2',  # High quality jpeg
-            output_path
+        'ffmpeg',
+        '-y',
+        '-i', video_path,
+        '-vframes', '1',
+        '-ss', str(time_offset),
+        '-c:v', 'libwebp',  # ✅ Tell FFmpeg to use WebP
+        '-q:v', '75',       # ✅ Set quality (75-80 is sweet spot)
+        output_path
         ]
         
         # Capture output silently
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
         if result.returncode == 0 and os.path.exists(output_path):
-            logger.info(f"✅ FFmpeg successfully extracted thumbnail to: {output_path}")
+            logger.info(f"✅ FFmpeg successfully extracted WebP thumbnail to: {output_path}")
             return True
         else:
             logger.error(f"❌ FFmpeg failed to extract thumbnail. Error: {result.stderr.decode('utf-8')}")
             return False
 
     except Exception as e:
-        logger.error(f"❌ FFmpeg frame extraction error: {e}")
+        logger.error(f"❌ Exception during thumbnail generation: {e}")
         return False
 
 def download_instagram_thumbnail_bytes(post) -> Optional[bytes]:

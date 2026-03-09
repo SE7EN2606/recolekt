@@ -79,7 +79,7 @@ def process_reel_request(request):
     # 2. PREVIEW THUMBNAIL
     # ---------------------------------------------------------
     preview_url = None
-    preview_path = os.path.join(temp_dir, "preview.jpg")
+    preview_path = os.path.join(temp_dir, "preview.webp")
 
     try:
         if generate_reel_thumbnail(video_path, preview_path, 0.5):

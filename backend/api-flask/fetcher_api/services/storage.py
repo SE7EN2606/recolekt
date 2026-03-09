@@ -23,7 +23,7 @@ def generate_gcs_paths(shortcode: str, platform: str = "IG", user_id: str = None
     folder_name = f"{shortcode}_{final_user_id}" if final_user_id else shortcode
     base_path = f"media/{platform}_reels/{folder_name}/"
     return {
-        "preview_thumbnail": f"{base_path}{shortcode}_thumbnail.jpeg",
+        "preview_thumbnail": f"{base_path}{shortcode}_thumbnail.webp",
         "video": f"{base_path}{shortcode}_video.mp4",
         "result_json": f"{base_path}{shortcode}_result.json"
     }

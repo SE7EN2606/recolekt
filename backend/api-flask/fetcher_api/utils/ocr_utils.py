@@ -203,7 +203,7 @@ def is_video_static(
         with tempfile.TemporaryDirectory() as tmp:
             frame_paths = []
             for i, t in enumerate(times):
-                frame_path = os.path.join(tmp, f"frame_{i}.jpg")
+                frame_path = os.path.join(tmp, f"frame_{i}.webp")
                 cmd = [
                     "ffmpeg",
                     "-hide_banner",
