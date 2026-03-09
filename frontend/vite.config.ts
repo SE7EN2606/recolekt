@@ -12,10 +12,11 @@ export default defineConfig({
       devOptions: {
         enabled: true
       },
-      includeAssets: ['favicon.ico', 'assets/favicon/apple-touch-icon.png'],
+      // ✅ FIX: Removed the duplicate image imports. Just keep favicon.ico
+      includeAssets: ['favicon.ico'],
       workbox: {
+        // This will grab the apple-touch-icon.png automatically!
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg}'],
-        // ✅ ADDED LEADING SLASH
         navigateFallback: '/index.html',
         runtimeCaching: [
           {
