@@ -6,11 +6,19 @@ import "./index.css";
 import { AuthProvider } from "./context/AuthContext";
 import { DataProvider } from "./context/DataContext";
 
-// @ts-ignore - This is a virtual module provided by vite-plugin-pwa
+// @ts-ignore
 import { registerSW } from 'virtual:pwa-register';
 
-// Register service worker for PWA offline capabilities
-registerSW({ immediate: true });
+// ✅ Added detailed logging to catch installation crashes
+registerSW({ 
+  immediate: true,
+  onOfflineReady() {
+    console.log('✅ PWA: App is ready to work offline');
+  },
+  onRegisterError(error: any) {
+    console.error('❌ PWA: Service worker registration error', error);
+  }
+});
 
 const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 

@@ -9,19 +9,14 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      // Enable dev mode so you can test PWA features locally
       devOptions: {
         enabled: true
       },
       includeAssets: ['favicon.ico', 'assets/favicon/apple-touch-icon.png'],
       workbox: {
-        // ✅ Precache all local static assets
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg}'],
-        
-        // ✅ FIX: Redirects all offline navigation requests to index.html (defeats the Dinosaur)
-        navigateFallback: 'index.html',
-        
-        // ✅ Runtime caching for Google Storage images
+        // ✅ ADDED LEADING SLASH
+        navigateFallback: '/index.html',
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/storage\.googleapis\.com\/.*/i,
