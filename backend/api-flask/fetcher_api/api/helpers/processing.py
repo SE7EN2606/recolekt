@@ -65,6 +65,12 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
     gcs_paths = generate_gcs_paths(shortcode, platform_code, user_id)
 
     try:
+        # 0. Ensure critical fields are always in result (needed for error handler)
+        result["user_id"] = user_id
+        result["source_url"] = url
+        result["caption"] = caption
+        result["author_name"] = author_name
+
         # 1. Download & Metadata
         if not os.path.exists(video_path):
             dl_result = ensure_dict(download_instagram_video(url, video_path))
@@ -75,6 +81,8 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             meta = ensure_dict(dl_result.get("metadata", {}))
             caption     = caption     or meta.get("caption", "")
             author_name = author_name or meta.get("username", "")
+            result["caption"] = caption
+            result["author_name"] = author_name
 
         # 2. Duration & Strategy
         duration, duration_seconds = get_video_duration(video_path)
@@ -159,7 +167,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             "caption":              caption,
             "author_name":          author_name,
             "summary":              ai_summary,
-            "summary_title":        summary_title,   # ← now written to DB
+            "summary_title":        summary_title,
             "content_type":         ai_res.get("content_type", "general"),
             "summary_category":     ai_res.get("category", ""),
             "summary_topic":        ai_res.get("topic", ""),

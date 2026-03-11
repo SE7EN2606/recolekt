@@ -23,6 +23,11 @@ def insert_reel_into_db(reel_data):
         user_id = reel_data.get("user_id")
         logger.info(f"🔧 [DB_INSERT] Starting upsert for process_id: {process_id}")
 
+        # ── Guard: skip DB insert if user_id is missing ──
+        if not user_id:
+            logger.error(f"❌ [DB_INSERT] Skipping insert for {process_id}: user_id is None/empty")
+            return
+
         # summary_title → plain TEXT column, never cast to JSONB
         raw_title = reel_data.get("summary_title")
         if isinstance(raw_title, dict):
@@ -126,10 +131,10 @@ def insert_reel_into_db(reel_data):
             "duration":         reel_data.get("duration"),
             "is_long_video":    reel_data.get("is_long_video", False),
 
-            "summary_category": reel_data.get("summary_category", "General"),
-            "summary_topic":    reel_data.get("summary_topic", "General"),
-            "summary_title":    summary_title_str,   # ← plain TEXT, no ::jsonb
-            "summary_text":     summary_text_json,   # ← JSONB, cast in SQL
+            "summary_category": reel_data.get("summary_category") or reel_data.get("category") or "",
+            "summary_topic":    reel_data.get("summary_topic") or reel_data.get("topic") or "",
+            "summary_title":    summary_title_str,
+            "summary_text":     summary_text_json,
 
             "summary_bullets":  summary_bullets_json,
             "summary_hashtags": reel_data.get("summary_hashtags", []),
