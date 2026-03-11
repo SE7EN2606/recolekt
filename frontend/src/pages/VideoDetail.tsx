@@ -272,8 +272,8 @@ export const VideoDetail: React.FC = () => {
       id: v.id || v.process_id,
       title: safeString(displayTitle),
       author: safeString(v.author_name || v.author || 'Unknown'),
-      category: safeString(v.category || v.summary_category || getCategory(v) || 'General'),
-      subCategory: safeString(v.subCategory || v.summary_topic || v.topic || getTopic(v) || ''),
+      category: safeString(v.summary_category || v.category || getCategory(v) || ''),
+      subCategory: safeString(v.summary_topic || v.subCategory || v.topic || getTopic(v) || ''),
       summary: safeString(displaySummary),
       bullets,
       tags,
@@ -293,13 +293,13 @@ export const VideoDetail: React.FC = () => {
   if (loading || !viewModel) return <VideoDetailSkeleton />;
 
   return (
-    <div className="animate-fade-in relative px-0 pb-20 md:pb-12">
-      <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-12 items-start">
+    <div className="animate-fade-in relative px-0 pb-20 md:pb-6">
+      <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-6 items-start">
 
         {/* ======================= LEFT COLUMN ======================= */}
         <div className="min-w-0 w-full flex flex-col">
 
-          <div className="relative w-full aspect-[9/8] bg-black rounded-2xl overflow-hidden shadow-sm mb-6 group mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0">
+          <div className="relative w-full aspect-[9/8] bg-black rounded-2xl overflow-hidden shadow-sm mb-5 group mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0">
             {viewModel.thumbnailUrl && (
               <img
                 src={viewModel.thumbnailUrl}
@@ -347,7 +347,7 @@ export const VideoDetail: React.FC = () => {
             </div>
           </div>
 
-          <div className="mb-4">
+          <div className="mb-3">
             <EditableTitle title={viewModel.title} isEditMode={isEditing} value={viewModel.title} onChange={val => handleEditField('title', val)} />
           </div>
 
@@ -438,7 +438,7 @@ export const VideoDetail: React.FC = () => {
           </div>
 
           {viewModel.recipe && (
-            <div className="mb-6">
+            <div className="mb-5">
               <RecipeDetailsCard
                 recipe={viewModel.recipe}
                 servingScale={servingScale}
@@ -451,7 +451,7 @@ export const VideoDetail: React.FC = () => {
           )}
 
           {viewModel.caption && (
-            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden p-5 mt-2 mb-6">
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden p-5 mb-5">
               <div className="flex items-center gap-2 mb-3">
                 <div className="p-1.5 bg-gray-100 text-gray-600 rounded-md"><AlignLeft size={16} /></div>
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Légende</h4>
@@ -469,7 +469,7 @@ export const VideoDetail: React.FC = () => {
         </div>
 
         {/* ======================= RIGHT COLUMN (DESKTOP) ======================= */}
-        <div className="hidden md:flex flex-col w-full gap-6 mt-6 md:mt-0">
+        <div className="hidden md:flex flex-col w-full gap-5 mt-0">
 
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col shrink-0 divide-y divide-gray-100">
             <div className="p-5 flex flex-col gap-3 hover:bg-gray-50/50 transition-colors">

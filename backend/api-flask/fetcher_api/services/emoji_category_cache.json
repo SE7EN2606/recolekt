@@ -214,5 +214,12 @@
   "skyr or fromage blanc": "PROTEIN_DAIRY",
   "moutarde ancienne": "SAUCE_PASTE",
   "worcestershire or soy sauce": "SAUCE_PASTE",
-  "apple cider vinegar": "FERMENTED"
+  "apple cider vinegar": "FERMENTED",
+  "sauce worcestershire or soja": "SAUCE_PASTE",
+  "paprika fume": "SPICE",
+  "vinaigre de cidre": "ALCOHOL",
+  "sauce worcestershire ou soja": "SAUCE_PASTE",
+  "skyr or non-fat yogurt": "PROTEIN_DAIRY",
+  "dijon mustard": "SAUCE_PASTE",
+  "worcestershire sauce": "SAUCE_PASTE"
 }

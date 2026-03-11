@@ -7,44 +7,32 @@ export function safeStr(v: any): string {
   return String(v);
 }
 
-// ✅ Extract English from dual-language objects
 export function extractEnglish(value: any): string {
   if (!value) return '';
-  
-  // If it's already a string, return it
   if (typeof value === 'string') return value;
-  
-  // If it's an object with english/original, prefer english
   if (typeof value === 'object') {
     if (value.english) return safeStr(value.english);
     if (value.original) return safeStr(value.original);
   }
-  
   return safeStr(value);
 }
 
 export function dedupeBullets(items: Array<{ headline?: string | any; text?: string | any; emoji?: string }>) {
   const seen = new Set<string>();
   const out: Array<{ headline: string; text: string; emoji?: string }> = [];
-
   for (const b of items || []) {
-    // ✅ Handle dual-language for both headline and text
     const headline = extractEnglish(b?.headline).trim();
     const text = extractEnglish(b?.text).trim();
-    
     if (!headline && !text) continue;
-
     const key = `${headline.toLowerCase()}|${text.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
-
     out.push({
       headline: headline || 'Highlight',
       text,
       emoji: safeStr(b?.emoji).trim() || undefined,
     });
   }
-
   return out;
 }
 
@@ -57,21 +45,13 @@ export function pickFirstString(...vals: any[]): string {
 }
 
 export function getBullets(v: AnyObj) {
-  // ✅ NEW: Check summary_text first (new backend format)
   const summaryText = v?.summary_text;
   if (summaryText) {
     const englishHeadlines = summaryText?.english?.headlines || summaryText?.english?.highlights;
     const originalHeadlines = summaryText?.original?.headlines || summaryText?.original?.highlights;
-    
-    if (Array.isArray(englishHeadlines) && englishHeadlines.length > 0) {
-      return dedupeBullets(englishHeadlines);
-    }
-    if (Array.isArray(originalHeadlines) && originalHeadlines.length > 0) {
-      return dedupeBullets(originalHeadlines);
-    }
+    if (Array.isArray(englishHeadlines) && englishHeadlines.length > 0) return dedupeBullets(englishHeadlines);
+    if (Array.isArray(originalHeadlines) && originalHeadlines.length > 0) return dedupeBullets(originalHeadlines);
   }
-
-  // ✅ Fallback: Try multiple possible paths
   const candidates =
     v?.summary?.headlines ??
     v?.summary?.highlights ??
@@ -80,35 +60,24 @@ export function getBullets(v: AnyObj) {
     v?.summary?.bullets ??
     v?.summary_bullets ??
     [];
-
-  // ✅ Parse if it's a JSON string
   let arr: any[] = [];
   if (typeof candidates === 'string') {
-    try {
-      arr = JSON.parse(candidates);
-    } catch {
-      arr = [];
-    }
+    try { arr = JSON.parse(candidates); } catch { arr = []; }
   } else if (Array.isArray(candidates)) {
     arr = candidates;
   }
-
   return dedupeBullets(arr);
 }
 
 export function getDescription(v: AnyObj) {
-  // ✅ Try summary_text first (new backend format)
   const summaryText = v?.summary_text;
   if (summaryText) {
     const englishSummary = summaryText?.english?.summary;
     const originalSummary = summaryText?.original?.summary;
-    
     if (englishSummary) return safeStr(englishSummary).trim();
     if (originalSummary) return safeStr(originalSummary).trim();
   }
-
-  // ✅ Fallback: Try multiple possible paths
-  const result = pickFirstString(
+  return pickFirstString(
     v?.summary?.summary,
     v?.summary_text,
     v?.ai_analysis?.summary,
@@ -119,58 +88,60 @@ export function getDescription(v: AnyObj) {
     v?.aiSummary,
     v?.description
   );
-  
-  return result;
 }
 
 export function getTitle(v: AnyObj) {
-  // ✅ Try summary_text first
   const summaryText = v?.summary_text;
   if (summaryText) {
     const englishTitle = summaryText?.english?.title;
     const originalTitle = summaryText?.original?.title;
-    
     if (englishTitle) return safeStr(englishTitle).trim();
     if (originalTitle) return safeStr(originalTitle).trim();
   }
-
-  // ✅ Fallback
   return pickFirstString(
-    v?.summary?.title, 
-    v?.summary_title, 
-    v?.summarytitle, 
-    v?.title, 
-    'Untitled'
-  );
-}
-
-export function getTopic(v: AnyObj) {
-  return pickFirstString(
-    v?.summary?.topic, 
-    v?.summary_topic, 
-    v?.summarytopic, 
-    v?.topic, 
+    v?.summary?.title,
+    v?.summary_title,
+    v?.summarytitle,
+    v?.title,
     ''
   );
 }
 
 export function getCategory(v: AnyObj) {
+  const summaryObj = v?.summary_text || v?.summary;
+  if (summaryObj && typeof summaryObj === 'object' && !Array.isArray(summaryObj)) {
+    const cat = summaryObj?.category;
+    if (cat && typeof cat === 'string' && cat.trim()) return cat.trim();
+  }
   return pickFirstString(
-    v?.summary?.category, 
-    v?.summary_category, 
-    v?.summarycategory, 
-    v?.category, 
-    'General'
+    v?.summary_category,
+    v?.category,
+    v?.summary?.category,
+    v?.summarycategory,
+    ''
+  );
+}
+
+export function getTopic(v: AnyObj) {
+  const summaryObj = v?.summary_text || v?.summary;
+  if (summaryObj && typeof summaryObj === 'object' && !Array.isArray(summaryObj)) {
+    const topic = summaryObj?.topic;
+    if (topic && typeof topic === 'string' && topic.trim()) return topic.trim();
+  }
+  return pickFirstString(
+    v?.summary_topic,
+    v?.topic,
+    v?.summary?.topic,
+    v?.summarytopic,
+    ''
   );
 }
 
 export function getHashtags(v: AnyObj) {
-  // ✅ Try summary_text first
   const summaryText = v?.summary_text;
   if (summaryText) {
     const englishHashtags = summaryText?.english?.hashtags;
     const originalHashtags = summaryText?.original?.hashtags;
-    
     if (Array.isArray(englishHashtags) && englishHashtags.length > 0) {
       return englishHashtags.map((t: string) => safeStr(t).replace(/^#/, '').trim()).filter(Boolean);
     }
@@ -178,8 +149,6 @@ export function getHashtags(v: AnyObj) {
       return originalHashtags.map((t: string) => safeStr(t).replace(/^#/, '').trim()).filter(Boolean);
     }
   }
-
-  // ✅ Fallback
   const raw = v?.summary?.hashtags ?? v?.summary_hashtags ?? v?.summaryhashtags ?? v?.hashtags ?? [];
   const tags = Array.isArray(raw) ? raw : [];
   return tags.map((t: string) => safeStr(t).replace(/^#/, '').trim()).filter(Boolean);
@@ -194,17 +163,11 @@ export function sanitizeServings(servings: any): number {
 
 export function parseQuantity(qty: string): { val: string; unit: string } {
   if (!qty) return { val: '', unit: '' };
-  
   const trimmed = qty.trim();
   const match = trimmed.match(/^([\d\.\,\/\s]+)(.*)$/);
-  
   if (match && /\d/.test(match[1])) {
-    return { 
-      val: match[1].trim(),
-      unit: match[2].trim()
-    };
+    return { val: match[1].trim(), unit: match[2].trim() };
   }
-
   return { val: trimmed, unit: '' };
 }
 
@@ -226,19 +189,13 @@ export function convertToMetric(quantity: string): string {
     'lb': { unit: 'g', factor: 453.6 },
     'lbs': { unit: 'g', factor: 453.6 },
   };
-
   const { val, unit } = parseQuantity(quantity);
-  
   if (!val || !unit) return quantity;
-  
   const lowerUnit = unit.toLowerCase();
   const conversion = conversions[lowerUnit];
-  
   if (!conversion) return quantity;
-  
   let numValue = 0;
   const parts = val.split(/\s+/);
-  
   for (const part of parts) {
     if (part.includes('/')) {
       const [numerator, denominator] = part.split('/').map(Number);
@@ -247,24 +204,18 @@ export function convertToMetric(quantity: string): string {
       numValue += parseFloat(part) || 0;
     }
   }
-  
   const converted = numValue * conversion.factor;
   const rounded = converted >= 100 ? Math.round(converted) : Math.round(converted * 10) / 10;
-  
   return `${rounded} ${conversion.unit}`;
 }
 
 export function scaleQuantity(quantity: string, scale: number): string {
   if (!quantity) return quantity;
   if (scale === 1) return quantity;
-
   const { val, unit } = parseQuantity(quantity);
-  
   if (!val) return quantity;
-   
   let numValue = 0;
   const parts = val.split(/\s+/);
-  
   for (const part of parts) {
     if (part.includes('/')) {
       const [numerator, denominator] = part.split('/').map(Number);
@@ -273,9 +224,7 @@ export function scaleQuantity(quantity: string, scale: number): string {
       numValue += parseFloat(part) || 0;
     }
   }
-  
   const scaled = numValue * scale;
   const formatted = scaled % 1 === 0 ? scaled : scaled.toFixed(1);
-  
   return `${formatted} ${unit}`.trim();
 }

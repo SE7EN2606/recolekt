@@ -9,33 +9,21 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      devOptions: {
-        enabled: true
-      },
-      // Include the new icons folder in the build assets
-      includeAssets: ['favicon.ico', 'recolekt_icon.png', 'assets/icons/**/*.webp'],
+      devOptions: { enabled: true },
+      // Reverted to including your original PNG assets
+      includeAssets: [
+        'favicon.ico', 
+        'apple-touch-icon.png', 
+        'favicon-96x96.png', 
+        'assets/*.png', 
+        'assets/icons/*.png'
+      ],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg,json}'],
         navigateFallback: '/index.html',
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/storage\.googleapis\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'gcs-images-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-        ],
       },
       manifest: {
-        id: '/?v=3',
+        id: '/?v=7', // Incremented version to clear previous webp attempts
         name: 'Recolekt',
         short_name: 'Recolekt',
         description: 'Your personal video organizer',
@@ -45,21 +33,28 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: '/assets/icons/android/android-launchericon-192-192.webp',
+            src: '/assets/android-chrome-192x192.png',
             sizes: '192x192',
-            type: 'image/webp',
-            purpose: 'any maskable'
+            type: 'image/png',
+            purpose: 'any'
           },
           {
-            src: '/assets/icons/android/android-launchericon-512-512.webp',
+            src: '/assets/android-chrome-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable'
+          },
+          {
+            src: '/assets/android-chrome-512x512.png',
             sizes: '512x512',
-            type: 'image/webp',
-            purpose: 'any maskable'
+            type: 'image/png',
+            purpose: 'any'
           },
           {
-            src: '/assets/icons/ios/180.webp',
-            sizes: '180x180',
-            type: 'image/webp'
+            src: '/assets/android-chrome-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
           }
         ]
       }
@@ -68,15 +63,7 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/api': {
-        target: 'http://localhost:5001',
-        changeOrigin: true,
-      },
-      '/gcs-proxy': {
-        target: 'https://storage.googleapis.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/gcs-proxy/, ''),
-      },
+      '/api': { target: 'http://localhost:5001', changeOrigin: true },
     },
   },
 });

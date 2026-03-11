@@ -1,23 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { X, Share, PlusSquare } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import LogoIcon from '../assets/recolekt_icon.webp';
+
+// Reverting to the high-quality root PNG
+const LogoIcon = '/apple-touch-icon.png';
 
 export const InstallPrompt: React.FC = () => {
   const { i18n } = useTranslation();
   const [showPrompt, setShowPrompt] = useState(false);
 
   useEffect(() => {
-    // 1. Check if it's iOS
     const userAgent = window.navigator.userAgent.toLowerCase();
     const isIOS = /iphone|ipad|ipod/.test(userAgent) && !(window as any).MSStream;
-
-    // 2. Check if it's already installed
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
                          (window.navigator as any).standalone === true;
 
-    // 🚀 ONLY show this custom UI for iOS. 
-    // Android will naturally show its own native mini-infobar at the top.
     if (isIOS && !isStandalone) {
       const timer = setTimeout(() => setShowPrompt(true), 3000);
       return () => clearTimeout(timer);
@@ -37,18 +34,11 @@ export const InstallPrompt: React.FC = () => {
   return (
     <div className="fixed bottom-24 left-4 right-4 z-[999] animate-in fade-in slide-in-from-bottom-5 max-w-sm mx-auto">
       <div className="bg-white rounded-2xl p-4 shadow-2xl border border-gray-100 relative">
-        <button 
-          onClick={() => setShowPrompt(false)} 
-          className="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 transition-colors"
-        >
+        <button onClick={() => setShowPrompt(false)} className="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 transition-colors">
           <X size={20} />
         </button>
         <div className="flex gap-4">
-          <img 
-            src={LogoIcon} 
-            className="w-12 h-12 rounded-[10px] object-cover shadow-sm shrink-0 border border-gray-100/10" 
-            alt="App" 
-          />
+          <img src={LogoIcon} className="w-12 h-12 rounded-[10px] object-cover shadow-sm shrink-0 border border-gray-100/10" alt="App" />
           <div className="flex-1 pr-6">
             <h3 className="font-bold text-sm text-gray-900">{txt.title}</h3>
             <p className="text-gray-500 text-[11px] mt-0.5 leading-tight">{txt.sub}</p>

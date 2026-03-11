@@ -3,7 +3,7 @@
 """
 Summary formatting + guardrails (UI contract):
 
-- Paragraph: 250–350 characters max (single factual paragraph).
+- Paragraph: 200–400 characters max.
 - Bullets: exactly 4 items, each has a short headline + one-sentence description + emoji.
 - No emojis in paragraph/headlines/descriptions text (only in separate emoji field).
 - No marketing fluff / author comments / CTA phrasing.
@@ -15,6 +15,27 @@ import re
 from typing import Any, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
+
+# Must match universal_extractor.py constants
+SUMMARY_PARAGRAPH_MAX = 450  # Hard ceiling for clamp
+
+# Banned opening patterns — summaries must NEVER start with these
+BANNED_SUMMARY_OPENERS = [
+    r"^this\s+(content|video|recipe|guide|clip|post|reel)\s",
+    r"^the\s+(content|video|recipe|guide|clip|post|reel)\s+(presents?|shows?|provides?|features?|covers?|is\s+about)",
+    r"^here\s+(is|are)\s",
+    r"^in\s+this\s+(content|video|recipe|guide|clip|post|reel)",
+    r"^ce\s+(contenu|vidéo)\s",
+    r"^cette\s+(vidéo|recette)\s",
+    r"^voici\s",
+    r"^este\s+(contenido|video)\s",
+    r"^esta\s+(receta|guía)\s",
+    r"^dieses\s+(video|rezept)\s",
+    r"^dieser\s+inhalt\s",
+    r"^questo\s+(contenuto|video)\s",
+    r"^questa\s+(ricetta)\s",
+]
+BANNED_OPENER_RE = re.compile("|".join(BANNED_SUMMARY_OPENERS), re.IGNORECASE)
 
 
 def strip_emoji(text: str) -> str:
@@ -54,27 +75,26 @@ def clean_text(text: str) -> str:
     return s
 
 
+def _has_banned_opener(text: str) -> bool:
+    """Check if the summary starts with a banned pattern like 'This content presents...'"""
+    s = (text or "").strip()
+    if not s:
+        return False
+    return bool(BANNED_OPENER_RE.match(s))
+
+
 def _looks_like_recipe_dump(s: str, content_type: str = "general") -> bool:
     """
     Heuristic: if paragraph looks like ingredients/instructions list, treat as invalid.
     EXCEPTION: for content_type="recipe", allow recipe-descriptive language.
-
-    NOTE:
-    - We now NEVER reject when content_type == "recipe".
-      This avoids accidentally nuking good recipe summaries and replacing
-      them with a generic fallback.
     """
     t = (s or "").lower()
     if not t:
         return True
 
-    # For recipe content, do not treat anything as a "dump" here.
-    # Recipe-specific guardrails should be handled by the recipe pipeline,
-    # not by this generic summary formatter.
     if content_type == "recipe":
         return False
 
-    # For non-recipe content, be stricter
     markers = [
         "ingrédient", "ingredients", "ingredient",
         "g", "kg", "ml", "l ", "tbsp", "tsp",
@@ -94,24 +114,31 @@ def _looks_like_recipe_dump(s: str, content_type: str = "general") -> bool:
     return False
 
 
-def clamp_paragraph_chars(text: str, min_chars: int = 250, max_chars: int = 350) -> str:
+def clamp_paragraph_chars(text: str, min_chars: int = 200, max_chars: int = SUMMARY_PARAGRAPH_MAX) -> str:
     """
     Clamp a paragraph to at most max_chars, keeping sentence integrity where possible.
-
-    NOTE: min_chars is currently advisory; we do not pad text up to min_chars.
     """
     s = clean_text(text)
     if not s:
         return ""
 
     if len(s) > max_chars:
-        cut = s[:max_chars].rstrip()
-        if " " in cut:
-            cut = cut.rsplit(" ", 1)[0].rstrip()
-        cut = cut.rstrip(" ,.;:!-–—")
-        if cut and not cut.endswith((".", "!", "?")):
-            cut += "."
-        s = cut
+        cut = s[:max_chars]
+
+        # Try to find last complete sentence
+        last_period = max(cut.rfind('. '), cut.rfind('! '), cut.rfind('? '))
+        if cut.endswith('.') or cut.endswith('!') or cut.endswith('?'):
+            last_period = max(last_period, len(cut) - 1)
+
+        if last_period > max_chars * 0.6:
+            s = s[:last_period + 1].strip()
+        else:
+            if " " in cut:
+                cut = cut.rsplit(" ", 1)[0].rstrip()
+            cut = cut.rstrip(" ,.;:!-–—")
+            if cut and not cut.endswith((".", "!", "?")):
+                cut += "."
+            s = cut
 
     return s
 
@@ -212,15 +239,27 @@ def format_ai_summary(
     Each bullet includes: headline, description, emoji.
     """
     raw_clean = clean_text(summary_en_raw or "")
-    paragraph = clamp_paragraph_chars(raw_clean, 250, 350)
+    paragraph = clamp_paragraph_chars(raw_clean, 200, SUMMARY_PARAGRAPH_MAX)
     bullets = normalize_bullets(highlights_raw)
 
-    # Decide if we should override the paragraph
-    if not paragraph or _looks_like_recipe_dump(paragraph, content_type):
+    # Check if paragraph needs replacement
+    needs_replacement = (
+        not paragraph
+        or _looks_like_recipe_dump(paragraph, content_type)
+        or _has_banned_opener(paragraph)
+    )
+
+    if needs_replacement:
+        reason = "empty"
+        if paragraph and _looks_like_recipe_dump(paragraph, content_type):
+            reason = "recipe_dump"
+        elif paragraph and _has_banned_opener(paragraph):
+            reason = "banned_opener"
+
         logger.info(
-            "Replacing AI summary paragraph due to guardrail "
-            "(empty or looks_like_recipe_dump). "
+            "Replacing AI summary paragraph due to guardrail (%s). "
             "content_type=%s, original_len=%d",
+            reason,
             content_type,
             len(raw_clean),
         )
@@ -229,11 +268,24 @@ def format_ai_summary(
         if not base:
             base = "Saved content"
 
-        fallback = (
-            f"{base}. The clip presents key details and visuals around this "
-            f"topic in a short, factual format."
-        )
-        paragraph = clamp_paragraph_chars(fallback, 250, 350)
+        # Content-type-aware fallback
+        if content_type == "recipe":
+            fallback = (
+                f"{base} — a recipe with detailed ingredients and step-by-step "
+                f"preparation instructions for easy at-home cooking."
+            )
+        elif content_type == "workout":
+            fallback = (
+                f"{base} — a workout routine with exercises and "
+                f"practical guidance for effective training."
+            )
+        else:
+            fallback = (
+                f"{base} — key takeaways and practical details "
+                f"covered in a short, easy-to-follow format."
+            )
+
+        paragraph = clamp_paragraph_chars(fallback, 200, SUMMARY_PARAGRAPH_MAX)
         if not paragraph:
             paragraph = f"{base}."
 
