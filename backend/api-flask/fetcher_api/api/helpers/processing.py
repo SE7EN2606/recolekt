@@ -176,6 +176,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             "summary_topic":        ai_res.get("topic", ""),
             "recipe":               json_stringify(ai_res.get("recipe")),
             "workout":              json_stringify(ai_res.get("workout")),
+            "prompt":               ai_res.get("prompt"),
             "transcription":        transcription_data,
             "processing_strategy":  "bookmark" if is_too_long else "full",
         })

@@ -201,9 +201,10 @@ LANGUAGE: {lang}
 
 CRITICAL RULES:
 - Use BOTH the transcript and caption together. The transcript has the spoken details; the caption has structured info and correct entity names.
+- If IMAGES are provided, they are frames from the video. READ ALL ON-SCREEN TEXT carefully — ingredient quantities, recipe steps, product names, prices, and any other text overlaid on the video. This on-screen text is often the primary source for specific details like measurements and quantities.
 - When the transcript contains garbled brand/product names, cross-reference with @mentions and #hashtags from the caption to determine the correct name.
 - If the post is SPONSORED or PROMOTIONAL, the title and summary MUST name the product/service being promoted — that is why the user saved it.
-- Do NOT hallucinate facts that are not in the transcript or caption.
+- Do NOT hallucinate facts that are not in the transcript, caption, or video frames.
 - If the text is sparse, leave fields empty ("") rather than fabricating.
 
 EXTRACT:
@@ -229,6 +230,13 @@ EXTRACT:
 6. **hashtags**: Generate up to 5 highly relevant keywords WITHOUT '#'. DO NOT repeat any hashtags that are already used in the CAPTION.
 
 7. **emojis**: array of 4 relevant emojis for this content type.
+
+8. **prompt**: If the content contains an AI PROMPT, TEMPLATE, or SCRIPT that the creator shares (e.g., a ChatGPT prompt, a Midjourney prompt, an email template), extract it here as a clean, ready-to-copy string.
+   - Look for phrases like "copy this prompt", "use this prompt", "paste this into ChatGPT/GPT/Claude/Midjourney", "DM me for the prompt" (but the prompt itself is often spoken aloud in the video).
+   - The prompt is usually spoken in the transcript — extract it, clean it up, and format it so someone can directly paste it into an AI tool.
+   - If the creator says "DM me for the prompt" but ALSO reads the prompt aloud in the video, extract the spoken prompt.
+   - Write the prompt in the ORIGINAL LANGUAGE it was spoken/written in (do not translate it).
+   - If there is no prompt/template in the content, set this to null.
 
 {type_specific}
 
