@@ -138,7 +138,10 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             pass
 
         ai_res = ensure_dict(
-            analyze_instagram_video(merged_text, caption, transcription_data["detected_language"])
+            analyze_instagram_video(
+                merged_text, caption, transcription_data["detected_language"],
+                video_path=video_path, duration_seconds=duration_seconds,
+            )
         )
 
         # ── Parse AI summary & extract title before saving ──────────────────

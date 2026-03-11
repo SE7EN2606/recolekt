@@ -5,6 +5,7 @@ Separated from business logic for maintainability.
 """
 
 import json
+import re
 from typing import List, Optional
 
 from fetcher_api.services.extractor_helpers import TITLE_MAX_CHARS
@@ -66,6 +67,92 @@ def get_lang_name(lang_code: str) -> str:
 
 
 # ══════════════════════════════════════════════════════════════
+# CAPTION ENTITY EXTRACTION + CONTEXT BUILDING
+# ══════════════════════════════════════════════════════════════
+
+def extract_caption_context(caption: str) -> dict:
+    """
+    Extract structured context from the caption:
+    - @mentions (brands, people)
+    - hashtags (topics)
+    - URLs
+    - sponsored/promo signals
+    Returns a dict with all extracted info.
+    """
+    if not caption or not caption.strip():
+        return {}
+
+    ctx = {}
+
+    # @mentions
+    mentions = re.findall(r"@([\w.]+)", caption)
+    if mentions:
+        ctx["mentions"] = mentions
+
+    # hashtags (beyond what the AI generates — these are the creator's own)
+    tags = re.findall(r"#(\w+)", caption)
+    if tags:
+        ctx["hashtags"] = tags
+
+    # URLs
+    urls = re.findall(r"https?://[^\s]+", caption)
+    if urls:
+        ctx["urls"] = urls
+
+    # Sponsored signals
+    cap_lower = caption.lower()
+    sponsor_signals = [
+        "collaboration commerciale", "sponsored", "partenariat",
+        "paid partnership", "gifted", "publicité", "annonce",
+    ]
+    if any(s in cap_lower for s in sponsor_signals):
+        ctx["is_sponsored"] = True
+
+    return ctx
+
+
+def build_context_block(caption: str, transcript: str) -> str:
+    """
+    Build a CONTEXT section that goes at the top of the prompt,
+    giving the AI key entities and signals before it reads the raw text.
+    """
+    ctx = extract_caption_context(caption)
+    if not ctx:
+        return ""
+
+    lines = ["CONTEXT (extracted from caption — use this to interpret the transcript correctly):"]
+
+    if ctx.get("mentions"):
+        # Format mentions with hint about what they likely are
+        mention_strs = []
+        for m in ctx["mentions"]:
+            mention_strs.append(f"@{m}")
+        lines.append(f"  Accounts mentioned: {', '.join(mention_strs)}")
+        lines.append(f"  → These are likely the brands, tools, or people featured in the video.")
+
+    if ctx.get("hashtags"):
+        lines.append(f"  Creator hashtags: {', '.join('#' + t for t in ctx['hashtags'])}")
+
+    if ctx.get("urls"):
+        lines.append(f"  Links: {', '.join(ctx['urls'])}")
+
+    if ctx.get("is_sponsored"):
+        lines.append(f"  ⚠️ This is a SPONSORED post. The creator is promoting a product/service/brand.")
+        lines.append(f"  → The title and summary MUST mention what is being promoted.")
+
+    lines.append("")
+    lines.append("IMPORTANT: The transcript is auto-generated speech-to-text and often MISSPELLS")
+    lines.append("brand names, websites, and proper nouns. Use the accounts/hashtags above to")
+    lines.append("CORRECT mangled names in the transcript. Examples of common transcript errors:")
+    lines.append('  "hébergeant sh" or "émergent point s h" → likely "Emergent.sh" (from @emergentlabs)')
+    lines.append('  "chat gpt" or "tchat ji pi ti" → "ChatGPT"')
+    lines.append('  "tik tok" → "TikTok"')
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+# ══════════════════════════════════════════════════════════════
 # PROMPT BUILDERS
 # ══════════════════════════════════════════════════════════════
 
@@ -87,50 +174,16 @@ CRITICAL: Do not invent detailed facts or hallucinate a summary. Output JSON onl
 """
 
 
-def _extract_caption_entities(caption: str) -> str:
-    """
-    Extract @mentions, URLs, brand names, and other entities from the caption.
-    Returns a context block the AI can use to reconcile with messy transcripts.
-    """
-    import re
-    if not caption or not caption.strip():
-        return ""
-
-    entities = []
-
-    # @mentions → likely brand or person
-    mentions = re.findall(r"@([\w.]+)", caption)
-    if mentions:
-        entities.append(f"Mentioned accounts: {', '.join('@' + m for m in mentions)}")
-
-    # URLs
-    urls = re.findall(r"https?://[^\s]+", caption)
-    if urls:
-        entities.append(f"Links: {', '.join(urls)}")
-
-    # Detect "collaboration commerciale" / "sponsored" / "ad" / "partenariat"
-    cap_lower = caption.lower()
-    sponsor_signals = ["collaboration commerciale", "sponsored", "partenariat", "ad ", "#ad", "paid partnership", "gifted"]
-    if any(s in cap_lower for s in sponsor_signals):
-        entities.append("Note: This is a SPONSORED/PROMOTIONAL post. The creator is promoting a product or service.")
-
-    if not entities:
-        return ""
-
-    return "ENTITIES DETECTED IN CAPTION:\n" + "\n".join(f"  - {e}" for e in entities) + "\n"
-
-
 def build_data_extraction_prompt(
     transcript: str, caption: str, lang: str, content_type: str
 ) -> str:
-    # Build input context block with clear separation
+    # Build context block from caption entities
+    context_block = build_context_block(caption, transcript)
+
+    # Build input sections
     input_sections = []
-
-    # Extract entities FIRST so AI has context before reading the transcript
-    entity_block = _extract_caption_entities(caption)
-    if entity_block:
-        input_sections.append(entity_block)
-
+    if context_block:
+        input_sections.append(context_block)
     if transcript.strip():
         input_sections.append(f"TRANSCRIPT (what was said in the video):\n{transcript[:3500]}")
     if caption.strip():
@@ -147,9 +200,9 @@ LANGUAGE: {lang}
 {input_block}
 
 CRITICAL RULES:
-- Use BOTH the transcript and caption to understand the full context. The transcript captures what was said aloud; the caption often has the structured details (ingredients, steps, links).
-- ENTITY RECONCILIATION: The transcript is auto-generated and often MISSPELLS brand names, websites, and proper nouns. Use the @mentions and entities from the caption to CORRECT what the transcript mangles. Example: if the caption mentions "@emergentlabs" and the transcript says "hébergeant sh" or "émergent point s h", the actual entity is "Emergent.sh" (emergentlabs).
-- If the post is SPONSORED/PROMOTIONAL, mention the product/service being promoted in the title and summary. The user saved this to remember what was being promoted.
+- Use BOTH the transcript and caption together. The transcript has the spoken details; the caption has structured info and correct entity names.
+- When the transcript contains garbled brand/product names, cross-reference with @mentions and #hashtags from the caption to determine the correct name.
+- If the post is SPONSORED or PROMOTIONAL, the title and summary MUST name the product/service being promoted — that is why the user saved it.
 - Do NOT hallucinate facts that are not in the transcript or caption.
 - If the text is sparse, leave fields empty ("") rather than fabricating.
 
@@ -160,9 +213,10 @@ EXTRACT:
 2. **topic**: 2-3 word English topic (e.g., "Pumpkin Bars", "HIIT Workout", "Stain Removal")
 
 3. **title**: A clear, descriptive English title that tells a user at a glance what this content is about. Max {TITLE_MAX_CHARS} chars, NO emojis. It must describe the SUBJECT, not the creator or the series.
-   GOOD: "Creamy Diet Steakhouse Sauce"
+   - If a specific product/tool/brand is featured, INCLUDE IT in the title.
+   GOOD: "Emergent.sh — AI That Codes Your Ideas"
    GOOD: "15-Minute Morning Yoga Stretch"
-   BAD: "Sauce Ta Diète Ep. 23" (series name, not descriptive)
+   BAD: "AI Turns Ideas into Code" (too generic when a specific tool is featured)
    BAD: "Amazing Recipe You Must Try" (clickbait, not descriptive)
 
 4. **brief_description**: ONE sentence (max 80 chars) describing what this is.
@@ -320,9 +374,19 @@ def _build_type_specific_block(content_type: str) -> str:
 """
 
     return """
-8. **recipe** object: ONLY CREATE if the content is an ACTUAL RECIPE TUTORIAL teaching how to make a dish at home.
-   DO NOT create a recipe if the video is just a restaurant review, food tasting, or visiting a shop.
-   If it IS a valid home recipe, include the same fields as above.
+8. **recipe** object: CREATE if the content is a RECIPE or contains an ingredient list.
+   Look for these signals: ingredient names (even without quantities), cooking instructions,
+   food preparation steps, or a list of items like "-scallops -garlic -lime -butter".
+   DO NOT create a recipe if the video is just a restaurant review or food tasting.
+   If it IS a recipe, include:
+   - **servings**: Number of portions (estimate if not stated, use "2" as default for most dishes). 
+   - **prep_time**: ESTIMATE based on complexity (e.g., "10 minutes" for simple dishes). Only leave empty if truly unknowable.
+   - **cook_time**: ESTIMATE based on the dish type (e.g., "5 minutes" for pan-fried scallops). Write "No cooking" only for raw/no-heat dishes.
+   - **total_time**: ESTIMATE as prep + cook.
+   - **ingredients**: ARRAY OF OBJECTS with "item", "quantity", "unit", "emoji". If no quantities are given in the source, leave quantity and unit as empty strings but STILL include all ingredient names.
+   - **instructions**: Detailed, actionable steps. Expand from any cooking hints in the caption/transcript (minimum 4 steps). If the caption only lists ingredients, generate reasonable cooking steps based on the dish type.
+   - **tips**: Extract any cooking tips mentioned.
+   - **notes**: Any relevant context.
 
 9. **location** object: ONLY CREATE if the video is about visiting a specific place.
    - **name**: Name of the place (e.g. "L'Antico Vinaio")

@@ -61,7 +61,8 @@ class AIService:
 
         return out
 
-    def analyze_content(self, transcript: str, caption: str, language_code: str = "en") -> Dict:
+    def analyze_content(self, transcript: str, caption: str, language_code: str = "en",
+                        video_path: str = None, duration_seconds: int = None) -> Dict:
         transcript = transcript or ""
         caption = caption or ""
 
@@ -86,7 +87,10 @@ class AIService:
 
         try:
             # Use universal extractor for ALL content types
-            out = self.extractor.extract(transcript, caption, language_code, classification)
+            out = self.extractor.extract(
+                transcript, caption, language_code, classification,
+                video_path=video_path, duration_seconds=duration_seconds,
+            )
 
             out["pipeline_version"] = PIPELINE_VERSION
             out["classification"] = classification
@@ -112,5 +116,9 @@ class AIService:
 ai_service = AIService()
 
 
-def analyze_instagram_video(transcript: str, caption: str, language_code: str = "en") -> Dict:
-    return ai_service.analyze_content(transcript, caption, language_code)
+def analyze_instagram_video(transcript: str, caption: str, language_code: str = "en",
+                            video_path: str = None, duration_seconds: int = None) -> Dict:
+    return ai_service.analyze_content(
+        transcript, caption, language_code,
+        video_path=video_path, duration_seconds=duration_seconds,
+    )

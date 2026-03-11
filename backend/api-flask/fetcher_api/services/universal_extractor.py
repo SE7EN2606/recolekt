@@ -10,7 +10,7 @@ import json
 import logging
 import requests
 import re
-from typing import Dict
+from typing import Dict, List
 
 from fetcher_api.services.extractor_helpers import (
     is_english,
@@ -40,6 +40,7 @@ from fetcher_api.services.extractor_prompts import (
     build_summary_prompt_bilingual,
 )
 from fetcher_api.services.usage_tracker import record_call
+from fetcher_api.utils.ocr_utils import extract_video_frames_base64, should_extract_frames
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,8 @@ class UniversalExtractor:
     # ══════════════════════════════════════════════════════════════
 
     def extract(
-        self, transcript: str, caption: str, lang: str, classification: Dict
+        self, transcript: str, caption: str, lang: str, classification: Dict,
+        video_path: str = None, duration_seconds: int = None,
     ) -> Dict:
         logger.info("🔍 UniversalExtractor.extract() called!")
         self.api_call_count = 0
@@ -142,10 +144,20 @@ class UniversalExtractor:
         if (transcript_len + caption_len) < 80 and caption_len < 40:
             return self._bookmark_mode(caption, effective_lang)
 
-        # ── CALL 1: Structured data extraction ──
+        # ── EXTRACT VIDEO FRAMES for vision OCR ──
+        frame_images = []
+        if video_path and should_extract_frames(transcript, caption, content_type):
+            frame_images = extract_video_frames_base64(
+                video_path, duration_seconds=duration_seconds
+            )
+            if frame_images:
+                logger.info("🎞️ Will send %d frames to Mistral vision", len(frame_images))
+
+        # ── CALL 1: Structured data extraction (with optional frames) ──
         logger.info("📞 CALL 1: Extracting structured data...")
         result_data = self._call_ai(
-            build_data_extraction_prompt(transcript, caption, effective_lang, content_type)
+            build_data_extraction_prompt(transcript, caption, effective_lang, content_type),
+            images=frame_images,
         )
 
         # Parse Call 1 results
@@ -523,17 +535,36 @@ class UniversalExtractor:
     # AI CALL + HELPERS
     # ══════════════════════════════════════════════════════════════
 
-    def _call_ai(self, prompt: str, max_retries: int = 2) -> Dict:
-        """Pure HTTP call to Mistral API."""
+    def _call_ai(self, prompt: str, max_retries: int = 2, images: List = None) -> Dict:
+        """Pure HTTP call to Mistral API. Supports optional vision images."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
+
+        # Build message content — text + optional images
+        if images:
+            # Multimodal message: images first, then text prompt
+            content_parts = []
+            for i, img_b64 in enumerate(images):
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": f"data:image/jpeg;base64,{img_b64}",
+                })
+            content_parts.append({
+                "type": "text",
+                "text": prompt,
+            })
+            user_message = {"role": "user", "content": content_parts}
+            logger.info("🖼️ Sending %d images + text to Mistral vision", len(images))
+        else:
+            user_message = {"role": "user", "content": prompt}
+
         payload = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": SYSTEM_MESSAGE},
-                {"role": "user", "content": prompt},
+                user_message,
             ],
             "response_format": {"type": "json_object"},
             "temperature": 0.1,
