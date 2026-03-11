@@ -87,11 +87,50 @@ CRITICAL: Do not invent detailed facts or hallucinate a summary. Output JSON onl
 """
 
 
+def _extract_caption_entities(caption: str) -> str:
+    """
+    Extract @mentions, URLs, brand names, and other entities from the caption.
+    Returns a context block the AI can use to reconcile with messy transcripts.
+    """
+    import re
+    if not caption or not caption.strip():
+        return ""
+
+    entities = []
+
+    # @mentions → likely brand or person
+    mentions = re.findall(r"@([\w.]+)", caption)
+    if mentions:
+        entities.append(f"Mentioned accounts: {', '.join('@' + m for m in mentions)}")
+
+    # URLs
+    urls = re.findall(r"https?://[^\s]+", caption)
+    if urls:
+        entities.append(f"Links: {', '.join(urls)}")
+
+    # Detect "collaboration commerciale" / "sponsored" / "ad" / "partenariat"
+    cap_lower = caption.lower()
+    sponsor_signals = ["collaboration commerciale", "sponsored", "partenariat", "ad ", "#ad", "paid partnership", "gifted"]
+    if any(s in cap_lower for s in sponsor_signals):
+        entities.append("Note: This is a SPONSORED/PROMOTIONAL post. The creator is promoting a product or service.")
+
+    if not entities:
+        return ""
+
+    return "ENTITIES DETECTED IN CAPTION:\n" + "\n".join(f"  - {e}" for e in entities) + "\n"
+
+
 def build_data_extraction_prompt(
     transcript: str, caption: str, lang: str, content_type: str
 ) -> str:
     # Build input context block with clear separation
     input_sections = []
+
+    # Extract entities FIRST so AI has context before reading the transcript
+    entity_block = _extract_caption_entities(caption)
+    if entity_block:
+        input_sections.append(entity_block)
+
     if transcript.strip():
         input_sections.append(f"TRANSCRIPT (what was said in the video):\n{transcript[:3500]}")
     if caption.strip():
@@ -109,6 +148,8 @@ LANGUAGE: {lang}
 
 CRITICAL RULES:
 - Use BOTH the transcript and caption to understand the full context. The transcript captures what was said aloud; the caption often has the structured details (ingredients, steps, links).
+- ENTITY RECONCILIATION: The transcript is auto-generated and often MISSPELLS brand names, websites, and proper nouns. Use the @mentions and entities from the caption to CORRECT what the transcript mangles. Example: if the caption mentions "@emergentlabs" and the transcript says "hébergeant sh" or "émergent point s h", the actual entity is "Emergent.sh" (emergentlabs).
+- If the post is SPONSORED/PROMOTIONAL, mention the product/service being promoted in the title and summary. The user saved this to remember what was being promoted.
 - Do NOT hallucinate facts that are not in the transcript or caption.
 - If the text is sparse, leave fields empty ("") rather than fabricating.
 
