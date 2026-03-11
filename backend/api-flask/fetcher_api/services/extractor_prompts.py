@@ -211,7 +211,13 @@ EXTRACT:
 
 1. **category**: {_CATEGORY_BLOCK}
 
-2. **topic**: 2-3 word English topic (e.g., "Pumpkin Bars", "HIIT Workout", "Stain Removal")
+2. **topic**: 1-2 word English topic that is MORE SPECIFIC than the category. It names the exact subject.
+   - The topic MUST be different from the category — never repeat the same words.
+   - GOOD: category "Weight Loss" → topic "Calorie Counting" (specific method)
+   - GOOD: category "Healthy Cooking" → topic "Steakhouse Sauce" (specific dish)
+   - GOOD: category "Skincare" → topic "Retinol Routine" (specific product/method)
+   - BAD: category "Weight Loss" → topic "Weight Loss Plan" (redundant)
+   - BAD: category "Cooking" → topic "Cooking Recipe" (redundant)
 
 3. **title**: A clear, descriptive English title that tells a user at a glance what this content is about. Max {TITLE_MAX_CHARS} chars, NO emojis. It must describe the SUBJECT, not the creator or the series.
    - If a specific product/tool/brand is featured, INCLUDE IT in the title.
