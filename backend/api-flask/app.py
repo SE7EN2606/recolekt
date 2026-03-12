@@ -3,12 +3,14 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
+
 # ============================================
 # 1. ENVIRONMENT LOADING
 # ============================================
 IS_RAILWAY = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"))
 IS_DOCKER = os.path.exists("/app/.env") or IS_RAILWAY
 IS_LOCAL = not IS_DOCKER
+
 
 if IS_LOCAL:
     env_local = Path(__file__).parent / ".env.local"
@@ -19,6 +21,7 @@ elif IS_DOCKER and not IS_RAILWAY:
     if root_env.exists():
         load_dotenv(root_env, override=True)
 
+
 import logging
 import warnings
 from datetime import datetime, timedelta
@@ -27,17 +30,21 @@ from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 
 warnings.filterwarnings("ignore")
 os.environ["PYTHONWARNINGS"] = "ignore"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
 
 # ============================================
 # 2. LOGGING CONFIG
 # ============================================
 werkzeug_log = logging.getLogger("werkzeug")
 werkzeug_log.setLevel(logging.WARNING)
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,17 +53,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger("app")
 
+
 # ============================================
 # 3. FLASK APP INITIALIZATION (ONLY ONCE)
 # ============================================
 from fetcher_api import create_app
 
+
 app = create_app()
 if not app:
     raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
 
+
 # ✅ PROXY FIX: Critical for Railway Load Balancer HTTPS detection
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+
 
 # ============================================
 # 4. SESSION & COOKIE CONFIG
@@ -64,6 +75,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise RuntimeError("FATAL: SECRET_KEY not set in environment variables.")
+
 
 app.config.update(
     SECRET_KEY=SECRET_KEY,
@@ -74,8 +86,9 @@ app.config.update(
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_SAMESITE="None",
     SESSION_COOKIE_PATH="/",
-    SESSION_COOKIE_DOMAIN=None, 
+    SESSION_COOKIE_DOMAIN=None,
 )
+
 
 app.template_folder = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -83,11 +96,13 @@ app.template_folder = os.path.join(
     "templates",
 )
 
+
 # ============================================
-# 5. CORS CONFIGURATION (THE ONLY ONE)
+# 5. CORS CONFIGURATION
 # ============================================
 def _norm_origin(o: str) -> str:
     return (o or "").strip().rstrip("/")
+
 
 if IS_LOCAL:
     cors_origins = [
@@ -106,25 +121,28 @@ else:
     if env_frontend:
         cors_origins.append(env_frontend)
 
+
 cors_origins = list(set(_norm_origin(o) for o in cors_origins if o))
 
-# ✅ THIS is all you need for Delete, Options, and fetching
+
 CORS(
     app,
     resources={r"/*": {
         "origins": cors_origins,
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": "*",  # ✅ changed to "*" to allow cache-control, pragma, etc.
+        "allow_headers": "*",
         "supports_credentials": True,
         "expose_headers": ["Content-Type", "Authorization"]
     }},
     max_age=3600,
 )
 
+
 # ============================================
 # 6. OAUTH INITIALIZATION
 # ============================================
 from authlib.integrations.flask_client import OAuth
+
 
 oauth = OAuth(app)
 oauth.register(
@@ -137,11 +155,13 @@ oauth.register(
 app.config["oauth"] = oauth
 logger.info("✅ OAuth initialized with Google provider")
 
+
 # ============================================
 # 7. BLUEPRINT REGISTRATION
 # ============================================
 from fetcher_api.api import register_blueprints
 register_blueprints(app)
+
 
 try:
     from fetcher_api.api.routes.folders import folders_bp
@@ -151,74 +171,36 @@ try:
 except Exception as e:
     logger.error(f"❌ Failed to register folders blueprint: {e}")
 
+
 # ============================================
 # 8. UTILITY & ADMIN ROUTES
 # ============================================
 from fetcher_api.services.rate_monitor import get_mistral_limits
 
+
 @app.route("/api/rate-limits", methods=["GET"])
 def rate_limits():
     return jsonify(get_mistral_limits())
 
-ADMIN_SECRET = os.getenv("ADMIN_SECRET", "change-me-in-env")
-
-@app.route("/api/admin/dashboard", methods=["GET"])
-def admin_dashboard():
-    key = request.args.get("key", "")
-    if key != ADMIN_SECRET:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    from fetcher_api.services.usage_tracker import get_usage
-    from fetcher_api.adapters.db import get_db_connection
-
-    usage = get_usage()
-    limits = get_mistral_limits()
-
-    try:
-        with get_db_connection() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM users")
-            total_users = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(DISTINCT user_id) FROM reels WHERE created_at >= NOW() - INTERVAL '24 hours'")
-            active_users_today = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM reels")
-            total_reels = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM reels WHERE created_at >= NOW() - INTERVAL '24 hours'")
-            reels_today = cur.fetchone()[0]
-            cur.execute("SELECT MAX(created_at) FROM reels")
-            last_reel_at = cur.fetchone()[0]
-            if last_reel_at:
-                last_reel_at = last_reel_at.isoformat()
-            cur.execute("SELECT email, created_at FROM users ORDER BY created_at DESC LIMIT 5")
-            newest_users = [{"email": r[0], "joined": r[1].isoformat()} for r in cur.fetchall()]
-            cur.close()
-    except Exception as e:
-        logger.error("Admin DB query failed: %s", e)
-        total_users = active_users_today = total_reels = reels_today = "n/a"
-        last_reel_at = None
-        newest_users = []
-
-    return jsonify({
-        "status": "online",
-        "environment": "RAILWAY" if IS_RAILWAY else "LOCAL",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "mistral": {
-            "calls_today": usage.get("calls_today"),
-            "tokens_estimated_today": usage.get("tokens_estimated_today"),
-            "errors_today": usage.get("errors_today"),
-            "limits": limits,
-        },
-        "users": {"total": total_users, "active_today": active_users_today, "newest": newest_users},
-        "reels": {"total": total_reels, "processed_today": reels_today, "last_processed_at": last_reel_at},
-    })
 
 @app.route("/admin", methods=["GET"])
 def admin_page():
-    key = request.args.get("key", "")
-    if key != ADMIN_SECRET:
+    # ✅ Read fresh from env — never trust module-level import on Railway
+    admin_key = (
+        os.getenv("ADMIN_KEY") or
+        os.getenv("ADMIN_SECRET") or
+        "recolekt-admin-2026"
+    ).strip()
+    key = request.args.get("key", "").strip()
+    logger.info(f"🔑 /admin: received={repr(key)} expected={repr(admin_key)} match={key == admin_key}")
+    if key != admin_key:
         return render_template("admin_login.html"), 401
     return render_template("admin.html", admin_key=key)
 
+
+# ============================================
+# 9. ERROR HANDLER
+# ============================================
 @app.errorhandler(Exception)
 def handle_error(e):
     code = 500
@@ -229,8 +211,9 @@ def handle_error(e):
     logger.error("❌ Error %s: %s", code, message, exc_info=True)
     return jsonify({"error": message, "code": code}), code
 
+
 # ============================================
-# 9. FRONTEND SERVING (PRODUCTION)
+# 10. FRONTEND SERVING (PRODUCTION)
 # ============================================
 if not IS_LOCAL:
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -245,8 +228,9 @@ if not IS_LOCAL:
             return send_from_directory(frontend_dir, path)
         return send_from_directory(frontend_dir, "index.html")
 
+
 # ============================================
-# 10. MAIN ENTRY POINT
+# 11. MAIN ENTRY POINT
 # ============================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
