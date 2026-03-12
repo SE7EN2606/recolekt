@@ -1,55 +1,48 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useGoogleLogin } from '@react-oauth/google';
 import { useNavigate } from 'react-router-dom';
+
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  
-  // ✅ PULLS IN verifyGoogleToken
-  const { loginUser, registerUser, verifyGoogleToken, loading, error } = useAuth();
+
+  const { loginUser, registerUser, startGoogleLogin, loading, error } = useAuth();
   const [localError, setLocalError] = useState('');
   const navigate = useNavigate();
 
-  // ✅ RESTORES THE GOOGLE POPUP LOGIN
-  const loginWithGoogle = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      await verifyGoogleToken(tokenResponse.access_token);
-      onClose();
-      navigate('/gallery');
-    },
-    onError: () => setLocalError("Google authentication closed or failed.")
-  });
 
   if (!isOpen) return null;
+
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError('');
-    
+
     try {
       if (isSignUp) {
         await registerUser(email, password, name);
       } else {
         const user = await loginUser(email, password);
         if (user) {
-            onClose();
-            navigate('/gallery');
+          onClose();
+          navigate('/gallery');
         }
       }
     } catch (err: any) {
-      setLocalError(err.message || "An unexpected error occurred.");
+      setLocalError(err.message || 'An unexpected error occurred.');
     }
   };
+
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -61,15 +54,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           <X size={24} />
         </button>
 
+
         <h2 className="text-2xl font-bold text-gray-900 mb-6">
           {isSignUp ? 'Create Account' : 'Sign In'}
         </h2>
-        
+
         {(localError || error) && (
           <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">
             {localError || error}
           </div>
         )}
+
 
         <form onSubmit={handleAuth} className="space-y-4">
           {isSignUp && (
@@ -85,6 +80,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               />
             </div>
           )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
@@ -96,6 +92,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               placeholder="your@email.com"
             />
           </div>
+
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
@@ -110,6 +107,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             />
           </div>
 
+
           <button
             type="submit"
             disabled={loading}
@@ -118,6 +116,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             {loading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Sign In')}
           </button>
         </form>
+
 
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center">
@@ -128,10 +127,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           </div>
         </div>
 
+
         <button
           type="button"
-          onClick={() => loginWithGoogle()} // ✅ TRIGGERS THE POPUP
-          className="w-full flex items-center justify-center gap-3 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-lg transition-colors"
+          onClick={startGoogleLogin}
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-3 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-lg transition-colors disabled:opacity-50"
         >
           <svg width="18" height="18" viewBox="0 0 18 18">
             <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
@@ -142,12 +143,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           Google
         </button>
 
+
         <p className="mt-6 text-center text-sm text-gray-600">
           {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
           <button
             type="button"
-            onClick={() => { 
-              setIsSignUp(!isSignUp); 
+            onClick={() => {
+              setIsSignUp(!isSignUp);
               setLocalError('');
             }}
             className="text-primary-600 hover:text-primary-700 font-medium"

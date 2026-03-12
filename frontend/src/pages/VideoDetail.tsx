@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, ChevronDown, Heart, FolderInput, AlertCircle, X, EllipsisVertical, Archive, AlignLeft, Pencil, Save, Globe, Folder, Clock, Activity, Flame, Dumbbell } from 'lucide-react';
+import { ArrowLeft, Trash2, ChevronDown, Heart, FolderInput, AlertCircle, X, EllipsisVertical, Archive, AlignLeft, Pencil, Save, Globe, Folder, Clock, Activity, Flame, Dumbbell, Lightbulb } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { getAuthHeaders } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -15,7 +15,6 @@ import { useTranslation } from 'react-i18next';
 import { getCategory, getTopic } from '../utils/videoUtils';
 import { API_BASE } from '../utils/api';
 import { useScrollLock } from '../utils/useScrollLock';
-import { Workout } from '../types';
 
 /* ─── IMPORTED EXTERNAL ICONS ─── */
 import { 
@@ -81,40 +80,56 @@ const VideoDetailSkeleton = () => (
 );
 
 /* ─── WORKOUT BLOCK COMPONENT ─── */
-const WorkoutBlock = ({ workout }: { workout: Workout }) => {
+const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any, showOriginal: boolean }) => {
+  const { t } = useTranslation(['videoDetail']);
+
+  // If showOriginal is FALSE, we want the French (translated) data.
+  // If showOriginal is TRUE, we want the English (original) data.
+  const activeWorkout = showOriginal && workoutData?.original 
+    ? workoutData.original 
+    : (workoutData?.french || workoutData?.translated || workoutData);
+
+  if (!activeWorkout || Object.keys(activeWorkout).length === 0) return null;
+
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden mb-5">
-      <div className="bg-orange-50/50 p-5 border-b border-gray-50 flex items-center gap-3">
-        <Dumbbell className="text-orange-600" size={20} />
-        <h3 className="font-bold text-gray-900 text-lg">Workout Plan</h3>
+    <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
+      
+      {/* Header */}
+      <div className="bg-orange-100/60 p-4 md:p-5 border-b border-gray-50 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Dumbbell className="text-orange-600" size={20} />
+          <h3 className="font-bold text-gray-900 text-lg">
+            {t('videoDetail:workoutDetails', 'Plan d\'entraînement')}
+          </h3>
+        </div>
       </div>
       
       {/* Meta Stats */}
       <div className="grid grid-cols-3 divide-x divide-gray-50 border-b border-gray-50">
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Clock size={16} className="text-orange-500 mb-1" />
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Time</span>
-          <span className="text-sm font-bold text-gray-900">{workout.duration}</span>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t('videoDetail:time', 'Durée')}</span>
+          <span className="text-sm font-bold text-gray-900">{activeWorkout.duration || '—'}</span>
         </div>
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Activity size={16} className="text-orange-500 mb-1" />
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Format</span>
-          <span className="text-sm font-bold text-gray-900">{workout.format}</span>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t('videoDetail:format', 'Format')}</span>
+          <span className="text-sm font-bold text-gray-900">{activeWorkout.format || '—'}</span>
         </div>
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Flame size={16} className="text-orange-500 mb-1" />
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Level</span>
-          <span className="text-sm font-bold text-gray-900">{workout.level}</span>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{t('videoDetail:level', 'Niveau')}</span>
+          <span className="text-sm font-bold text-gray-900">{activeWorkout.level || '—'}</span>
         </div>
       </div>
 
       {/* Equipment */}
-      {workout.equipment && workout.equipment.length > 0 && (
-        <div className="p-5 border-b border-gray-50">
-          <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Equipment</h4>
+      {activeWorkout.equipment && activeWorkout.equipment.length > 0 && (
+        <div className="p-6 border-b border-gray-50">
+          <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t('videoDetail:equipment', 'Équipement')}</h4>
           <div className="flex flex-wrap gap-2">
-            {workout.equipment.map((eq, i) => (
-              <div key={i} className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold">
+            {activeWorkout.equipment.map((eq: string, i: number) => (
+              <div key={i} className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-sm font-bold">
                 {eq}
               </div>
             ))}
@@ -123,32 +138,67 @@ const WorkoutBlock = ({ workout }: { workout: Workout }) => {
       )}
 
       {/* Exercises */}
-      {workout.groups && workout.groups.length > 0 && (
-        <div className="p-5 bg-gray-50/30">
-          <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Circuit / Exercises</h4>
+      {activeWorkout.groups && activeWorkout.groups.length > 0 && (
+        <div className="p-6 bg-gray-50/30">
+          <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t('videoDetail:exercises', 'Circuit / Exercices')}</h4>
           <div className="space-y-6">
-            {workout.groups.map((group, idx) => (
+            {activeWorkout.groups.map((group: any, idx: number) => (
               <div key={idx} className="relative">
                 {idx > 0 && <div className="absolute -top-3 left-0 right-0 border-t border-dashed border-gray-200" />}
-                <h5 className="font-bold text-gray-900 text-sm bg-white border border-gray-200 shadow-sm inline-block px-3 py-1.5 rounded-lg mb-3">
-                  {group.title}
-                </h5>
-                <ul className="space-y-3 pl-2">
-                  {group.items.map((item, i) => (
-                    <li key={i} className="flex items-start gap-3">
-                      <div className="mt-1.5 min-w-[16px]">
-                        <div className="w-2 h-2 rounded-full bg-orange-400" />
-                      </div>
-                      <div className="text-sm leading-relaxed">
-                        {item.info && <span className="text-orange-600 font-bold mr-2">{item.info}</span>}
-                        <span className="text-gray-800 font-medium">{item.name}</span>
-                      </div>
-                    </li>
-                  ))}
+                
+                {group.title && (
+                  <h5 className="font-bold text-gray-900 text-sm bg-white border border-gray-200 shadow-sm inline-block px-3 py-1.5 rounded-lg mb-4">
+                    {group.title}
+                  </h5>
+                )}
+
+                <ul className="space-y-4">
+                  {group.items && group.items.map((item: any, i: number) => {
+                    // Remove "Minute X" redundancy
+                    let infoText = item.info || '';
+                    infoText = infoText.replace(/min(?:ute)?\s*\d+/i, '').trim();
+                    infoText = infoText.replace(/^[-/]\s*/, '').replace(/\s*[-/]$/, '').trim();
+
+                    return (
+                      <li key={i} className="flex items-start gap-3">
+                        <div className="w-6 flex justify-center flex-shrink-0 pt-[0.1rem]">
+                          <div className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-black">
+                            {i + 1}
+                          </div>
+                        </div>
+                        <div className="text-sm font-medium text-gray-600 leading-relaxed pt-[2px] flex flex-wrap items-baseline flex-1">
+                          {infoText && <span className="text-orange-600 font-bold mr-2">{infoText}</span>}
+                          <span className="text-gray-900 font-bold">{item.name}</span>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Tips */}
+      {(activeWorkout.tips?.length > 0) && (
+        <div className="bg-yellow-50/50 border-t border-yellow-100 p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Lightbulb className="text-yellow-600" size={18} />
+            <h4 className="text-xs font-black text-yellow-700 uppercase tracking-widest">
+              {t('videoDetail:trainerTips', 'Conseils du coach')}
+            </h4>
+          </div>
+          <ul className="space-y-2">
+            {activeWorkout.tips.map((tip: string, i: number) => (
+              <li key={i} className="flex items-start gap-3 text-sm text-gray-700">
+                <div className="w-6 flex justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-yellow-500 font-bold text-lg leading-none">•</span>
+                </div>
+                <span className="italic flex-1 pt-[1px]">{tip}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
@@ -301,11 +351,21 @@ export const VideoDetail: React.FC = () => {
     const originalData = summaryObj.original || {};
     const langBlock = (showOriginal && Object.keys(originalData).length > 0) ? originalData : (Object.keys(englishData).length > 0 ? englishData : summaryObj);
 
+    // Parse Recipe
     let recipeData = v.recipe;
     if (typeof recipeData === 'string') { try { recipeData = JSON.parse(recipeData); } catch (e) { recipeData = null; } }
     if (recipeData && recipeData.recipe) recipeData = recipeData.recipe;
     let activeRecipe = null;
     if (recipeData && Object.keys(recipeData).length > 0) activeRecipe = showOriginal && recipeData.original ? recipeData.original : (recipeData.english || recipeData);
+
+    // Parse Workout (Passing the full multilingual object to the component)
+    let workoutData = v.workout;
+    if (typeof workoutData === 'string') {
+      try { workoutData = JSON.parse(workoutData); } catch (e) { workoutData = null; }
+    }
+    if (workoutData && Object.keys(workoutData).length === 0) {
+      workoutData = null;
+    }
 
     let extractedTranscript = '';
     if (v.transcription) {
@@ -354,7 +414,7 @@ export const VideoDetail: React.FC = () => {
       transcript: extractedTranscript.trim(),
       caption: typeof v.caption === 'string' ? v.caption.trim() : (v.caption?.text || v.caption?.caption || '').trim(),
       recipe: activeRecipe,
-      workout: v.workout || null,
+      workout: workoutData, // Pass raw data, component handles translation
       thumbnailUrl: safeString(v.thumbnailUrl || v.gcs_urls?.preview_thumbnail || v.preview || '') || galleryThumbnail,
       originalUrl: safeString(v.source_url || v.originalUrl || ''),
       platform: safeString(v.source_url || v.originalUrl || '').includes('facebook') ? 'facebook' : 'instagram',
@@ -528,7 +588,7 @@ export const VideoDetail: React.FC = () => {
 
           {/* WORKOUT BLOCK */}
           {viewModel.workout && (
-            <WorkoutBlock workout={viewModel.workout} />
+            <WorkoutBlock workoutData={viewModel.workout} showOriginal={showOriginal} />
           )}
 
           {viewModel.caption && (

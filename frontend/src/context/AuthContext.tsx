@@ -2,6 +2,7 @@ import { API_BASE } from "../utils/api";
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+
 interface User {
   id: string;
   email: string;
@@ -10,11 +11,13 @@ interface User {
   language?: string;
 }
 
+
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   error: string | null;
   verifyGoogleToken: (accessToken: string) => Promise<void>;
+  startGoogleLogin: () => void;
   signOut: () => Promise<void>;
   isAuthenticated: boolean;
   registerUser: (email: string, password: string, name: string) => Promise<User | null>;
@@ -22,7 +25,9 @@ interface AuthContextType {
   updateUserLanguage: (lang: string) => Promise<void>;
 }
 
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
 
 function joinUrl(base: string, path: string) {
   const b = String(base || '').replace(/\/+$/, '');
@@ -31,6 +36,7 @@ function joinUrl(base: string, path: string) {
   return `${b}/${p}`;
 }
 
+
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
@@ -38,8 +44,10 @@ function getAuthHeaders(): HeadersInit {
   return headers;
 }
 
+
 const LS_USER_KEY = 'auth_user';
 const LS_USER_TS_KEY = 'auth_user_updated_at';
+
 
 function loadCachedUserUnsafeInstant(): User | null {
   try {
@@ -49,6 +57,7 @@ function loadCachedUserUnsafeInstant(): User | null {
   } catch { return null; }
 }
 
+
 function saveCachedUser(user: User) {
   try {
     localStorage.setItem(LS_USER_KEY, JSON.stringify(user));
@@ -56,12 +65,14 @@ function saveCachedUser(user: User) {
   } catch {}
 }
 
+
 function clearCachedUser() {
   try {
     localStorage.removeItem(LS_USER_KEY);
     localStorage.removeItem(LS_USER_TS_KEY);
   } catch {}
 }
+
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { i18n } = useTranslation();
@@ -71,8 +82,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [token, setToken] = useState(localStorage.getItem('auth_token') || localStorage.getItem('token'));
 
+
   const userRef = useRef(user);
   userRef.current = user;
+
 
   const clearAuthEverywhere = () => {
     localStorage.removeItem('auth_token');
@@ -84,6 +97,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsAuthenticated(false);
     setLoading(false);
   };
+
 
   const fetchMe = async () => {
     const currentToken = localStorage.getItem('auth_token') || localStorage.getItem('token');
@@ -113,6 +127,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+
+  // Redirect-based Google login — no popup, no @react-oauth/google dependency needed
+  const startGoogleLogin = () => {
+    setError(null);
+    const next = encodeURIComponent(`${window.location.origin}/gallery`);
+    window.location.href = joinUrl(API_BASE, `/api/auth/google/login?next=${next}`);
+  };
+
+
+  // Keep for any other callers that still use the access_token verify path
   const verifyGoogleToken = async (accessToken: string) => {
     setError(null);
     try {
@@ -139,11 +163,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (err: any) {
       setError(err.message);
-      throw err; // ✅ re-throw so Auth.tsx can catch it
+      throw err;
     }
   };
 
-  // ✅ Now throws on failure so Auth.tsx handleSubmit can setErrorMsg
+
   const loginUser = async (email: string, password: string): Promise<User | null> => {
     try {
       const response = await fetch(joinUrl(API_BASE, '/api/auth/login'), {
@@ -154,7 +178,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       const data = await response.json();
       if (!response.ok) {
-        // ✅ Map status codes to friendly messages
         if (response.status === 401) {
           throw new Error(data.error || 'Invalid email or password.');
         }
@@ -173,11 +196,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return data.user;
     } catch (err: any) {
       setError(err.message);
-      throw err; // ✅ re-throw
+      throw err;
     }
   };
 
-  // ✅ Now throws on failure
+
   const registerUser = async (email: string, password: string, name: string): Promise<User | null> => {
     try {
       const response = await fetch(joinUrl(API_BASE, '/api/auth/register'), {
@@ -196,9 +219,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return data.user;
     } catch (err: any) {
       setError(err.message);
-      throw err; // ✅ re-throw
+      throw err;
     }
   };
+
 
   const updateUserLanguage = async (lang: string) => {
     i18n.changeLanguage(lang);
@@ -214,34 +238,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) { console.error(e); }
   };
 
+
   const signOut = async () => {
     clearAuthEverywhere();
     window.location.href = '/auth';
   };
 
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlToken = params.get('token');
+    const urlError = params.get('error');
+
+    // Google callback returned an error (e.g. user cancelled)
+    if (urlError) {
+      setError(decodeURIComponent(urlError));
+      window.history.replaceState({}, '', window.location.pathname);
+      setLoading(false);
+      return;
+    }
+
+    // Google callback returned a JWT — store it before fetchMe runs
     if (urlToken) {
       localStorage.setItem('auth_token', urlToken);
       localStorage.setItem('token', urlToken);
       window.history.replaceState({}, '', window.location.pathname);
     }
+
     fetchMe();
   }, []);
 
+
   const value = useMemo(() => ({
-    user, loading, error, verifyGoogleToken, signOut,
-    isAuthenticated, registerUser, loginUser, updateUserLanguage
+    user, loading, error,
+    verifyGoogleToken, startGoogleLogin,
+    signOut, isAuthenticated,
+    registerUser, loginUser, updateUserLanguage
   }), [user, loading, error, isAuthenticated]);
+
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
+
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) throw new Error('useAuth error');
   return context;
 };
+
 
 export { getAuthHeaders };

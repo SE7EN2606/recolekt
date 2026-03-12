@@ -12,6 +12,15 @@ import { MoveCollectionModal } from '../components/MoveCollectionModal';
 const CalendarArrowUp = ({ size = 20 }) => ( <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 18 4-4 4 4"/><path d="M16 2v4"/><path d="M18 22v-8"/><path d="M21 11.343V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2-2v14a2 2 0 0 0 2 2h9"/><path d="M3 10h18"/><path d="M8 2v4"/></svg> );
 const CalendarArrowDown = ({ size = 20 }) => ( <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 18 4 4 4-4"/><path d="M16 2v4"/><path d="M18 14v8"/><path d="M21 11.354V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2-2v14a2 2 0 0 0 2 2h7.343"/><path d="M3 10h18"/><path d="M8 2v4"/></svg> );
 
+const PROCESSING_MESSAGES = [
+  'msg_indexing', 'msg_parsing', 'msg_visual', 'msg_auditory', 
+  'msg_analysing', 'msg_decoding', 'msg_semantic', 'msg_contextual', 
+  'msg_identifying', 'msg_mapping', 'msg_inferring', 'msg_correlating', 
+  'msg_synthesizing', 'msg_distilling', 'msg_abstracting', 'msg_interpreting', 
+  'msg_ideating', 'msg_curating', 'msg_refining', 'msg_tuning', 
+  'msg_optimizing', 'msg_polishing', 'msg_finalizing'
+];
+
 export const Gallery: React.FC = () => {
   const { folderId } = useParams<{ folderId?: string }>();
   const [searchParams] = useSearchParams();
@@ -27,6 +36,9 @@ export const Gallery: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
+  
+  // Track the cycling messages
+  const [msgIndex, setMsgIndex] = useState(0);
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth', { replace: true });
@@ -44,6 +56,18 @@ export const Gallery: React.FC = () => {
     setSelectionMode(false);
     setSelectedIds(new Set());
   }, [folderId, location.pathname, location.key]);
+
+  // AI Message Cycler (Updates exactly with the 3s CSS animation)
+  useEffect(() => {
+    const hasProcessing = videos.some((v: any) => v.category === 'Processing' || v.status === 'processing');
+    if (!hasProcessing) return;
+
+    const interval = setInterval(() => {
+      setMsgIndex((prev) => (prev + 1) % PROCESSING_MESSAGES.length);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [videos]);
 
   const isFavoritesView = folderId === 'favorites';
   const isAllView = !folderId || folderId === 'all';
@@ -212,17 +236,55 @@ export const Gallery: React.FC = () => {
           const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
           const thumb = getThumbnail(video);
           
+          /* ======================================================= */
+          /* 🚀 THE FIX: SHARP LINES, PERSISTENT GRID, CYCLING TEXT    */
+          /* ======================================================= */
           if (video.category === 'Processing' || video.status === 'processing') {
             return (
-              <div key={videoId} className="relative aspect-[9/16] rounded-2xl bg-black overflow-hidden cursor-default">
+              <div key={videoId} className="relative aspect-[9/16] rounded-2xl bg-black overflow-hidden cursor-default shadow-[0_0_15px_rgba(124,58,237,0.15)] border border-primary-500/20">
+                
+                {/* 1. Base Image Layer (Z-0) - Darkened and blurred to prevent the "white veil" */}
                 {thumb ? (
-                  <img src={thumb} alt="Processing" className="absolute inset-0 w-full h-full object-cover opacity-60 blur-md scale-110" />
+                  <img src={thumb} alt="Processing" className="absolute inset-0 w-full h-full object-cover opacity-30 blur-xl scale-110 z-0" />
                 ) : (
-                  <div className="absolute inset-0 bg-gray-900 animate-pulse" />
+                  <div className="absolute inset-0 bg-black z-0" />
                 )}
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 z-10">
-                  <Loader2 className="w-10 h-10 text-white animate-spin mb-3" />
-                  <span className="text-white text-xs font-bold tracking-widest uppercase">{t('gallery:processing')}</span>
+
+                {/* 2. Deep Dark Blur Overlay (Z-10) - Ensures a true dark grey background */}
+                <div className="absolute inset-0 bg-black/70 backdrop-blur-md z-10" />
+
+                {/* 3. Sharp Subtle Grid Overlay (Z-20) */}
+                <div 
+                  className="absolute inset-0 opacity-[0.15] z-20 pointer-events-none"
+                  style={{
+                    backgroundImage: `linear-gradient(rgba(167, 139, 250, 1) 1px, transparent 1px), linear-gradient(90deg, rgba(167, 139, 250, 1) 1px, transparent 1px)`,
+                    backgroundSize: '24px 24px'
+                  }}
+                />
+
+                {/* 4. Sharp Horizontal Scanner Line (Z-30) - Slowed down to 8s */}
+                <div 
+                  className="absolute top-0 left-0 w-full h-[2px] bg-primary-400 shadow-[0_0_10px_2px_rgba(167,139,250,0.8)] z-30 pointer-events-none"
+                  style={{ animation: 'sequence-h 8s ease-in-out infinite' }}
+                />
+
+                {/* 5. Sharp Vertical Scanner Line (Z-30) - Slowed down to 8s */}
+                <div 
+                  className="absolute top-0 left-0 h-full w-[2px] bg-primary-400 shadow-[0_0_10px_2px_rgba(167,139,250,0.8)] z-30 pointer-events-none"
+                  style={{ animation: 'sequence-v 8s ease-in-out infinite' }}
+                />
+
+                {/* 6. Content Container (Z-40) */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center z-40 pointer-events-none px-4 text-center">
+                  <Loader2 className="w-8 h-8 text-primary-400 animate-spin mb-4 drop-shadow-[0_0_8px_rgba(167,139,250,0.5)]" />
+                  
+                  {/* Dynamic AI Message - Lowercase with custom animation */}
+                  <span 
+                    key={msgIndex} // Forces re-render for animation trigger
+                    className="text-primary-200 text-xs font-medium lowercase tracking-wide drop-shadow-md ai-message"
+                  >
+                    {t(`gallery:${PROCESSING_MESSAGES[msgIndex]}`, PROCESSING_MESSAGES[msgIndex].replace('msg_', ''))}
+                  </span>
                 </div>
               </div>
             );
@@ -265,6 +327,40 @@ export const Gallery: React.FC = () => {
       )}
 
       <MoveCollectionModal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} onMove={handleMoveSubmit} count={selectedIds.size} />
+      
+      {/* 🚀 CSS ANIMATION FOR THE GEMINI-STYLE TEXT REVEAL */}
+      <style>{`
+        @keyframes ai-text-reveal {
+          0% { 
+            clip-path: inset(0 100% 0 0); 
+            opacity: 0; 
+            filter: blur(4px); 
+            transform: translateX(-4px); 
+          }
+          10% { 
+            opacity: 1; 
+            filter: blur(0px); 
+          }
+          40% { 
+            clip-path: inset(0 0 0 0); 
+            transform: translateX(0); 
+          }
+          85% { 
+            opacity: 1; 
+            filter: blur(0px); 
+            transform: translateY(0); 
+          }
+          100% { 
+            opacity: 0; 
+            filter: blur(4px); 
+            transform: translateY(-4px); 
+            clip-path: inset(0 0 0 0); 
+          }
+        }
+        .ai-message {
+          animation: ai-text-reveal 3s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+        }
+      `}</style>
     </div>
   );
 };

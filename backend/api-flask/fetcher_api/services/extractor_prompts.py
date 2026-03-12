@@ -66,40 +66,23 @@ def get_lang_name(lang_code: str) -> str:
     return LANG_NAME_MAP.get(lang_code, lang_code.upper())
 
 
-# ══════════════════════════════════════════════════════════════
-# CAPTION ENTITY EXTRACTION + CONTEXT BUILDING
-# ══════════════════════════════════════════════════════════════
-
 def extract_caption_context(caption: str) -> dict:
-    """
-    Extract structured context from the caption:
-    - @mentions (brands, people)
-    - hashtags (topics)
-    - URLs
-    - sponsored/promo signals
-    Returns a dict with all extracted info.
-    """
     if not caption or not caption.strip():
         return {}
 
     ctx = {}
-
-    # @mentions
     mentions = re.findall(r"@([\w.]+)", caption)
     if mentions:
         ctx["mentions"] = mentions
 
-    # hashtags (beyond what the AI generates — these are the creator's own)
     tags = re.findall(r"#(\w+)", caption)
     if tags:
         ctx["hashtags"] = tags
 
-    # URLs
     urls = re.findall(r"https?://[^\s]+", caption)
     if urls:
         ctx["urls"] = urls
 
-    # Sponsored signals
     cap_lower = caption.lower()
     sponsor_signals = [
         "collaboration commerciale", "sponsored", "partenariat",
@@ -112,10 +95,6 @@ def extract_caption_context(caption: str) -> dict:
 
 
 def build_context_block(caption: str, transcript: str) -> str:
-    """
-    Build a CONTEXT section that goes at the top of the prompt,
-    giving the AI key entities and signals before it reads the raw text.
-    """
     ctx = extract_caption_context(caption)
     if not ctx:
         return ""
@@ -123,7 +102,6 @@ def build_context_block(caption: str, transcript: str) -> str:
     lines = ["CONTEXT (extracted from caption — use this to interpret the transcript correctly):"]
 
     if ctx.get("mentions"):
-        # Format mentions with hint about what they likely are
         mention_strs = []
         for m in ctx["mentions"]:
             mention_strs.append(f"@{m}")
@@ -152,10 +130,6 @@ def build_context_block(caption: str, transcript: str) -> str:
     return "\n".join(lines)
 
 
-# ══════════════════════════════════════════════════════════════
-# PROMPT BUILDERS
-# ══════════════════════════════════════════════════════════════
-
 def build_bookmark_prompt(caption: str, lang: str) -> str:
     return f"""The following text is extremely short. Generate basic metadata to categorize it as a bookmark. Output ONLY valid JSON.
 
@@ -177,10 +151,8 @@ CRITICAL: Do not invent detailed facts or hallucinate a summary. Output JSON onl
 def build_data_extraction_prompt(
     transcript: str, caption: str, lang: str, content_type: str
 ) -> str:
-    # Build context block from caption entities
     context_block = build_context_block(caption, transcript)
 
-    # Build input sections
     input_sections = []
     if context_block:
         input_sections.append(context_block)
@@ -201,10 +173,8 @@ LANGUAGE: {lang}
 
 CRITICAL RULES:
 - Use BOTH the transcript and caption together. The transcript has the spoken details; the caption has structured info and correct entity names.
-- If IMAGES are provided, they are frames from the video. READ ALL ON-SCREEN TEXT carefully — ingredient quantities, recipe steps, product names, prices, and any other text overlaid on the video. This on-screen text is often the primary source for specific details like measurements and quantities.
-- When the transcript contains garbled brand/product names, cross-reference with @mentions and #hashtags from the caption to determine the correct name.
-- If the post is SPONSORED or PROMOTIONAL, the title and summary MUST name the product/service being promoted — that is why the user saved it.
-- Do NOT hallucinate facts that are not in the transcript, caption, or video frames.
+- If IMAGES are provided, they are frames from the video. READ ALL ON-SCREEN TEXT carefully.
+- When the transcript contains garbled brand/product names, cross-reference with @mentions and #hashtags.
 - If the text is sparse, leave fields empty ("") rather than fabricating.
 
 EXTRACT:
@@ -212,41 +182,25 @@ EXTRACT:
 1. **category**: {_CATEGORY_BLOCK}
 
 2. **topic**: 1-2 word English topic that is MORE SPECIFIC than the category. It names the exact subject.
-   - The topic MUST be different from the category — never repeat the same words.
-   - GOOD: category "Weight Loss" → topic "Calorie Counting" (specific method)
-   - GOOD: category "Healthy Cooking" → topic "Steakhouse Sauce" (specific dish)
-   - GOOD: category "Skincare" → topic "Retinol Routine" (specific product/method)
-   - BAD: category "Weight Loss" → topic "Weight Loss Plan" (redundant)
-   - BAD: category "Cooking" → topic "Cooking Recipe" (redundant)
 
-3. **title**: A clear, descriptive English title that tells a user at a glance what this content is about. Max {TITLE_MAX_CHARS} chars, NO emojis. It must describe the SUBJECT, not the creator or the series.
-   - If a specific product/tool/brand is featured, INCLUDE IT in the title.
-   GOOD: "Emergent.sh — AI That Codes Your Ideas"
-   GOOD: "15-Minute Morning Yoga Stretch"
-   BAD: "AI Turns Ideas into Code" (too generic when a specific tool is featured)
-   BAD: "Amazing Recipe You Must Try" (clickbait, not descriptive)
+3. **title**: A clear, descriptive English title that tells a user at a glance what this content is about. Max {TITLE_MAX_CHARS} chars, NO emojis. 
 
 4. **brief_description**: ONE sentence (max 80 chars) describing what this is.
 
 5. **highlights**: array of EXACTLY 4 objects:
    - "emoji": ONE relevant emoji
    - "headline": 3-5 word title (NO emojis in text)
-   - "description": One sentence (NO emojis in text). Capture SPECIFIC details from the content, not generic statements.
+   - "description": One sentence (NO emojis in text). Capture SPECIFIC details from the content.
 
 6. **hashtags**: Generate up to 5 highly relevant keywords WITHOUT '#'. DO NOT repeat any hashtags that are already used in the CAPTION.
 
 7. **emojis**: array of 4 relevant emojis for this content type.
 
-8. **prompt**: If the content contains an AI PROMPT, TEMPLATE, or SCRIPT that the creator shares (e.g., a ChatGPT prompt, a Midjourney prompt, an email template), extract it here as a clean, ready-to-copy string.
-   - Look for phrases like "copy this prompt", "use this prompt", "paste this into ChatGPT/GPT/Claude/Midjourney", "DM me for the prompt" (but the prompt itself is often spoken aloud in the video).
-   - The prompt is usually spoken in the transcript — extract it, clean it up, and format it so someone can directly paste it into an AI tool.
-   - If the creator says "DM me for the prompt" but ALSO reads the prompt aloud in the video, extract the spoken prompt.
-   - Write the prompt in the ORIGINAL LANGUAGE it was spoken/written in (do not translate it).
-   - If there is no prompt/template in the content, set this to null.
+8. **prompt**: If the content contains an AI PROMPT, TEMPLATE, or SCRIPT that the creator shares, extract it here as a clean, ready-to-copy string. Otherwise, set to null.
 
 {type_specific}
 
-Return JSON with these fields only. Do NOT include summary field.
+Return JSON with these exact keys. Do NOT include a summary field yet.
 """
 
 
@@ -264,10 +218,8 @@ REQUIREMENTS:
 - Format: Write EXACTLY 2 short paragraphs. Use a newline (\\n\\n) to separate them.
 - Style: Simple, factual, informative.
 {_BANNED_OPENER_BLOCK}
-- Write about: WHAT it is, KEY specifics (numbers, ingredients, techniques), WHO it's useful for.
-- NO emojis, NO marketing language, NO flowery adjectives.
-- Do NOT write out step-by-step instructions (keep it high level).
-- Write in your own words — do NOT copy phrases from the input.
+- Write about: WHAT it is, KEY specifics, WHO it's useful for.
+- NO emojis, NO marketing language.
 
 Output ONLY valid JSON with one field:
 {{"summary": "your summary text here"}}
@@ -287,7 +239,6 @@ def build_summary_prompt_bilingual(
 ) -> str:
     lang_name = get_lang_name(original_lang)
 
-    # ── Build translation block ──
     translation_input = ""
     translation_output_fields = []
 
@@ -340,20 +291,13 @@ BRIEF DESCRIPTION: {brief_desc}
 CONTENT TYPE: {content_type}
 {translation_section}
 REQUIREMENTS FOR BOTH SUMMARIES:
-- Length: STRICTLY between {SUMMARY_MIN_CHARS} and {SUMMARY_MAX_CHARS_SOFT} characters EACH. Count carefully. Do NOT exceed {SUMMARY_MAX_CHARS_SOFT} characters.
-- Format: Write EXACTLY 2 short paragraphs per language. Use a newline (\\n\\n) to separate them.
+- Length: STRICTLY between {SUMMARY_MIN_CHARS} and {SUMMARY_MAX_CHARS_SOFT} characters EACH.
+- Format: Write EXACTLY 2 short paragraphs per language.
 - Style: Simple, factual, informative.
 {_BANNED_OPENER_BLOCK}
 TRANSLATION QUALITY RULES:
-- The {lang_name} title must sound NATURAL in {lang_name}, as if a native speaker wrote it.
-- Do NOT translate word-by-word. Write it the way a {lang_name} native would naturally say it.
-  EN: "Creamy Diet Steakhouse Sauce"
-  FR GOOD: "Sauce miel-moutarde crémeuse façon steakhouse"
-  FR BAD: "Sauce crémeuse pour steakhouse à régime"
-- Keep metric units unchanged (g, kg, ml, etc.)
-- Write about: WHAT it is, KEY specifics, WHO it's useful for.
-- NO emojis, NO marketing language.
-- Write ORIGINAL text — do NOT copy from input.
+- The {lang_name} title must sound NATURAL.
+- Keep metric units unchanged.
 
 Output ONLY valid JSON:
 {{
@@ -364,56 +308,46 @@ Output ONLY valid JSON:
 """
 
 
-# ══════════════════════════════════════════════════════════════
-# INTERNAL HELPERS
-# ══════════════════════════════════════════════════════════════
-
 def _build_type_specific_block(content_type: str) -> str:
     """Build the specific extraction instructions based on content type."""
     if content_type == "recipe":
         return """
-8. **recipe** object: Extract the recipe details.
-   - **servings**: Number of PORTIONS this recipe makes (a simple number like "4" or "6").
-     This is NOT the total weight or volume. If the caption says "pour ~400 ml" that means the total yield is 400ml — estimate how many portions that is (e.g., "4" for a sauce). If unsure, use "1".
-   - **prep_time**: Time to prepare/assemble ingredients. ESTIMATE if not explicitly stated — e.g., a simple blended sauce takes "5 minutes", a multi-step dish with chopping takes "15 minutes". Only leave empty "" if you truly cannot estimate.
-   - **cook_time**: Active cooking/heating time. If NO cooking or heating is involved (e.g., a blended raw sauce, a salad, a no-bake dessert), write "No cooking" — do NOT write "0 minutes".
-   - **total_time**: Total duration from start to finish. ESTIMATE if not stated — sum of prep + cook time. Only leave empty "" if you truly cannot estimate.
-   - **ingredients**: ARRAY OF OBJECTS. Each must have: "item", "quantity", "unit", "emoji". Never return strings.
-     Extract quantities and units exactly as stated in the source.
-   - **instructions**: Detailed, actionable steps. Expand brief creator instructions into clear cooking steps (minimum 6). It is OK to elaborate on what the creator described briefly.
+9. **recipe** object: Extract the recipe details.
+   - **servings**: Number of PORTIONS this recipe makes.
+   - **prep_time**: Time to prepare/assemble ingredients. 
+   - **cook_time**: Active cooking/heating time.
+   - **total_time**: Total duration from start to finish.
+   - **ingredients**: ARRAY OF OBJECTS. Each must have: "item", "quantity", "unit", "emoji".
+   - **instructions**: Detailed, actionable steps.
    - **tips**: Extract specific chef secrets or nuances.
-   - **notes**: Important context (nutritional info, storage, etc.).
+   - **notes**: Important context.
 
-9. **location** object: null
 10. **workout** object: null
+11. **location** object: null
 """
 
     elif content_type == "workout":
         return """
-8. **workout** object: Extract the exercise routine details.
-   - **duration**: Estimated time to complete (e.g., "30 Min", "45 Min"). Estimate based on the exercises if not explicitly stated.
-   - **format**: The style of workout (e.g., "EMOM", "AMRAP", "Circuit", "Strength", "HIIT"). Estimate if not stated.
-   - **level**: Difficulty level (e.g., "Beginner", "Intermediate", "All Levels"). Estimate if not stated.
-   - **equipment**: ARRAY of strings. List all equipment needed (e.g., ["Kettlebell", "Dumbbells"]). If none, output ["Bodyweight"].
-   - **groups**: ARRAY OF OBJECTS representing the circuits, blocks, or phases of the workout.
-     - Each group must have a "title" (e.g., "Warm Up", "Main Circuit (4 Rounds)", "Finisher").
+9. **workout** object: Extract the exercise routine details.
+   - **duration**: Estimated time to complete (e.g., "30 Min").
+   - **format**: The style of workout (e.g., "EMOM", "AMRAP", "Circuit").
+   - **level**: Difficulty level (e.g., "All Levels").
+   - **equipment**: ARRAY of strings. List all equipment needed (e.g., ["Kettlebell"]). If none, output ["Bodyweight"].
+   - **groups**: ARRAY OF OBJECTS representing the circuits or phases.
+     - Each group must have a "title" (e.g., "Warm Up", "Circuit").
      - Each group must have an "items" array. Each item is an object with:
        - "info": Reps, time, or timing info (e.g., "40s work / 20s rest", "12 reps", "Minute 1"). Leave empty string if none.
-       - "name": Name of the exercise (e.g., "Goblet Squat", "Alternating Lunges").
-   - **tips**: ARRAY of strings. Extract any trainer tips, form cues, or weight recommendations mentioned by the creator.
+       - "name": Name of the exercise (e.g., "Goblet Squat").
+   - **tips**: ARRAY of strings. Extract any trainer tips mentioned.
 
-9. **recipe** object: null
-10. **location** object: null
+10. **recipe** object: null
+11. **location** object: null
 """
 
     # Fallback for general content
     return """
-8. **recipe** object: CREATE if the content is a RECIPE or contains an ingredient list.
-   Look for these signals: ingredient names (even without quantities), cooking instructions,
-   food preparation steps, or a list of items like "-scallops -garlic -lime -butter".
-   DO NOT create a recipe if the video is just a restaurant review or food tasting.
-   If it IS a recipe, include:
-   - **servings**: Number of portions (estimate if not stated, use "2" as default for most dishes). 
+9. **recipe** object: CREATE if the content is a RECIPE.
+   - **servings**: Number of portions.
    - **prep_time**: ESTIMATE based on complexity.
    - **cook_time**: ESTIMATE based on the dish type.
    - **total_time**: ESTIMATE as prep + cook.
@@ -422,9 +356,9 @@ def _build_type_specific_block(content_type: str) -> str:
    - **tips**: Extract any cooking tips mentioned.
    - **notes**: Any relevant context.
 
-9. **workout** object: CREATE if the content is a WORKOUT or fitness routine. Use the structure: duration, format, level, equipment (array), groups (array of objects with 'title' and 'items' [info, name]), and tips (array).
+10. **workout** object: CREATE if the content is a WORKOUT or fitness routine. Use the structure: duration, format, level, equipment (array), groups (array of objects with 'title' and 'items' [info, name]), and tips (array).
 
-10. **location** object: ONLY CREATE if the video is about visiting a specific place.
+11. **location** object: ONLY CREATE if the video is about visiting a specific place.
    - **name**: Name of the place (e.g. "L'Antico Vinaio")
    - **city**: City or region mentioned (e.g. "Paris")
    - **type**: Type of place (e.g. "Sandwich Shop", "Restaurant", "Hotel")
