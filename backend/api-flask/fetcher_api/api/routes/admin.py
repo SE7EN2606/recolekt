@@ -18,13 +18,12 @@ logger = logging.getLogger("admin")
 
 admin_bp = Blueprint("admin", __name__)
 
+# ✅ Accept either env var name — never breaks regardless of what Railway has
 ADMIN_KEY = (
     os.getenv("ADMIN_KEY")
     or os.getenv("ADMIN_SECRET")
     or "recolekt-admin-2026"
 )
-DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
-GCS_BUCKET_NAME  = os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
 
 
 def _check_admin_key():
@@ -34,8 +33,6 @@ def _check_admin_key():
 
 # ══════════════════════════════════════════════════════════════
 # ADMIN PAGE (HTML template)
-# Registered with url_prefix="/api" → served at /api/admin
-# But also registered without prefix below for direct /admin access
 # ══════════════════════════════════════════════════════════════
 
 @admin_bp.route("/admin/page", methods=["GET"])
@@ -47,7 +44,7 @@ def admin_page():
 
 
 # ══════════════════════════════════════════════════════════════
-# MAIN DASHBOARD ENDPOINT (JSON)
+# MAIN DASHBOARD ENDPOINT
 # blueprint prefix "/api" + "/admin/dashboard" = /api/admin/dashboard ✅
 # ══════════════════════════════════════════════════════════════
 
@@ -146,10 +143,12 @@ def _get_db_stats():
 
 
 def _get_mistral_usage():
-    if not MISTRAL_API_KEY:
-        return {"error": "MISTRAL_API_KEY not set"}
+    # ✅ Read inside function — never a NameError
+    api_key = os.getenv("MISTRAL_API_KEY", "")
+    if not api_key:
+        return {"error": "MISTRAL_API_KEY not set", "total_requests": 0, "total_tokens": 0}
     try:
-        headers = {"Authorization": f"Bearer {MISTRAL_API_KEY}"}
+        headers = {"Authorization": f"Bearer {api_key}"}
         now   = datetime.utcnow()
         start = now.replace(day=1).strftime("%Y-%m-%dT00:00:00Z")
         end   = now.strftime("%Y-%m-%dT23:59:59Z")
@@ -182,18 +181,22 @@ def _get_mistral_usage():
             return {
                 "error":          f"HTTP {resp.status_code}",
                 "note":           "Check console.mistral.ai for usage stats",
-                "api_key_prefix": MISTRAL_API_KEY[:12] + "...",
+                "api_key_prefix": api_key[:12] + "...",
+                "total_requests": 0,
+                "total_tokens":   0,
             }
     except Exception as e:
         logger.error(f"Mistral usage error: {e}")
-        return {"error": str(e)}
+        return {"error": str(e), "total_requests": 0, "total_tokens": 0}
 
 
 def _get_deepgram_usage():
-    if not DEEPGRAM_API_KEY:
+    # ✅ Read inside function
+    api_key = os.getenv("DEEPGRAM_API_KEY", "")
+    if not api_key:
         return {"error": "DEEPGRAM_API_KEY not set"}
     try:
-        headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
+        headers = {"Authorization": f"Token {api_key}"}
 
         projects_resp = requests.get(
             "https://api.deepgram.com/v1/projects", headers=headers, timeout=10,
@@ -256,10 +259,12 @@ def _get_deepgram_usage():
 
 
 def _get_gcs_usage():
+    # ✅ Read inside function
+    bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
     try:
         from google.cloud import storage as gcs_storage
         client = gcs_storage.Client()
-        bucket = client.bucket(GCS_BUCKET_NAME)
+        bucket = client.bucket(bucket_name)
 
         total_size = total_count = video_count = json_count = thumb_count = 0
         for blob in bucket.list_blobs(prefix="media/", max_results=2000):
@@ -274,9 +279,9 @@ def _get_gcs_usage():
                 thumb_count += 1
 
         return {
-            "bucket_name":    GCS_BUCKET_NAME,
+            "bucket_name":    bucket_name,
             "total_files":    total_count,
-            "total_size_mb":  round(total_size / (1024 * 1024),       2),
+            "total_size_mb":  round(total_size / (1024 * 1024),        2),
             "total_size_gb":  round(total_size / (1024 * 1024 * 1024), 3),
             "videos":         video_count,
             "json_files":     json_count,
