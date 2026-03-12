@@ -18,8 +18,11 @@ logger = logging.getLogger("admin")
 
 admin_bp = Blueprint("admin", __name__)
 
-ADMIN_KEY      = os.getenv("ADMIN_KEY", "recolekt-admin-2026")
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
+ADMIN_KEY = (
+    os.getenv("ADMIN_KEY")
+    or os.getenv("ADMIN_SECRET")
+    or "recolekt-admin-2026"
+)
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 GCS_BUCKET_NAME  = os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
 
