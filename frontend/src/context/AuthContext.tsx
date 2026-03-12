@@ -17,7 +17,6 @@ interface AuthContextType {
   loading: boolean;
   error: string | null;
   verifyGoogleToken: (accessToken: string) => Promise<void>;
-  startGoogleLogin: () => void;
   signOut: () => Promise<void>;
   isAuthenticated: boolean;
   registerUser: (email: string, password: string, name: string) => Promise<User | null>;
@@ -102,10 +101,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchMe = async () => {
     const currentToken = localStorage.getItem('auth_token') || localStorage.getItem('token');
     if (!currentToken) { clearAuthEverywhere(); return; }
+
+    // Abort after 8s — prevents infinite hang in Firefox Focus / aggressive blockers
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
     try {
       const response = await fetch(joinUrl(API_BASE, '/api/auth/me'), {
         headers: getAuthHeaders(),
         credentials: 'omit',
+        signal: controller.signal,
       });
       if (response.ok) {
         const data = await response.json();
@@ -120,23 +125,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         clearAuthEverywhere();
       }
-    } catch (e) {
-      console.error("Auth check failed", e);
+    } catch (e: any) {
+      if (e?.name === 'AbortError') {
+        // Request was blocked or timed out (e.g. Firefox Focus)
+        // Fall back to cached user if available, otherwise clear
+        const cached = loadCachedUserUnsafeInstant();
+        if (cached) {
+          setUser(cached);
+          setIsAuthenticated(true);
+        } else {
+          clearAuthEverywhere();
+        }
+        console.warn('Auth check timed out — falling back to cache');
+      } else {
+        console.error('Auth check failed', e);
+        clearAuthEverywhere();
+      }
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   };
 
 
-  // Redirect-based Google login — no popup, no @react-oauth/google dependency needed
-  const startGoogleLogin = () => {
-    setError(null);
-    const next = encodeURIComponent(`${window.location.origin}/gallery`);
-    window.location.href = joinUrl(API_BASE, `/api/auth/google/login?next=${next}`);
-  };
-
-
-  // Keep for any other callers that still use the access_token verify path
   const verifyGoogleToken = async (accessToken: string) => {
     setError(null);
     try {
@@ -248,32 +259,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlToken = params.get('token');
-    const urlError = params.get('error');
-
-    // Google callback returned an error (e.g. user cancelled)
-    if (urlError) {
-      setError(decodeURIComponent(urlError));
-      window.history.replaceState({}, '', window.location.pathname);
-      setLoading(false);
-      return;
-    }
-
-    // Google callback returned a JWT — store it before fetchMe runs
     if (urlToken) {
       localStorage.setItem('auth_token', urlToken);
       localStorage.setItem('token', urlToken);
       window.history.replaceState({}, '', window.location.pathname);
     }
-
     fetchMe();
   }, []);
 
 
   const value = useMemo(() => ({
-    user, loading, error,
-    verifyGoogleToken, startGoogleLogin,
-    signOut, isAuthenticated,
-    registerUser, loginUser, updateUserLanguage
+    user, loading, error, verifyGoogleToken, signOut,
+    isAuthenticated, registerUser, loginUser, updateUserLanguage
   }), [user, loading, error, isAuthenticated]);
 
 
