@@ -50,7 +50,7 @@ MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 # Hardcoded bookmark messages for empty reels
 BOOKMARK_MESSAGES = {
     "en": "Bookmark saved. The creator did not provide a detailed caption or transcript for this video.",
-    "fr": "Signet enregistré. Le créateur n'a pas fourni de légende ou de transcription détaillée pour cette vidéo.",
+    "fr": "Signet enregistré. Le créateur n'a pas fourni de légende ou de transcription détaillée per cette vidéo.",
     "es": "Marcador guardado. El creador no proporcionó una leyenda o transcripción detallada para este video.",
     "it": "Segnalibro salvato. Il creatore non ha fornito una didascalia o una trascrizione dettagliata per questo video.",
     "de": "Lesezeichen gespeichert. Der Ersteller hat keine detaillierte Bildunterschrift oder ein Transkript bereitgestellt."
@@ -214,6 +214,9 @@ class UniversalExtractor:
         cook_time = safe_str(recipe_obj.get("cook_time", "")).strip()
         total_time = safe_str(recipe_obj.get("total_time", "")).strip()
 
+        # Workout fields
+        workout_obj = result_data.get("workout") or None
+
         # Hashtags
         hashtags_raw = safe_list(result_data.get("hashtags", []))
         hashtags_clean = [str(t).lstrip("#").strip() for t in hashtags_raw if str(t).strip()]
@@ -249,6 +252,7 @@ class UniversalExtractor:
             "prep_time": prep_time,
             "cook_time": cook_time,
             "total_time": total_time,
+            "workout": workout_obj, # Pass through the workout object
             "hashtags": hashtags,
             "emojis": emojis,
         }
@@ -479,7 +483,7 @@ class UniversalExtractor:
             "prompt": parsed.get("prompt"),
             "recipe": json.dumps(recipe_data, ensure_ascii=False) if recipe_data else None,
             "location": parsed["location"],
-            "workout": None,
+            "workout": parsed["workout"], # ALLOW WORKOUT DATA THROUGH!
             "detected_language": effective_lang,
         }
 
