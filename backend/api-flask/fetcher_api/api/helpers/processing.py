@@ -128,10 +128,11 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
         thumbnail_path = os.path.join(os.path.dirname(video_path), f"{shortcode}_thumb.jpg")
         thumb_success = False
 
-        # Attempt 1 (Instagram): Get the official gallery poster using Instaloader data
+        # Attempt 1 (Instagram): Get the official gallery poster
         if post_obj and not is_facebook:
             logger.info("📸 Attempting to download official Instagram gallery poster...")
-            thumb_success = download_instagram_thumbnail(post_obj, thumbnail_path)
+            # ✅ Add 'url' as the third argument here
+            thumb_success = download_instagram_thumbnail(post_obj, thumbnail_path, url)
             
         # Attempt 1 (Facebook): Get the official thumbnail if yt-dlp extracted it
         elif is_facebook and meta.get("thumbnail"):

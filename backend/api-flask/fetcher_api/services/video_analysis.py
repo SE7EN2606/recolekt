@@ -42,36 +42,52 @@ def generate_reel_thumbnail(video_path: str, output_path: str, time_offset: floa
         logger.error(f"❌ Exception during thumbnail generation: {e}")
         return False
 
-def download_instagram_thumbnail_bytes(post) -> Optional[bytes]:
+def download_instagram_thumbnail_bytes(post, source_url: str = None) -> Optional[bytes]:
     """
-    Download Instagram's ACTUAL display thumbnail bytes (the one shown in gallery).
-    Returns raw bytes or None.
+    Download Instagram's ACTUAL display thumbnail bytes (the gallery poster).
+    We try scraping the og:image from the HTML first, as this contains the custom
+    user-uploaded cover. If that fails, we fall back to Instaloader's display URL.
     """
-    try:
-        import requests
+    import requests
+    import re
+    
+    thumbnail_url = None
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
 
-        thumbnail_url = None
+    # 1. ATTEMPT 1: Scrape the 'og:image' from the raw HTML (This is the real poster)
+    if source_url:
+        try:
+            logger.info("📸 Scraping HTML for official og:image poster...")
+            res = requests.get(source_url, headers=headers, timeout=10)
+            match = re.search(r'<meta property="og:image" content="([^"]+)"', res.text)
+            if match:
+                thumbnail_url = match.group(1).replace("&amp;", "&")
+                logger.info(f"✅ Found official poster URL in HTML metadata.")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to scrape og:image: {e}")
 
-        # Instagram provides display_url which is the poster/thumbnail
+    # 2. ATTEMPT 2: Fall back to Instaloader's display URL
+    if not thumbnail_url and post:
         if hasattr(post, "url") and post.url:
             thumbnail_url = post.url
-            logger.info("📸 Downloading Instagram's display thumbnail...")
-
-        # Fallback: Try thumbnail_url attribute
+            logger.info("📸 Using Instaloader display_url...")
         elif hasattr(post, "thumbnail_url") and post.thumbnail_url:
             thumbnail_url = post.thumbnail_url
-            logger.info("📸 Using thumbnail_url...")
+            logger.info("📸 Using Instaloader thumbnail_url...")
 
-        if not thumbnail_url:
-            logger.warning("⚠️ No thumbnail URL found in post metadata")
-            return None
+    if not thumbnail_url:
+        logger.warning("⚠️ No thumbnail URL found by any method.")
+        return None
 
+    # Download the actual image bytes
+    try:
         response = requests.get(thumbnail_url, timeout=30)
         response.raise_for_status()
         return response.content
-
     except Exception as e:
-        logger.error(f"❌ Thumbnail download error: {e}")
+        logger.error(f"❌ Poster download error: {e}")
         return None
 
 def download_instagram_thumbnail(post, output_path: str) -> bool:
