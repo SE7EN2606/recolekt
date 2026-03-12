@@ -10,20 +10,19 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       devOptions: { enabled: true },
-      // Reverted to including your original PNG assets
+      // ✅ Removed assets/*.png to stop Workbox caching conflicts
       includeAssets: [
         'favicon.ico', 
         'apple-touch-icon.png', 
-        'favicon-96x96.png', 
-        'assets/*.png', 
-        'assets/icons/*.png'
+        'favicon-96x96.png'
       ],
       workbox: {
+        cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg,json}'],
         navigateFallback: '/index.html',
       },
       manifest: {
-        id: '/?v=7', // Incremented version to clear previous webp attempts
+        id: '/?v=25', // Bumped
         name: 'Recolekt',
         short_name: 'Recolekt',
         description: 'Your personal video organizer',
@@ -36,25 +35,13 @@ export default defineConfig({
             src: '/assets/android-chrome-192x192.png',
             sizes: '192x192',
             type: 'image/png',
-            purpose: 'any'
-          },
-          {
-            src: '/assets/android-chrome-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'maskable'
+            purpose: 'any maskable'
           },
           {
             src: '/assets/android-chrome-512x512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any'
-          },
-          {
-            src: '/assets/android-chrome-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable'
+            purpose: 'any maskable'
           }
         ]
       }

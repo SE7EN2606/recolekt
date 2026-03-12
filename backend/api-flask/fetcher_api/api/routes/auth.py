@@ -184,8 +184,12 @@ def google_verify():
     if not access_token: return jsonify({"error": "Missing access token"}), 400
 
     try:
-        resp = requests.get("https://www.googleapis.com/oauth2/v3/userinfo",
-                            headers={"Authorization": f"Bearer {access_token}"})
+        # ✅ ADDED timeout=10. This prevents the 90-second Railway hang!
+        resp = requests.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10
+        )
         if not resp.ok: return jsonify({"error": "Invalid token from Google"}), 401
 
         user_info = resp.json()
