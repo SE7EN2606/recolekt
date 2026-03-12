@@ -1,7 +1,7 @@
 import { API_BASE } from "../utils/api";
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Loader2, CheckCircle2, AlertCircle, RefreshCw, Trash2, CircleSlash2, Folder as FolderIcon } from 'lucide-react';
+import { Heart, Loader2, CheckCircle2, AlertCircle, RefreshCw, Trash2, CircleSlash2, Folder as FolderIcon, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useData } from '../context/DataContext';
 import { ConfirmModal } from './ConfirmModal';
@@ -76,6 +76,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
   const [animateHeart, setAnimateHeart] = useState(false);
   
   const [msgIndex, setMsgIndex] = useState(0);
+  const [scanState, setScanState] = useState<'h-active' | 'v-active'>('h-active');
 
   const imgRef = useRef<HTMLImageElement>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -87,16 +88,25 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
   const isProcessing = video?.category === 'Processing' || video?.status === 'processing';
   const isFailedStatus = video?.category === 'Failed' || video?.status === 'error' || video?.status === 'failed';
   
-  // ✅ Keeps the poster logic
   const thumbnailUrl = video?.posterUrl || video?.coverUrl || video?.gcs_urls?.poster || video?.thumbnailUrl || video?.thumbnail_url || video?.gcs_urls?.preview_thumbnail || video?.gcsUrls?.previewThumbnail || video?.preview_thumbnail || '';
 
-  // 2s interval matching your preferred style
   useEffect(() => {
     if (!isProcessing) return;
-    const interval = setInterval(() => {
+    
+    // Cycle text every 2s
+    const msgInterval = setInterval(() => {
       setMsgIndex((prev) => (prev + 1) % PROCESSING_MESSAGES.length);
     }, 2000);
-    return () => clearInterval(interval);
+
+    // Alternate scanners every 4s to match sequence length
+    const scanSequencer = setInterval(() => {
+      setScanState((prev) => (prev === 'h-active' ? 'v-active' : 'h-active'));
+    }, 4000); 
+
+    return () => {
+      clearInterval(msgInterval);
+      clearInterval(scanSequencer);
+    };
   }, [isProcessing]);
 
   useEffect(() => {
@@ -129,11 +139,6 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     return 'instagram';
   }, [sourceUrl]);
 
-  const profileUrl = platform === 'instagram'
-    ? `https://www.instagram.com/${author.replace('@', '')}/`
-    : sourceUrl || '#';
-
-  // ✅ Fixed Heart click handler
   const handleHeartClick = async (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
     if (isDisabled || !navigator.onLine) return;
@@ -195,7 +200,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     <>
       <div
         onClick={handleCardClick}
-        className={`relative rounded-2xl overflow-hidden aspect-[9/16] shadow-sm transition-all duration-300 bg-gray-100 cursor-pointer hover:shadow-lg ${selected ? 'ring-2 ring-primary-600 ring-offset-2' : ''} group`}
+        className={`relative rounded-2xl overflow-hidden aspect-[9/16] shadow-sm transition-all duration-300 bg-slate-900 cursor-pointer hover:shadow-lg ${selected ? 'ring-2 ring-primary-600 ring-offset-2' : ''} group`}
       >
         {!imageLoaded && !hasError && !isProcessing && <div className="placeholder-skeleton" />}
 
@@ -210,64 +215,48 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
             className={`absolute inset-0 w-full h-full object-cover transition-all duration-200 z-10 ${imageLoaded ? 'opacity-100' : 'opacity-0'} ${!selected ? 'group-hover:scale-105' : ''}`}
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center z-10 bg-gray-50">
+          <div className="absolute inset-0 flex items-center justify-center z-10 bg-slate-900">
             {!hasError && !isProcessing && (
-              <span className="text-gray-300 text-xs font-medium">{t('videoCard:noPreview')}</span>
+              <span className="text-gray-500 text-xs font-medium">{t('videoCard:noPreview')}</span>
             )}
           </div>
         )}
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60 pointer-events-none z-20" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-80 pointer-events-none z-20" />
 
         {selectionMode && selected && (
           <div className="absolute inset-0 bg-primary-600/20 z-20 pointer-events-none" />
         )}
 
         {/* ======================================================= */}
-        {/* EXACT RESTORED PROCESSING STATE WITH 4s LINES           */}
+        {/* GPU ACCELERATED PROCESSING STATE - NO GRID              */}
         {/* ======================================================= */}
         {isProcessing && (
           <div className="absolute inset-0 z-40 bg-slate-900 overflow-hidden shadow-[0_0_20px_rgba(124,58,237,0.25)] border border-primary-500/40">
-            {/* 1. Base Image Layer */}
             {thumbnailUrl ? (
-              <img src={thumbnailUrl} alt="Processing" className="absolute inset-0 w-full h-full object-cover opacity-50 blur-md scale-110 z-0" />
+              <img src={thumbnailUrl} alt="Processing" className="absolute inset-0 w-full h-full object-cover opacity-40 blur-md scale-110 z-0" />
             ) : (
               <div className="absolute inset-0 bg-slate-900 z-0" />
             )}
 
-            {/* 2. Blur / Darkening Overlay */}
-            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-10" />
+            <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md z-10" />
 
-            {/* 3. Sharp Grid Overlay */}
+            {/* SEQUENTIAL, HARDWARE-ACCELERATED THIN SCANNERS */}
             <div 
-              className="absolute inset-0 opacity-50 z-20 pointer-events-none"
-              style={{
-                backgroundImage: `linear-gradient(rgba(167, 139, 250, 0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(167, 139, 250, 0.4) 1px, transparent 1px)`,
-                backgroundSize: '24px 24px'
-              }}
+              className={`absolute top-0 left-0 w-full h-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)] z-30 pointer-events-none will-change-transform ${scanState === 'h-active' ? 'h-active' : 'idle'}`}
+            />
+            <div 
+              className={`absolute top-0 left-0 h-full w-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)] z-30 pointer-events-none will-change-transform ${scanState === 'v-active' ? 'v-active' : 'idle'}`}
             />
 
-            {/* 4. Sharp Horizontal Scanner Line */}
-            <div 
-              className="absolute top-0 left-0 w-full h-[2px] bg-primary-300 shadow-[0_0_12px_3px_rgba(167,139,250,0.9)] z-30 pointer-events-none"
-              style={{ animation: 'sequence-h 4s ease-in-out infinite' }}
-            />
-
-            {/* 5. Sharp Vertical Scanner Line */}
-            <div 
-              className="absolute top-0 left-0 h-full w-[2px] bg-primary-300 shadow-[0_0_12px_3px_rgba(167,139,250,0.9)] z-30 pointer-events-none"
-              style={{ animation: 'sequence-v 4s ease-in-out infinite' }}
-            />
-
-            {/* 6. Content Container */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center z-40 pointer-events-none">
+            <div className="absolute inset-0 flex flex-col items-center justify-center z-40 pointer-events-none px-4 text-center">
               <Loader2 className="w-10 h-10 text-primary-400 animate-spin mb-3 drop-shadow-[0_0_10px_rgba(167,139,250,0.6)]" />
               
               <span 
                 key={msgIndex}
-                className="text-white text-[11px] font-bold tracking-widest uppercase drop-shadow-md animate-fade-in"
+                className="text-primary-200 text-[12px] font-medium tracking-widest lowercase drop-shadow-md ai-message will-change-transform"
               >
-                {t(`gallery:${PROCESSING_MESSAGES[msgIndex]}`, 'Processing...')}
+                {t(`gallery:${PROCESSING_MESSAGES[msgIndex]}`, 'processing...')}
               </span>
             </div>
           </div>
@@ -296,7 +285,6 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         {!selectionMode && !hasError && (
           <button
             onClick={handleHeartClick}
-            // ✅ Fixed Heart classes
             className={`absolute top-3 left-3 favorite-heart z-30 ${animateHeart ? 'heart-animate' : ''} transition-transform`}
           >
             <Heart
@@ -352,17 +340,19 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
       <div className="pt-3 px-0.5">
         <p className="text-sm font-bold text-gray-900 leading-snug line-clamp-2 mb-1">{displayTitle}</p>
+        
         <a
-          href={profileUrl}
+          href={sourceUrl}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => { e.stopPropagation(); if (isDisabled) e.preventDefault(); }}
-          className="inline-flex items-center gap-1.5 group/author"
+          className="inline-flex items-center gap-1.5 group/author w-max"
         >
           <PlatformIconAuthor platform={platform} />
-          <span className="text-xs text-gray-400 font-medium truncate max-w-[140px] group-hover/author:text-gray-700 transition-colors">
+          <span className="text-xs text-gray-400 font-medium truncate max-w-[120px] group-hover/author:text-gray-700 transition-colors">
             {author}
           </span>
+          <ExternalLink size={12} className="text-gray-400 group-hover/author:text-gray-700 transition-colors" />
         </a>
       </div>
 
@@ -375,6 +365,37 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         confirmLabel={t('common:remove')}
         variant="danger"
       />
+      
+      <style>{`
+        /* GPU Accelerated Sequential Scanners (No layout jumpiness) */
+        @keyframes scan-h { 
+          0% { transform: translate3d(0, -10px, 0); opacity: 0; } 
+          10% { opacity: 1; } 
+          90% { opacity: 1; } 
+          100% { transform: translate3d(0, 800px, 0); opacity: 0; } 
+        }
+        @keyframes scan-v { 
+          0% { transform: translate3d(-10px, 0, 0); opacity: 0; } 
+          10% { opacity: 1; } 
+          90% { opacity: 1; } 
+          100% { transform: translate3d(600px, 0, 0); opacity: 0; } 
+        }
+
+        .h-active { animation: scan-h 4s linear forwards; }
+        .v-active { animation: scan-v 4s linear forwards; }
+        .idle { opacity: 0; }
+
+        /* GPU-Safe Lowercase AI Text Reveal */
+        @keyframes ai-text-reveal {
+          0% { opacity: 0; filter: blur(6px); transform: translate3d(-8px, 0, 0); }
+          15% { opacity: 1; filter: blur(0px); transform: translate3d(0, 0, 0); }
+          85% { opacity: 1; filter: blur(0px); transform: translate3d(0, 0, 0); }
+          100% { opacity: 0; filter: blur(6px); transform: translate3d(8px, 0, 0); }
+        }
+        .ai-message {
+          animation: ai-text-reveal 2s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+        }
+      `}</style>
     </>
   );
 };

@@ -83,8 +83,6 @@ const VideoDetailSkeleton = () => (
 const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any, showOriginal: boolean }) => {
   const { t } = useTranslation(['videoDetail']);
 
-  // If showOriginal is FALSE, we want the French (translated) data.
-  // If showOriginal is TRUE, we want the English (original) data.
   const activeWorkout = showOriginal && workoutData?.original 
     ? workoutData.original 
     : (workoutData?.french || workoutData?.translated || workoutData);
@@ -93,8 +91,6 @@ const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any, showOri
 
   return (
     <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
-      
-      {/* Header */}
       <div className="bg-orange-100/60 p-4 md:p-5 border-b border-gray-50 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Dumbbell className="text-orange-600" size={20} />
@@ -104,7 +100,6 @@ const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any, showOri
         </div>
       </div>
       
-      {/* Meta Stats */}
       <div className="grid grid-cols-3 divide-x divide-gray-50 border-b border-gray-50">
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Clock size={16} className="text-orange-500 mb-1" />
@@ -123,7 +118,6 @@ const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any, showOri
         </div>
       </div>
 
-      {/* Equipment */}
       {activeWorkout.equipment && activeWorkout.equipment.length > 0 && (
         <div className="p-6 border-b border-gray-50">
           <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t('videoDetail:equipment', 'Équipement')}</h4>
@@ -137,7 +131,6 @@ const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any, showOri
         </div>
       )}
 
-      {/* Exercises */}
       {activeWorkout.groups && activeWorkout.groups.length > 0 && (
         <div className="p-6 bg-gray-50/30">
           <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t('videoDetail:exercises', 'Circuit / Exercices')}</h4>
@@ -154,7 +147,6 @@ const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any, showOri
 
                 <ul className="space-y-4">
                   {group.items && group.items.map((item: any, i: number) => {
-                    // Remove "Minute X" redundancy
                     let infoText = item.info || '';
                     infoText = infoText.replace(/min(?:ute)?\s*\d+/i, '').trim();
                     infoText = infoText.replace(/^[-/]\s*/, '').replace(/\s*[-/]$/, '').trim();
@@ -180,7 +172,6 @@ const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any, showOri
         </div>
       )}
 
-      {/* Tips */}
       {(activeWorkout.tips?.length > 0) && (
         <div className="bg-yellow-50/50 border-t border-yellow-100 p-6">
           <div className="flex items-center gap-2 mb-4">
@@ -215,7 +206,12 @@ export const VideoDetail: React.FC = () => {
   const [video, setVideo] = useState<any>(null);
   const [galleryThumbnail, setGalleryThumbnail] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  
+  // Collapse States
+  const [isCaptionOpen, setIsCaptionOpen] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [isMobileTranscriptOpen, setIsMobileTranscriptOpen] = useState(false);
+
   const [isEditing, setIsEditing] = useState(false);
   const [editedVideo, setEditedVideo] = useState<any | null>(null);
   const [servingScale, setServingScale] = useState(1);
@@ -311,17 +307,17 @@ export const VideoDetail: React.FC = () => {
   const handleSaveEdit = () => { if (editedVideo && video) { if (typeof updateVideo === 'function') updateVideo(video.id, editedVideo); setVideo(editedVideo); setIsEditing(false); } };
   const handleShare = async () => { if (navigator.share) { try { await navigator.share({ title: video.title, url: window.location.href }); } catch (err) {} } else { await navigator.clipboard.writeText(window.location.href); alert(t('videoDetail:linkCopied', 'Link copied!')); } };
 
+  // ✅ REORDERED MENU ACTIONS: Delete is up, Report is down
   const actionItems: ActionItem[] = [
-    { icon: IOSShareIcon, label: t('videoDetail:share', "Share Video"), onClick: handleShare },
-    { icon: Pencil, label: t('videoDetail:editReel', "Edit details"), onClick: () => setIsEditing(true) },
-    { icon: Heart, label: video?.isFavorite ? t('videoDetail:removeFromFavorites', "Remove from Favorites") : t('videoDetail:addToFavorites', "Add to Favorites"), onClick: handleToggleFavorite, variant: video?.isFavorite ? 'default' : 'primary' },
-    { icon: FolderInput, label: t('videoDetail:moveToCollection', "Move to Collection"), onClick: () => setIsMoveModalOpen(true) },
-    { icon: Archive, label: t('videoDetail:archive', "Archive"), onClick: handleArchive },
-    { icon: AlertCircle, label: t('videoDetail:reportIssue', "Report Issue"), onClick: () => setIsReportModalOpen(true) },
-    { icon: Trash2, label: t('videoDetail:deleteReel', "Delete clip"), onClick: () => setIsDeleteConfirmOpen(true), variant: 'danger' }
+    { icon: IOSShareIcon, label: t('videoDetail:share', "Partager la vidéo"), onClick: handleShare },
+    { icon: Pencil, label: t('videoDetail:editReel', "Modifier les détails"), onClick: () => setIsEditing(true) },
+    { icon: Heart, label: video?.isFavorite ? t('videoDetail:removeFromFavorites', "Retirer des favoris") : t('videoDetail:addToFavorites', "Add to Favorites"), onClick: handleToggleFavorite, variant: video?.isFavorite ? 'default' : 'primary' },
+    { icon: FolderInput, label: t('videoDetail:moveToCollection', "Déplacer vers une collection"), onClick: () => setIsMoveModalOpen(true) },
+    { icon: Archive, label: t('videoDetail:archive', "Archiver la vidéo"), onClick: handleArchive },
+    { icon: Trash2, label: t('videoDetail:deleteReel', "Supprimer le clip"), onClick: () => setIsDeleteConfirmOpen(true), variant: 'danger' },
+    { icon: AlertCircle, label: t('videoDetail:reportIssue', "Signaler un problème"), onClick: () => setIsReportModalOpen(true) }
   ];
 
-  /* ─── FOLDER NAME (recursive) ─── */
   const findFolderById = (targetId: string, folderList: any[]): any | null => {
     for (const folder of folderList) {
       if (folder.id === targetId) return folder;
@@ -351,14 +347,12 @@ export const VideoDetail: React.FC = () => {
     const originalData = summaryObj.original || {};
     const langBlock = (showOriginal && Object.keys(originalData).length > 0) ? originalData : (Object.keys(englishData).length > 0 ? englishData : summaryObj);
 
-    // Parse Recipe
     let recipeData = v.recipe;
     if (typeof recipeData === 'string') { try { recipeData = JSON.parse(recipeData); } catch (e) { recipeData = null; } }
     if (recipeData && recipeData.recipe) recipeData = recipeData.recipe;
     let activeRecipe = null;
     if (recipeData && Object.keys(recipeData).length > 0) activeRecipe = showOriginal && recipeData.original ? recipeData.original : (recipeData.english || recipeData);
 
-    // Parse Workout (Passing the full multilingual object to the component)
     let workoutData = v.workout;
     if (typeof workoutData === 'string') {
       try { workoutData = JSON.parse(workoutData); } catch (e) { workoutData = null; }
@@ -414,7 +408,7 @@ export const VideoDetail: React.FC = () => {
       transcript: extractedTranscript.trim(),
       caption: typeof v.caption === 'string' ? v.caption.trim() : (v.caption?.text || v.caption?.caption || '').trim(),
       recipe: activeRecipe,
-      workout: workoutData, // Pass raw data, component handles translation
+      workout: workoutData,
       thumbnailUrl: safeString(v.thumbnailUrl || v.gcs_urls?.preview_thumbnail || v.preview || '') || galleryThumbnail,
       originalUrl: safeString(v.source_url || v.originalUrl || ''),
       platform: safeString(v.source_url || v.originalUrl || '').includes('facebook') ? 'facebook' : 'instagram',
@@ -445,7 +439,6 @@ export const VideoDetail: React.FC = () => {
               />
             )}
 
-            {/* Top row: back button + action button */}
             <div className="absolute top-4 left-4 right-4 flex justify-between z-20">
               <button onClick={() => navigate(-1)} className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-lg hover:bg-white/40 transition-colors">
                 <ArrowLeft size={20} />
@@ -464,7 +457,6 @@ export const VideoDetail: React.FC = () => {
               </div>
             </div>
 
-            {/* Bottom row: folder badge + duration */}
             <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between z-30 pointer-events-none">
               <div className="flex items-center gap-2 pointer-events-auto">
                 {folderName && (
@@ -501,7 +493,6 @@ export const VideoDetail: React.FC = () => {
             )}
           </div>
 
-          {/* Mobile: category/topic/tags card */}
           <div className="md:hidden mb-6 bg-violet-50 border border-violet-200 rounded-xl overflow-hidden p-4">
             <div className="pb-3 mb-3 border-b border-violet-200/70 relative flex items-center">
               <div className="flex flex-col gap-2 pr-10 flex-1">
@@ -509,7 +500,6 @@ export const VideoDetail: React.FC = () => {
                   <CategoryIcon size={14} />
                   <span className="text-xs font-bold uppercase tracking-wide truncate text-violet-600">{viewModel.category}</span>
                 </div>
-                {/* Hide topic completely if it doesn't exist */}
                 {(isEditing || viewModel.subCategory) && (
                     <div className="flex items-center gap-2">
                     <TopicIcon size={14} />
@@ -533,7 +523,6 @@ export const VideoDetail: React.FC = () => {
             </div>
           </div>
 
-          {/* AI Summary */}
           <div className="bg-primary-50 rounded-2xl p-5 md:p-6 mb-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-primary-700 font-bold text-sm uppercase tracking-wide">AI Summary</h3>
@@ -572,7 +561,6 @@ export const VideoDetail: React.FC = () => {
             )}
           </div>
 
-          {/* RECIPE BLOCK */}
           {viewModel.recipe && (
             <div className="mb-5">
               <RecipeDetailsCard
@@ -586,18 +574,61 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
-          {/* WORKOUT BLOCK */}
           {viewModel.workout && (
             <WorkoutBlock workoutData={viewModel.workout} showOriginal={showOriginal} />
           )}
 
+          {/* ✅ COLLAPSIBLE CAPTION BLOCK */}
           {viewModel.caption && (
-            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden p-5 mb-5">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="p-1.5 bg-gray-100 text-gray-600 rounded-md"><AlignLeft size={16} /></div>
-                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Légende</h4>
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5 mb-5">
+              <div 
+                className="flex items-center justify-between cursor-pointer group"
+                onClick={() => setIsCaptionOpen(!isCaptionOpen)}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-gray-100 text-gray-600 rounded-md"><AlignLeft size={16} /></div>
+                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('videoDetail:caption', 'Légende')}</h4>
+                </div>
+                <div className="p-1 rounded-full group-hover:bg-gray-50 transition-colors">
+                  <ChevronDown size={20} className={`text-gray-400 transition-transform duration-300 ${isCaptionOpen ? 'rotate-180' : ''}`} />
+                </div>
               </div>
-              <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{viewModel.caption}</div>
+              
+              <div 
+                className={`grid transition-all duration-300 ease-in-out ${isCaptionOpen ? 'grid-rows-[1fr] opacity-100 mt-4' : 'grid-rows-[0fr] opacity-0'}`}
+              >
+                <div className="overflow-hidden">
+                  <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                    {viewModel.caption}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ✅ MOBILE TRANSCRIPT BLOCK (Hidden on Desktop) */}
+          {viewModel.transcript && (
+            <div className="md:hidden bg-white border border-gray-100 rounded-2xl shadow-sm p-5 mb-5">
+              <div 
+                className="flex items-center justify-between cursor-pointer group"
+                onClick={() => setIsMobileTranscriptOpen(!isMobileTranscriptOpen)}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-gray-100 text-gray-600 rounded-md"><CustomMessageSquareMoreIcon size={16} /></div>
+                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('videoDetail:transcript', 'Transcription')}</h4>
+                </div>
+                <div className="p-1 rounded-full group-hover:bg-gray-50 transition-colors">
+                  <ChevronDown size={20} className={`text-gray-400 transition-transform duration-300 ${isMobileTranscriptOpen ? 'rotate-180' : ''}`} />
+                </div>
+              </div>
+              
+              <div className={`grid transition-all duration-300 ease-in-out ${isMobileTranscriptOpen ? 'grid-rows-[1fr] opacity-100 mt-4' : 'grid-rows-[0fr] opacity-0'}`}>
+                <div className="overflow-hidden">
+                  <div className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap font-medium italic border-l-2 border-gray-100 pl-4">
+                    "{viewModel.transcript}"
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -661,22 +692,28 @@ export const VideoDetail: React.FC = () => {
             </div>
           </div>
 
+          {/* ✅ DESKTOP TRANSCRIPT BLOCK (Closed by default) */}
           {viewModel.transcript && (
-            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col shrink-0">
-              <button onClick={() => setTranscriptOpen(!transcriptOpen)} className="w-full p-5 flex items-center justify-between hover:bg-gray-50 transition-colors">
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5 flex flex-col shrink-0">
+              <div 
+                className="flex items-center justify-between cursor-pointer group"
+                onClick={() => setTranscriptOpen(!transcriptOpen)}
+              >
                 <div className="flex items-center gap-2">
                   <div className="p-1.5 bg-gray-100 text-gray-600 rounded-md"><CustomMessageSquareMoreIcon size={16} /></div>
-                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Transcription</h4>
+                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('videoDetail:transcript', 'Transcription')}</h4>
                 </div>
-                <ChevronDown size={16} className={`text-gray-400 transition-transform duration-200 ${transcriptOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {transcriptOpen && (
-                <div className="px-5 pb-5">
+                <div className="p-1 rounded-full group-hover:bg-gray-50 transition-colors">
+                  <ChevronDown size={20} className={`text-gray-400 transition-transform duration-300 ${transcriptOpen ? 'rotate-180' : ''}`} />
+                </div>
+              </div>
+              <div className={`grid transition-all duration-300 ease-in-out ${transcriptOpen ? 'grid-rows-[1fr] opacity-100 mt-4' : 'grid-rows-[0fr] opacity-0'}`}>
+                <div className="overflow-hidden">
                   <div className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap font-medium italic border-l-2 border-gray-100 pl-4">
                     "{viewModel.transcript}"
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           )}
 

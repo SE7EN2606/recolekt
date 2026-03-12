@@ -2,6 +2,8 @@ import os
 import logging
 import subprocess
 from typing import Dict, Optional, Tuple
+import requests
+import re
 
 from fetcher_api.adapters.instagram_client import instagram_client
 
@@ -48,9 +50,6 @@ def download_instagram_thumbnail_bytes(post, source_url: str = None) -> Optional
     We try scraping the og:image from the HTML first, as this contains the custom
     user-uploaded cover. If that fails, we fall back to Instaloader's display URL.
     """
-    import requests
-    import re
-    
     thumbnail_url = None
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -59,7 +58,7 @@ def download_instagram_thumbnail_bytes(post, source_url: str = None) -> Optional
     # 1. ATTEMPT 1: Scrape the 'og:image' from the raw HTML (This is the real poster)
     if source_url:
         try:
-            logger.info("📸 Scraping HTML for official og:image poster...")
+            logger.info(f"📸 Scraping HTML for official og:image poster at {source_url}...")
             res = requests.get(source_url, headers=headers, timeout=10)
             match = re.search(r'<meta property="og:image" content="([^"]+)"', res.text)
             if match:
@@ -90,13 +89,14 @@ def download_instagram_thumbnail_bytes(post, source_url: str = None) -> Optional
         logger.error(f"❌ Poster download error: {e}")
         return None
 
-def download_instagram_thumbnail(post, output_path: str) -> bool:
+def download_instagram_thumbnail(post, output_path: str, source_url: str = None) -> bool:
     """
     Download Instagram's ACTUAL display thumbnail (the one shown in gallery).
     This is what you see before clicking play - not frame 0!
     """
     try:
-        content = download_instagram_thumbnail_bytes(post)
+        # ✅ We pass the source_url down properly now!
+        content = download_instagram_thumbnail_bytes(post, source_url) 
         if not content:
             return False
 
@@ -105,13 +105,13 @@ def download_instagram_thumbnail(post, output_path: str) -> bool:
 
         if os.path.exists(output_path):
             file_size = os.path.getsize(output_path)
-            logger.info(f"✅ Instagram thumbnail downloaded ({file_size} bytes)")
+            logger.info(f"✅ Instagram poster downloaded ({file_size} bytes)")
             return True
 
         return False
 
     except Exception as e:
-        logger.error(f"❌ Thumbnail download error: {e}")
+        logger.error(f"❌ Poster save error: {e}")
         return False
 
 def get_instagram_video_duration(url: str) -> Optional[int]:
@@ -249,8 +249,6 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
         # 2. Pure HTML Fallback with Restriction Detection
         if not video_url:
             logger.info("🔄 Using pure HTML extraction fallback...")
-            import requests
-            import re
             
             headers = {
                 "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -286,7 +284,6 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
 
         # 3. Download the MP4
         logger.info(f"⬇️ Downloading video stream from: {video_url[:60]}...")
-        import requests
         response = requests.get(video_url, stream=True, timeout=60)
         response.raise_for_status()
 

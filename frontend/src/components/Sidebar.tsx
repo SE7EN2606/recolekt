@@ -43,19 +43,20 @@ export const Sidebar: React.FC = () => {
   
   const getFavoritesCount = () => (videos || []).filter((v: any) => v.isFavorite).length;
 
+  // ✅ CSS FIXED: Added the light purple background hover (hover:bg-primary-50)
   const linkClass = (active: boolean) =>
     `group flex items-center justify-between w-full p-3 rounded-xl transition-all duration-200 border ${
       active
         ? 'bg-primary-50 text-primary-900 font-bold border-primary-100 shadow-sm'
-        : 'bg-transparent text-gray-600 border-transparent hover:bg-white/60 hover:text-primary-900'
+        : 'bg-transparent text-gray-600 border-transparent hover:bg-primary-50 hover:text-primary-600'
     }`;
 
-  // ✅ UPDATED: Neutral background (white/transparent), text is red on active/hover
+  // ✅ CSS FIXED: Red background hover for favorites
   const favLinkClass = (active: boolean) =>
     `group flex items-center justify-between w-full p-3 rounded-xl transition-all duration-200 border ${
       active
         ? 'bg-white text-red-600 font-bold border-gray-200 shadow-sm'
-        : 'bg-transparent text-gray-600 border-transparent hover:bg-white/60 hover:text-red-500'
+        : 'bg-transparent text-gray-600 border-transparent hover:bg-red-50 hover:text-red-600'
     }`;
 
   const headerBtnClass = "w-7 h-7 flex items-center justify-center text-gray-400 hover:text-primary-600 hover:bg-primary-100/80 rounded-md transition-all active:scale-95";
@@ -129,9 +130,11 @@ export const Sidebar: React.FC = () => {
               <NavLink to="/gallery" end className={({ isActive }) => linkClass(isActive && !location.pathname.includes('favorites') && !location.pathname.includes('unsorted'))}>
                 {({ isActive }) => (
                   <>
-                    <div className="flex items-center gap-3">
-                      <LayoutGrid size={20} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                      <span className="text-sm">{t('gallery:myVideos', 'My videos')}</span>
+                    <div className="flex items-center gap-2">
+                      <div className={`p-1.5 rounded-xl transition-all duration-200 group-hover:scale-110 ${isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600 group-hover:bg-white group-hover:shadow-sm'}`}>
+                        <LayoutGrid size={20} />
+                      </div>
+                      <span className="text-sm pl-1">{t('gallery:myVideos', 'My videos')}</span>
                     </div>
                     <div className="w-7 flex justify-center flex-shrink-0">
                       <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-primary-100 text-primary-600">
@@ -144,9 +147,11 @@ export const Sidebar: React.FC = () => {
 
               <NavLink to="/organizer" className={({ isActive }) => linkClass(isActive)}>
                 {({ isActive }) => (
-                  <div className="flex items-center gap-3">
-                    <FolderOpen size={20} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                    <span className="text-sm">{t('sidebar:organizer', 'Organizer')}</span>
+                  <div className="flex items-center gap-2">
+                    <div className={`p-1.5 rounded-xl transition-all duration-200 group-hover:scale-110 ${isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600 group-hover:bg-white group-hover:shadow-sm'}`}>
+                      <FolderOpen size={20} />
+                    </div>
+                    <span className="text-sm pl-1">{t('sidebar:organizer', 'Organizer')}</span>
                   </div>
                 )}
               </NavLink>
@@ -154,9 +159,11 @@ export const Sidebar: React.FC = () => {
               <NavLink to="/gallery/unsorted" className={({ isActive }) => linkClass(isActive)}>
                 {({ isActive }) => (
                   <>
-                    <div className="flex items-center gap-3">
-                      <Inbox size={20} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                      <span className="text-sm">{t('sidebar:unsorted', 'Unsorted')}</span>
+                    <div className="flex items-center gap-2">
+                      <div className={`p-1.5 rounded-xl transition-all duration-200 group-hover:scale-110 ${isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600 group-hover:bg-white group-hover:shadow-sm'}`}>
+                        <Inbox size={20} />
+                      </div>
+                      <span className="text-sm pl-1">{t('sidebar:unsorted', 'Unsorted')}</span>
                     </div>
                     <div className="w-7 flex justify-center flex-shrink-0">
                       <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-primary-100 text-primary-600">
@@ -170,9 +177,11 @@ export const Sidebar: React.FC = () => {
               <NavLink to="/gallery/favorites" className={({ isActive }) => favLinkClass(isActive)}>
                 {({ isActive }) => (
                   <>
-                    <div className="flex items-center gap-3">
-                      <Heart size={20} className={isActive ? 'text-red-500' : 'text-gray-400 group-hover:text-red-500'} />
-                      <span className="text-sm">{t('gallery:favorites')}</span>
+                    <div className="flex items-center gap-2">
+                      <div className={`p-1.5 rounded-xl transition-all duration-200 group-hover:scale-110 ${isActive ? 'text-red-500' : 'text-gray-400 group-hover:text-red-500 group-hover:bg-white group-hover:shadow-sm'}`}>
+                        <Heart size={20} />
+                      </div>
+                      <span className="text-sm pl-1">{t('gallery:favorites')}</span>
                     </div>
                     <div className="w-7 flex justify-center flex-shrink-0">
                       <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md transition-colors ${isActive ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500 group-hover:bg-red-50 group-hover:text-red-600'}`}>
@@ -195,7 +204,6 @@ export const Sidebar: React.FC = () => {
 
             <div className="space-y-1">
               {customFolders.map((folder: any) => {
-                const isFolderActive = location.pathname === `/gallery/${folder.id}`;
                 const anySubActive = folder.subFolders?.some((sub: any) => location.pathname === `/gallery/${sub.id}`);
                 const hasSubs = !!(folder.subFolders && folder.subFolders.length > 0);
                 
@@ -211,9 +219,11 @@ export const Sidebar: React.FC = () => {
                       <NavLink to={`/gallery/${folder.id}`} className={({ isActive }) => linkClass(isActive)}>
                         {({ isActive }) => (
                           <>
-                            <div className="flex items-center gap-3 min-w-0 pointer-events-none">
-                              <FolderClosed size={20} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                              <span className="text-sm truncate">{folder.name}</span>
+                            <div className="flex items-center gap-2 min-w-0 pointer-events-none">
+                              <div className={`p-1.5 rounded-xl transition-all duration-200 group-hover:scale-110 ${isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600 group-hover:bg-white group-hover:shadow-sm'}`}>
+                                <FolderClosed size={20} />
+                              </div>
+                              <span className="text-sm truncate pl-1">{folder.name}</span>
                             </div>
                             
                             <div className="w-7 flex justify-center flex-shrink-0 pointer-events-none">
@@ -241,12 +251,14 @@ export const Sidebar: React.FC = () => {
                               className="rounded-xl transition-all duration-200"
                             >
                               <NavLink to={`/gallery/${sub.id}`} 
-                                className={({ isActive }) => `group flex items-center justify-between w-full py-2.5 pl-8 pr-3 rounded-xl border transition-all ${isActive ? 'bg-primary-50 text-primary-900 font-bold border-primary-100 shadow-sm' : 'bg-transparent text-gray-500 border-transparent hover:bg-white/60 hover:text-primary-900'}`}
+                                className={({ isActive }) => `group flex items-center justify-between w-full py-2.5 pl-8 pr-3 rounded-xl border transition-all ${isActive ? 'bg-primary-50 text-primary-900 font-bold border-primary-100 shadow-sm' : 'bg-transparent text-gray-500 border-transparent hover:bg-primary-50 hover:text-primary-600'}`}
                               >
                                 {({ isActive }) => (
                                   <>
-                                    <div className="flex items-center gap-2 min-w-0 pointer-events-none">
-                                      <CornerDownRight size={14} className={isActive ? 'text-primary-600' : 'text-gray-300'} strokeWidth={2.5} />
+                                    <div className="flex items-center gap-1 min-w-0 pointer-events-none">
+                                      <div className={`p-1 rounded-xl transition-all duration-200 group-hover:scale-110 ${isActive ? 'text-primary-600' : 'text-gray-300 group-hover:text-primary-600 group-hover:bg-white group-hover:shadow-sm'}`}>
+                                        <CornerDownRight size={14} strokeWidth={2.5} />
+                                      </div>
                                       <span className="text-sm truncate">{sub.name}</span>
                                     </div>
                                     <div className="w-7 flex justify-center flex-shrink-0 pointer-events-none">
@@ -272,17 +284,21 @@ export const Sidebar: React.FC = () => {
           <div className="pt-2 mt-2 border-t border-white/40 space-y-1">
             <NavLink to="/gallery/shared" className={({ isActive }) => linkClass(isActive)}>
               {({ isActive }) => (
-                <div className="flex items-center gap-3">
-                  <Share2 size={20} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                  <span className="text-sm">{t('sidebar:shared')}</span>
+                <div className="flex items-center gap-2">
+                  <div className={`p-1.5 rounded-xl transition-all duration-200 group-hover:scale-110 ${isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600 group-hover:bg-white group-hover:shadow-sm'}`}>
+                    <Share2 size={20} />
+                  </div>
+                  <span className="text-sm pl-1">{t('sidebar:shared')}</span>
                 </div>
               )}
             </NavLink>
             <NavLink to="/gallery/archive" className={({ isActive }) => linkClass(isActive)}>
               {({ isActive }) => (
-                <div className="flex items-center gap-3">
-                  <Archive size={20} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                  <span className="text-sm">{t('sidebar:archive')}</span>
+                <div className="flex items-center gap-2">
+                  <div className={`p-1.5 rounded-xl transition-all duration-200 group-hover:scale-110 ${isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600 group-hover:bg-white group-hover:shadow-sm'}`}>
+                    <Archive size={20} />
+                  </div>
+                  <span className="text-sm pl-1">{t('sidebar:archive')}</span>
                 </div>
               )}
             </NavLink>

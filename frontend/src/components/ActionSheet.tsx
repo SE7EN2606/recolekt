@@ -1,8 +1,6 @@
-import { API_BASE } from "../utils/api";
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-// ✅ Must be named export to match your imports
 export interface ActionItem {
   icon: React.ElementType;
   label: string;
@@ -18,7 +16,6 @@ interface ActionSheetProps {
   actions: ActionItem[];
 }
 
-// ✅ Must be named export
 export const ActionSheet: React.FC<ActionSheetProps> = ({ isOpen, onClose, title, actions }) => {
   const [shouldRender, setShouldRender] = useState(false);
   const [animateOpen, setAnimateOpen] = useState(false);
@@ -53,7 +50,7 @@ export const ActionSheet: React.FC<ActionSheetProps> = ({ isOpen, onClose, title
   if (!shouldRender) return null;
 
   return (
-    // ✅ justify-end forces it to the bottom, items-center centers it horizontally on desktop
+    // justify-end forces it to the bottom, items-center centers it horizontally on desktop
     <div className="fixed inset-0 z-[200] flex flex-col justify-end items-center">
       {/* Backdrop */}
       <div 
@@ -81,7 +78,7 @@ export const ActionSheet: React.FC<ActionSheetProps> = ({ isOpen, onClose, title
           </div>
         )}
 
-        {/* ✅ Scrollable Actions List */}
+        {/* Scrollable Actions List */}
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pb-2">
           <div className="bg-gray-50/80 rounded-3xl overflow-hidden border border-gray-100/50">
             {actions.map((action, index) => {
@@ -111,10 +108,10 @@ export const ActionSheet: React.FC<ActionSheetProps> = ({ isOpen, onClose, title
           </div>
         </div>
         
-        {/* ✅ Fixed Cancel Button stuck to the bottom */}
+        {/* Fixed Cancel Button stuck to the bottom */}
         <div 
           className="flex-shrink-0 px-4 pt-3 bg-white/90 border-t border-gray-100 shadow-[0_-8px_15px_-5px_rgba(0,0,0,0.05)] relative z-10"
-          style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 24px)' }} // Increased bottom padding slightly to ground it more on desktop
+          style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 24px)' }}
         >
           <button 
             onClick={onClose}

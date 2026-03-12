@@ -38,6 +38,7 @@ export const Gallery: React.FC = () => {
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   
   const [msgIndex, setMsgIndex] = useState(0);
+  const [scanState, setScanState] = useState<'h-active' | 'v-active'>('h-active');
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth', { replace: true });
@@ -60,11 +61,18 @@ export const Gallery: React.FC = () => {
     const hasProcessing = videos.some((v: any) => v.category === 'Processing' || v.status === 'processing');
     if (!hasProcessing) return;
 
-    const interval = setInterval(() => {
+    const msgInterval = setInterval(() => {
       setMsgIndex((prev) => (prev + 1) % PROCESSING_MESSAGES.length);
     }, 2000);
 
-    return () => clearInterval(interval);
+    const scanSequencer = setInterval(() => {
+      setScanState((prev) => (prev === 'h-active' ? 'v-active' : 'h-active'));
+    }, 4000);
+
+    return () => {
+      clearInterval(msgInterval);
+      clearInterval(scanSequencer);
+    };
   }, [videos]);
 
   const isFavoritesView = folderId === 'favorites';
@@ -246,35 +254,30 @@ export const Gallery: React.FC = () => {
           
           if (video.category === 'Processing' || video.status === 'processing') {
             return (
-              <div key={videoId} className="relative aspect-[9/16] rounded-2xl bg-[#0b0f19] overflow-hidden cursor-default shadow-[0_0_20px_rgba(124,58,237,0.25)] border border-primary-500/40">
+              <div key={videoId} className="relative aspect-[9/16] rounded-2xl bg-slate-900 overflow-hidden cursor-default shadow-[0_0_20px_rgba(124,58,237,0.25)] border border-primary-500/40">
                 
                 {thumb ? (
                   <img src={thumb} alt="Processing" className="absolute inset-0 w-full h-full object-cover opacity-40 blur-md scale-110 z-0" />
                 ) : (
-                  <div className="absolute inset-0 bg-[#0b0f19] z-0" />
+                  <div className="absolute inset-0 bg-slate-900 z-0" />
                 )}
 
-                <div className="absolute inset-0 bg-[#0b0f19]/70 backdrop-blur-md z-10" />
-
-                {/* Thin Shimmering Grid Overlay */}
-                <div className="absolute inset-0 z-20 pointer-events-none shimmer-grid" />
+                <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md z-10" />
 
                 <div 
-                  className="absolute top-0 left-0 w-full h-[2px] bg-primary-300 shadow-[0_0_12px_3px_rgba(167,139,250,0.9)] z-30 pointer-events-none"
-                  style={{ animation: 'sequence-h 7s ease-in-out infinite' }}
+                  className={`absolute top-0 left-0 w-full h-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)] z-30 pointer-events-none will-change-transform ${scanState === 'h-active' ? 'h-active' : 'idle'}`}
                 />
 
                 <div 
-                  className="absolute top-0 left-0 h-full w-[2px] bg-primary-300 shadow-[0_0_12px_3px_rgba(167,139,250,0.9)] z-30 pointer-events-none"
-                  style={{ animation: 'sequence-v 7s ease-in-out infinite' }}
+                  className={`absolute top-0 left-0 h-full w-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)] z-30 pointer-events-none will-change-transform ${scanState === 'v-active' ? 'v-active' : 'idle'}`}
                 />
 
-                <div className="absolute inset-0 flex flex-col items-center justify-center z-40 pointer-events-none">
+                <div className="absolute inset-0 flex flex-col items-center justify-center z-40 pointer-events-none px-4 text-center">
                   <Loader2 className="w-10 h-10 text-primary-400 animate-spin mb-3 drop-shadow-[0_0_10px_rgba(167,139,250,0.6)]" />
                   
                   <span 
                     key={msgIndex}
-                    className="text-primary-200 text-[12px] font-medium tracking-widest lowercase drop-shadow-md ai-message"
+                    className="text-primary-200 text-[12px] font-medium tracking-widest lowercase drop-shadow-md ai-message will-change-transform"
                   >
                     {t(`gallery:${PROCESSING_MESSAGES[msgIndex]}`, 'processing...')}
                   </span>

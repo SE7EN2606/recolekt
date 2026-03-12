@@ -232,5 +232,20 @@
   "tomato concentrate": "SAUCE_PASTE",
   "harissa": "SAUCE_PASTE",
   "schiste": "OTHER",
-  "silken tofu": "PROTEIN_SOY"
+  "silken tofu": "PROTEIN_SOY",
+  "mais en conserve egoutte grille ou de mais frais grille": "GRAIN",
+  "œuf dur entier blanc dur": "PROTEIN_EGG",
+  "skyr": "PROTEIN_DAIRY",
+  "jus zeste de lime": "FRUIT",
+  "mix cajun maison": "SAUCE_PASTE",
+  "ail en poudre": "ALLIUM",
+  "oignon en poudre": "ALLIUM",
+  "piment de cayenne": "CHILI",
+  "origan seche": "HERB",
+  "mayonnaise allegee": "SAUCE_PASTE",
+  "mix de fruits rouge": "FRUIT",
+  "piment chipotle": "CHILI",
+  "miel cremeux": "SWEETENER_LIQUID",
+  "jus d citron vert": "FRUIT",
+  "gousse d ail noir": "ALLIUM"
 }
