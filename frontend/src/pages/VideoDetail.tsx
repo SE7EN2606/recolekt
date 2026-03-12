@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, ChevronDown, Heart, FolderInput, AlertCircle, X, EllipsisVertical, Archive, AlignLeft, Pencil, Save, Globe, Folder } from 'lucide-react';
+import { ArrowLeft, Trash2, ChevronDown, Heart, FolderInput, AlertCircle, X, EllipsisVertical, Archive, AlignLeft, Pencil, Save, Globe, Folder, Clock, Activity, Flame, Dumbbell } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { getAuthHeaders } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { getCategory, getTopic } from '../utils/videoUtils';
 import { API_BASE } from '../utils/api';
 import { useScrollLock } from '../utils/useScrollLock';
+import { Workout } from '../types';
 
 /* ─── IMPORTED EXTERNAL ICONS ─── */
 import { 
@@ -79,6 +80,81 @@ const VideoDetailSkeleton = () => (
   </div>
 );
 
+/* ─── WORKOUT BLOCK COMPONENT ─── */
+const WorkoutBlock = ({ workout }: { workout: Workout }) => {
+  return (
+    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden mb-5">
+      <div className="bg-orange-50/50 p-5 border-b border-gray-50 flex items-center gap-3">
+        <Dumbbell className="text-orange-600" size={20} />
+        <h3 className="font-bold text-gray-900 text-lg">Workout Plan</h3>
+      </div>
+      
+      {/* Meta Stats */}
+      <div className="grid grid-cols-3 divide-x divide-gray-50 border-b border-gray-50">
+        <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
+          <Clock size={16} className="text-orange-500 mb-1" />
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Time</span>
+          <span className="text-sm font-bold text-gray-900">{workout.duration}</span>
+        </div>
+        <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
+          <Activity size={16} className="text-orange-500 mb-1" />
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Format</span>
+          <span className="text-sm font-bold text-gray-900">{workout.format}</span>
+        </div>
+        <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
+          <Flame size={16} className="text-orange-500 mb-1" />
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Level</span>
+          <span className="text-sm font-bold text-gray-900">{workout.level}</span>
+        </div>
+      </div>
+
+      {/* Equipment */}
+      {workout.equipment && workout.equipment.length > 0 && (
+        <div className="p-5 border-b border-gray-50">
+          <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Equipment</h4>
+          <div className="flex flex-wrap gap-2">
+            {workout.equipment.map((eq, i) => (
+              <div key={i} className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold">
+                {eq}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Exercises */}
+      {workout.groups && workout.groups.length > 0 && (
+        <div className="p-5 bg-gray-50/30">
+          <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Circuit / Exercises</h4>
+          <div className="space-y-6">
+            {workout.groups.map((group, idx) => (
+              <div key={idx} className="relative">
+                {idx > 0 && <div className="absolute -top-3 left-0 right-0 border-t border-dashed border-gray-200" />}
+                <h5 className="font-bold text-gray-900 text-sm bg-white border border-gray-200 shadow-sm inline-block px-3 py-1.5 rounded-lg mb-3">
+                  {group.title}
+                </h5>
+                <ul className="space-y-3 pl-2">
+                  {group.items.map((item, i) => (
+                    <li key={i} className="flex items-start gap-3">
+                      <div className="mt-1.5 min-w-[16px]">
+                        <div className="w-2 h-2 rounded-full bg-orange-400" />
+                      </div>
+                      <div className="text-sm leading-relaxed">
+                        {item.info && <span className="text-orange-600 font-bold mr-2">{item.info}</span>}
+                        <span className="text-gray-800 font-medium">{item.name}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const VideoDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -141,7 +217,6 @@ export const VideoDetail: React.FC = () => {
     }
   }, [id, fetchBackendJsonNoStore]);
 
-  // Seed from gallery cache immediately (no wait for API)
   useEffect(() => {
     if (!id) return;
     const cached = getVideoById(id) || videos.find((v: any) => v.id === id);
@@ -253,7 +328,6 @@ export const VideoDetail: React.FC = () => {
     let tags = Array.isArray(langBlock.hashtags) ? langBlock.hashtags : (Array.isArray(v.summary_hashtags) ? v.summary_hashtags : (Array.isArray(v.tags) ? v.tags : []));
     let bullets = Array.isArray(langBlock.headlines) ? langBlock.headlines : (Array.isArray(v.summary_bullets) ? v.summary_bullets : (Array.isArray(v.bullets) ? v.bullets : []));
 
-    // Format the date correctly
     let formattedDate = '';
     const rawDate = v.savedAt || v.created_at;
     if (rawDate) {
@@ -280,6 +354,7 @@ export const VideoDetail: React.FC = () => {
       transcript: extractedTranscript.trim(),
       caption: typeof v.caption === 'string' ? v.caption.trim() : (v.caption?.text || v.caption?.caption || '').trim(),
       recipe: activeRecipe,
+      workout: v.workout || null,
       thumbnailUrl: safeString(v.thumbnailUrl || v.gcs_urls?.preview_thumbnail || v.preview || '') || galleryThumbnail,
       originalUrl: safeString(v.source_url || v.originalUrl || ''),
       platform: safeString(v.source_url || v.originalUrl || '').includes('facebook') ? 'facebook' : 'instagram',
@@ -437,6 +512,7 @@ export const VideoDetail: React.FC = () => {
             )}
           </div>
 
+          {/* RECIPE BLOCK */}
           {viewModel.recipe && (
             <div className="mb-5">
               <RecipeDetailsCard
@@ -448,6 +524,11 @@ export const VideoDetail: React.FC = () => {
                 onToggleMetric={setUseMetric}
               />
             </div>
+          )}
+
+          {/* WORKOUT BLOCK */}
+          {viewModel.workout && (
+            <WorkoutBlock workout={viewModel.workout} />
           )}
 
           {viewModel.caption && (

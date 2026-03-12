@@ -369,7 +369,7 @@ Output ONLY valid JSON:
 # ══════════════════════════════════════════════════════════════
 
 def _build_type_specific_block(content_type: str) -> str:
-    """Build the recipe/location extraction instructions based on content type."""
+    """Build the specific extraction instructions based on content type."""
     if content_type == "recipe":
         return """
 8. **recipe** object: Extract the recipe details.
@@ -384,9 +384,29 @@ def _build_type_specific_block(content_type: str) -> str:
    - **tips**: Extract specific chef secrets or nuances.
    - **notes**: Important context (nutritional info, storage, etc.).
 
-9. **location** object: null (not applicable for recipes unless a restaurant is mentioned).
+9. **location** object: null
+10. **workout** object: null
 """
 
+    elif content_type == "workout":
+        return """
+8. **workout** object: Extract the exercise routine details.
+   - **duration**: Estimated time to complete (e.g., "30 Min", "45 Min"). Estimate based on the exercises if not explicitly stated.
+   - **format**: The style of workout (e.g., "EMOM", "AMRAP", "Circuit", "Strength", "HIIT"). Estimate if not stated.
+   - **level**: Difficulty level (e.g., "Beginner", "Intermediate", "All Levels"). Estimate if not stated.
+   - **equipment**: ARRAY of strings. List all equipment needed (e.g., ["Kettlebell", "Dumbbells"]). If none, output ["Bodyweight"].
+   - **groups**: ARRAY OF OBJECTS representing the circuits, blocks, or phases of the workout.
+     - Each group must have a "title" (e.g., "Warm Up", "Main Circuit (4 Rounds)", "Finisher").
+     - Each group must have an "items" array. Each item is an object with:
+       - "info": Reps, time, or timing info (e.g., "40s work / 20s rest", "12 reps", "Minute 1"). Leave empty string if none.
+       - "name": Name of the exercise (e.g., "Goblet Squat", "Alternating Lunges").
+   - **tips**: ARRAY of strings. Extract any trainer tips, form cues, or weight recommendations mentioned by the creator.
+
+9. **recipe** object: null
+10. **location** object: null
+"""
+
+    # Fallback for general content
     return """
 8. **recipe** object: CREATE if the content is a RECIPE or contains an ingredient list.
    Look for these signals: ingredient names (even without quantities), cooking instructions,
@@ -394,15 +414,17 @@ def _build_type_specific_block(content_type: str) -> str:
    DO NOT create a recipe if the video is just a restaurant review or food tasting.
    If it IS a recipe, include:
    - **servings**: Number of portions (estimate if not stated, use "2" as default for most dishes). 
-   - **prep_time**: ESTIMATE based on complexity (e.g., "10 minutes" for simple dishes). Only leave empty if truly unknowable.
-   - **cook_time**: ESTIMATE based on the dish type (e.g., "5 minutes" for pan-fried scallops). Write "No cooking" only for raw/no-heat dishes.
+   - **prep_time**: ESTIMATE based on complexity.
+   - **cook_time**: ESTIMATE based on the dish type.
    - **total_time**: ESTIMATE as prep + cook.
-   - **ingredients**: ARRAY OF OBJECTS with "item", "quantity", "unit", "emoji". If no quantities are given in the source, leave quantity and unit as empty strings but STILL include all ingredient names.
-   - **instructions**: Detailed, actionable steps. Expand from any cooking hints in the caption/transcript (minimum 4 steps). If the caption only lists ingredients, generate reasonable cooking steps based on the dish type.
+   - **ingredients**: ARRAY OF OBJECTS with "item", "quantity", "unit", "emoji". 
+   - **instructions**: Detailed, actionable steps.
    - **tips**: Extract any cooking tips mentioned.
    - **notes**: Any relevant context.
 
-9. **location** object: ONLY CREATE if the video is about visiting a specific place.
+9. **workout** object: CREATE if the content is a WORKOUT or fitness routine. Use the structure: duration, format, level, equipment (array), groups (array of objects with 'title' and 'items' [info, name]), and tips (array).
+
+10. **location** object: ONLY CREATE if the video is about visiting a specific place.
    - **name**: Name of the place (e.g. "L'Antico Vinaio")
    - **city**: City or region mentioned (e.g. "Paris")
    - **type**: Type of place (e.g. "Sandwich Shop", "Restaurant", "Hotel")

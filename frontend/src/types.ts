@@ -106,6 +106,25 @@ export interface SummaryObject {
 
 export type Platform = 'instagram' | 'youtube' | 'tiktok' | 'facebook';
 
+export interface WorkoutExercise {
+  info?: string; // e.g., "40s / 20s", "12 reps", "Minute 1"
+  name: string;  // e.g., "Goblet Squat", "Deadlift"
+}
+
+export interface WorkoutGroup {
+  title: string; // e.g., "Warm-up", "Circuit A", "Finisher"
+  items: WorkoutExercise[];
+}
+
+export interface Workout {
+  duration: string;   // e.g., "30 Min", "45 Min"
+  format: string;     // e.g., "EMOM", "AMRAP", "HIIT", "Strength"
+  level: string;      // e.g., "Beginner", "Intermediate", "All Levels"
+  equipment: string[]; // e.g., ["Kettlebell", "Mat"]
+  groups: WorkoutGroup[];
+  tips?: string[];     // e.g., ["Keep back straight", "Adjust weight as needed"]
+}
+
 export interface Video {
   id: string;
   title: string;
@@ -148,7 +167,7 @@ export interface Video {
   // NEW: strongly-typed bilingual recipe instead of `any`
   recipe?: BilingualRecipe | null;
 
-  workout?: any;
+  workout?: Workout | null;
 
   // Backend status + raw payload
   status?: string;

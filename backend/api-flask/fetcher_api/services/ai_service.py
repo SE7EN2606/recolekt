@@ -61,6 +61,20 @@ class AIService:
 
         return out
 
+    def _looks_like_workout(self, transcript: str, caption: str) -> bool:
+        """Simple heuristic to detect workout/fitness content to prevent recipe false-positives."""
+        text = (transcript + " " + caption).lower()
+        workout_keywords = [
+            "workout", "kettlebell", "dumbbell", "squat", "pushup", "push-up",
+            "deadlift", "reps", "sets", "emem", "amrap", "hiit", "muscle", 
+            "gym", "fitness", "fentes", "glutes", "quads", "hamstrings",
+            "entraînement", "musculation", "gainage", "circuit"
+        ]
+        
+        # Count how many distinct workout keywords appear
+        matches = sum(1 for kw in workout_keywords if kw in text)
+        return matches >= 2
+
     def analyze_content(self, transcript: str, caption: str, language_code: str = "en",
                         video_path: str = None, duration_seconds: int = None) -> Dict:
         transcript = transcript or ""
@@ -69,8 +83,18 @@ class AIService:
         # Classify content type
         classification = classify_reel_content(transcript, caption)
 
-        # Guardrail: if caption structure looks like recipe, force recipe routing
-        if classification.get("label") != "recipe" and caption_looks_like_recipe(caption):
+        # Quick check: Is this obviously a workout?
+        is_workout = self._looks_like_workout(transcript, caption)
+
+        if is_workout:
+            # If it's a workout, force the label to 'workout' so it gets the right prompt
+            classification = dict(classification) if isinstance(classification, dict) else {}
+            classification["label"] = "workout"
+            classification["reason"] = (classification.get("reason") or "") + " | forced:workout_keywords"
+            classification.setdefault("score", 0.90)
+
+        # Guardrail: if caption structure looks like recipe AND it's NOT a workout
+        elif classification.get("label") != "recipe" and caption_looks_like_recipe(caption):
             old_label = classification.get("label")
             classification = dict(classification) if isinstance(classification, dict) else {}
             classification["label"] = "recipe"
