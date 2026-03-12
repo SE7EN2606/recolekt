@@ -6,6 +6,7 @@ Protected by a simple admin key (not JWT — this is for internal use).
 
 import os
 import sys
+import json
 import logging
 import requests
 from datetime import datetime
@@ -143,39 +144,28 @@ def _get_db_stats():
 
 
 def _get_mistral_usage():
-    # ✅ Read inside function — never a NameError
     api_key = os.getenv("MISTRAL_API_KEY", "")
     if not api_key:
         return {"error": "MISTRAL_API_KEY not set", "total_requests": 0, "total_tokens": 0}
     try:
         headers = {"Authorization": f"Bearer {api_key}"}
-        now   = datetime.utcnow()
-        start = now.replace(day=1).strftime("%Y-%m-%dT00:00:00Z")
-        end   = now.strftime("%Y-%m-%dT23:59:59Z")
+        now = datetime.utcnow()
 
+        # ✅ Correct Mistral billing endpoint
         resp = requests.get(
-            f"https://api.mistral.ai/v1/usage?start_date={start}&end_date={end}",
+            "https://api.mistral.ai/v1/billing/workspace/credits",
             headers=headers, timeout=10,
         )
 
         if resp.status_code == 200:
             data = resp.json()
-            total_tokens = total_input = total_output = total_requests = 0
-            for entry in data.get("data", []):
-                total_input    += entry.get("input_tokens",   0)
-                total_output   += entry.get("output_tokens",  0)
-                total_tokens   += entry.get("total_tokens",   0)
-                total_requests += entry.get("total_requests", 0)
-
-            cost = (total_input * 0.0000001) + (total_output * 0.0000003)
             return {
-                "total_tokens":       total_tokens,
-                "input_tokens":       total_input,
-                "output_tokens":      total_output,
-                "total_requests":     total_requests,
-                "estimated_cost_usd": round(cost, 4),
+                "total_tokens":       0,
+                "total_requests":     0,
+                "estimated_cost_usd": 0,
                 "period":             now.strftime("%B %Y"),
                 "model":              "mistral-small-latest",
+                "credits":            data,
             }
         else:
             return {
@@ -191,7 +181,6 @@ def _get_mistral_usage():
 
 
 def _get_deepgram_usage():
-    # ✅ Read inside function
     api_key = os.getenv("DEEPGRAM_API_KEY", "")
     if not api_key:
         return {"error": "DEEPGRAM_API_KEY not set"}
@@ -221,8 +210,10 @@ def _get_deepgram_usage():
                 bd = br.json().get("balances", [])
                 if bd:
                     balances = {"amount": bd[0].get("amount"), "units": bd[0].get("units", "usd")}
-        except Exception:
-            pass
+            else:
+                logger.warning(f"Deepgram balances: HTTP {br.status_code} — {br.text[:200]}")
+        except Exception as e:
+            logger.warning(f"Deepgram balances error: {e}")
 
         usage = {}
         try:
@@ -243,8 +234,10 @@ def _get_deepgram_usage():
                     "total_requests": total_requests,
                     "total_minutes":  round(total_hours * 60, 2),
                 }
-        except Exception:
-            pass
+            else:
+                logger.warning(f"Deepgram usage: HTTP {ur.status_code} — {ur.text[:200]}")
+        except Exception as e:
+            logger.warning(f"Deepgram usage error: {e}")
 
         return {
             "project_name":     project_name,
@@ -259,11 +252,20 @@ def _get_deepgram_usage():
 
 
 def _get_gcs_usage():
-    # ✅ Read inside function
+    # ✅ Explicitly pass credentials from env — same as storage.py does
     bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
     try:
         from google.cloud import storage as gcs_storage
-        client = gcs_storage.Client()
+        from google.oauth2 import service_account
+
+        creds_json = os.getenv("GCS_CREDENTIALS_JSON")
+        if creds_json:
+            creds_info = json.loads(creds_json)
+            credentials = service_account.Credentials.from_service_account_info(creds_info)
+            client = gcs_storage.Client(credentials=credentials, project=creds_info.get("project_id"))
+        else:
+            client = gcs_storage.Client()  # local ADC fallback
+
         bucket = client.bucket(bucket_name)
 
         total_size = total_count = video_count = json_count = thumb_count = 0
