@@ -1,6 +1,6 @@
 import { assertEnv } from './assertEnv';
 
-// 1. Try to get the environment variable (check both names just in case!)
+// 1. Try to get the environment variable
 let raw = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL;
 
 // 2. Smart Fallback: If no env var is found, check the URL
@@ -9,7 +9,7 @@ if (!raw) {
     const hostname = window.location.hostname;
     
     if (hostname.includes('staging')) {
-      // ✅ FIX: Use the exact same staging domain to completely bypass CORS
+      // ✅ FIX: Use the exact same domain we are browsing on! No more CORS.
       raw = 'https://staging.recolekt.app';
     } else if (hostname === 'localhost' || hostname === '127.0.0.1') {
       // Force local Python backend if we are running the frontend locally!
