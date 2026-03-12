@@ -32,13 +32,13 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: '/assets/android-chrome-192x192.png',
+            src: '/android-chrome-192x192.png', // Removed /assets
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any maskable'
           },
           {
-            src: '/assets/android-chrome-512x512.png',
+            src: '/android-chrome-512x512.png', // Removed /assets
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'

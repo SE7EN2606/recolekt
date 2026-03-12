@@ -1,9 +1,17 @@
 # Python
-__pycache__/
+**/__pycache__/
 *.py[cod]
+*$py.class
 venv/
+.venv/
+env/
+
+# Environments
+.env
 .env.local
 .env.development
-.env
+.env.production
+
+# Logs & OS
 *.log
 .DS_Store

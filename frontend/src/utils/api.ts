@@ -1,34 +1,35 @@
 import { assertEnv } from './assertEnv';
 
-// 1. Try to get the environment variable
+// 1. Determine the Raw URL base
 let raw = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL;
 
-// 2. Smart Fallback: If no env var is found, check the URL
 if (!raw) {
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
     
-    if (hostname.includes('staging')) {
-      // ✅ FIX: Use the exact same domain we are browsing on! No more CORS.
-      raw = 'https://staging.recolekt.app';
-    } else if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      // Force local Python backend if we are running the frontend locally!
+    if (import.meta.env.DEV || hostname === 'localhost' || hostname === '127.0.0.1') {
+      // Force local Python backend if we are running locally
       raw = 'http://127.0.0.1:5001';
+    } else if (hostname.includes('staging')) {
+      // ✅ FIX: Use the exact same domain we are browsing on to bypass CORS
+      raw = 'https://staging.recolekt.app';
     } else {
-      // Default to production
-      raw = 'https://api.recolekt.app';
+      // Default to production (Empty string allows relative paths like /api/...)
+      raw = '';
     }
   } else {
-    raw = 'https://api.recolekt.app';
+    raw = '';
   }
 }
 
-// Disable assertEnv for local dev if it's strict, or pass the resolved 'raw'
-assertEnv('VITE_BACKEND_URL', raw);
-
+// 2. Export Constants (Only once!)
 export const API_BASE = raw.replace(/\/+$/, '');
 export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '517149606657-1c7alf9nm5ms1n0s20ch2lj0b02h5189.apps.googleusercontent.com';
 
+// Sanity check
+assertEnv('VITE_BACKEND_URL', raw || 'RELATIVE_MODE');
+
+// 3. Authenticated Fetch Wrapper
 export const fetchWithAuth = (endpoint: string, options: RequestInit = {}) => {
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`;
   const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
