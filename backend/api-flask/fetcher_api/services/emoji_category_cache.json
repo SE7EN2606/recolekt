@@ -221,5 +221,15 @@
   "sauce worcestershire ou soja": "SAUCE_PASTE",
   "skyr or non-fat yogurt": "PROTEIN_DAIRY",
   "dijon mustard": "SAUCE_PASTE",
-  "worcestershire sauce": "SAUCE_PASTE"
+  "worcestershire sauce": "SAUCE_PASTE",
+  "chicken tender": "PROTEIN_MEAT",
+  "cornflake": "GRAIN",
+  "panko breadcrumb": "STARCH",
+  "garlic powder": "ALLIUM_GARLIC",
+  "onion powder": "ALLIUM",
+  "chicken thigh": "PROTEIN_MEAT",
+  "cajun spice mix": "SPICE",
+  "tomato concentrate": "SAUCE_PASTE",
+  "harissa": "SAUCE_PASTE",
+  "schiste": "OTHER"
 }

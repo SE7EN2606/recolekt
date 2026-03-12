@@ -37,7 +37,6 @@ export const Gallery: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   
-  // Track the cycling messages
   const [msgIndex, setMsgIndex] = useState(0);
 
   useEffect(() => {
@@ -57,7 +56,6 @@ export const Gallery: React.FC = () => {
     setSelectedIds(new Set());
   }, [folderId, location.pathname, location.key]);
 
-  // AI Message Cycler (Updates exactly with the 3s CSS animation)
   useEffect(() => {
     const hasProcessing = videos.some((v: any) => v.category === 'Processing' || v.status === 'processing');
     if (!hasProcessing) return;
@@ -151,8 +149,18 @@ export const Gallery: React.FC = () => {
     return t('gallery:subtitleFolder', 'Manage videos in this collection');
   };
 
-  const getThumbnail = (video: any): string => video?.thumbnailUrl || video?.thumbnail_url || video?.gcs_urls?.preview_thumbnail || video?.gcsUrls?.previewThumbnail || '';
-
+  const getThumbnail = (video: any): string => {
+    return (
+      video?.posterUrl || 
+      video?.coverUrl ||
+      video?.gcs_urls?.poster || 
+      video?.thumbnailUrl || 
+      video?.thumbnail_url || 
+      video?.gcs_urls?.preview_thumbnail || 
+      ''
+    );
+  };
+  
   const showSkeleton = authLoading || (dataLoading && videos.length === 0);
 
   if (showSkeleton) return (
@@ -236,24 +244,18 @@ export const Gallery: React.FC = () => {
           const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
           const thumb = getThumbnail(video);
           
-          /* ======================================================= */
-          /* 🚀 THE FIX: SHARP LINES, PERSISTENT GRID, CYCLING TEXT    */
-          /* ======================================================= */
           if (video.category === 'Processing' || video.status === 'processing') {
             return (
               <div key={videoId} className="relative aspect-[9/16] rounded-2xl bg-black overflow-hidden cursor-default shadow-[0_0_15px_rgba(124,58,237,0.15)] border border-primary-500/20">
                 
-                {/* 1. Base Image Layer (Z-0) - Darkened and blurred to prevent the "white veil" */}
                 {thumb ? (
                   <img src={thumb} alt="Processing" className="absolute inset-0 w-full h-full object-cover opacity-30 blur-xl scale-110 z-0" />
                 ) : (
                   <div className="absolute inset-0 bg-black z-0" />
                 )}
 
-                {/* 2. Deep Dark Blur Overlay (Z-10) - Ensures a true dark grey background */}
                 <div className="absolute inset-0 bg-black/70 backdrop-blur-md z-10" />
 
-                {/* 3. Sharp Subtle Grid Overlay (Z-20) */}
                 <div 
                   className="absolute inset-0 opacity-[0.15] z-20 pointer-events-none"
                   style={{
@@ -262,26 +264,23 @@ export const Gallery: React.FC = () => {
                   }}
                 />
 
-                {/* 4. Sharp Horizontal Scanner Line (Z-30) - Slowed down to 8s */}
+                {/* 🚀 FIXED: Added translate3d for GPU acceleration to stop jumpiness */}
                 <div 
-                  className="absolute top-0 left-0 w-full h-[2px] bg-primary-400 shadow-[0_0_10px_2px_rgba(167,139,250,0.8)] z-30 pointer-events-none"
-                  style={{ animation: 'sequence-h 8s ease-in-out infinite' }}
+                  className="absolute top-0 left-0 w-full h-[2px] bg-primary-400 shadow-[0_0_10px_2px_rgba(167,139,250,0.8)] z-30 pointer-events-none will-change-transform"
+                  style={{ animation: 'scan-h 8s ease-in-out infinite' }}
                 />
 
-                {/* 5. Sharp Vertical Scanner Line (Z-30) - Slowed down to 8s */}
                 <div 
-                  className="absolute top-0 left-0 h-full w-[2px] bg-primary-400 shadow-[0_0_10px_2px_rgba(167,139,250,0.8)] z-30 pointer-events-none"
-                  style={{ animation: 'sequence-v 8s ease-in-out infinite' }}
+                  className="absolute top-0 left-0 h-full w-[2px] bg-primary-400 shadow-[0_0_10px_2px_rgba(167,139,250,0.8)] z-30 pointer-events-none will-change-transform"
+                  style={{ animation: 'scan-v 8s ease-in-out infinite' }}
                 />
 
-                {/* 6. Content Container (Z-40) */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center z-40 pointer-events-none px-4 text-center">
                   <Loader2 className="w-8 h-8 text-primary-400 animate-spin mb-4 drop-shadow-[0_0_8px_rgba(167,139,250,0.5)]" />
                   
-                  {/* Dynamic AI Message - Lowercase with custom animation */}
                   <span 
-                    key={msgIndex} // Forces re-render for animation trigger
-                    className="text-primary-200 text-xs font-medium lowercase tracking-wide drop-shadow-md ai-message"
+                    key={msgIndex} 
+                    className="text-primary-200 text-xs font-medium lowercase tracking-wide drop-shadow-md ai-message will-change-transform"
                   >
                     {t(`gallery:${PROCESSING_MESSAGES[msgIndex]}`, PROCESSING_MESSAGES[msgIndex].replace('msg_', ''))}
                   </span>
@@ -328,14 +327,25 @@ export const Gallery: React.FC = () => {
 
       <MoveCollectionModal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} onMove={handleMoveSubmit} count={selectedIds.size} />
       
-      {/* 🚀 CSS ANIMATION FOR THE GEMINI-STYLE TEXT REVEAL */}
       <style>{`
+        /* 🚀 GPU-Accelerated Scanners to stop stuttering/jumpiness */
+        @keyframes scan-h {
+          0% { transform: translate3d(0, 0, 0); }
+          50% { transform: translate3d(0, 500px, 0); }
+          100% { transform: translate3d(0, 0, 0); }
+        }
+        @keyframes scan-v {
+          0% { transform: translate3d(0, 0, 0); }
+          50% { transform: translate3d(300px, 0, 0); }
+          100% { transform: translate3d(0, 0, 0); }
+        }
+
         @keyframes ai-text-reveal {
           0% { 
             clip-path: inset(0 100% 0 0); 
             opacity: 0; 
             filter: blur(4px); 
-            transform: translateX(-4px); 
+            transform: translate3d(-4px, 0, 0); 
           }
           10% { 
             opacity: 1; 
@@ -343,17 +353,17 @@ export const Gallery: React.FC = () => {
           }
           40% { 
             clip-path: inset(0 0 0 0); 
-            transform: translateX(0); 
+            transform: translate3d(0, 0, 0); 
           }
           85% { 
             opacity: 1; 
             filter: blur(0px); 
-            transform: translateY(0); 
+            transform: translate3d(0, 0, 0); 
           }
           100% { 
             opacity: 0; 
             filter: blur(4px); 
-            transform: translateY(-4px); 
+            transform: translate3d(0, -4px, 0); 
             clip-path: inset(0 0 0 0); 
           }
         }
