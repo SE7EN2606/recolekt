@@ -9,8 +9,8 @@ if (!raw) {
     const hostname = window.location.hostname;
     
     if (hostname.includes('staging')) {
-      // Force staging backend if we are on the staging website
-      raw = 'https://recolekt-staging.up.railway.app';
+      // ✅ FIX: Use the exact same staging domain to completely bypass CORS
+      raw = 'https://staging.recolekt.app';
     } else if (hostname === 'localhost' || hostname === '127.0.0.1') {
       // Force local Python backend if we are running the frontend locally!
       raw = 'http://127.0.0.1:5001';
