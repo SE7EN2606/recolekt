@@ -218,8 +218,8 @@ def _get_deepgram_usage():
         usage = {}
         try:
             now   = datetime.utcnow()
-            start = now.replace(day=1).strftime("%Y-%m-%dT00:00:00Z")
-            end   = now.strftime("%Y-%m-%dT23:59:59Z")
+            start = now.replace(day=1).strftime("%Y-%m-%d")
+            end   = now.strftime("%Y-%m-%d")
             ur = requests.get(
                 f"https://api.deepgram.com/v1/projects/{project_id}/usage?start={start}&end={end}",
                 headers=headers, timeout=10,
