@@ -64,6 +64,8 @@
         .card.yellow .value { color:#fbbf24; }
         .card.red { border-color:#dc262633; }
         .card.red .value { color:#f87171; }
+        .card.orange { border-color:#ea580c33; }
+        .card.orange .value { color:#fb923c; }
         .card.wide { grid-column: span 2; }
         .users-table { width:100%; border-collapse:collapse; margin-top:4px; }
         .users-table th {
@@ -83,6 +85,7 @@
             border-radius:8px; font-size:13px; cursor:pointer;
         }
         .refresh-btn:hover { background:#222; color:white; }
+        .error-text { color:#f87171; font-size:12px; margin-top:4px; }
     </style>
 </head>
 <body>
@@ -97,6 +100,7 @@
     </div>
     <div class="timestamp" id="timestamp">Loading...</div>
 
+    <!-- USERS -->
     <div class="section-title">👥 Users</div>
     <div class="grid">
         <div class="card green">
@@ -109,6 +113,7 @@
         </div>
     </div>
 
+    <!-- REELS -->
     <div class="section-title">🎬 Reels</div>
     <div class="grid">
         <div class="card purple">
@@ -125,6 +130,7 @@
         </div>
     </div>
 
+    <!-- MISTRAL -->
     <div class="section-title">🤖 Mistral AI</div>
     <div class="grid">
         <div class="card yellow">
@@ -147,6 +153,61 @@
     </div>
     <div style="margin-top:8px;font-size:12px;color:#555;" id="mistral-last-call">Last call: —</div>
 
+    <!-- DEEPGRAM -->
+    <div class="section-title">🎙️ Deepgram</div>
+    <div class="grid">
+        <div class="card green">
+            <div class="label">Balance</div>
+            <div class="value" id="deepgram-balance">—</div>
+            <div class="sub" id="deepgram-balance-units"></div>
+        </div>
+        <div class="card blue">
+            <div class="label">Requests This Month</div>
+            <div class="value" id="deepgram-requests">—</div>
+        </div>
+        <div class="card purple">
+            <div class="label">Minutes This Month</div>
+            <div class="value" id="deepgram-minutes">—</div>
+        </div>
+        <div class="card">
+            <div class="label">Project</div>
+            <div class="value" style="font-size:13px;font-weight:600;" id="deepgram-project">—</div>
+            <div class="sub" id="deepgram-period"></div>
+        </div>
+    </div>
+
+    <!-- GCS -->
+    <div class="section-title">☁️ Google Cloud Storage</div>
+    <div class="grid">
+        <div class="card blue">
+            <div class="label">Total Files</div>
+            <div class="value" id="gcs-total">—</div>
+        </div>
+        <div class="card green">
+            <div class="label">Storage Used</div>
+            <div class="value" id="gcs-size">—</div>
+            <div class="sub" id="gcs-size-gb"></div>
+        </div>
+        <div class="card purple">
+            <div class="label">Videos</div>
+            <div class="value" id="gcs-videos">—</div>
+        </div>
+        <div class="card yellow">
+            <div class="label">Thumbnails</div>
+            <div class="value" id="gcs-thumbs">—</div>
+        </div>
+        <div class="card orange">
+            <div class="label">JSON Files</div>
+            <div class="value" id="gcs-json">—</div>
+        </div>
+        <div class="card">
+            <div class="label">Bucket</div>
+            <div class="value" style="font-size:13px;font-weight:600;" id="gcs-bucket">—</div>
+            <div class="sub" id="gcs-sampled"></div>
+        </div>
+    </div>
+
+    <!-- NEWEST USERS -->
     <div class="section-title">🆕 Newest Users</div>
     <div class="card">
         <table class="users-table">
@@ -159,6 +220,7 @@
         </table>
     </div>
 
+    <!-- SERVER -->
     <div class="section-title">🖥️ Server</div>
     <div class="grid">
         <div class="card">
@@ -189,21 +251,33 @@
             return new Date(iso).toLocaleString();
         }
 
+        function fmtMb(mb) {
+            if (!mb && mb !== 0) return "—";
+            return mb >= 1000 ? (mb / 1024).toFixed(2) + " GB" : mb.toFixed(1) + " MB";
+        }
+
         async function loadData() {
             try {
                 const res = await fetch(`/api/admin/dashboard?key=${KEY}`);
+                if (!res.ok) {
+                    document.getElementById("timestamp").textContent = `❌ HTTP ${res.status} — ${res.statusText}`;
+                    return;
+                }
                 const d = await res.json();
 
                 document.getElementById("timestamp").textContent = "Last updated: " + fmtDate(d.timestamp);
                 document.getElementById("env-badge").textContent = d.environment || "—";
 
+                // Users
                 document.getElementById("users-total").textContent = fmt(d.users?.total);
                 document.getElementById("users-active").textContent = fmt(d.users?.active_today);
 
+                // Reels
                 document.getElementById("reels-total").textContent = fmt(d.reels?.total);
                 document.getElementById("reels-today").textContent = fmt(d.reels?.processed_today);
                 document.getElementById("reels-last").textContent = fmtDate(d.reels?.last_processed_at);
 
+                // Mistral
                 document.getElementById("mistral-calls").textContent = fmt(d.mistral?.calls_today);
                 document.getElementById("mistral-remaining").textContent = fmt(d.mistral?.estimated_remaining) + " remaining";
                 const tok = d.mistral?.tokens_estimated_today;
@@ -213,6 +287,42 @@
                 document.getElementById("mistral-errors").textContent = fmt(d.mistral?.errors_today);
                 document.getElementById("mistral-last-call").textContent = "Last call: " + fmtDate(d.mistral?.last_call_at);
 
+                // Deepgram
+                const dg = d.deepgram || {};
+                if (dg.error) {
+                    document.getElementById("deepgram-balance").textContent = "—";
+                    document.getElementById("deepgram-balance-units").textContent = dg.error;
+                    document.getElementById("deepgram-balance-units").classList.add("error-text");
+                } else {
+                    const bal = dg.balance || {};
+                    document.getElementById("deepgram-balance").textContent = bal.amount != null ? "$" + parseFloat(bal.amount).toFixed(4) : "—";
+                    document.getElementById("deepgram-balance-units").textContent = bal.units || "";
+                    const usage = dg.usage_this_month || {};
+                    document.getElementById("deepgram-requests").textContent = fmt(usage.total_requests);
+                    document.getElementById("deepgram-minutes").textContent = usage.total_minutes != null ? usage.total_minutes.toFixed(1) + " min" : "—";
+                    document.getElementById("deepgram-project").textContent = dg.project_name || "—";
+                    document.getElementById("deepgram-period").textContent = dg.period || "";
+                }
+
+                // GCS
+                const gcs = d.gcs || {};
+                if (gcs.error) {
+                    document.getElementById("gcs-total").textContent = "—";
+                    document.getElementById("gcs-size").textContent = "Error";
+                    document.getElementById("gcs-size-gb").textContent = gcs.error.substring(0, 60) + "...";
+                    document.getElementById("gcs-size-gb").classList.add("error-text");
+                } else {
+                    document.getElementById("gcs-total").textContent = fmt(gcs.total_files);
+                    document.getElementById("gcs-size").textContent = fmtMb(gcs.total_size_mb);
+                    document.getElementById("gcs-size-gb").textContent = gcs.total_size_gb ? gcs.total_size_gb + " GB total" : "";
+                    document.getElementById("gcs-videos").textContent = fmt(gcs.videos);
+                    document.getElementById("gcs-thumbs").textContent = fmt(gcs.thumbnails);
+                    document.getElementById("gcs-json").textContent = fmt(gcs.json_files);
+                    document.getElementById("gcs-bucket").textContent = gcs.bucket_name || "—";
+                    document.getElementById("gcs-sampled").textContent = gcs.sampled ? "⚠️ Sampled (>2000 files)" : "Full scan";
+                }
+
+                // Newest users
                 const tbody = document.getElementById("users-table-body");
                 const users = d.users?.newest || [];
                 if (users.length === 0) {
@@ -226,6 +336,7 @@
                     `).join("");
                 }
 
+                // Server
                 document.getElementById("server-extractor").textContent = d.server?.extractor_version || "—";
                 document.getElementById("server-python").textContent = d.server?.python_version || "—";
 
