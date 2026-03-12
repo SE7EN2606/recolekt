@@ -62,7 +62,7 @@ export const Gallery: React.FC = () => {
 
     const interval = setInterval(() => {
       setMsgIndex((prev) => (prev + 1) % PROCESSING_MESSAGES.length);
-    }, 3000);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [videos]);
@@ -246,43 +246,37 @@ export const Gallery: React.FC = () => {
           
           if (video.category === 'Processing' || video.status === 'processing') {
             return (
-              <div key={videoId} className="relative aspect-[9/16] rounded-2xl bg-black overflow-hidden cursor-default shadow-[0_0_15px_rgba(124,58,237,0.15)] border border-primary-500/20">
+              <div key={videoId} className="relative aspect-[9/16] rounded-2xl bg-[#0b0f19] overflow-hidden cursor-default shadow-[0_0_20px_rgba(124,58,237,0.25)] border border-primary-500/40">
                 
                 {thumb ? (
-                  <img src={thumb} alt="Processing" className="absolute inset-0 w-full h-full object-cover opacity-30 blur-xl scale-110 z-0" />
+                  <img src={thumb} alt="Processing" className="absolute inset-0 w-full h-full object-cover opacity-40 blur-md scale-110 z-0" />
                 ) : (
-                  <div className="absolute inset-0 bg-black z-0" />
+                  <div className="absolute inset-0 bg-[#0b0f19] z-0" />
                 )}
 
-                <div className="absolute inset-0 bg-black/70 backdrop-blur-md z-10" />
+                <div className="absolute inset-0 bg-[#0b0f19]/70 backdrop-blur-md z-10" />
+
+                {/* Thin Shimmering Grid Overlay */}
+                <div className="absolute inset-0 z-20 pointer-events-none shimmer-grid" />
 
                 <div 
-                  className="absolute inset-0 opacity-[0.15] z-20 pointer-events-none"
-                  style={{
-                    backgroundImage: `linear-gradient(rgba(167, 139, 250, 1) 1px, transparent 1px), linear-gradient(90deg, rgba(167, 139, 250, 1) 1px, transparent 1px)`,
-                    backgroundSize: '24px 24px'
-                  }}
-                />
-
-                {/* 🚀 FIXED: Added translate3d for GPU acceleration to stop jumpiness */}
-                <div 
-                  className="absolute top-0 left-0 w-full h-[2px] bg-primary-400 shadow-[0_0_10px_2px_rgba(167,139,250,0.8)] z-30 pointer-events-none will-change-transform"
-                  style={{ animation: 'scan-h 8s ease-in-out infinite' }}
+                  className="absolute top-0 left-0 w-full h-[2px] bg-primary-300 shadow-[0_0_12px_3px_rgba(167,139,250,0.9)] z-30 pointer-events-none"
+                  style={{ animation: 'sequence-h 7s ease-in-out infinite' }}
                 />
 
                 <div 
-                  className="absolute top-0 left-0 h-full w-[2px] bg-primary-400 shadow-[0_0_10px_2px_rgba(167,139,250,0.8)] z-30 pointer-events-none will-change-transform"
-                  style={{ animation: 'scan-v 8s ease-in-out infinite' }}
+                  className="absolute top-0 left-0 h-full w-[2px] bg-primary-300 shadow-[0_0_12px_3px_rgba(167,139,250,0.9)] z-30 pointer-events-none"
+                  style={{ animation: 'sequence-v 7s ease-in-out infinite' }}
                 />
 
-                <div className="absolute inset-0 flex flex-col items-center justify-center z-40 pointer-events-none px-4 text-center">
-                  <Loader2 className="w-8 h-8 text-primary-400 animate-spin mb-4 drop-shadow-[0_0_8px_rgba(167,139,250,0.5)]" />
+                <div className="absolute inset-0 flex flex-col items-center justify-center z-40 pointer-events-none">
+                  <Loader2 className="w-10 h-10 text-primary-400 animate-spin mb-3 drop-shadow-[0_0_10px_rgba(167,139,250,0.6)]" />
                   
                   <span 
-                    key={msgIndex} 
-                    className="text-primary-200 text-xs font-medium lowercase tracking-wide drop-shadow-md ai-message will-change-transform"
+                    key={msgIndex}
+                    className="text-primary-200 text-[12px] font-medium tracking-widest lowercase drop-shadow-md ai-message"
                   >
-                    {t(`gallery:${PROCESSING_MESSAGES[msgIndex]}`, PROCESSING_MESSAGES[msgIndex].replace('msg_', ''))}
+                    {t(`gallery:${PROCESSING_MESSAGES[msgIndex]}`, 'processing...')}
                   </span>
                 </div>
               </div>
@@ -326,51 +320,6 @@ export const Gallery: React.FC = () => {
       )}
 
       <MoveCollectionModal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} onMove={handleMoveSubmit} count={selectedIds.size} />
-      
-      <style>{`
-        /* 🚀 GPU-Accelerated Scanners to stop stuttering/jumpiness */
-        @keyframes scan-h {
-          0% { transform: translate3d(0, 0, 0); }
-          50% { transform: translate3d(0, 500px, 0); }
-          100% { transform: translate3d(0, 0, 0); }
-        }
-        @keyframes scan-v {
-          0% { transform: translate3d(0, 0, 0); }
-          50% { transform: translate3d(300px, 0, 0); }
-          100% { transform: translate3d(0, 0, 0); }
-        }
-
-        @keyframes ai-text-reveal {
-          0% { 
-            clip-path: inset(0 100% 0 0); 
-            opacity: 0; 
-            filter: blur(4px); 
-            transform: translate3d(-4px, 0, 0); 
-          }
-          10% { 
-            opacity: 1; 
-            filter: blur(0px); 
-          }
-          40% { 
-            clip-path: inset(0 0 0 0); 
-            transform: translate3d(0, 0, 0); 
-          }
-          85% { 
-            opacity: 1; 
-            filter: blur(0px); 
-            transform: translate3d(0, 0, 0); 
-          }
-          100% { 
-            opacity: 0; 
-            filter: blur(4px); 
-            transform: translate3d(0, -4px, 0); 
-            clip-path: inset(0 0 0 0); 
-          }
-        }
-        .ai-message {
-          animation: ai-text-reveal 3s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
-        }
-      `}</style>
     </div>
   );
 };

@@ -7,22 +7,29 @@ import random
 import resend
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, request, jsonify, session
+
+from flask import Blueprint, request, jsonify, session, redirect, url_for, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
+
 
 from fetcher_api.api.helpers.auth import get_user_id_from_request
 from fetcher_api.adapters.db import execute, fetch_one
 from fetcher_api.utils.timestamps import get_unique_id
 
+
 logger = logging.getLogger("auth")
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
+
 
 resend.api_key = os.getenv("RESEND_API_KEY")
 FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@recolekt.app")
 APP_URL = os.getenv("APP_URL", "https://recolekt.app")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://recolekt.app")
+
 
 def get_signing_key():
     return os.getenv("SECRET_KEY", "recolekt-titanium-secret-2026")
+
 
 def create_jwt_token(user_id: str, email: str) -> str:
     payload = {
@@ -39,8 +46,8 @@ def create_jwt_token(user_id: str, email: str) -> str:
 # EMAIL TEMPLATES
 # ─────────────────────────────────────────────
 
+
 def _base_html(lang: str, body_content: str) -> str:
-    """Shared wrapper for all email templates."""
     unsubscribe_label = "Se désabonner" if lang == "fr" else "Unsubscribe"
     help_label = "Aide" if lang == "fr" else "Help"
     return f"""<!DOCTYPE html>
@@ -56,6 +63,7 @@ def _base_html(lang: str, body_content: str) -> str:
     <tr><td align="center">
       <table width="480" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);max-width:480px;">
 
+
         <!-- Header -->
         <tr>
           <td style="background:#0B0F19;padding:28px 40px;">
@@ -63,8 +71,10 @@ def _base_html(lang: str, body_content: str) -> str:
           </td>
         </tr>
 
+
         <!-- Body -->
         {body_content}
+
 
         <!-- Footer -->
         <tr>
@@ -77,6 +87,7 @@ def _base_html(lang: str, body_content: str) -> str:
           </td>
         </tr>
 
+
       </table>
     </td></tr>
   </table>
@@ -85,7 +96,6 @@ def _base_html(lang: str, body_content: str) -> str:
 
 
 def _email_verification_html(code: str, lang: str = "en") -> tuple[str, str, str]:
-    """Returns (subject, html, plain_text)"""
     if lang == "fr":
         subject = "Vérifiez votre compte Recolekt"
         title = "Bienvenue sur Recolekt !"
@@ -116,7 +126,6 @@ def _email_verification_html(code: str, lang: str = "en") -> tuple[str, str, str
 
 
 def _email_reset_html(code: str, lang: str = "en") -> tuple[str, str, str]:
-    """Returns (subject, html, plain_text)"""
     if lang == "fr":
         subject = "Réinitialiser votre mot de passe Recolekt"
         title = "Réinitialisation du mot de passe"
@@ -147,7 +156,6 @@ def _email_reset_html(code: str, lang: str = "en") -> tuple[str, str, str]:
 
 
 def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
-    """Centralized email sender with spam-reduction headers."""
     if not resend.api_key:
         logger.warning("⚠️ RESEND_API_KEY not set — email not sent to %s", to)
         return False
@@ -157,10 +165,10 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
             "to": to,
             "subject": subject,
             "html": html,
-            "text": text,  # ✅ plain-text alternative — required by iCloud/Gmail spam filters
+            "text": text,
             "headers": {
-                "X-Entity-Ref-ID": f"recolekt-{random.randint(100000, 999999)}",  # unique per send
-                "List-Unsubscribe": "<mailto:unsubscribe@recolekt.app>",  # ✅ iCloud requirement
+                "X-Entity-Ref-ID": f"recolekt-{random.randint(100000, 999999)}",
+                "List-Unsubscribe": "<mailto:unsubscribe@recolekt.app>",
                 "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
             }
         })
@@ -172,8 +180,57 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
 
 
 # ─────────────────────────────────────────────
-# GOOGLE OAUTH
+# GOOGLE OAUTH — REDIRECT FLOW (popup-free)
 # ─────────────────────────────────────────────
+
+
+@auth_bp.route("/google/login", methods=["GET"])
+def google_login():
+    # Pull oauth from app.extensions — initialized once in app.py, no duplicate here
+    oauth = current_app.extensions["oauth"]
+    next_url = request.args.get("next", f"{FRONTEND_URL}/gallery")
+    redirect_uri = url_for("auth.google_callback", _external=True)
+    return oauth.google.authorize_redirect(redirect_uri, state=next_url)
+
+
+@auth_bp.route("/google/callback", methods=["GET"])
+def google_callback():
+    oauth = current_app.extensions["oauth"]
+    frontend_next = request.args.get("state", f"{FRONTEND_URL}/gallery")
+    try:
+        token = oauth.google.authorize_access_token()
+        user_info = token.get("userinfo") or {}
+        email = (user_info.get("email") or "").strip().lower()
+        google_id = user_info.get("sub", "")
+        name = user_info.get("name", "")
+        picture = user_info.get("picture", "")
+
+        if not email:
+            return redirect(f"{FRONTEND_URL}/auth?error=no_email")
+
+        user = fetch_one(
+            "SELECT user_id FROM users WHERE email = %s OR google_id = %s;",
+            (email, google_id))
+        if user:
+            user_id = user["user_id"] if isinstance(user, dict) else user[0]
+            execute(
+                "UPDATE users SET google_id = %s, picture = %s WHERE user_id = %s;",
+                (google_id, picture, user_id), commit=True)
+        else:
+            user_id = get_unique_id(email)
+            execute(
+                "INSERT INTO users (user_id, email, name, google_id, picture, verified, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, TRUE, NOW()) "
+                "ON CONFLICT (email) DO UPDATE SET google_id = EXCLUDED.google_id, picture = EXCLUDED.picture, verified = TRUE;",
+                (user_id, email, name, google_id, picture), commit=True)
+
+        jwt_token = create_jwt_token(user_id, email)
+        return redirect(f"{frontend_next}?token={jwt_token}")
+
+    except Exception as e:
+        logger.error("❌ Google callback crash: %s", e, exc_info=True)
+        return redirect(f"{FRONTEND_URL}/auth?error=google_failed")
+
 
 @auth_bp.route("/google/verify", methods=["POST", "OPTIONS"])
 def google_verify():
@@ -184,7 +241,6 @@ def google_verify():
     if not access_token: return jsonify({"error": "Missing access token"}), 400
 
     try:
-        # ✅ ADDED timeout=10. This prevents the 90-second Railway hang!
         resp = requests.get(
             "https://www.googleapis.com/oauth2/v3/userinfo",
             headers={"Authorization": f"Bearer {access_token}"},
@@ -223,6 +279,7 @@ def google_verify():
 # EMAIL / PASSWORD
 # ─────────────────────────────────────────────
 
+
 @auth_bp.route("/login", methods=["POST", "OPTIONS"])
 def login():
     if request.method == "OPTIONS": return "", 200
@@ -260,7 +317,7 @@ def register():
     email = (data.get('email') or '').strip().lower()
     password = data.get('password') or ''
     name = data.get('name', 'User')
-    lang = data.get('lang', 'en')  # ✅ from frontend i18n.language
+    lang = data.get('lang', 'en')
 
     if not email or not password:
         return jsonify({'error': 'Email and password required'}), 400
@@ -407,7 +464,6 @@ def forgot_password():
 
     user_dict = dict(user) if isinstance(user, dict) else {'user_id': user[0], 'language': user[1]}
     user_id = user_dict['user_id']
-    # ✅ prefer stored language, fall back to what the frontend sent
     lang = user_dict.get('language') or requested_lang
 
     code = ''.join(random.choices('0123456789', k=6))

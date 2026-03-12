@@ -1,5 +1,3 @@
-# fetcher_api/services/video_analysis.py
-
 import os
 import logging
 import subprocess
@@ -18,7 +16,7 @@ def generate_reel_thumbnail(video_path: str, output_path: str, time_offset: floa
             logger.error(f"❌ Video file not found for thumbnail: {video_path}")
             return False
 
-        # ✅ UPDATED: Run FFmpeg to extract frame as WebP
+        # ✅ Run FFmpeg to extract frame as WebP
         cmd = [
         'ffmpeg',
         '-y',
@@ -76,7 +74,6 @@ def download_instagram_thumbnail_bytes(post) -> Optional[bytes]:
         logger.error(f"❌ Thumbnail download error: {e}")
         return None
 
-
 def download_instagram_thumbnail(post, output_path: str) -> bool:
     """
     Download Instagram's ACTUAL display thumbnail (the one shown in gallery).
@@ -101,17 +98,10 @@ def download_instagram_thumbnail(post, output_path: str) -> bool:
         logger.error(f"❌ Thumbnail download error: {e}")
         return False
 
-
 def get_instagram_video_duration(url: str) -> Optional[int]:
     """
     Get video duration from Instagram WITHOUT downloading the video.
     This allows early duration checks before bandwidth usage.
-    
-    Args:
-        url: Instagram video URL
-    
-    Returns:
-        Duration in seconds, or None if failed
     """
     try:
         logger.info(f"🕒 Checking video duration for: {url}")
@@ -119,10 +109,8 @@ def get_instagram_video_duration(url: str) -> Optional[int]:
         # Check if Facebook
         url_lower = url.lower()
         if "facebook.com" in url_lower or "fb." in url_lower:
-            # yt-dlp duration check for facebook
             from fetcher_api.adapters.facebook_client import facebook_client
             info = facebook_client.get_post_info(url)
-            # yt-dlp sometimes extracts duration, but if not we skip it.
             return info.get("duration") if info else None
 
         # Extract shortcode from URL (Instagram path)
@@ -154,7 +142,7 @@ def get_instagram_video_duration(url: str) -> Optional[int]:
             logger.warning("⚠️ Post is not a video")
             return None
 
-        # Get duration (Instaloader provides video_duration attribute)
+        # Get duration
         if hasattr(post, 'video_duration') and post.video_duration:
             duration = int(post.video_duration)
             logger.info(f"✅ Video duration: {duration}s ({duration // 60}:{duration % 60:02d})")
@@ -170,9 +158,8 @@ def get_instagram_video_duration(url: str) -> Optional[int]:
 
 def download_instagram_video(url: str, output_path: str) -> Dict:
     """
-    Universal downloader. Retained name 'download_instagram_video' 
-    to not break existing background imports, but now routes Facebook
-    URLs to the facebook_client.
+    Universal downloader. Handles Facebook, and uses Instaloader for Instagram
+    with a pure HTML Regex fallback that detects Age-Restricted/Sensitive content blocks.
     """
     url_lower = url.lower()
     if "facebook.com" in url_lower or "fb." in url_lower:
@@ -186,10 +173,8 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
             fb_result = facebook_client.download_facebook_video(url, output_path)
             
             if not fb_result.get("success"):
-                return {"success": False, "metadata": {}, "post": None}
+                return {"success": False, "metadata": {}, "post": None, "error_code": "GENERIC_ERROR"}
                 
-            # Facebook post object is just a dict for us, 
-            # we can use CV2 fallback for thumbnail later.
             return {
                 "success": True,
                 "metadata": fb_result.get("metadata", {}),
@@ -197,10 +182,10 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
             }
         except Exception as e:
             logger.error(f"❌ Facebook download error: {e}")
-            return {"success": False, "metadata": {}, "post": None}
+            return {"success": False, "metadata": {}, "post": None, "error_code": "GENERIC_ERROR"}
 
     # -------------------------------------
-    # INSTAGRAM FLOW (Unchanged)
+    # INSTAGRAM FLOW
     # -------------------------------------
     try:
         logger.info(f"⬇️ Downloading Instagram video: {url}")
@@ -209,36 +194,82 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
         shortcode = instagram_client.extract_shortcode(url)
         if not shortcode:
             logger.error("❌ Could not extract shortcode from URL")
-            return {"success": False, "metadata": {}, "post": None}
+            return {"success": False, "metadata": {}, "post": None, "error_code": "INVALID_URL"}
 
-        # Use Instaloader to get post
-        from instaloader import Instaloader, Post
+        video_url = None
+        username = "Unknown"
+        caption = ""
+        likes = 0
+        comments = 0
+        post_obj = None
 
-        L = Instaloader(
-            download_videos=True,
-            download_video_thumbnails=False,
-            download_geotags=False,
-            download_comments=False,
-            save_metadata=False,
-            compress_json=False,
-        )
-
+        # 1. Standard Instaloader attempt
         try:
-            post = Post.from_shortcode(L.context, shortcode)
+            from instaloader import Instaloader, Post
+            L = Instaloader(
+                download_videos=True,
+                download_video_thumbnails=False,
+                download_geotags=False,
+                download_comments=False,
+                save_metadata=False,
+                compress_json=False,
+            )
+            post_obj = Post.from_shortcode(L.context, shortcode)
+            
+            if post_obj.is_video:
+                video_url = post_obj.video_url
+                username = getattr(post_obj, 'owner_username', 'Unknown')
+                if username == 'Unknown' and hasattr(post_obj, 'owner_profile'):
+                    try: username = post_obj.owner_profile.username
+                    except: pass
+                caption = post_obj.caption if post_obj.caption else ""
+                likes = getattr(post_obj, "likes", 0)
+                comments = getattr(post_obj, "comments", 0)
+                logger.info("✅ Instaloader parsed metadata successfully.")
+                
         except Exception as e:
-            logger.error(f"❌ Failed to fetch post: {e}")
-            return {"success": False, "metadata": {}, "post": None}
+            logger.warning(f"⚠️ Instaloader crashed (likely empty/restricted reel): {e}")
 
-        # Get video URL
-        if not post.is_video or not post.video_url:
-            logger.error("❌ Post is not a video or no video URL found")
-            return {"success": False, "metadata": {}, "post": None}
+        # 2. Pure HTML Fallback with Restriction Detection
+        if not video_url:
+            logger.info("🔄 Using pure HTML extraction fallback...")
+            import requests
+            import re
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            }
+            res = requests.get(url, headers=headers, timeout=15)
+            
+            # 🚨 DETECT AGE-RESTRICTED / SENSITIVE CONTENT
+            if "accounts/login" in res.url or "restricted" in res.text.lower() or "sensitive" in res.text.lower():
+                logger.error("❌ Instagram blocked access (Age-Restricted, Sensitive, or Private).")
+                return {
+                    "success": False, 
+                    "metadata": {}, 
+                    "post": None,
+                    "error_code": "RESTRICTED_CONTENT",
+                    "error_message": "Instagram restricts this video (Sensitive, Private, or Age-Restricted)."
+                }
+            
+            # Extract raw video URL from meta tags
+            vid_match = re.search(r'<meta property="og:video" content="([^"]+)"', res.text)
+            if vid_match:
+                video_url = vid_match.group(1).replace("&amp;", "&")
+                logger.info("✅ Extracted video URL directly from HTML.")
+            
+            # Extract username from schema
+            user_match = re.search(r'"@type":"Person","name":"([^"]+)"', res.text)
+            if user_match:
+                username = user_match.group(1)
 
-        video_url = post.video_url
+        # Ensure we got a URL
+        if not video_url:
+            logger.error("❌ No video URL found via Instaloader or HTML fallback.")
+            return {"success": False, "metadata": {}, "post": None, "error_code": "NOT_FOUND"}
 
-        # Download the video
-        logger.info(f"⬇️ Downloading video from: {video_url}")
-
+        # 3. Download the MP4
+        logger.info(f"⬇️ Downloading video stream from: {video_url[:60]}...")
         import requests
         response = requests.get(video_url, stream=True, timeout=60)
         response.raise_for_status()
@@ -250,40 +281,19 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
 
         logger.info(f"✅ Video saved to {output_path}")
 
-        # Proper username extraction with fallback
-        username = ""
-        if hasattr(post, 'owner_username') and post.owner_username:
-            username = post.owner_username
-            logger.info(f"🔍 Method 1: Got username from owner_username: '{username}'")
-        elif hasattr(post, 'owner_profile'):
-            try:
-                username = post.owner_profile.username
-                logger.info(f"🔍 Method 2: Got username from owner_profile: '{username}'")
-            except:
-                pass
-        
-        if not username:
-            logger.warning(f"⚠️ Could not extract username for shortcode: {shortcode}")
-            username = "Unknown"
-        
-        logger.info(f"✅ Final username: '{username}'")
-
-        # Extract metadata
         metadata = {
             "username": username,
-            "caption": post.caption if post.caption else "",
-            "likes": getattr(post, "likes", 0),
-            "comments": getattr(post, "comments", 0),
+            "caption": caption,
+            "likes": likes,
+            "comments": comments,
         }
-
-        logger.info(f"📊 Metadata: @{metadata['username']} | ❤️ {metadata['likes']} | 💬 {metadata['comments']}")
 
         return {
             "success": True,
             "metadata": metadata,
-            "post": post  # ✅ Return the post object for thumbnail extraction
+            "post": post_obj
         }
 
     except Exception as e:
-        logger.error(f"❌ Download error: {e}")
-        return {"success": False, "metadata": {}, "post": None}
+        logger.error(f"❌ Ultimate Download error: {e}", exc_info=True)
+        return {"success": False, "metadata": {}, "post": None, "error_code": "GENERIC_ERROR"}

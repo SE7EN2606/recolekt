@@ -1,7 +1,7 @@
 import { API_BASE } from "../utils/api";
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Globe, Loader2, CheckCircle2, AlertCircle, RefreshCw, Trash2, CircleSlash2, Folder as FolderIcon } from 'lucide-react';
+import { Heart, Loader2, CheckCircle2, AlertCircle, RefreshCw, Trash2, CircleSlash2, Folder as FolderIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useData } from '../context/DataContext';
 import { ConfirmModal } from './ConfirmModal';
@@ -33,59 +33,52 @@ const getFolderName = (folderId: string, folders: any[]): string | null => {
   return null;
 };
 
-function resolveTitle(video: any, t: any): { english: string; original: string; hasTwoLanguages: boolean } {
+function resolveTitle(video: any, t: any): string {
   const DEFAULT = t('videoCard:untitledVideo', 'Saved Video');
-
   let summaryObj = video?.summary ?? video?.summary_text ?? video?.raw?.summary ?? {};
   if (typeof summaryObj === 'string') {
     try { summaryObj = JSON.parse(summaryObj); } catch(e) { summaryObj = {}; }
   }
-
   const sumEngTitle = safeStr(summaryObj?.english?.title).trim();
-  const sumOrigTitle = safeStr(summaryObj?.original?.title).trim();
-
   let recipeObj = video?.recipe ?? video?.raw?.recipe ?? {};
   if (typeof recipeObj === 'string') {
     try { recipeObj = JSON.parse(recipeObj); } catch(e) { recipeObj = {}; }
   }
   if (recipeObj?.recipe) recipeObj = recipeObj.recipe;
-
   const recEngTitle = safeStr(recipeObj?.english?.title).trim();
-  const recOrigTitle = safeStr(recipeObj?.original?.title).trim();
-
   const dbTitle = safeStr(video?.summary_title ?? video?.summaryTitle).trim();
-
   let passedTitle = safeStr(video?.title).trim();
-  const captionCutoff = safeStr(video?.caption ?? '').split('\\n')[0].substring(0, 56).trim();
+  const captionCutoff = safeStr(video?.caption ?? '').split('\n')[0].substring(0, 56).trim();
   if (passedTitle === captionCutoff || passedTitle.length === 56) passedTitle = '';
-
-  const english = sumEngTitle || recEngTitle || dbTitle || passedTitle || summaryObj?.title || safeStr(video?.caption ?? '').split('\\n')[0].trim() || DEFAULT;
-  const original = sumOrigTitle || recOrigTitle || dbTitle || passedTitle || summaryObj?.title || english;
-  const hasTwoLanguages = !!(sumEngTitle && sumOrigTitle) || !!(recEngTitle && recOrigTitle);
-
-  return { english, original, hasTwoLanguages };
+  return sumEngTitle || recEngTitle || dbTitle || passedTitle || summaryObj?.title || safeStr(video?.caption ?? '').split('\n')[0].trim() || DEFAULT;
 }
+
+const PROCESSING_MESSAGES = [
+  'msg_indexing', 'msg_parsing', 'msg_visual', 'msg_auditory', 
+  'msg_analysing', 'msg_decoding', 'msg_semantic', 'msg_contextual', 
+  'msg_identifying', 'msg_mapping', 'msg_inferring', 'msg_correlating', 
+  'msg_synthesizing', 'msg_distilling', 'msg_abstracting', 'msg_interpreting', 
+  'msg_ideating', 'msg_curating', 'msg_refining', 'msg_tuning', 
+  'msg_optimizing', 'msg_polishing', 'msg_finalizing'
+];
 
 const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggleSelect, selectionMode }) => {
   const navigate = useNavigate();
-  const { t, i18n } = useTranslation(['videoCard', 'common']);
+  const { t } = useTranslation(['videoCard', 'gallery', 'common']);
   const { toggleFavorite, addVideo, deleteVideos, folders } = useData();
 
   const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
 
   const [isFavorite, setIsFavorite] = useState(Boolean(video?.isFavorite ?? video?.is_favorite ?? false));
-  const [showOriginal, setShowOriginal] = useState(i18n.language.startsWith('fr'));
   const [isRetrying, setIsRetrying] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [animateHeart, setAnimateHeart] = useState(false);
+  
+  const [msgIndex, setMsgIndex] = useState(0);
 
   const imgRef = useRef<HTMLImageElement>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
-
-  useEffect(() => {
-    setShowOriginal(i18n.language.startsWith('fr'));
-  }, [i18n.language]);
 
   useEffect(() => {
     setIsFavorite(Boolean(video?.isFavorite ?? video?.is_favorite ?? false));
@@ -93,7 +86,18 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
   const isProcessing = video?.category === 'Processing' || video?.status === 'processing';
   const isFailedStatus = video?.category === 'Failed' || video?.status === 'error' || video?.status === 'failed';
-  const thumbnailUrl = video?.thumbnailUrl || video?.thumbnail_url || video?.gcs_urls?.preview_thumbnail || video?.gcsUrls?.previewThumbnail || video?.preview_thumbnail || '';
+  
+  // ✅ Keeps the poster logic
+  const thumbnailUrl = video?.posterUrl || video?.coverUrl || video?.gcs_urls?.poster || video?.thumbnailUrl || video?.thumbnail_url || video?.gcs_urls?.preview_thumbnail || video?.gcsUrls?.previewThumbnail || video?.preview_thumbnail || '';
+
+  // 2s interval matching your preferred style
+  useEffect(() => {
+    if (!isProcessing) return;
+    const interval = setInterval(() => {
+      setMsgIndex((prev) => (prev + 1) % PROCESSING_MESSAGES.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [isProcessing]);
 
   useEffect(() => {
     if (imgRef.current && imgRef.current.complete) setImageLoaded(true);
@@ -111,17 +115,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     [video?.folderId, folders]
   );
 
-  const { english: englishTitle, original: originalTitle, hasTwoLanguages } = useMemo(() => resolveTitle(video, t), [video, t]);
-  const displayTitle = showOriginal ? originalTitle : englishTitle;
-
-  let languageCode = 'EN';
-  const transcriptionObj = video?.transcription ?? video?.raw?.transcription ?? video?.__raw?.transcription;
-  if (transcriptionObj?.detected_language) {
-    languageCode = String(transcriptionObj.detected_language).toUpperCase();
-  } else if (video?.language) {
-    languageCode = String(video.language).toUpperCase();
-  }
-  if (languageCode === 'OG') languageCode = 'EN';
+  const displayTitle = useMemo(() => resolveTitle(video, t), [video, t]);
 
   const author = String(video?.author ?? video?.author_name ?? video?.authorName ?? t('videoCard:unknownAuthor'));
   const duration = video?.duration;
@@ -139,26 +133,31 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     ? `https://www.instagram.com/${author.replace('@', '')}/`
     : sourceUrl || '#';
 
+  // ✅ Fixed Heart click handler
   const handleHeartClick = async (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
-    if (isDisabled || !navigator.onLine) return; // ✅ Blocked if offline
-    if (isFavorite) { setShowRemoveConfirm(true); return; }
+    if (isDisabled || !navigator.onLine) return;
+    
+    if (isFavorite) { 
+      setShowRemoveConfirm(true); 
+      return; 
+    }
+
     setAnimateHeart(true);
     setIsFavorite(true);
-    setTimeout(() => setAnimateHeart(false), 400);
-    try { await toggleFavorite(videoId); } catch (err) { setIsFavorite(false); }
+    setTimeout(() => setAnimateHeart(false), 400); 
+
+    try { 
+      await toggleFavorite(videoId); 
+    } catch (err) { 
+      setIsFavorite(false); 
+    }
   };
 
   const confirmRemoveFavorite = async () => {
     setIsFavorite(false);
     setShowRemoveConfirm(false);
     try { await toggleFavorite(videoId); } catch (err) { setIsFavorite(true); }
-  };
-
-  const handleLanguageToggle = (e: React.MouseEvent) => {
-    e.preventDefault(); e.stopPropagation();
-    if (isDisabled) return;
-    setShowOriginal(prev => !prev);
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
@@ -169,22 +168,28 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
   const handleRetry = async (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
-    if (!sourceUrl || isRetrying || !navigator.onLine) return; // ✅ Blocked if offline
+    if (!sourceUrl || isRetrying || !navigator.onLine) return;
     setIsRetrying(true);
     try { await addVideo(sourceUrl, true); } catch (err) {} finally { setIsRetrying(false); }
   };
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
-    if (!videoId || isDeleting || !navigator.onLine) return; // ✅ Blocked if offline
+    if (!videoId || isDeleting || !navigator.onLine) return;
     setIsDeleting(true);
     try { await deleteVideos([videoId]); } catch (err) { setIsDeleting(false); }
   };
 
-  const errorText = video?.errorMessage || video?.error_message || video?.raw?.errormessage
-    || (isMissingThumbnail
-      ? t('videoCard:missingThumbnailText', 'Media download failed.')
-      : t('videoCard:defaultError'));
+  const rawError = video?.errorMessage || video?.error_message || video?.error_code || video?.raw?.errormessage;
+  
+  let errorText = t('videoCard:defaultError', 'Media download failed.');
+  if (rawError === 'RESTRICTED_CONTENT') {
+    errorText = t('videoCard:restrictedContent', 'Instagram blocked this video (Sensitive or Private).');
+  } else if (isMissingThumbnail) {
+    errorText = t('videoCard:missingThumbnailText', 'Media download failed.');
+  } else if (rawError) {
+    errorText = rawError;
+  }
 
   return (
     <>
@@ -192,7 +197,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         onClick={handleCardClick}
         className={`relative rounded-2xl overflow-hidden aspect-[9/16] shadow-sm transition-all duration-300 bg-gray-100 cursor-pointer hover:shadow-lg ${selected ? 'ring-2 ring-primary-600 ring-offset-2' : ''} group`}
       >
-        <div className={`absolute inset-0 bg-gray-200 transition-opacity duration-200 ${isDisabled ? 'opacity-40' : 'opacity-0'}`} />
+        {!imageLoaded && !hasError && !isProcessing && <div className="placeholder-skeleton" />}
 
         {thumbnailUrl ? (
           <img
@@ -218,26 +223,69 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           <div className="absolute inset-0 bg-primary-600/20 z-20 pointer-events-none" />
         )}
 
+        {/* ======================================================= */}
+        {/* EXACT RESTORED PROCESSING STATE WITH 4s LINES           */}
+        {/* ======================================================= */}
         {isProcessing && (
-          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/50 backdrop-blur-sm">
-            <Loader2 size={28} className="text-white animate-spin" />
-            <span className="text-white text-xs font-bold uppercase tracking-wider">{t('videoCard:processing')}</span>
+          <div className="absolute inset-0 z-40 bg-slate-900 overflow-hidden shadow-[0_0_20px_rgba(124,58,237,0.25)] border border-primary-500/40">
+            {/* 1. Base Image Layer */}
+            {thumbnailUrl ? (
+              <img src={thumbnailUrl} alt="Processing" className="absolute inset-0 w-full h-full object-cover opacity-50 blur-md scale-110 z-0" />
+            ) : (
+              <div className="absolute inset-0 bg-slate-900 z-0" />
+            )}
+
+            {/* 2. Blur / Darkening Overlay */}
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-10" />
+
+            {/* 3. Sharp Grid Overlay */}
+            <div 
+              className="absolute inset-0 opacity-50 z-20 pointer-events-none"
+              style={{
+                backgroundImage: `linear-gradient(rgba(167, 139, 250, 0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(167, 139, 250, 0.4) 1px, transparent 1px)`,
+                backgroundSize: '24px 24px'
+              }}
+            />
+
+            {/* 4. Sharp Horizontal Scanner Line */}
+            <div 
+              className="absolute top-0 left-0 w-full h-[2px] bg-primary-300 shadow-[0_0_12px_3px_rgba(167,139,250,0.9)] z-30 pointer-events-none"
+              style={{ animation: 'sequence-h 4s ease-in-out infinite' }}
+            />
+
+            {/* 5. Sharp Vertical Scanner Line */}
+            <div 
+              className="absolute top-0 left-0 h-full w-[2px] bg-primary-300 shadow-[0_0_12px_3px_rgba(167,139,250,0.9)] z-30 pointer-events-none"
+              style={{ animation: 'sequence-v 4s ease-in-out infinite' }}
+            />
+
+            {/* 6. Content Container */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center z-40 pointer-events-none">
+              <Loader2 className="w-10 h-10 text-primary-400 animate-spin mb-3 drop-shadow-[0_0_10px_rgba(167,139,250,0.6)]" />
+              
+              <span 
+                key={msgIndex}
+                className="text-white text-[11px] font-bold tracking-widest uppercase drop-shadow-md animate-fade-in"
+              >
+                {t(`gallery:${PROCESSING_MESSAGES[msgIndex]}`, 'Processing...')}
+              </span>
+            </div>
           </div>
         )}
 
         {hasError && (
-          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 p-4 bg-black/60 backdrop-blur-sm">
-            <AlertCircle size={28} className="text-red-400" />
+          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 p-4 bg-black/70 backdrop-blur-sm border border-red-500/30 rounded-2xl">
+            <AlertCircle size={28} className="text-red-400 drop-shadow-md" />
             <div className="text-center">
               <p className="text-white text-xs font-bold mb-1">{t('videoCard:processingFailed')}</p>
-              <p className="text-gray-300 text-[10px] leading-tight">{errorText}</p>
+              <p className="text-gray-300 text-[10px] leading-tight line-clamp-2">{errorText}</p>
             </div>
-            <div className="flex gap-2">
-              <button onClick={handleRetry} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-bold rounded-lg transition-colors">
+            <div className="flex gap-2 mt-1">
+              <button onClick={handleRetry} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition-colors border border-white/10">
                 {isRetrying ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
                 {t('common:tryAgain')}
               </button>
-              <button onClick={handleDelete} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/80 hover:bg-red-500 text-white text-xs font-bold rounded-lg transition-colors">
+              <button onClick={handleDelete} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/40 text-red-200 hover:text-white text-[10px] font-bold rounded-lg transition-colors border border-red-500/30">
                 {isDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                 {t('common:remove')}
               </button>
@@ -248,11 +296,12 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         {!selectionMode && !hasError && (
           <button
             onClick={handleHeartClick}
-            className={`absolute top-3 left-3 favorite-heart z-30 ${animateHeart ? 'scale-125' : ''} transition-transform`}
+            // ✅ Fixed Heart classes
+            className={`absolute top-3 left-3 favorite-heart z-30 ${animateHeart ? 'heart-animate' : ''} transition-transform`}
           >
             <Heart
               size={24}
-              className={isFavorite ? 'text-red-500 fill-red-500' : 'text-white drop-shadow'}
+              className={isFavorite ? 'favorited' : 'text-white drop-shadow'}
               aria-hidden="true"
             />
           </button>
@@ -269,14 +318,14 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
         {!selectionMode && !hasError && !isProcessing && (
           <div className="absolute top-3 right-3 z-30 pointer-events-none">
-            <div className="w-7 h-7 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white shadow-sm">
+            <div className="w-7 h-7 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/20 shadow-sm">
               {isSorted ? (
-                <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center" title="sorted">
-                  <CheckCircle2 size={12} className="text-white" aria-hidden="true" />
+                <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                  <CheckCircle2 size={12} className="text-white" />
                 </div>
               ) : (
-                <div className="w-5 h-5 bg-gray-400/80 rounded-full flex items-center justify-center" title="unsorted">
-                  <CircleSlash2 size={12} className="text-white" aria-hidden="true" />
+                <div className="w-5 h-5 bg-gray-400/80 rounded-full flex items-center justify-center">
+                  <CircleSlash2 size={12} className="text-white" />
                 </div>
               )}
             </div>
@@ -284,29 +333,18 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         )}
 
         {folderName && !isDisabled && !selectionMode && (
-          <div className="absolute bottom-3 left-3 z-30" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute bottom-3 left-3 z-30">
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
-              <FolderIcon size={11} className="text-primary-400 flex-shrink-0" strokeWidth={2.5} />
-              <span className="text-[10px] font-bold text-white uppercase tracking-wide leading-none truncate max-w-[80px]">
+              <FolderIcon size={11} className="text-primary-400" strokeWidth={2.5} />
+              <span className="text-[10px] font-bold text-white uppercase tracking-wide truncate max-w-[80px]">
                 {folderName}
               </span>
             </div>
           </div>
         )}
 
-        {hasTwoLanguages && !isDisabled && !selectionMode && !folderName && (
-          <button
-            onClick={handleLanguageToggle}
-            className="hidden md:flex absolute bottom-3 left-3 px-3 py-1.5 rounded-lg items-center gap-1.5 z-30 shadow-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors"
-            title={`Affichage en ${showOriginal ? languageCode : 'EN'}`}
-          >
-            <Globe size={14} aria-hidden="true" />
-            <span className="text-[11px] font-bold uppercase">{showOriginal ? languageCode : 'EN'}</span>
-          </button>
-        )}
-
-        {duration && duration !== '0:00' && !hasError && (
-          <div className="hidden md:block absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-medium text-white z-30">
+        {duration && duration !== '0:00' && !hasError && !isProcessing && (
+          <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold text-white z-30 shadow-md">
             {duration}
           </div>
         )}
@@ -332,9 +370,9 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         isOpen={showRemoveConfirm}
         onClose={() => setShowRemoveConfirm(false)}
         onConfirm={confirmRemoveFavorite}
-        title={t('videoCard:removeFavoriteTitle', 'Remove Favorite')}
-        message={t('videoCard:removeFavoriteMessage', 'Are you sure you want to remove this video from your favorites?')}
-        confirmLabel={t('common:remove', 'Remove')}
+        title={t('videoCard:removeFavoriteTitle')}
+        message={t('videoCard:removeFavoriteMessage')}
+        confirmLabel={t('common:remove')}
         variant="danger"
       />
     </>

@@ -19,7 +19,13 @@ from fetcher_api.api.helpers.normalizers import (
     json_stringify,
 )
 from fetcher_api.utils.ocr_utils import maybe_ocr_and_merge_text
-from fetcher_api.services.video_analysis import download_instagram_video, generate_reel_thumbnail
+
+# ✅ CORRECTED IMPORTS: This file imports FROM video_analysis.py
+from fetcher_api.services.video_analysis import (
+    download_instagram_video, 
+    generate_reel_thumbnail,
+    download_instagram_thumbnail
+)
 
 logger = logging.getLogger("api")
 
@@ -78,11 +84,17 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
                 result["status"] = "error"
                 insert_reel_into_db(result)
                 return
+            
             meta = ensure_dict(dl_result.get("metadata", {}))
+            post_obj = dl_result.get("post") # ✅ Grab the raw post object for the thumbnail
+            
             caption     = caption     or meta.get("caption", "")
             author_name = author_name or meta.get("username", "")
             result["caption"] = caption
             result["author_name"] = author_name
+        else:
+            post_obj = None
+            meta = {}
 
         # 2. Duration & Strategy
         duration, duration_seconds = get_video_duration(video_path)
@@ -110,10 +122,37 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
         if transcription_data["detected_language"] == "unknown":
             transcription_data["detected_language"] = "en"
 
-        # 4. Thumbnail & Early UI Update
+        # ---------------------------------------------------------
+        # 4. 🚨 THUMBNAIL LOGIC (FIXED) 🚨
+        # ---------------------------------------------------------
         thumbnail_path = os.path.join(os.path.dirname(video_path), f"{shortcode}_thumb.jpg")
-        generate_reel_thumbnail(video_path, thumbnail_path)
+        thumb_success = False
 
+        # Attempt 1 (Instagram): Get the official gallery poster using Instaloader data
+        if post_obj and not is_facebook:
+            logger.info("📸 Attempting to download official Instagram gallery poster...")
+            thumb_success = download_instagram_thumbnail(post_obj, thumbnail_path)
+            
+        # Attempt 1 (Facebook): Get the official thumbnail if yt-dlp extracted it
+        elif is_facebook and meta.get("thumbnail"):
+            import requests
+            try:
+                logger.info("📸 Attempting to download official Facebook thumbnail...")
+                r = requests.get(meta.get("thumbnail"), timeout=15)
+                if r.status_code == 200:
+                    with open(thumbnail_path, "wb") as f:
+                        f.write(r.content)
+                    thumb_success = True
+                    logger.info("✅ Facebook thumbnail downloaded.")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to download Facebook thumbnail: {e}")
+
+        # Attempt 2 (Fallback): If official posters fail, slice the first frame with FFmpeg
+        if not thumb_success:
+            logger.info("🔄 Falling back to FFmpeg first-frame extraction...")
+            generate_reel_thumbnail(video_path, thumbnail_path)
+
+        # Upload the thumbnail to GCS
         if os.path.exists(thumbnail_path) and save_to_gcs and gcs_client.available:
             thumb_blob = gcs_client.client.bucket(gcs_client.analysis_bucket_name).blob(
                 gcs_paths["preview_thumbnail"]
@@ -124,11 +163,14 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
                 f"{gcs_client.analysis_bucket_name}/{gcs_paths['preview_thumbnail']}"
             )
             result["gcs_urls"] = {"preview_thumbnail": thumb_url}
+            
+            # ✅ FIXED: Reverted to only updating the JSON column. No database schema changes needed!
             execute(
                 "UPDATE reels SET gcs_urls = %s::jsonb WHERE id = %s",
                 (json.dumps(result["gcs_urls"]), result["process_id"]),
                 commit=True,
             )
+        # ---------------------------------------------------------
 
         # 5. AI Analysis
         merged_text = final_transcript

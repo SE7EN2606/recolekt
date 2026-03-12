@@ -55,7 +55,7 @@ logger = logging.getLogger("app")
 
 
 # ============================================
-# 3. FLASK APP INITIALIZATION (ONLY ONCE)
+# 3. FLASK APP INITIALIZATION
 # ============================================
 from fetcher_api import create_app
 
@@ -152,7 +152,8 @@ oauth.register(
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={"scope": "openid email profile"},
 )
-app.config["oauth"] = oauth
+# ✅ Store on app so auth.py can access it without circular imports
+app.extensions["oauth"] = oauth
 logger.info("✅ OAuth initialized with Google provider")
 
 
@@ -185,7 +186,6 @@ def rate_limits():
 
 @app.route("/admin", methods=["GET"])
 def admin_page():
-    # ✅ Read fresh from env — never trust module-level import on Railway
     admin_key = (
         os.getenv("ADMIN_KEY") or
         os.getenv("ADMIN_SECRET") or
