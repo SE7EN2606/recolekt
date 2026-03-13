@@ -1,10 +1,5 @@
 import { assertEnv } from './assertEnv';
 
-// Resolve API base once.
-// Priority:
-// 1) Explicit env vars
-// 2) Local dev fallback to Flask on :5001
-// 3) Production fallback to relative paths on current origin
 let raw =
   import.meta.env.VITE_BACKEND_URL ||
   import.meta.env.VITE_API_URL ||
@@ -19,10 +14,10 @@ if (!raw && typeof window !== 'undefined') {
     hostname === '127.0.0.1'
   ) {
     raw = 'http://127.0.0.1:5001';
+  } else if (hostname.includes('staging')) {
+    raw = 'https://recolekt-staging.up.railway.app';
   } else {
-    // Use same-origin in deployed environments:
-    // /api/... stays on whatever domain the user is currently visiting
-    raw = '';
+    raw = 'https://api.recolekt.app';
   }
 }
 
@@ -35,7 +30,7 @@ export const GOOGLE_CLIENT_ID =
   import.meta.env.VITE_GOOGLE_CLIENT_ID ||
   '517149606657-1c7alf9nm5ms1n0s20ch2lj0b02h5189.apps.googleusercontent.com';
 
-assertEnv('VITE_BACKEND_URL', raw || 'RELATIVE_MODE');
+assertEnv('VITE_BACKEND_URL', raw || 'MISSING');
 
 export const fetchWithAuth = (
   endpoint: string,
