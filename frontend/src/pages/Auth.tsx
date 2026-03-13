@@ -282,9 +282,13 @@ export const Auth: React.FC = () => {
                         className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm tracking-widest font-bold text-center" />
                     </div>
                   </div>
-                  <Button type="submit" fullWidth size="lg" disabled={emailLoading} className="h-14 mt-2 font-black shadow-xl rounded-xl">
+                  <button
+                    type="submit"
+                    disabled={emailLoading}
+                    className="w-full mt-2 px-8 py-4 text-lg font-black text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-xl shadow-primary-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     {emailLoading ? t('common:processing') : t('auth:verifyEmail')}
-                  </Button>
+                  </button>
                 </form>
                 <div className="mt-4 text-center">
                   <button type="button" onClick={handleResendCode} disabled={resendCooldown > 0}
@@ -339,9 +343,13 @@ export const Auth: React.FC = () => {
                       </button>
                     </div>
                   </div>
-                  <Button type="submit" fullWidth size="lg" disabled={emailLoading} className="h-14 mt-2 font-black shadow-xl rounded-xl">
+                  <button
+                    type="submit"
+                    disabled={emailLoading}
+                    className="w-full mt-2 px-8 py-4 text-lg font-black text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-xl shadow-primary-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     {emailLoading ? t('common:processing') : t('auth:resetPassword')}
-                  </Button>
+                  </button>
                 </form>
                 <div className="mt-4 text-center">
                   <button type="button" onClick={() => setView('forgot')} className="text-sm hover:underline" style={{ color: '#f43f5e' }}>← {t('auth:backTo')}</button>
@@ -370,9 +378,13 @@ export const Auth: React.FC = () => {
                         className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
                     </div>
                   </div>
-                  <Button type="submit" fullWidth size="lg" disabled={emailLoading} className="h-14 mt-2 font-black shadow-xl rounded-xl">
+                  <button
+                    type="submit"
+                    disabled={emailLoading}
+                    className="w-full mt-2 px-8 py-4 text-lg font-black text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-xl shadow-primary-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     {emailLoading ? t('common:processing') : t('auth:sendResetCode')}
-                  </Button>
+                  </button>
                 </form>
                 <div className="mt-4 text-center">
                   <button type="button" onClick={() => setView('login')} className="text-sm hover:underline" style={{ color: '#f43f5e' }}>{t('auth:backTo')}</button>
@@ -472,9 +484,13 @@ export const Auth: React.FC = () => {
                     )}
                   </div>
 
-                  <Button type="submit" fullWidth size="lg" disabled={emailLoading || googleLoading} className="h-14 mt-4 font-black shadow-xl rounded-xl">
+                  <button
+                    type="submit"
+                    disabled={emailLoading || googleLoading}
+                    className="w-full mt-4 px-8 py-4 text-lg font-black text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-xl shadow-primary-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     {emailLoading ? t('common:processing') : (view === 'login' ? t('common:signIn') : t('auth:createAccount'))}
-                  </Button>
+                  </button>
                 </form>
 
                 <div className="mt-5 text-center">
