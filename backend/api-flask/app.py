@@ -193,7 +193,16 @@ def admin_page():
     return render_template("admin.html", admin_key=key)
 
 
-# TEMP — add right after /debug/routes, remove after fixing
+# TEMP DEBUG — remove after Google login is fixed
+@app.route("/debug/routes")
+def debug_routes():
+    routes = []
+    for rule in app.url_map.iter_rules():
+        if "google" in rule.rule or "auth" in rule.rule:
+            routes.append(f"{rule.rule} -> {rule.endpoint} [{', '.join(rule.methods)}]")
+    return jsonify({"auth_routes": sorted(routes), "total_rules": len(list(app.url_map.iter_rules()))})
+
+
 @app.route("/debug/google-creds")
 def debug_google_creds():
     cid = os.getenv("GOOGLE_CLIENT_ID", "")
@@ -203,9 +212,39 @@ def debug_google_creds():
         "client_id_prefix": cid[:20] + "..." if cid else "(empty)",
         "client_secret_length": len(csec),
         "client_secret_prefix": csec[:6] + "..." if csec else "(empty)",
+        "client_secret_last4": csec[-4:] if len(csec) >= 4 else csec,
         "client_secret_has_whitespace": csec != csec.strip(),
         "client_secret_has_newlines": "\n" in csec or "\r" in csec,
     })
+
+
+@app.route("/debug/test-token-exchange")
+def debug_test_exchange():
+    """Test if Google accepts our client credentials"""
+    import requests as req
+    cid = os.getenv("GOOGLE_CLIENT_ID", "")
+    csec = os.getenv("GOOGLE_CLIENT_SECRET", "")
+
+    resp = req.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "code": "fake_code_12345",
+            "client_id": cid,
+            "client_secret": csec,
+            "redirect_uri": "https://recolekt-staging.up.railway.app/api/auth/google/callback",
+            "grant_type": "authorization_code",
+        },
+        timeout=10,
+    )
+
+    # invalid_grant = credentials OK (just fake code)
+    # invalid_client = credentials WRONG
+    return jsonify({
+        "status": resp.status_code,
+        "response": resp.json(),
+        "note": "invalid_grant means credentials are OK. invalid_client means secret is WRONG."
+    })
+
 
 # ============================================
 # 9. ERROR HANDLER + FRONTEND SERVING
