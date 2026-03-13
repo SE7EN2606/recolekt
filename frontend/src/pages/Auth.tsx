@@ -19,6 +19,24 @@ type ViewState = 'login' | 'register' | 'forgot' | 'reset' | 'verify';
 
 const LAST_AUTH_KEY = 'last_auth_method';
 
+/**
+ * Detect browsers where Google popup OAuth is known to fail.
+ * Firefox Focus, Firefox Klar, and most iOS in-app browsers
+ * block cross-site cookies / popups aggressively.
+ */
+function shouldUseRedirectFlow(): boolean {
+  const ua = navigator.userAgent || '';
+  // Firefox Focus (iOS) / Firefox Klar (EU branding)
+  if (/Focus|Klar/i.test(ua)) return true;
+  // DuckDuckGo browser
+  if (/DuckDuckGo/i.test(ua)) return true;
+  // Brave with aggressive shields (detected via brave property)
+  if ((navigator as any).brave) return true;
+  // Generic iOS in-app webviews (Facebook, Instagram, etc.)
+  if (/FBAN|FBAV|Instagram|Line\//i.test(ua)) return true;
+  return false;
+}
+
 export const Auth: React.FC = () => {
   const [view, setView] = useState<ViewState>('login');
   const [emailLoading, setEmailLoading] = useState(false);
@@ -37,6 +55,7 @@ export const Auth: React.FC = () => {
   const { user, verifyGoogleToken, loginUser, registerUser } = useAuth();
 
   const lastAuthMethod = localStorage.getItem(LAST_AUTH_KEY);
+  const useRedirect = shouldUseRedirectFlow();
 
   useEffect(() => {
     if (user) navigate('/gallery', { replace: true });
@@ -54,7 +73,8 @@ export const Auth: React.FC = () => {
     return () => clearTimeout(timer);
   }, [resendCooldown]);
 
-  const loginWithGoogle = useGoogleLogin({
+  // Popup-based Google login (default for normal browsers)
+  const loginWithGooglePopup = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       setGoogleLoading(true);
       setErrorMsg('');
@@ -63,16 +83,41 @@ export const Auth: React.FC = () => {
         localStorage.setItem(LAST_AUTH_KEY, 'google');
         navigate('/gallery');
       } catch (err: any) {
-        setErrorMsg(err.message || "Google authentication failed.");
+        // If popup flow fails, fall back to redirect
+        console.warn('Google popup flow failed, falling back to redirect:', err);
+        handleGoogleRedirect();
       } finally {
         setGoogleLoading(false);
       }
     },
-    onError: () => {
-      setErrorMsg("Google login was cancelled or failed.");
+    onError: (errorResponse) => {
+      console.warn('Google popup login error:', errorResponse);
+      // On popup failure, try redirect flow instead of just showing error
+      handleGoogleRedirect();
       setGoogleLoading(false);
     }
   });
+
+  // Redirect-based Google login (fallback for Firefox Focus, etc.)
+  const handleGoogleRedirect = () => {
+    setGoogleLoading(true);
+    // Use your backend's server-side OAuth redirect endpoint
+    const googleLoginUrl = joinUrl(API_BASE, '/api/auth/google/login');
+    window.location.assign(googleLoginUrl);
+  };
+
+  const handleGoogleLogin = () => {
+    setErrorMsg('');
+    setGoogleLoading(true);
+
+    if (useRedirect) {
+      // Skip popup entirely for browsers known to block it
+      handleGoogleRedirect();
+    } else {
+      // Try popup first, with automatic redirect fallback on failure
+      loginWithGooglePopup();
+    }
+  };
 
   const handleResendCode = async () => {
     if (resendCooldown > 0 || !verificationEmail) return;
@@ -205,7 +250,7 @@ export const Auth: React.FC = () => {
         {/* ── RIGHT PANEL ── */}
         <div className="w-full md:w-1/2 flex flex-col justify-start items-center h-full relative pl-0 md:pl-16 pt-32 md:pt-28">
 
-          {/* ✅ Back to home — top-right of right panel */}
+          {/* Back to home */}
           <div className="absolute top-8 right-0">
             <Link
               to="/"
@@ -274,7 +319,7 @@ export const Auth: React.FC = () => {
               </div>
             )}
 
-            {/* ══ RESET VIEW — code + new password ══ */}
+            {/* ══ RESET VIEW ══ */}
             {view === 'reset' && (
               <>
                 <div className="text-center mb-6">
@@ -375,7 +420,6 @@ export const Auth: React.FC = () => {
             {/* ══ LOGIN / REGISTER VIEWS ══ */}
             {(view === 'login' || view === 'register') && (
               <>
-                {/* In login/register view */}
                 <div className="text-center mb-8 -mt-6 md:mt-0 md:mb-6">
                   <h2 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">
                     {view === 'login' ? t('auth:welcome') : t('auth:createAccount')}
@@ -389,11 +433,11 @@ export const Auth: React.FC = () => {
                   </div>
                 )}
 
-                {/* ✅ Google button — pill floats outside top-right */}
+                {/* Google button */}
                 <div className="relative mb-4 mt-3">
                   <button
                     type="button"
-                    onClick={() => { setGoogleLoading(true); loginWithGoogle(); }}
+                    onClick={handleGoogleLogin}
                     disabled={googleLoading || emailLoading}
                     className="w-full flex items-center justify-center gap-3 p-4 bg-white/40 hover:bg-white/80 text-gray-800 font-bold rounded-xl transition-all border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 disabled:opacity-50"
                   >
@@ -408,7 +452,6 @@ export const Auth: React.FC = () => {
                     <span className="text-base">{googleLoading ? t('common:processing') : t('auth:googleContinue')}</span>
                   </button>
 
-                  {/* ✅ Pill outside button — slightly above and past right edge */}
                   {lastAuthMethod === 'google' && !googleLoading && (
                     <span className="absolute -top-3.5 -right-1 translate-x-1 inline-flex items-center gap-1 bg-gray-900 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shadow-md pointer-events-none">
                       <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />

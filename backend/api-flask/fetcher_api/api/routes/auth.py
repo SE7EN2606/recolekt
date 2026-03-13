@@ -184,19 +184,37 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
 # ─────────────────────────────────────────────
 
 
+# Only showing the google_callback and google_login changes.
+# Replace these two route functions in your existing auth.py routes file.
+
 @auth_bp.route("/google/login", methods=["GET"])
 def google_login():
-    # Pull oauth from app.extensions — initialized once in app.py, no duplicate here
     oauth = current_app.extensions["oauth"]
     next_url = request.args.get("next", f"{FRONTEND_URL}/gallery")
     redirect_uri = url_for("auth.google_callback", _external=True)
+    
+    # Store next_url in session as a backup — some privacy browsers
+    # strip the OAuth state parameter during the redirect chain
+    session["oauth_next_url"] = next_url
+    
     return oauth.google.authorize_redirect(redirect_uri, state=next_url)
 
 
 @auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
     oauth = current_app.extensions["oauth"]
-    frontend_next = request.args.get("state", f"{FRONTEND_URL}/gallery")
+    
+    # Try state param first, fall back to session, then default
+    frontend_next = (
+        request.args.get("state")
+        or session.pop("oauth_next_url", None)
+        or f"{FRONTEND_URL}/gallery"
+    )
+    
+    # Ensure frontend_next is our own domain (prevent open redirect)
+    if not frontend_next.startswith(FRONTEND_URL):
+        frontend_next = f"{FRONTEND_URL}/gallery"
+    
     try:
         token = oauth.google.authorize_access_token()
         user_info = token.get("userinfo") or {}
@@ -225,7 +243,11 @@ def google_callback():
                 (user_id, email, name, google_id, picture), commit=True)
 
         jwt_token = create_jwt_token(user_id, email)
-        return redirect(f"{frontend_next}?token={jwt_token}")
+        
+        # Append token as query param — the frontend AuthContext
+        # picks this up on load and stores it in localStorage
+        separator = "&" if "?" in frontend_next else "?"
+        return redirect(f"{frontend_next}{separator}token={jwt_token}")
 
     except Exception as e:
         logger.error("❌ Google callback crash: %s", e, exc_info=True)
