@@ -65,7 +65,7 @@ if not app:
     raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
 
 
-# ✅ PROXY FIX: Critical for Railway Load Balancer HTTPS detection
+# PROXY FIX: Critical for Railway Load Balancer HTTPS detection
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
 
 
@@ -165,7 +165,7 @@ from fetcher_api.api import register_blueprints
 register_blueprints(app)
 
 # NOTE: folders_bp is already registered inside register_blueprints()
-# Do NOT register it again here — that caused duplicate blueprint errors.
+# Do NOT register it again here.
 
 
 # ============================================
@@ -204,38 +204,62 @@ def debug_routes():
 
 
 # ============================================
-# 9. ERROR HANDLER
+# 9. ERROR HANDLER + FRONTEND SERVING
 # ============================================
-@app.errorhandler(Exception)
-def handle_error(e):
-    code = 500
-    message = str(e)
-    if isinstance(e, HTTPException):
-        code = e.code
-        message = e.description
-    logger.error("❌ Error %s: %s", code, message, exc_info=True)
-    return jsonify({"error": message, "code": code}), code
+# We use a SINGLE error handler that doubles as the SPA catch-all.
+# This approach NEVER shadows blueprint routes because it only runs
+# when Flask has already determined no blueprint matched.
 
-
-# ============================================
-# 10. FRONTEND SERVING (PRODUCTION)
-# ============================================
 if not IS_LOCAL:
     base_dir = os.path.dirname(os.path.abspath(__file__))
     frontend_dir = os.path.join(base_dir, "frontend")
 
-    @app.route("/", defaults={"path": ""})
-    @app.route("/<path:path>")
-    def serve(path):
-        if path.startswith("api/"):
-            return jsonify({"error": "Not Found"}), 404
-        if path != "" and os.path.exists(os.path.join(frontend_dir, path)):
-            return send_from_directory(frontend_dir, path)
+    # Explicit root route for serving index.html at /
+    @app.route("/")
+    def serve_root():
         return send_from_directory(frontend_dir, "index.html")
+
+    @app.errorhandler(404)
+    def handle_404(e):
+        path = request.path.lstrip("/")
+
+        # API paths that no blueprint matched → JSON 404
+        if path.startswith("api/"):
+            return jsonify({"error": "Not Found", "code": 404}), 404
+
+        # Static frontend file (JS, CSS, images, fonts, etc.)
+        if path and os.path.exists(os.path.join(frontend_dir, path)):
+            return send_from_directory(frontend_dir, path)
+
+        # SPA fallback — React Router handles client-side routing
+        return send_from_directory(frontend_dir, "index.html")
+
+    @app.errorhandler(Exception)
+    def handle_error(e):
+        if isinstance(e, HTTPException) and e.code == 404:
+            return handle_404(e)
+        code = 500
+        message = str(e)
+        if isinstance(e, HTTPException):
+            code = e.code
+            message = e.description
+        logger.error("❌ Error %s: %s", code, message, exc_info=True)
+        return jsonify({"error": message, "code": code}), code
+
+else:
+    @app.errorhandler(Exception)
+    def handle_error(e):
+        code = 500
+        message = str(e)
+        if isinstance(e, HTTPException):
+            code = e.code
+            message = e.description
+        logger.error("❌ Error %s: %s", code, message, exc_info=True)
+        return jsonify({"error": message, "code": code}), code
 
 
 # ============================================
-# 11. MAIN ENTRY POINT
+# 10. MAIN ENTRY POINT
 # ============================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
