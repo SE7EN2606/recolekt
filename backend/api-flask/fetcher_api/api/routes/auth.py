@@ -203,35 +203,57 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
 
 @auth_bp.route("/google/login", methods=["GET"])
 def google_login():
-    oauth = current_app.extensions["oauth"]
+    try:
+        oauth = current_app.extensions["oauth"]
+    except KeyError:
+        logger.error("❌ Google login: OAuth not initialized on app.extensions")
+        return jsonify({"error": "OAuth not configured"}), 500
 
     frontend_base = _get_frontend_base()
     next_url = request.args.get("next", f"{frontend_base}/gallery")
     redirect_uri = url_for("auth.google_callback", _external=True)
 
     # Store in session as backup — privacy browsers strip OAuth state param
-    session["oauth_next_url"] = next_url
-    session["oauth_frontend_base"] = frontend_base
+    # Wrapped in try/except because some browsers block session cookies entirely
+    try:
+        session["oauth_next_url"] = next_url
+        session["oauth_frontend_base"] = frontend_base
+    except Exception as e:
+        logger.warning(f"⚠️ Could not write to session (browser may block cookies): {e}")
 
     logger.info(f"🔑 Google login: redirect_uri={redirect_uri}, next={next_url}, frontend={frontend_base}")
 
-    return oauth.google.authorize_redirect(redirect_uri, state=next_url)
+    try:
+        return oauth.google.authorize_redirect(redirect_uri, state=next_url)
+    except Exception as e:
+        logger.error(f"❌ Google login: authorize_redirect crashed: {e}", exc_info=True)
+        return redirect(f"{frontend_base}/auth?error=google_init_failed")
 
 
 @auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
-    oauth = current_app.extensions["oauth"]
+    try:
+        oauth = current_app.extensions["oauth"]
+    except KeyError:
+        logger.error("❌ Google callback: OAuth not initialized")
+        return jsonify({"error": "OAuth not configured"}), 500
 
-    # Recover frontend base — try session first (most reliable for privacy browsers)
-    frontend_base = (
-        session.pop("oauth_frontend_base", None)
-        or _get_frontend_base()
-    )
+    # Recover frontend base — try session first, then infer
+    try:
+        frontend_base = session.pop("oauth_frontend_base", None)
+    except Exception:
+        frontend_base = None
+    frontend_base = frontend_base or _get_frontend_base()
 
     # Recover the intended next URL
+    try:
+        session_next = session.pop("oauth_next_url", None)
+    except Exception:
+        session_next = None
+    
     frontend_next = (
         request.args.get("state")
-        or session.pop("oauth_next_url", None)
+        or session_next
         or f"{frontend_base}/gallery"
     )
 
