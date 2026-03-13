@@ -1,5 +1,5 @@
 import { API_BASE } from "../utils/api";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, User, AlertCircle, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../components/Button';
@@ -19,22 +19,78 @@ type ViewState = 'login' | 'register' | 'forgot' | 'reset' | 'verify';
 
 const LAST_AUTH_KEY = 'last_auth_method';
 
-/**
- * Detect browsers where Google popup OAuth is known to fail.
- * Firefox Focus, Firefox Klar, and most iOS in-app browsers
- * block cross-site cookies / popups aggressively.
- */
-function shouldUseRedirectFlow(): boolean {
+// ─── DEBUG LOGGER ───────────────────────────────────────
+// Writes to both console AND a visible on-screen debug panel
+// so you can see what's happening on mobile without devtools
+const DEBUG_LOGS: string[] = [];
+
+function dbg(msg: string) {
+  const ts = new Date().toISOString().slice(11, 23);
+  const line = `[${ts}] ${msg}`;
+  console.log(`🔍 AUTH_DEBUG: ${line}`);
+  DEBUG_LOGS.push(line);
+  // Keep last 30 lines
+  if (DEBUG_LOGS.length > 30) DEBUG_LOGS.shift();
+  // Dispatch custom event so the debug panel re-renders
+  window.dispatchEvent(new CustomEvent('auth-debug-log'));
+}
+
+// On-screen debug panel component (remove after debugging)
+const DebugPanel: React.FC = () => {
+  const [logs, setLogs] = useState<string[]>([]);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const handler = () => setLogs([...DEBUG_LOGS]);
+    window.addEventListener('auth-debug-log', handler);
+    return () => window.removeEventListener('auth-debug-log', handler);
+  }, []);
+
+  return (
+    <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 99999 }}>
+      <button
+        onClick={() => setVisible(v => !v)}
+        style={{
+          position: 'absolute', bottom: visible ? 'auto' : 8, top: visible ? 0 : 'auto',
+          right: 8, background: '#f43f5e', color: '#fff', border: 'none',
+          borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 900,
+          zIndex: 100000
+        }}
+      >
+        {visible ? 'HIDE DEBUG' : `DEBUG (${logs.length})`}
+      </button>
+      {visible && (
+        <div style={{
+          background: 'rgba(0,0,0,0.92)', color: '#0f0', fontFamily: 'monospace',
+          fontSize: 10, lineHeight: 1.4, padding: '32px 8px 8px', maxHeight: '50vh',
+          overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all'
+        }}>
+          {logs.length === 0 ? 'No logs yet. Try clicking Google login.' : logs.join('\n')}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── BROWSER DETECTION ──────────────────────────────────
+function detectBrowserInfo(): { name: string; shouldRedirect: boolean } {
   const ua = navigator.userAgent || '';
-  // Firefox Focus (iOS) / Firefox Klar (EU branding)
-  if (/Focus|Klar/i.test(ua)) return true;
-  // DuckDuckGo browser
-  if (/DuckDuckGo/i.test(ua)) return true;
-  // Brave with aggressive shields (detected via brave property)
-  if ((navigator as any).brave) return true;
-  // Generic iOS in-app webviews (Facebook, Instagram, etc.)
-  if (/FBAN|FBAV|Instagram|Line\//i.test(ua)) return true;
-  return false;
+
+  if (/Focus/i.test(ua)) return { name: 'Firefox Focus', shouldRedirect: true };
+  if (/Klar/i.test(ua)) return { name: 'Firefox Klar', shouldRedirect: true };
+  if (/DuckDuckGo/i.test(ua)) return { name: 'DuckDuckGo', shouldRedirect: true };
+  if (/FBAN|FBAV/i.test(ua)) return { name: 'Facebook In-App', shouldRedirect: true };
+  if (/Instagram/i.test(ua)) return { name: 'Instagram In-App', shouldRedirect: true };
+  if (/Line\//i.test(ua)) return { name: 'LINE In-App', shouldRedirect: true };
+  // iOS webview that isn't Safari
+  if (/iPhone|iPad/i.test(ua) && !/Safari/i.test(ua)) return { name: 'iOS WebView', shouldRedirect: true };
+  if ((navigator as any).brave) return { name: 'Brave', shouldRedirect: true };
+
+  // Check if popups are likely blocked
+  // Some browsers report Safari in UA but still block popups
+  if (/iPhone|iPad/i.test(ua) && /FxiOS/i.test(ua)) return { name: 'Firefox iOS', shouldRedirect: true };
+
+  return { name: 'Standard', shouldRedirect: false };
 }
 
 export const Auth: React.FC = () => {
@@ -53,9 +109,18 @@ export const Auth: React.FC = () => {
 
   const navigate = useNavigate();
   const { user, verifyGoogleToken, loginUser, registerUser } = useAuth();
+  const googleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const lastAuthMethod = localStorage.getItem(LAST_AUTH_KEY);
-  const useRedirect = shouldUseRedirectFlow();
+  const browserInfo = detectBrowserInfo();
+
+  // Log browser detection on mount
+  useEffect(() => {
+    const ua = navigator.userAgent || '';
+    dbg(`Browser: ${browserInfo.name} | redirect=${browserInfo.shouldRedirect}`);
+    dbg(`UA: ${ua.slice(0, 120)}`);
+    dbg(`API_BASE: ${API_BASE}`);
+  }, []);
 
   useEffect(() => {
     if (user) navigate('/gallery', { replace: true });
@@ -73,49 +138,81 @@ export const Auth: React.FC = () => {
     return () => clearTimeout(timer);
   }, [resendCooldown]);
 
-  // Popup-based Google login (default for normal browsers)
+  // Popup-based Google login
   const loginWithGooglePopup = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
+      dbg(`POPUP onSuccess — got access_token (${tokenResponse.access_token?.slice(0, 20)}...)`);
+      // Clear the safety timeout
+      if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
+
       setGoogleLoading(true);
       setErrorMsg('');
       try {
+        dbg('Calling verifyGoogleToken...');
         await verifyGoogleToken(tokenResponse.access_token);
+        dbg('verifyGoogleToken SUCCESS');
         localStorage.setItem(LAST_AUTH_KEY, 'google');
         navigate('/gallery');
       } catch (err: any) {
-        // If popup flow fails, fall back to redirect
-        console.warn('Google popup flow failed, falling back to redirect:', err);
-        handleGoogleRedirect();
+        dbg(`verifyGoogleToken FAILED: ${err?.message || err}`);
+        dbg('Falling back to redirect flow...');
+        doRedirectLogin();
       } finally {
         setGoogleLoading(false);
       }
     },
     onError: (errorResponse) => {
-      console.warn('Google popup login error:', errorResponse);
-      // On popup failure, try redirect flow instead of just showing error
-      handleGoogleRedirect();
-      setGoogleLoading(false);
+      dbg(`POPUP onError: ${JSON.stringify(errorResponse)}`);
+      if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
+      dbg('Popup failed — falling back to redirect flow');
+      doRedirectLogin();
+    },
+    onNonOAuthError: (err) => {
+      // This fires when popup is blocked or user closes it
+      dbg(`POPUP onNonOAuthError: ${JSON.stringify(err)}`);
+      if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
+      dbg('Popup blocked/closed — falling back to redirect flow');
+      doRedirectLogin();
     }
   });
 
-  // Redirect-based Google login (fallback for Firefox Focus, etc.)
-  const handleGoogleRedirect = () => {
+  // Redirect-based login (server-side OAuth)
+  const doRedirectLogin = () => {
+    dbg('>>> REDIRECT: navigating to /api/auth/google/login');
     setGoogleLoading(true);
-    // Use your backend's server-side OAuth redirect endpoint
-    const googleLoginUrl = joinUrl(API_BASE, '/api/auth/google/login');
-    window.location.assign(googleLoginUrl);
+    const url = joinUrl(API_BASE, '/api/auth/google/login');
+    dbg(`>>> REDIRECT URL: ${url}`);
+    window.location.assign(url);
   };
 
   const handleGoogleLogin = () => {
     setErrorMsg('');
     setGoogleLoading(true);
+    dbg(`handleGoogleLogin called — browser=${browserInfo.name} shouldRedirect=${browserInfo.shouldRedirect}`);
 
-    if (useRedirect) {
-      // Skip popup entirely for browsers known to block it
-      handleGoogleRedirect();
-    } else {
-      // Try popup first, with automatic redirect fallback on failure
+    if (browserInfo.shouldRedirect) {
+      dbg('Using REDIRECT flow (browser detected as needing it)');
+      doRedirectLogin();
+      return;
+    }
+
+    dbg('Trying POPUP flow first...');
+
+    // Safety timeout: if the popup doesn't respond within 8s,
+    // assume it was blocked and fall back to redirect
+    googleTimeoutRef.current = setTimeout(() => {
+      dbg('⚠️ POPUP TIMEOUT (8s) — no response from Google popup');
+      dbg('Falling back to redirect flow...');
+      doRedirectLogin();
+    }, 8000);
+
+    try {
       loginWithGooglePopup();
+      dbg('loginWithGooglePopup() called — waiting for popup response...');
+    } catch (err: any) {
+      dbg(`loginWithGooglePopup() threw: ${err?.message || err}`);
+      if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
+      doRedirectLogin();
     }
   };
 
@@ -155,7 +252,6 @@ export const Auth: React.FC = () => {
           localStorage.setItem(LAST_AUTH_KEY, 'email');
           navigate('/gallery');
         }
-
       } else if (view === 'register') {
         const res = await registerUser(email, password, name);
         if (res) {
@@ -164,7 +260,6 @@ export const Auth: React.FC = () => {
           setResendCooldown(60);
           setView('verify');
         }
-
       } else if (view === 'forgot') {
         const res = await fetch(joinUrl(API_BASE, '/api/auth/forgot-password'), {
           method: 'POST',
@@ -178,7 +273,6 @@ export const Auth: React.FC = () => {
           const data = await res.json().catch(() => ({}));
           setErrorMsg(data.error || 'Failed to send reset code.');
         }
-
       } else if (view === 'reset') {
         const res = await fetch(joinUrl(API_BASE, '/api/auth/reset-password'), {
           method: 'POST',
@@ -191,7 +285,6 @@ export const Auth: React.FC = () => {
           const data = await res.json().catch(() => ({}));
           setErrorMsg(data.error || 'Invalid or expired code.');
         }
-
       } else if (view === 'verify') {
         const res = await fetch(joinUrl(API_BASE, '/api/auth/verify-email'), {
           method: 'POST',
@@ -216,6 +309,9 @@ export const Auth: React.FC = () => {
 
   return (
     <div className="min-h-screen w-full relative bg-white flex flex-col md:flex-row">
+
+      {/* ── DEBUG PANEL — remove after fixing ── */}
+      <DebugPanel />
 
       {/* ── BACKGROUND SPLIT ── */}
       <div className="fixed inset-0 flex pointer-events-none">
@@ -250,7 +346,6 @@ export const Auth: React.FC = () => {
         {/* ── RIGHT PANEL ── */}
         <div className="w-full md:w-1/2 flex flex-col justify-start items-center h-full relative pl-0 md:pl-16 pt-32 md:pt-28">
 
-          {/* Back to home */}
           <div className="absolute top-8 right-0">
             <Link
               to="/"
@@ -262,7 +357,6 @@ export const Auth: React.FC = () => {
               {t('auth:backToHome')}
             </Link>
           </div>
-
 
           <div className="w-full max-w-sm mx-auto px-1 md:px-0 md:max-w-sm" style={{ maxWidth: 'min(100%, 420px)' }}>
 
@@ -288,10 +382,8 @@ export const Auth: React.FC = () => {
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:verifyAccount')}</label>
                     <div className="relative">
                       <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input
-                        type="text" name="code" placeholder="123456" required maxLength={6}
-                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm tracking-widest font-bold text-center"
-                      />
+                      <input type="text" name="code" placeholder="123456" required maxLength={6}
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm tracking-widest font-bold text-center" />
                     </div>
                   </div>
                   <Button type="submit" fullWidth disabled={emailLoading} className="h-12 mt-2 text-sm font-black shadow-xl rounded-xl">
@@ -299,22 +391,14 @@ export const Auth: React.FC = () => {
                   </Button>
                 </form>
                 <div className="mt-4 text-center">
-                  <button
-                    type="button"
-                    onClick={handleResendCode}
-                    disabled={resendCooldown > 0}
+                  <button type="button" onClick={handleResendCode} disabled={resendCooldown > 0}
                     className="text-sm hover:underline disabled:opacity-40 disabled:no-underline"
-                    style={{ color: resendCooldown > 0 ? '#9ca3af' : '#f43f5e' }}
-                  >
-                    {resendCooldown > 0
-                      ? `${t('common:resendIn', 'Resend in')} ${resendCooldown}s`
-                      : t('common:didntReceive', "Didn't receive it? Resend")}
+                    style={{ color: resendCooldown > 0 ? '#9ca3af' : '#f43f5e' }}>
+                    {resendCooldown > 0 ? `${t('common:resendIn', 'Resend in')} ${resendCooldown}s` : t('common:didntReceive', "Didn't receive it? Resend")}
                   </button>
                 </div>
                 <div className="mt-3 text-center">
-                  <button type="button" onClick={() => setView('register')} className="text-xs text-gray-400 hover:text-gray-600">
-                    ← {t('auth:backTo')}
-                  </button>
+                  <button type="button" onClick={() => setView('register')} className="text-xs text-gray-400 hover:text-gray-600">← {t('auth:backTo')}</button>
                 </div>
               </div>
             )}
@@ -334,8 +418,7 @@ export const Auth: React.FC = () => {
                 </div>
                 {errorMsg && (
                   <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 text-sm">
-                    <AlertCircle size={16} className="flex-shrink-0" />
-                    <span>{errorMsg}</span>
+                    <AlertCircle size={16} className="flex-shrink-0" /><span>{errorMsg}</span>
                   </div>
                 )}
                 <form onSubmit={handleSubmit} className="space-y-3">
@@ -343,28 +426,19 @@ export const Auth: React.FC = () => {
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:verifyAccount')}</label>
                     <div className="relative">
                       <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input
-                        type="text" name="code" placeholder="123456" required maxLength={6}
-                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm tracking-widest font-bold text-center"
-                      />
+                      <input type="text" name="code" placeholder="123456" required maxLength={6}
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm tracking-widest font-bold text-center" />
                     </div>
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:newPassword')}</label>
                     <div className="relative">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input
-                        type={showNewPassword ? 'text' : 'password'}
-                        name="password" placeholder="••••••••" required
-                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-11 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPassword(p => !p)}
+                      <input type={showNewPassword ? 'text' : 'password'} name="password" placeholder="••••••••" required
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-11 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
+                      <button type="button" onClick={() => setShowNewPassword(p => !p)}
                         className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                        tabIndex={-1}
-                        aria-label={showNewPassword ? 'Hide password' : 'Show password'}
-                      >
+                        tabIndex={-1} aria-label={showNewPassword ? 'Hide password' : 'Show password'}>
                         {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
                     </div>
@@ -374,9 +448,7 @@ export const Auth: React.FC = () => {
                   </Button>
                 </form>
                 <div className="mt-4 text-center">
-                  <button type="button" onClick={() => setView('forgot')} className="text-sm hover:underline" style={{ color: '#f43f5e' }}>
-                    ← {t('auth:backTo')}
-                  </button>
+                  <button type="button" onClick={() => setView('forgot')} className="text-sm hover:underline" style={{ color: '#f43f5e' }}>← {t('auth:backTo')}</button>
                 </div>
               </>
             )}
@@ -390,8 +462,7 @@ export const Auth: React.FC = () => {
                 </div>
                 {errorMsg && (
                   <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 text-sm">
-                    <AlertCircle size={16} className="flex-shrink-0" />
-                    <span>{errorMsg}</span>
+                    <AlertCircle size={16} className="flex-shrink-0" /><span>{errorMsg}</span>
                   </div>
                 )}
                 <form onSubmit={handleSubmit} className="space-y-3">
@@ -399,10 +470,8 @@ export const Auth: React.FC = () => {
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:emailAddress')}</label>
                     <div className="relative">
                       <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input
-                        type="email" name="email" placeholder={t('auth:emailPlaceholder')} required
-                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
-                      />
+                      <input type="email" name="email" placeholder={t('auth:emailPlaceholder')} required
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
                     </div>
                   </div>
                   <Button type="submit" fullWidth disabled={emailLoading} className="h-12 mt-2 text-sm font-black shadow-xl rounded-xl">
@@ -410,14 +479,12 @@ export const Auth: React.FC = () => {
                   </Button>
                 </form>
                 <div className="mt-4 text-center">
-                  <button type="button" onClick={() => setView('login')} className="text-sm hover:underline" style={{ color: '#f43f5e' }}>
-                  {t('auth:backTo')}
-                  </button>
+                  <button type="button" onClick={() => setView('login')} className="text-sm hover:underline" style={{ color: '#f43f5e' }}>{t('auth:backTo')}</button>
                 </div>
               </>
             )}
 
-            {/* ══ LOGIN / REGISTER VIEWS ══ */}
+            {/* ══ LOGIN / REGISTER ══ */}
             {(view === 'login' || view === 'register') && (
               <>
                 <div className="text-center mb-8 -mt-6 md:mt-0 md:mb-6">
@@ -428,8 +495,7 @@ export const Auth: React.FC = () => {
 
                 {errorMsg && (
                   <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 text-sm">
-                    <AlertCircle size={16} className="flex-shrink-0" />
-                    <span>{errorMsg}</span>
+                    <AlertCircle size={16} className="flex-shrink-0" /><span>{errorMsg}</span>
                   </div>
                 )}
 
@@ -475,10 +541,8 @@ export const Auth: React.FC = () => {
                       <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:fullName')}</label>
                       <div className="relative">
                         <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                        <input
-                          type="text" name="name" placeholder={t('auth:namePlaceholder')} required
-                          className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
-                        />
+                        <input type="text" name="name" placeholder={t('auth:namePlaceholder')} required
+                          className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
                       </div>
                     </div>
                   )}
@@ -487,10 +551,8 @@ export const Auth: React.FC = () => {
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:emailAddress')}</label>
                     <div className="relative">
                       <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input
-                        type="email" name="email" placeholder={t('auth:emailPlaceholder')} required
-                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
-                      />
+                      <input type="email" name="email" placeholder={t('auth:emailPlaceholder')} required
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
                     </div>
                   </div>
 
@@ -498,29 +560,17 @@ export const Auth: React.FC = () => {
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:password')}</label>
                     <div className="relative">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        name="password" placeholder="••••••••" required
-                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-11 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(prev => !prev)}
+                      <input type={showPassword ? 'text' : 'password'} name="password" placeholder="••••••••" required
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-11 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
+                      <button type="button" onClick={() => setShowPassword(prev => !prev)}
                         className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                        tabIndex={-1}
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      >
+                        tabIndex={-1} aria-label={showPassword ? 'Hide password' : 'Show password'}>
                         {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
                     </div>
                     {view === 'login' && (
                       <div className="text-right mt-1">
-                        <button
-                          type="button"
-                          onClick={() => setView('forgot')}
-                          className="text-xs hover:underline"
-                          style={{ color: '#f43f5e' }}
-                        >
+                        <button type="button" onClick={() => setView('forgot')} className="text-xs hover:underline" style={{ color: '#f43f5e' }}>
                           {t('auth:forgotPassword')}
                         </button>
                       </div>
@@ -533,11 +583,8 @@ export const Auth: React.FC = () => {
                 </form>
 
                 <div className="mt-4 text-center">
-                  <button
-                    onClick={() => setView(view === 'login' ? 'register' : 'login')}
-                    type="button"
-                    className="text-sm font-black hover:underline text-primary-600"
-                  >
+                  <button onClick={() => setView(view === 'login' ? 'register' : 'login')} type="button"
+                    className="text-sm font-black hover:underline text-primary-600">
                     {view === 'login' ? t('auth:noAccount') : t('auth:backTo')}
                   </button>
                 </div>
