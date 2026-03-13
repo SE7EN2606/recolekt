@@ -193,15 +193,19 @@ def admin_page():
     return render_template("admin.html", admin_key=key)
 
 
-# TEMP DEBUG — remove after Google login is fixed
-@app.route("/debug/routes")
-def debug_routes():
-    routes = []
-    for rule in app.url_map.iter_rules():
-        if "google" in rule.rule or "auth" in rule.rule:
-            routes.append(f"{rule.rule} -> {rule.endpoint} [{', '.join(rule.methods)}]")
-    return jsonify({"auth_routes": sorted(routes), "total_rules": len(list(app.url_map.iter_rules()))})
-
+# TEMP — add right after /debug/routes, remove after fixing
+@app.route("/debug/google-creds")
+def debug_google_creds():
+    cid = os.getenv("GOOGLE_CLIENT_ID", "")
+    csec = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    return jsonify({
+        "client_id_length": len(cid),
+        "client_id_prefix": cid[:20] + "..." if cid else "(empty)",
+        "client_secret_length": len(csec),
+        "client_secret_prefix": csec[:6] + "..." if csec else "(empty)",
+        "client_secret_has_whitespace": csec != csec.strip(),
+        "client_secret_has_newlines": "\n" in csec or "\r" in csec,
+    })
 
 # ============================================
 # 9. ERROR HANDLER + FRONTEND SERVING
