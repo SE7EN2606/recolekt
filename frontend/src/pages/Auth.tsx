@@ -19,77 +19,17 @@ type ViewState = 'login' | 'register' | 'forgot' | 'reset' | 'verify';
 
 const LAST_AUTH_KEY = 'last_auth_method';
 
-// ─── DEBUG LOGGER ───────────────────────────────────────
-// Writes to both console AND a visible on-screen debug panel
-// so you can see what's happening on mobile without devtools
-const DEBUG_LOGS: string[] = [];
-
-function dbg(msg: string) {
-  const ts = new Date().toISOString().slice(11, 23);
-  const line = `[${ts}] ${msg}`;
-  console.log(`🔍 AUTH_DEBUG: ${line}`);
-  DEBUG_LOGS.push(line);
-  // Keep last 30 lines
-  if (DEBUG_LOGS.length > 30) DEBUG_LOGS.shift();
-  // Dispatch custom event so the debug panel re-renders
-  window.dispatchEvent(new CustomEvent('auth-debug-log'));
-}
-
-// On-screen debug panel component (remove after debugging)
-const DebugPanel: React.FC = () => {
-  const [logs, setLogs] = useState<string[]>([]);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const handler = () => setLogs([...DEBUG_LOGS]);
-    window.addEventListener('auth-debug-log', handler);
-    return () => window.removeEventListener('auth-debug-log', handler);
-  }, []);
-
-  return (
-    <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 99999 }}>
-      <button
-        onClick={() => setVisible(v => !v)}
-        style={{
-          position: 'absolute', bottom: visible ? 'auto' : 8, top: visible ? 0 : 'auto',
-          right: 8, background: '#f43f5e', color: '#fff', border: 'none',
-          borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 900,
-          zIndex: 100000
-        }}
-      >
-        {visible ? 'HIDE DEBUG' : `DEBUG (${logs.length})`}
-      </button>
-      {visible && (
-        <div style={{
-          background: 'rgba(0,0,0,0.92)', color: '#0f0', fontFamily: 'monospace',
-          fontSize: 10, lineHeight: 1.4, padding: '32px 8px 8px', maxHeight: '50vh',
-          overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all'
-        }}>
-          {logs.length === 0 ? 'No logs yet. Try clicking Google login.' : logs.join('\n')}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ─── BROWSER DETECTION ──────────────────────────────────
 function detectBrowserInfo(): { name: string; shouldRedirect: boolean } {
   const ua = navigator.userAgent || '';
-
   if (/Focus/i.test(ua)) return { name: 'Firefox Focus', shouldRedirect: true };
   if (/Klar/i.test(ua)) return { name: 'Firefox Klar', shouldRedirect: true };
   if (/DuckDuckGo/i.test(ua)) return { name: 'DuckDuckGo', shouldRedirect: true };
   if (/FBAN|FBAV/i.test(ua)) return { name: 'Facebook In-App', shouldRedirect: true };
   if (/Instagram/i.test(ua)) return { name: 'Instagram In-App', shouldRedirect: true };
   if (/Line\//i.test(ua)) return { name: 'LINE In-App', shouldRedirect: true };
-  // iOS webview that isn't Safari
   if (/iPhone|iPad/i.test(ua) && !/Safari/i.test(ua)) return { name: 'iOS WebView', shouldRedirect: true };
   if ((navigator as any).brave) return { name: 'Brave', shouldRedirect: true };
-
-  // Check if popups are likely blocked
-  // Some browsers report Safari in UA but still block popups
   if (/iPhone|iPad/i.test(ua) && /FxiOS/i.test(ua)) return { name: 'Firefox iOS', shouldRedirect: true };
-
   return { name: 'Standard', shouldRedirect: false };
 }
 
@@ -114,14 +54,6 @@ export const Auth: React.FC = () => {
   const lastAuthMethod = localStorage.getItem(LAST_AUTH_KEY);
   const browserInfo = detectBrowserInfo();
 
-  // Log browser detection on mount
-  useEffect(() => {
-    const ua = navigator.userAgent || '';
-    dbg(`Browser: ${browserInfo.name} | redirect=${browserInfo.shouldRedirect}`);
-    dbg(`UA: ${ua.slice(0, 120)}`);
-    dbg(`API_BASE: ${API_BASE}`);
-  }, []);
-
   useEffect(() => {
     if (user) navigate('/gallery', { replace: true });
   }, [user, navigate]);
@@ -138,79 +70,50 @@ export const Auth: React.FC = () => {
     return () => clearTimeout(timer);
   }, [resendCooldown]);
 
-  // Popup-based Google login
   const loginWithGooglePopup = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
-      dbg(`POPUP onSuccess — got access_token (${tokenResponse.access_token?.slice(0, 20)}...)`);
-      // Clear the safety timeout
       if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
-
       setGoogleLoading(true);
       setErrorMsg('');
       try {
-        dbg('Calling verifyGoogleToken...');
         await verifyGoogleToken(tokenResponse.access_token);
-        dbg('verifyGoogleToken SUCCESS');
         localStorage.setItem(LAST_AUTH_KEY, 'google');
         navigate('/gallery');
-      } catch (err: any) {
-        dbg(`verifyGoogleToken FAILED: ${err?.message || err}`);
-        dbg('Falling back to redirect flow...');
+      } catch {
         doRedirectLogin();
       } finally {
         setGoogleLoading(false);
       }
     },
-    onError: (errorResponse) => {
-      dbg(`POPUP onError: ${JSON.stringify(errorResponse)}`);
+    onError: () => {
       if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
-      dbg('Popup failed — falling back to redirect flow');
       doRedirectLogin();
     },
-    onNonOAuthError: (err) => {
-      // This fires when popup is blocked or user closes it
-      dbg(`POPUP onNonOAuthError: ${JSON.stringify(err)}`);
+    onNonOAuthError: () => {
       if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
-      dbg('Popup blocked/closed — falling back to redirect flow');
       doRedirectLogin();
     }
   });
 
-  // Redirect-based login (server-side OAuth)
   const doRedirectLogin = () => {
-    dbg('>>> REDIRECT: navigating to /api/auth/google/login');
     setGoogleLoading(true);
-    const url = joinUrl(API_BASE, '/api/auth/google/login');
-    dbg(`>>> REDIRECT URL: ${url}`);
-    window.location.assign(url);
+    window.location.assign(joinUrl(API_BASE, '/api/auth/google/login'));
   };
 
   const handleGoogleLogin = () => {
     setErrorMsg('');
     setGoogleLoading(true);
-    dbg(`handleGoogleLogin called — browser=${browserInfo.name} shouldRedirect=${browserInfo.shouldRedirect}`);
 
     if (browserInfo.shouldRedirect) {
-      dbg('Using REDIRECT flow (browser detected as needing it)');
       doRedirectLogin();
       return;
     }
 
-    dbg('Trying POPUP flow first...');
-
-    // Safety timeout: if the popup doesn't respond within 8s,
-    // assume it was blocked and fall back to redirect
-    googleTimeoutRef.current = setTimeout(() => {
-      dbg('⚠️ POPUP TIMEOUT (8s) — no response from Google popup');
-      dbg('Falling back to redirect flow...');
-      doRedirectLogin();
-    }, 8000);
+    googleTimeoutRef.current = setTimeout(() => doRedirectLogin(), 8000);
 
     try {
       loginWithGooglePopup();
-      dbg('loginWithGooglePopup() called — waiting for popup response...');
-    } catch (err: any) {
-      dbg(`loginWithGooglePopup() threw: ${err?.message || err}`);
+    } catch {
       if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
       doRedirectLogin();
     }
@@ -310,10 +213,6 @@ export const Auth: React.FC = () => {
   return (
     <div className="min-h-screen w-full relative bg-white flex flex-col md:flex-row">
 
-      {/* ── DEBUG PANEL — remove after fixing ── */}
-      <DebugPanel />
-
-      {/* ── BACKGROUND SPLIT ── */}
       <div className="fixed inset-0 flex pointer-events-none">
         <div className="hidden md:block w-1/2 h-full bg-[#0B0F19]" />
         <div className="w-full md:w-1/2 h-full bg-white" />
@@ -321,7 +220,7 @@ export const Auth: React.FC = () => {
 
       <div className="relative z-10 w-full max-w-[1280px] mx-auto min-h-screen flex flex-col md:flex-row px-6 md:px-8">
 
-        {/* ── LEFT PANEL ── */}
+        {/* Left Panel */}
         <div className="hidden md:flex w-1/2 flex-col justify-between py-16 pr-16 text-white h-full">
           <div>
             <Link to="/" className="inline-block hover:opacity-80 transition-opacity">
@@ -343,14 +242,12 @@ export const Auth: React.FC = () => {
           </div>
         </div>
 
-        {/* ── RIGHT PANEL ── */}
+        {/* Right Panel */}
         <div className="w-full md:w-1/2 flex flex-col justify-start items-center h-full relative pl-0 md:pl-16 pt-32 md:pt-28">
 
           <div className="absolute top-8 right-0">
-            <Link
-              to="/"
-              className="inline-flex items-center gap-1.5 text-xs font-black text-gray-400 hover:text-gray-700 transition-colors uppercase tracking-widest"
-            >
+            <Link to="/"
+              className="inline-flex items-center gap-1.5 text-xs font-black text-gray-400 hover:text-gray-700 transition-colors uppercase tracking-widest">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M19 12H5M12 5l-7 7 7 7" />
               </svg>
@@ -360,7 +257,7 @@ export const Auth: React.FC = () => {
 
           <div className="w-full max-w-sm mx-auto px-1 md:px-0 md:max-w-sm" style={{ maxWidth: 'min(100%, 420px)' }}>
 
-            {/* ══ VERIFY VIEW ══ */}
+            {/* Verify */}
             {view === 'verify' && (
               <div className="text-center">
                 <div className="w-16 h-16 bg-primary-50 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -373,8 +270,7 @@ export const Auth: React.FC = () => {
                 </p>
                 {errorMsg && (
                   <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 text-sm text-left">
-                    <AlertCircle size={16} className="flex-shrink-0" />
-                    <span>{errorMsg}</span>
+                    <AlertCircle size={16} className="flex-shrink-0" /><span>{errorMsg}</span>
                   </div>
                 )}
                 <form onSubmit={handleSubmit} className="space-y-3">
@@ -386,7 +282,7 @@ export const Auth: React.FC = () => {
                         className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm tracking-widest font-bold text-center" />
                     </div>
                   </div>
-                  <Button type="submit" fullWidth disabled={emailLoading} className="h-12 mt-2 text-sm font-black shadow-xl rounded-xl">
+                  <Button type="submit" fullWidth disabled={emailLoading} className="h-14 mt-2 text-base font-black shadow-xl rounded-xl">
                     {emailLoading ? t('common:processing') : t('auth:verifyEmail')}
                   </Button>
                 </form>
@@ -403,7 +299,7 @@ export const Auth: React.FC = () => {
               </div>
             )}
 
-            {/* ══ RESET VIEW ══ */}
+            {/* Reset */}
             {view === 'reset' && (
               <>
                 <div className="text-center mb-6">
@@ -443,7 +339,7 @@ export const Auth: React.FC = () => {
                       </button>
                     </div>
                   </div>
-                  <Button type="submit" fullWidth disabled={emailLoading} className="h-12 mt-2 text-sm font-black shadow-xl rounded-xl">
+                  <Button type="submit" fullWidth disabled={emailLoading} className="h-14 mt-2 text-base font-black shadow-xl rounded-xl">
                     {emailLoading ? t('common:processing') : t('auth:resetPassword')}
                   </Button>
                 </form>
@@ -453,7 +349,7 @@ export const Auth: React.FC = () => {
               </>
             )}
 
-            {/* ══ FORGOT VIEW ══ */}
+            {/* Forgot */}
             {view === 'forgot' && (
               <>
                 <div className="text-center mb-6">
@@ -474,7 +370,7 @@ export const Auth: React.FC = () => {
                         className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
                     </div>
                   </div>
-                  <Button type="submit" fullWidth disabled={emailLoading} className="h-12 mt-2 text-sm font-black shadow-xl rounded-xl">
+                  <Button type="submit" fullWidth disabled={emailLoading} className="h-14 mt-2 text-base font-black shadow-xl rounded-xl">
                     {emailLoading ? t('common:processing') : t('auth:sendResetCode')}
                   </Button>
                 </form>
@@ -484,7 +380,7 @@ export const Auth: React.FC = () => {
               </>
             )}
 
-            {/* ══ LOGIN / REGISTER ══ */}
+            {/* Login / Register */}
             {(view === 'login' || view === 'register') && (
               <>
                 <div className="text-center mb-8 -mt-6 md:mt-0 md:mb-6">
@@ -499,13 +395,12 @@ export const Auth: React.FC = () => {
                   </div>
                 )}
 
-                {/* Google button */}
                 <div className="relative mb-4 mt-3">
                   <button
                     type="button"
                     onClick={handleGoogleLogin}
                     disabled={googleLoading || emailLoading}
-                    className="w-full flex items-center justify-center gap-3 p-4 bg-white/40 hover:bg-white/80 text-gray-800 font-bold rounded-xl transition-all border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-3 p-4 bg-white/40 hover:bg-white/80 text-gray-800 font-bold rounded-xl transition-all border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 disabled:opacity-50 text-base"
                   >
                     {googleLoading ? (
                       <svg className="animate-spin w-5 h-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -515,7 +410,7 @@ export const Auth: React.FC = () => {
                     ) : (
                       <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
                     )}
-                    <span className="text-base">{googleLoading ? t('common:processing') : t('auth:googleContinue')}</span>
+                    <span>{googleLoading ? t('common:processing') : t('auth:googleContinue')}</span>
                   </button>
 
                   {lastAuthMethod === 'google' && !googleLoading && (
@@ -577,14 +472,14 @@ export const Auth: React.FC = () => {
                     )}
                   </div>
 
-                  <Button type="submit" fullWidth disabled={emailLoading || googleLoading} className="h-12 mt-4 text-sm font-black shadow-xl rounded-xl">
+                  <Button type="submit" fullWidth disabled={emailLoading || googleLoading} className="h-14 mt-4 text-base font-black shadow-xl rounded-xl">
                     {emailLoading ? t('common:processing') : (view === 'login' ? t('common:signIn') : t('auth:createAccount'))}
                   </Button>
                 </form>
 
-                <div className="mt-4 text-center">
+                <div className="mt-5 text-center">
                   <button onClick={() => setView(view === 'login' ? 'register' : 'login')} type="button"
-                    className="text-sm font-black hover:underline text-primary-600">
+                    className="text-base font-black hover:underline text-primary-600">
                     {view === 'login' ? t('auth:noAccount') : t('auth:backTo')}
                   </button>
                 </div>

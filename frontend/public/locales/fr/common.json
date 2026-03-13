@@ -28,7 +28,7 @@
   "footerSlogan": "Sauvegardez et organisez vos vidéos préférées.",
   "tryAgain": "Nouvel essai",
   "remove": "Supprimer",
-  "footerCopyright": "© 2025 Recolekt.",
+  "footerCopyright": "© 2026 Recolekt.",
   "account": "Compte",
   "myAccount": "Mon Compte",
   "billingPlan": "Facturation & Offre",
@@ -36,16 +36,17 @@
   "resources": "Ressources",
   "guide": "Guide",
   "support": "Support",
-  "freeMember": "C Gratuit",
+  "freeMember": "Gratuit",
   "upgradePro": "Passer à Pro",
   "edit": "Modifier",
   "codeSentTo": "Code envoyé à",
   "resetDesc": "Entrez votre adresse e-mail pour recevoir un code de réinitialisation.",
   "resendIn": "Renvoyer dans",
   "didntReceive": "Vous ne l'avez pas reçu ? Renvoyer",
+  "close": "Fermer",
   "installTitle": "Installer Recolekt",
   "installSubtitle": "Ajoutez à l'écran d'accueil pour la meilleure expérience",
   "installStep1": "Appuyez sur le bouton Partager dans Safari",
   "installStep2": "Sélectionnez \"Sur l'écran d'accueil\"",
-  "add": "Installer l'App"
+  "installApp": "Installer l'App"
 }

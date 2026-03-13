@@ -1,6 +1,6 @@
 {
-  "signIn": "Sign in",
-  "signUp": "Sign up",
+  "signIn": "Sign In",
+  "signUp": "Sign Up",
   "cancel": "Cancel",
   "delete": "Delete",
   "search": "Search...",
@@ -28,7 +28,7 @@
   "footerSlogan": "Save and organize your favorite videos.",
   "tryAgain": "Try again",
   "remove": "Remove",
-  "footerCopyright": "© 2025 Recolekt.",
+  "footerCopyright": "© 2026 Recolekt.",
   "account": "Account",
   "myAccount": "My Account",
   "billingPlan": "Billing & Plan",
@@ -43,8 +43,9 @@
   "resetDesc": "Enter your email and we'll send you a reset code.",
   "resendIn": "Resend in",
   "didntReceive": "Didn't receive it? Resend",
-  “installTitle”: “Install Recolekt”,
-  “installSubtitle”: “Add to Home Screen for a better experience”,
-  “installStep1”: “Tap the Share button in Safari”,
-  “installStep2”: “Select \”On the Home Screen\“”
+  "close": "Close",
+  "installTitle": "Install Recolekt",
+  "installSubtitle": "Add to Home Screen for a better experience",
+  "installStep1": "Tap the Share button in Safari",
+  "installStep2": "Select \"Add to Home Screen\""
 }
