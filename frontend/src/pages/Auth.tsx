@@ -282,7 +282,7 @@ export const Auth: React.FC = () => {
                         className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm tracking-widest font-bold text-center" />
                     </div>
                   </div>
-                  <Button type="submit" fullWidth disabled={emailLoading} className="h-14 mt-2 text-base font-black shadow-xl rounded-xl">
+                  <Button type="submit" fullWidth size="lg" disabled={emailLoading} className="h-14 mt-2 font-black shadow-xl rounded-xl">
                     {emailLoading ? t('common:processing') : t('auth:verifyEmail')}
                   </Button>
                 </form>
@@ -339,7 +339,7 @@ export const Auth: React.FC = () => {
                       </button>
                     </div>
                   </div>
-                  <Button type="submit" fullWidth disabled={emailLoading} className="h-14 mt-2 text-base font-black shadow-xl rounded-xl">
+                  <Button type="submit" fullWidth size="lg" disabled={emailLoading} className="h-14 mt-2 font-black shadow-xl rounded-xl">
                     {emailLoading ? t('common:processing') : t('auth:resetPassword')}
                   </Button>
                 </form>
@@ -370,7 +370,7 @@ export const Auth: React.FC = () => {
                         className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
                     </div>
                   </div>
-                  <Button type="submit" fullWidth disabled={emailLoading} className="h-14 mt-2 text-base font-black shadow-xl rounded-xl">
+                  <Button type="submit" fullWidth size="lg" disabled={emailLoading} className="h-14 mt-2 font-black shadow-xl rounded-xl">
                     {emailLoading ? t('common:processing') : t('auth:sendResetCode')}
                   </Button>
                 </form>
@@ -472,7 +472,7 @@ export const Auth: React.FC = () => {
                     )}
                   </div>
 
-                  <Button type="submit" fullWidth disabled={emailLoading || googleLoading} className="h-14 mt-4 text-base font-black shadow-xl rounded-xl">
+                  <Button type="submit" fullWidth size="lg" disabled={emailLoading || googleLoading} className="h-14 mt-4 font-black shadow-xl rounded-xl">
                     {emailLoading ? t('common:processing') : (view === 'login' ? t('common:signIn') : t('auth:createAccount'))}
                   </Button>
                 </form>
