@@ -65,7 +65,6 @@ if not app:
     raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
 
 
-# PROXY FIX: Critical for Railway Load Balancer HTTPS detection
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
 
 
@@ -153,7 +152,6 @@ oauth.register(
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={"scope": "openid email profile"},
 )
-# Store on app so auth.py can access it without circular imports
 app.extensions["oauth"] = oauth
 logger.info("✅ OAuth initialized with Google provider")
 
@@ -163,9 +161,6 @@ logger.info("✅ OAuth initialized with Google provider")
 # ============================================
 from fetcher_api.api import register_blueprints
 register_blueprints(app)
-
-# NOTE: folders_bp is already registered inside register_blueprints()
-# Do NOT register it again here.
 
 
 # ============================================
@@ -193,93 +188,34 @@ def admin_page():
     return render_template("admin.html", admin_key=key)
 
 
-# TEMP DEBUG — remove after Google login is fixed
-@app.route("/debug/routes")
-def debug_routes():
-    routes = []
-    for rule in app.url_map.iter_rules():
-        if "google" in rule.rule or "auth" in rule.rule:
-            routes.append(f"{rule.rule} -> {rule.endpoint} [{', '.join(rule.methods)}]")
-    return jsonify({"auth_routes": sorted(routes), "total_rules": len(list(app.url_map.iter_rules()))})
-
-
-@app.route("/debug/google-creds")
-def debug_google_creds():
-    cid = os.getenv("GOOGLE_CLIENT_ID", "")
-    csec = os.getenv("GOOGLE_CLIENT_SECRET", "")
-    return jsonify({
-        "client_id_length": len(cid),
-        "client_id_prefix": cid[:20] + "..." if cid else "(empty)",
-        "client_secret_length": len(csec),
-        "client_secret_prefix": csec[:6] + "..." if csec else "(empty)",
-        "client_secret_last4": csec[-4:] if len(csec) >= 4 else csec,
-        "client_secret_has_whitespace": csec != csec.strip(),
-        "client_secret_has_newlines": "\n" in csec or "\r" in csec,
-    })
-
-
-@app.route("/debug/test-token-exchange")
-def debug_test_exchange():
-    """Test if Google accepts our client credentials"""
-    import requests as req
-    cid = os.getenv("GOOGLE_CLIENT_ID", "")
-    csec = os.getenv("GOOGLE_CLIENT_SECRET", "")
-
-    resp = req.post(
-        "https://oauth2.googleapis.com/token",
-        data={
-            "code": "fake_code_12345",
-            "client_id": cid,
-            "client_secret": csec,
-            "redirect_uri": "https://recolekt-staging.up.railway.app/api/auth/google/callback",
-            "grant_type": "authorization_code",
-        },
-        timeout=10,
-    )
-
-    # invalid_grant = credentials OK (just fake code)
-    # invalid_client = credentials WRONG
-    return jsonify({
-        "status": resp.status_code,
-        "response": resp.json(),
-        "note": "invalid_grant means credentials are OK. invalid_client means secret is WRONG."
-    })
-
-
 # ============================================
 # 9. ERROR HANDLER + FRONTEND SERVING
 # ============================================
-# We use a SINGLE error handler that doubles as the SPA catch-all.
-# This approach NEVER shadows blueprint routes because it only runs
-# when Flask has already determined no blueprint matched.
-
 if not IS_LOCAL:
     base_dir = os.path.dirname(os.path.abspath(__file__))
     frontend_dir = os.path.join(base_dir, "frontend")
 
-    # Explicit root route for serving index.html at /
     @app.route("/")
     def serve_root():
-        return send_from_directory(frontend_dir, "index.html")
+        index_path = os.path.join(frontend_dir, "index.html")
+        if os.path.exists(index_path):
+            return send_from_directory(frontend_dir, "index.html")
+        return jsonify({"status": "API running", "frontend": "not bundled"}), 200
 
     @app.errorhandler(404)
     def handle_404(e):
         path = request.path.lstrip("/")
 
-        # API paths that no blueprint matched → JSON 404
         if path.startswith("api/"):
             return jsonify({"error": "Not Found", "code": 404}), 404
 
-        # Static frontend file (JS, CSS, images, fonts, etc.)
         if path and os.path.exists(os.path.join(frontend_dir, path)):
             return send_from_directory(frontend_dir, path)
 
-        # SPA fallback — but only if index.html actually exists
         index_path = os.path.join(frontend_dir, "index.html")
         if os.path.exists(index_path):
             return send_from_directory(frontend_dir, "index.html")
 
-        # No frontend build present (e.g. staging backend-only)
         return jsonify({"error": "Not Found", "code": 404}), 404
 
     @app.errorhandler(Exception)
