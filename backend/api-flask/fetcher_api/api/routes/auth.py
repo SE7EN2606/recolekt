@@ -7,19 +7,15 @@ import random
 import resend
 from datetime import datetime, timedelta, timezone
 
-
 from flask import Blueprint, request, jsonify, session, redirect, url_for, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
-
 
 from fetcher_api.api.helpers.auth import get_user_id_from_request
 from fetcher_api.adapters.db import execute, fetch_one
 from fetcher_api.utils.timestamps import get_unique_id
 
-
 logger = logging.getLogger("auth")
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
-
 
 resend.api_key = os.getenv("RESEND_API_KEY")
 FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@recolekt.app")
@@ -43,9 +39,33 @@ def create_jwt_token(user_id: str, email: str) -> str:
 
 
 # ─────────────────────────────────────────────
-# EMAIL TEMPLATES
+# FRONTEND BASE URL HELPER
 # ─────────────────────────────────────────────
 
+def _get_frontend_base() -> str:
+    """
+    Return the correct frontend base URL for redirects.
+    Priority:
+      1. FRONTEND_URL env var (if explicitly set)
+      2. Inferred from the current request Host header
+      3. Fallback to the FRONTEND_URL constant
+    
+    This prevents staging from redirecting to production
+    when FRONTEND_URL isn't configured on the staging env.
+    """
+    env_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
+    if env_url:
+        return env_url
+
+    # If FRONTEND_URL is not set at all, infer from request
+    host = request.host  # e.g. "recolekt-staging.up.railway.app"
+    scheme = request.scheme  # "https" (via ProxyFix)
+    return f"{scheme}://{host}"
+
+
+# ─────────────────────────────────────────────
+# EMAIL TEMPLATES
+# ─────────────────────────────────────────────
 
 def _base_html(lang: str, body_content: str) -> str:
     unsubscribe_label = "Se désabonner" if lang == "fr" else "Unsubscribe"
@@ -63,7 +83,6 @@ def _base_html(lang: str, body_content: str) -> str:
     <tr><td align="center">
       <table width="480" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);max-width:480px;">
 
-
         <!-- Header -->
         <tr>
           <td style="background:#0B0F19;padding:28px 40px;">
@@ -71,10 +90,8 @@ def _base_html(lang: str, body_content: str) -> str:
           </td>
         </tr>
 
-
         <!-- Body -->
         {body_content}
-
 
         <!-- Footer -->
         <tr>
@@ -86,7 +103,6 @@ def _base_html(lang: str, body_content: str) -> str:
             </p>
           </td>
         </tr>
-
 
       </table>
     </td></tr>
@@ -180,41 +196,63 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
 
 
 # ─────────────────────────────────────────────
-# GOOGLE OAUTH — REDIRECT FLOW (popup-free)
+# GOOGLE OAUTH — REDIRECT FLOW
 # ─────────────────────────────────────────────
-
-
-# Only showing the google_callback and google_login changes.
-# Replace these two route functions in your existing auth.py routes file.
 
 @auth_bp.route("/google/login", methods=["GET"])
 def google_login():
     oauth = current_app.extensions["oauth"]
-    next_url = request.args.get("next", f"{FRONTEND_URL}/gallery")
+
+    frontend_base = _get_frontend_base()
+    next_url = request.args.get("next", f"{frontend_base}/gallery")
     redirect_uri = url_for("auth.google_callback", _external=True)
-    
-    # Store next_url in session as a backup — some privacy browsers
-    # strip the OAuth state parameter during the redirect chain
+
+    # Store in session as backup — privacy browsers strip OAuth state param
     session["oauth_next_url"] = next_url
-    
+    session["oauth_frontend_base"] = frontend_base
+
+    logger.info(f"🔑 Google login: redirect_uri={redirect_uri}, next={next_url}, frontend={frontend_base}")
+
     return oauth.google.authorize_redirect(redirect_uri, state=next_url)
 
 
 @auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
     oauth = current_app.extensions["oauth"]
-    
-    # Try state param first, fall back to session, then default
+
+    # Recover frontend base — try session first (most reliable for privacy browsers)
+    frontend_base = (
+        session.pop("oauth_frontend_base", None)
+        or _get_frontend_base()
+    )
+
+    # Recover the intended next URL
     frontend_next = (
         request.args.get("state")
         or session.pop("oauth_next_url", None)
-        or f"{FRONTEND_URL}/gallery"
+        or f"{frontend_base}/gallery"
     )
-    
-    # Ensure frontend_next is our own domain (prevent open redirect)
-    if not frontend_next.startswith(FRONTEND_URL):
-        frontend_next = f"{FRONTEND_URL}/gallery"
-    
+
+    # Security: ensure redirect stays on our own domain(s)
+    allowed_origins = [
+        "https://recolekt.app",
+        "https://www.recolekt.app",
+        "https://staging.recolekt.app",
+        "https://recolekt-staging.up.railway.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ]
+    allowed_origins.append(frontend_base)
+
+    is_safe = any(frontend_next.startswith(origin) for origin in allowed_origins)
+    if not is_safe:
+        logger.warning(f"⚠️ Blocked open redirect to: {frontend_next}")
+        frontend_next = f"{frontend_base}/gallery"
+
+    logger.info(f"🔑 Google callback: frontend_base={frontend_base}, next={frontend_next}")
+
     try:
         token = oauth.google.authorize_access_token()
         user_info = token.get("userinfo") or {}
@@ -224,7 +262,8 @@ def google_callback():
         picture = user_info.get("picture", "")
 
         if not email:
-            return redirect(f"{FRONTEND_URL}/auth?error=no_email")
+            logger.error("❌ Google callback: no email in user_info")
+            return redirect(f"{frontend_base}/auth?error=no_email")
 
         user = fetch_one(
             "SELECT user_id FROM users WHERE email = %s OR google_id = %s;",
@@ -234,6 +273,7 @@ def google_callback():
             execute(
                 "UPDATE users SET google_id = %s, picture = %s WHERE user_id = %s;",
                 (google_id, picture, user_id), commit=True)
+            logger.info(f"✅ Google callback: existing user {user_id} ({email})")
         else:
             user_id = get_unique_id(email)
             execute(
@@ -241,17 +281,18 @@ def google_callback():
                 "VALUES (%s, %s, %s, %s, %s, TRUE, NOW()) "
                 "ON CONFLICT (email) DO UPDATE SET google_id = EXCLUDED.google_id, picture = EXCLUDED.picture, verified = TRUE;",
                 (user_id, email, name, google_id, picture), commit=True)
+            logger.info(f"✅ Google callback: new user {user_id} ({email})")
 
         jwt_token = create_jwt_token(user_id, email)
-        
-        # Append token as query param — the frontend AuthContext
-        # picks this up on load and stores it in localStorage
+
         separator = "&" if "?" in frontend_next else "?"
-        return redirect(f"{frontend_next}{separator}token={jwt_token}")
+        final_url = f"{frontend_next}{separator}token={jwt_token}"
+        logger.info(f"✅ Google callback: redirecting to {final_url[:100]}...")
+        return redirect(final_url)
 
     except Exception as e:
         logger.error("❌ Google callback crash: %s", e, exc_info=True)
-        return redirect(f"{FRONTEND_URL}/auth?error=google_failed")
+        return redirect(f"{frontend_base}/auth?error=google_failed")
 
 
 @auth_bp.route("/google/verify", methods=["POST", "OPTIONS"])
@@ -300,7 +341,6 @@ def google_verify():
 # ─────────────────────────────────────────────
 # EMAIL / PASSWORD
 # ─────────────────────────────────────────────
-
 
 @auth_bp.route("/login", methods=["POST", "OPTIONS"])
 def login():
