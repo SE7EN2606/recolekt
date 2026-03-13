@@ -22,7 +22,7 @@ auth_bp = Blueprint("auth", __name__)
 resend.api_key = os.getenv("RESEND_API_KEY")
 FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@recolekt.app")
 APP_URL = os.getenv("APP_URL", "https://recolekt.app")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://recolekt.app")
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "https://recolekt.app")
 
 
 def get_signing_key():
@@ -48,18 +48,18 @@ def _get_frontend_base() -> str:
     """
     Return the correct frontend base URL for redirects.
     Priority:
-      1. FRONTEND_URL env var (if explicitly set)
+      1. FRONTEND_BASE_URL env var (if explicitly set)
       2. Inferred from the current request Host header
-      3. Fallback to the FRONTEND_URL constant
+      3. Fallback to the FRONTEND_BASE_URL constant
     
     This prevents staging from redirecting to production
-    when FRONTEND_URL isn't configured on the staging env.
+    when FRONTEND_BASE_URL isn't configured on the staging env.
     """
-    env_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
+    env_url = os.getenv("FRONTEND_BASE_URL", "").strip().rstrip("/")
     if env_url:
         return env_url
 
-    # If FRONTEND_URL is not set at all, infer from request
+    # If FRONTEND_BASE_URL is not set at all, infer from request
     host = request.host  # e.g. "recolekt-staging.up.railway.app"
     scheme = request.scheme  # "https" (via ProxyFix)
     return f"{scheme}://{host}"
