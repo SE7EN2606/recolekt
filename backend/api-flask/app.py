@@ -116,6 +116,7 @@ else:
         "https://recolekt.app",
         "https://www.recolekt.app",
         "https://staging.recolekt.app",
+        "https://recolekt-staging.up.railway.app",
     ]
     env_frontend = _norm_origin(os.getenv("FRONTEND_BASE_URL", ""))
     if env_frontend:
@@ -152,7 +153,7 @@ oauth.register(
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={"scope": "openid email profile"},
 )
-# ✅ Store on app so auth.py can access it without circular imports
+# Store on app so auth.py can access it without circular imports
 app.extensions["oauth"] = oauth
 logger.info("✅ OAuth initialized with Google provider")
 
@@ -163,14 +164,8 @@ logger.info("✅ OAuth initialized with Google provider")
 from fetcher_api.api import register_blueprints
 register_blueprints(app)
 
-
-try:
-    from fetcher_api.api.routes.folders import folders_bp
-    if 'folders' not in app.blueprints:
-        app.register_blueprint(folders_bp)
-        logger.info("✅ Folders blueprint registered explicitly")
-except Exception as e:
-    logger.error(f"❌ Failed to register folders blueprint: {e}")
+# NOTE: folders_bp is already registered inside register_blueprints()
+# Do NOT register it again here — that caused duplicate blueprint errors.
 
 
 # ============================================
@@ -196,6 +191,16 @@ def admin_page():
     if key != admin_key:
         return render_template("admin_login.html"), 401
     return render_template("admin.html", admin_key=key)
+
+
+# TEMP DEBUG — remove after Google login is fixed
+@app.route("/debug/routes")
+def debug_routes():
+    routes = []
+    for rule in app.url_map.iter_rules():
+        if "google" in rule.rule or "auth" in rule.rule:
+            routes.append(f"{rule.rule} -> {rule.endpoint} [{', '.join(rule.methods)}]")
+    return jsonify({"auth_routes": sorted(routes), "total_rules": len(list(app.url_map.iter_rules()))})
 
 
 # ============================================

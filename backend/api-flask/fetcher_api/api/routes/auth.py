@@ -15,7 +15,9 @@ from fetcher_api.adapters.db import execute, fetch_one
 from fetcher_api.utils.timestamps import get_unique_id
 
 logger = logging.getLogger("auth")
-auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
+
+# ⚠️ NO url_prefix here — it comes from register_blueprints() in __init__.py
+auth_bp = Blueprint("auth", __name__)
 
 resend.api_key = os.getenv("RESEND_API_KEY")
 FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@recolekt.app")
