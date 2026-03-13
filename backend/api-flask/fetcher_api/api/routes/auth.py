@@ -203,27 +203,49 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
 
 @auth_bp.route("/google/login", methods=["GET"])
 def google_login():
-    try:
-        oauth = current_app.extensions["oauth"]
-    except KeyError:
-        logger.error("❌ Google login: OAuth not initialized on app.extensions")
-        return jsonify({"error": "OAuth not configured"}), 500
-
+    """
+    Server-side Google OAuth redirect.
+    
+    Two modes:
+    1. mode=cookieless — Builds the Google auth URL manually, no session needed.
+       Used by Firefox Focus and other privacy browsers that block cookies.
+    2. Default — Uses Authlib's authorize_redirect (requires session cookies).
+    """
     frontend_base = _get_frontend_base()
     next_url = request.args.get("next", f"{frontend_base}/gallery")
+    mode = request.args.get("mode", "")
+
     redirect_uri = url_for("auth.google_callback", _external=True)
 
-    # Store in session as backup — privacy browsers strip OAuth state param
-    # Wrapped in try/except because some browsers block session cookies entirely
-    try:
-        session["oauth_next_url"] = next_url
-        session["oauth_frontend_base"] = frontend_base
-    except Exception as e:
-        logger.warning(f"⚠️ Could not write to session (browser may block cookies): {e}")
+    logger.info(f"🔑 Google login: mode={mode}, redirect_uri={redirect_uri}, next={next_url}, frontend={frontend_base}")
 
-    logger.info(f"🔑 Google login: redirect_uri={redirect_uri}, next={next_url}, frontend={frontend_base}")
+    if mode == "cookieless":
+        # Build Google OAuth URL manually — no session/cookies needed.
+        # The 'state' param carries our next_url through the redirect.
+        import urllib.parse
+        client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": next_url,
+            "access_type": "online",
+            "prompt": "select_account",
+        }
+        google_auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
+        logger.info(f"🔑 Cookieless redirect to: {google_auth_url[:120]}...")
+        return redirect(google_auth_url)
 
+    # Default: Authlib flow (needs session cookies)
     try:
+        oauth = current_app.extensions["oauth"]
+        try:
+            session["oauth_next_url"] = next_url
+            session["oauth_frontend_base"] = frontend_base
+        except Exception as e:
+            logger.warning(f"⚠️ Could not write to session: {e}")
+
         return oauth.google.authorize_redirect(redirect_uri, state=next_url)
     except Exception as e:
         logger.error(f"❌ Google login: authorize_redirect crashed: {e}", exc_info=True)
@@ -232,25 +254,28 @@ def google_login():
 
 @auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
-    try:
-        oauth = current_app.extensions["oauth"]
-    except KeyError:
-        logger.error("❌ Google callback: OAuth not initialized")
-        return jsonify({"error": "OAuth not configured"}), 500
+    """
+    Google OAuth callback.
+    
+    Handles both Authlib flow and cookieless (manual) flow.
+    If Authlib fails (e.g. no session cookie), falls back to manual token exchange.
+    """
+    frontend_base = _get_frontend_base()
 
-    # Recover frontend base — try session first, then infer
+    # Recover frontend base from session (may fail on privacy browsers)
     try:
-        frontend_base = session.pop("oauth_frontend_base", None)
+        session_frontend = session.pop("oauth_frontend_base", None)
+        if session_frontend:
+            frontend_base = session_frontend
     except Exception:
-        frontend_base = None
-    frontend_base = frontend_base or _get_frontend_base()
+        pass
 
-    # Recover the intended next URL
+    # Recover next URL
     try:
         session_next = session.pop("oauth_next_url", None)
     except Exception:
         session_next = None
-    
+
     frontend_next = (
         request.args.get("state")
         or session_next
@@ -277,9 +302,62 @@ def google_callback():
 
     logger.info(f"🔑 Google callback: frontend_base={frontend_base}, next={frontend_next}")
 
+    auth_code = request.args.get("code")
+    user_info = None
+
+    # ── ATTEMPT 1: Authlib (works when session cookies exist) ──
     try:
+        oauth = current_app.extensions["oauth"]
         token = oauth.google.authorize_access_token()
         user_info = token.get("userinfo") or {}
+        logger.info("✅ Google callback: Authlib flow succeeded")
+    except Exception as e:
+        logger.warning(f"⚠️ Authlib flow failed (expected on privacy browsers): {e}")
+
+    # ── ATTEMPT 2: Manual token exchange (cookieless fallback) ──
+    if not user_info and auth_code:
+        logger.info("🔑 Trying manual token exchange (cookieless fallback)...")
+        try:
+            redirect_uri = url_for("auth.google_callback", _external=True)
+            token_resp = requests.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code": auth_code,
+                    "client_id": os.getenv("GOOGLE_CLIENT_ID", ""),
+                    "client_secret": os.getenv("GOOGLE_CLIENT_SECRET", ""),
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+                timeout=10,
+            )
+            if token_resp.ok:
+                token_data = token_resp.json()
+                access_token = token_data.get("access_token")
+                if access_token:
+                    info_resp = requests.get(
+                        "https://www.googleapis.com/oauth2/v3/userinfo",
+                        headers={"Authorization": f"Bearer {access_token}"},
+                        timeout=10,
+                    )
+                    if info_resp.ok:
+                        user_info = info_resp.json()
+                        logger.info("✅ Google callback: manual token exchange succeeded")
+                    else:
+                        logger.error(f"❌ Userinfo request failed: {info_resp.status_code} {info_resp.text[:200]}")
+                else:
+                    logger.error(f"❌ No access_token in token response: {token_resp.text[:200]}")
+            else:
+                logger.error(f"❌ Token exchange failed: {token_resp.status_code} {token_resp.text[:200]}")
+        except Exception as e:
+            logger.error(f"❌ Manual token exchange crashed: {e}", exc_info=True)
+
+    # ── No user info from either method ──
+    if not user_info:
+        logger.error("❌ Google callback: could not get user info from any method")
+        return redirect(f"{frontend_base}/auth?error=google_failed")
+
+    # ── Process user info ──
+    try:
         email = (user_info.get("email") or "").strip().lower()
         google_id = user_info.get("sub", "")
         name = user_info.get("name", "")
@@ -315,7 +393,7 @@ def google_callback():
         return redirect(final_url)
 
     except Exception as e:
-        logger.error("❌ Google callback crash: %s", e, exc_info=True)
+        logger.error("❌ Google callback user processing crash: %s", e, exc_info=True)
         return redirect(f"{frontend_base}/auth?error=google_failed")
 
 

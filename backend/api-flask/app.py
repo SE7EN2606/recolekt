@@ -231,8 +231,13 @@ if not IS_LOCAL:
         if path and os.path.exists(os.path.join(frontend_dir, path)):
             return send_from_directory(frontend_dir, path)
 
-        # SPA fallback — React Router handles client-side routing
-        return send_from_directory(frontend_dir, "index.html")
+        # SPA fallback — but only if index.html actually exists
+        index_path = os.path.join(frontend_dir, "index.html")
+        if os.path.exists(index_path):
+            return send_from_directory(frontend_dir, "index.html")
+
+        # No frontend build present (e.g. staging backend-only)
+        return jsonify({"error": "Not Found", "code": 404}), 404
 
     @app.errorhandler(Exception)
     def handle_error(e):
