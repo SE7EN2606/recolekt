@@ -47,11 +47,11 @@ export const IOSInstallPrompt: React.FC = () => {
           </button>
 
           {/* App Icon */}
-          <div className="mb-6 shadow-xl rounded-[22%] overflow-hidden w-20 h-20 border border-gray-100 flex items-center justify-center bg-white">
+          <div style={{ width: 80, height: 80, borderRadius: '22%', overflow: 'hidden', marginBottom: 24, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', border: '1px solid #f3f4f6' }}>
             <img
               src="/assets/favicon/assets/apple-touch-icon.png?v=2"
               alt="Recolekt"
-              className="w-full h-full object-cover"
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             />
           </div>
 
