@@ -3,7 +3,7 @@ import { X, Share, PlusSquare } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 // Reverting to the high-quality root PNG
-const LogoIcon = '/apple-touch-icon.png';
+const LogoIcon = '/assets/favicon/assets/apple-touch-icon.png';
 
 export const InstallPrompt: React.FC = () => {
   const { i18n } = useTranslation();

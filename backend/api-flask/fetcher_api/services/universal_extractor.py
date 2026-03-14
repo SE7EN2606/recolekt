@@ -285,6 +285,7 @@ class UniversalExtractor:
             "instructions_og": parsed["instructions_en"],
             "tips_og": parsed["tips_en"],
             "notes_og": parsed["notes_en"],
+            "workout_og": parsed.get("workout"), # Default to English
             "translated_headlines": None,
         }
 
@@ -300,6 +301,7 @@ class UniversalExtractor:
                 instructions=parsed["instructions_en"] or None,
                 tips=parsed["tips_en"] or None,
                 notes=parsed["notes_en"] or None,
+                workout=parsed.get("workout"),  # <---- ADD THIS LINE HERE
             )
         )
 
@@ -322,6 +324,9 @@ class UniversalExtractor:
             result, parsed
         )
 
+        # Catch translated workout if Mistral provides it
+        workout_og = result.get("translated_workout") or result.get("workout_original") or result.get("workout")
+
         return {
             "summary_en": summary_en,
             "summary_og": summary_og,
@@ -330,6 +335,7 @@ class UniversalExtractor:
             "instructions_og": instructions_og,
             "tips_og": tips_og,
             "notes_og": notes_og,
+            "workout_og": workout_og, # <--- Added support for workout translation
             "translated_headlines": safe_list(result.get("headlines", [])),
         }
 
@@ -470,6 +476,25 @@ class UniversalExtractor:
                     "notes": summary_result["notes_og"],
                 },
             }
+            
+        # ── Workout object (NEW BILINGUAL STRUCTURE) ──
+        workout_data = None
+        if parsed.get("workout"):
+            # Ensure it's a dict
+            eng_workout = parsed["workout"]
+            if isinstance(eng_workout, str):
+                try: eng_workout = json.loads(eng_workout)
+                except: pass
+            
+            og_workout = summary_result.get("workout_og")
+            if isinstance(og_workout, str):
+                try: og_workout = json.loads(og_workout)
+                except: pass
+                
+            workout_data = {
+                "english": eng_workout,
+                "original": og_workout or eng_workout
+            }
 
         return {
             "content_type": content_type,
@@ -483,7 +508,7 @@ class UniversalExtractor:
             "prompt": parsed.get("prompt"),
             "recipe": json.dumps(recipe_data, ensure_ascii=False) if recipe_data else None,
             "location": parsed["location"],
-            "workout": parsed["workout"], # ALLOW WORKOUT DATA THROUGH!
+            "workout": json.dumps(workout_data, ensure_ascii=False) if workout_data else None,
             "detected_language": effective_lang,
         }
 
@@ -543,6 +568,7 @@ class UniversalExtractor:
 
     def _call_ai(self, prompt: str, max_retries: int = 2, images: List = None) -> Dict:
         """Pure HTTP call to Mistral API. Supports optional vision images."""
+        import time # ensures time is available
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -550,7 +576,6 @@ class UniversalExtractor:
 
         # Build message content — text + optional images
         if images:
-            # Multimodal message: images first, then text prompt
             content_parts = []
             for i, img_b64 in enumerate(images):
                 content_parts.append({
@@ -582,6 +607,13 @@ class UniversalExtractor:
                 self.api_call_count += 1
 
                 resp = requests.post(MISTRAL_API_URL, headers=headers, json=payload, timeout=30)
+                
+                # Handled Rate Limit Gracefully
+                if resp.status_code == 429:
+                    logger.warning("⚠️ Mistral Rate Limit Hit (429). Sleeping for 2 seconds...")
+                    time.sleep(2)
+                    resp.raise_for_status()
+
                 resp.raise_for_status()
 
                 raw = resp.json()["choices"][0]["message"]["content"]
@@ -593,7 +625,9 @@ class UniversalExtractor:
             except Exception as e:
                 logger.error("❌ HTTP Mistral failed (attempt %d): %s", attempt + 1, e)
                 record_call(prompt_len=len(prompt), response_len=0, error=True)
-                if attempt == max_retries:
+                if attempt < max_retries:
+                    time.sleep(2) # Enforced delay
+                else:
                     raise
 
         raise ValueError("Mistral HTTP call failed after retries")

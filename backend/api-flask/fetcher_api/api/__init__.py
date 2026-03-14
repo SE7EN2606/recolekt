@@ -16,7 +16,7 @@ def register_blueprints(app: Flask):
         admin_bp,
         api_bp,
         cleanup_bp,
-        folders_bp,  # ✅ ADD THIS
+        folders_bp,
     )
     
     # Register all blueprints
@@ -26,6 +26,6 @@ def register_blueprints(app: Flask):
     app.register_blueprint(reel_bp, url_prefix="/api")
     app.register_blueprint(billing_bp, url_prefix="/api")
     app.register_blueprint(admin_bp, url_prefix="/api")
-    app.register_blueprint(folders_bp) # ✅ ADD THIS (Prefix is inside folders.py)
+    app.register_blueprint(folders_bp)  # Prefix is inside folders.py
     app.register_blueprint(api_bp)  
     app.register_blueprint(cleanup_bp)

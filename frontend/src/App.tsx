@@ -11,11 +11,8 @@ import { Sidebar } from './components/Sidebar';
 import { Home } from './pages/Home';
 import { useAuth } from './context/AuthContext';
 import LogoWhite from './assets/recolekt_logo_white.png';
-
-// ✅ SINGLE COMPONENT FOR BOTH PLATFORMS
 import { InstallPrompt } from './components/InstallPrompt';
 
-// ✅ LAZY LOAD PAGES
 const Gallery = lazy(() => import('./pages/Gallery').then(m => ({ default: m.Gallery })));
 const VideoDetail = lazy(() => import('./pages/VideoDetail').then(m => ({ default: m.VideoDetail })));
 const Organizer = lazy(() => import('./pages/Organizer').then(m => ({ default: m.Organizer })));
@@ -25,8 +22,6 @@ const BillingPage = lazy(() => import('./pages/BillingPage').then(m => ({ defaul
 const SubscribePage = lazy(() => import('./pages/SubscribePage').then(m => ({ default: m.SubscribePage })));
 const Features = lazy(() => import('./pages/Features').then(m => ({ default: m.Features })));
 const Auth = lazy(() => import('./pages/Auth').then(m => ({ default: m.Auth })));
-
-// ✅ LAZY LOAD SECONDARY OVERLAYS
 const MobileBottomNav = lazy(() => import('./components/MobileBottomNav').then(m => ({ default: m.MobileBottomNav })));
 const AddVideoModal = lazy(() => import('./components/AddVideoModal').then(m => ({ default: m.AddVideoModal })));
 
@@ -40,7 +35,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const fullWidthPages = ['/', '/billing', '/billing/success', '/billing/cancel', '/subscribe', '/auth', '/features'];
   const showSidebar = user && !fullWidthPages.includes(location.pathname);
   const showFooter = ['/', '/features', '/billing'].includes(location.pathname);
-  
   const mainBottomPadding = user && !showFooter ? 'pb-24' : 'pb-6';
 
   return (
@@ -60,11 +54,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <AddVideoModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />
         </Suspense>
       )}
-      
-      {/* ✅ Handled in one place for stability */}
-      <Suspense fallback={null}>
-        <InstallPrompt />
-      </Suspense>
+
+      <InstallPrompt />
 
       {showFooter && (
         <footer className="bg-gray-900 text-white pt-16 pb-24 md:pb-8 border-t border-gray-800 mt-auto relative z-30 w-full">
@@ -96,7 +87,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 </ul>
               </div>
             </div>
-            <div className="pt-8 border-t border-gray-800 text-gray-500 text-sm">© 2025 Recolekt Inc.</div>
+            <div className="pt-8 border-t border-gray-800 text-gray-500 text-sm">{t('common:footerCopyright')}</div>
           </div>
         </footer>
       )}

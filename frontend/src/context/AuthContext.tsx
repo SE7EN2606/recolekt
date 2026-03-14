@@ -98,11 +98,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
 
+  const persistToken = (jwt: string) => {
+    localStorage.setItem('auth_token', jwt);
+    localStorage.setItem('token', jwt);
+    setToken(jwt);
+  };
+
+
   const fetchMe = async () => {
     const currentToken = localStorage.getItem('auth_token') || localStorage.getItem('token');
     if (!currentToken) { clearAuthEverywhere(); return; }
 
-    // Abort after 8s — prevents infinite hang in Firefox Focus / aggressive blockers
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
@@ -127,8 +133,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (e: any) {
       if (e?.name === 'AbortError') {
-        // Request was blocked or timed out (e.g. Firefox Focus)
-        // Fall back to cached user if available, otherwise clear
         const cached = loadCachedUserUnsafeInstant();
         if (cached) {
           setUser(cached);
@@ -150,21 +154,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const verifyGoogleToken = async (accessToken: string) => {
     setError(null);
+
+    // Add a timeout — Firefox Focus can silently hang on fetch
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
     try {
       const response = await fetch(joinUrl(API_BASE, '/api/auth/google/verify'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ access_token: accessToken }),
         credentials: 'omit',
+        signal: controller.signal,
       });
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error || 'Google login failed');
       }
       const data = await response.json();
-      localStorage.setItem('auth_token', data.token);
-      localStorage.setItem('token', data.token);
-      setToken(data.token);
+      persistToken(data.token);
       setUser(data.user);
       setIsAuthenticated(true);
       saveCachedUser(data.user);
@@ -173,8 +181,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem('i18nextLng', data.user.language);
       }
     } catch (err: any) {
-      setError(err.message);
+      if (err?.name === 'AbortError') {
+        setError('Google login timed out. Please try again.');
+      } else {
+        setError(err.message);
+      }
       throw err;
+    } finally {
+      clearTimeout(timeout);
     }
   };
 
@@ -197,9 +211,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         throw new Error(data.error || 'Login failed. Please try again.');
       }
-      localStorage.setItem('auth_token', data.token);
-      localStorage.setItem('token', data.token);
-      setToken(data.token);
+      persistToken(data.token);
       setUser(data.user);
       setIsAuthenticated(true);
       saveCachedUser(data.user);
@@ -257,12 +269,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 
   useEffect(() => {
+    // ──────────────────────────────────────────────────────
+    // Pick up ?token= from the Google OAuth redirect callback.
+    // This is the path Firefox Focus (and similar browsers) will
+    // actually use, because the popup flow gets blocked and we
+    // fall back to window.location.assign('/api/auth/google/login')
+    // which redirects back to /gallery?token=<jwt>.
+    // ──────────────────────────────────────────────────────
     const params = new URLSearchParams(window.location.search);
     const urlToken = params.get('token');
     if (urlToken) {
-      localStorage.setItem('auth_token', urlToken);
-      localStorage.setItem('token', urlToken);
-      window.history.replaceState({}, '', window.location.pathname);
+      persistToken(urlToken);
+      // Also record that Google was the method used
+      localStorage.setItem('last_auth_method', 'google');
+      // Clean URL without losing the path (handles /gallery?token=xxx)
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, '', cleanUrl);
     }
     fetchMe();
   }, []);

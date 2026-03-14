@@ -264,13 +264,13 @@ export const Gallery: React.FC = () => {
 
                 <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md z-10" />
 
-                <div 
-                  className={`absolute top-0 left-0 w-full h-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)] z-30 pointer-events-none will-change-transform ${scanState === 'h-active' ? 'h-active' : 'idle'}`}
-                />
+                <div className={`absolute top-[-100%] left-0 w-full h-full z-30 pointer-events-none will-change-transform ${scanState === 'h-active' ? 'h-active' : 'idle'}`}>
+                  <div className="absolute bottom-0 left-0 w-full h-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)]" />
+                </div>
 
-                <div 
-                  className={`absolute top-0 left-0 h-full w-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)] z-30 pointer-events-none will-change-transform ${scanState === 'v-active' ? 'v-active' : 'idle'}`}
-                />
+                <div className={`absolute top-0 left-[-100%] w-full h-full z-30 pointer-events-none will-change-transform ${scanState === 'v-active' ? 'v-active' : 'idle'}`}>
+                  <div className="absolute top-0 right-0 h-full w-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)]" />
+                </div>
 
                 <div className="absolute inset-0 flex flex-col items-center justify-center z-40 pointer-events-none px-4 text-center">
                   <Loader2 className="w-10 h-10 text-primary-400 animate-spin mb-3 drop-shadow-[0_0_10px_rgba(167,139,250,0.6)]" />
@@ -323,6 +323,40 @@ export const Gallery: React.FC = () => {
       )}
 
       <MoveCollectionModal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} onMove={handleMoveSubmit} count={selectedIds.size} />
+      
+      {/* GLOBAL STYLES FOR THE PROCESSING SKELETON */}
+      <style>{`
+        /* PERFECT BOUNDS SCANNER - Hardware Accelerated (Translate3D) */
+        @keyframes scan-h { 
+          0% { transform: translate3d(0, 0%, 0); opacity: 0; } 
+          5% { transform: translate3d(0, 0%, 0); opacity: 1; } 
+          50% { transform: translate3d(0, 100%, 0); opacity: 1; } 
+          95% { transform: translate3d(0, 0%, 0); opacity: 1; }
+          100% { transform: translate3d(0, 0%, 0); opacity: 0; } 
+        }
+        @keyframes scan-v { 
+          0% { transform: translate3d(0%, 0, 0); opacity: 0; } 
+          5% { transform: translate3d(0%, 0, 0); opacity: 1; } 
+          50% { transform: translate3d(100%, 0, 0); opacity: 1; } 
+          95% { transform: translate3d(0%, 0, 0); opacity: 1; }
+          100% { transform: translate3d(0%, 0, 0); opacity: 0; } 
+        }
+
+        .h-active { animation: scan-h 4s linear forwards; }
+        .v-active { animation: scan-v 4s linear forwards; }
+        .idle { opacity: 0; }
+
+        /* GPU-Safe Lowercase AI Text Reveal */
+        @keyframes ai-text-reveal {
+          0% { opacity: 0; filter: blur(6px); transform: translate3d(-8px, 0, 0); }
+          15% { opacity: 1; filter: blur(0px); transform: translate3d(0, 0, 0); }
+          85% { opacity: 1; filter: blur(0px); transform: translate3d(0, 0, 0); }
+          100% { opacity: 0; filter: blur(6px); transform: translate3d(8px, 0, 0); }
+        }
+        .ai-message {
+          animation: ai-text-reveal 2s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+        }
+      `}</style>
     </div>
   );
 };

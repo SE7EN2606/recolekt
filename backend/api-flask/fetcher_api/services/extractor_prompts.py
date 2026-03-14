@@ -236,6 +236,7 @@ def build_summary_prompt_bilingual(
     instructions: Optional[List] = None,
     tips: Optional[List] = None,
     notes: Optional[List] = None,
+    workout: Optional[dict] = None,  # ✅ ADDED: Accept workout data parameter
 ) -> str:
     lang_name = get_lang_name(original_lang)
 
@@ -266,6 +267,11 @@ def build_summary_prompt_bilingual(
     if notes:
         translation_input += f'\n"notes_en": {json.dumps(notes, ensure_ascii=False)}'
         translation_output_fields.append('"notes": ["translated note 1", ...]')
+        
+    # ✅ ADDED: If a workout exists, pass it to Mistral to translate
+    if workout:
+        translation_input += f'\n"workout_en": {json.dumps(workout, ensure_ascii=False)}'
+        translation_output_fields.append('"translated_workout": {"duration": "...", "format": "...", "level": "...", "equipment": ["..."], "groups": [{"title": "...", "items": [{"info": "...", "name": "..."}]}], "tips": ["..."]}')
 
     has_translation = bool(translation_input)
 
@@ -276,7 +282,7 @@ def build_summary_prompt_bilingual(
 CONTENT TO TRANSLATE TO {lang_name.upper()}:
 {translation_input}
 
-Also include these translated fields in your JSON output exactly matching the structure of the input arrays:
+Also include these translated fields in your JSON output exactly matching the structure of the input arrays (or objects):
   {extra_fields}
 """
 

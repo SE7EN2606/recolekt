@@ -336,13 +336,9 @@ export const Organizer: React.FC = () => {
                 )}
               </div>
             )}
-            
-            <span className="md:hidden text-xs text-primary-600 font-bold px-2 py-0.5 bg-primary-50 border border-primary-100 rounded-md whitespace-nowrap flex-shrink-0">
-              {t('organizer:itemsCount', { count: folderVideos.length })}
-            </span>
           </div>
 
-          <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
+          <div className="flex items-center justify-end gap-2 md:gap-3 flex-shrink-0 ml-auto pl-2">
             {selectedVideoIds.size > 0 && (
               <button
                 onClick={() => setSelectedVideoIds(new Set())}
@@ -352,7 +348,7 @@ export const Organizer: React.FC = () => {
               </button>
             )}
 
-            <span className="hidden md:inline-block text-xs text-primary-600 font-bold px-2.5 py-1 bg-primary-50 border border-primary-100 rounded-lg whitespace-nowrap mr-2 flex-shrink-0">
+            <span className="text-xs text-primary-600 font-bold px-2.5 py-1 bg-primary-50 border border-primary-100 rounded-lg whitespace-nowrap flex-shrink-0">
               {t('organizer:itemsCount', { count: folderVideos.length })}
             </span>
 
@@ -366,6 +362,7 @@ export const Organizer: React.FC = () => {
                 <span className="hidden md:inline">{t('organizer:undoMove')}</span>
               </button>
             )}
+            
             <div className="flex bg-gray-100 p-1 rounded-lg flex-shrink-0">
               <button type="button" onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400 hover:text-gray-600'}`}>
                 <Grid size={16} />
@@ -386,31 +383,33 @@ export const Organizer: React.FC = () => {
 
         {/* 2. ACTION BAR */}
         <div className="px-4 md:px-6 py-3 bg-gray-50/50 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 z-40 sticky top-16 backdrop-blur-sm">
-           <div className="relative w-full sm:max-w-xs md:max-w-md">
-             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-             <input 
-               placeholder={t('organizer:searchInFolder')} 
-               value={searchQuery}
-               onChange={e => setSearchQuery(e.target.value)}
-               className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all shadow-sm"
-             />
-           </div>
-
-           <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto overflow-visible">
+           
+           <div className="flex items-center gap-2 w-full sm:max-w-xs md:max-w-md">
+             <div className="relative w-full flex-1">
+               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+               <input 
+                 placeholder={t('organizer:searchInFolder')} 
+                 value={searchQuery}
+                 onChange={e => setSearchQuery(e.target.value)}
+                 className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all shadow-sm"
+               />
+             </div>
              
              {selectedVideoIds.size === 0 && (
                <button 
                  type="button"
                  onClick={() => { setIsCreating(!isCreating); setActionError(null); setNewFolderName(''); setCreationParentId(selectedFolderId === 'unsorted' || selectedFolderId === 'all' ? '' : selectedFolderId); }}
-                 className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl transition-all shadow-sm active:scale-95 whitespace-nowrap"
+                 className="flex items-center justify-center gap-1.5 px-3 py-2 bg-primary-50 border border-primary-100 text-primary-600 hover:bg-primary-100 rounded-xl transition-all shadow-sm active:scale-95 whitespace-nowrap shrink-0"
                >
-                 <Plus size={16} className="text-gray-500 shrink-0" />
-                 <span className="hidden sm:inline font-bold text-xs">{t('organizer:newFolder')}</span>
+                 <Plus size={20} className="shrink-0" />
+                 <span className="hidden sm:inline font-bold text-sm">{t('organizer:newFolder', 'New')}</span>
                </button>
              )}
+           </div>
 
+           <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto overflow-visible">
              {selectedVideoIds.size > 0 && (
-               <div className="flex items-center gap-3 animate-fade-in bg-primary-50 pl-3 pr-1 py-1 rounded-xl border border-primary-100 ml-auto">
+               <div className="flex items-center gap-3 animate-fade-in bg-primary-50 pl-3 pr-1 py-1 rounded-xl border border-primary-100 ml-auto w-full sm:w-auto">
                  <span className="text-xs font-bold text-primary-700 whitespace-nowrap">
                     {t('organizer:selectedCount', { count: selectedVideoIds.size })}
                  </span>
@@ -484,67 +483,68 @@ export const Organizer: React.FC = () => {
               </div>
             ) : (
               <div className={viewMode === 'grid' ? "grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4" : "space-y-3"}>
-                {folderVideos.map((video: any) => (
-                  <div 
-                    key={video.id}
-                    draggable
-                    onDragStart={(e) => {
-                      let idsToMove = [video.id];
-                      if (selectedVideoIds.has(video.id)) {
-                        idsToMove = Array.from(selectedVideoIds);
-                      }
-                      e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
-                      e.dataTransfer.setData('sourceId', selectedFolderId);
-                      e.dataTransfer.effectAllowed = 'move';
-                    }}
-                    onClick={() => {
-                      const next = new Set(selectedVideoIds);
-                      if (next.has(video.id)) next.delete(video.id);
-                      else next.add(video.id);
-                      setSelectedVideoIds(next);
-                    }}
-                    className={`
-                      group relative cursor-pointer transition-all bg-white
-                      ${viewMode === 'grid' 
-                        ? `aspect-[9/14] rounded-2xl overflow-hidden border-2 ${selectedVideoIds.has(video.id) ? 'border-primary-500 shadow-md shadow-primary-500/20' : 'border-transparent shadow-sm hover:shadow-md'}`
-                        : `flex items-center gap-4 p-3 rounded-2xl border-2 ${selectedVideoIds.has(video.id) ? 'bg-primary-50 border-primary-500 shadow-sm shadow-primary-500/10' : 'border-gray-100 hover:border-primary-200 shadow-sm'}`
-                      }
-                      hover:-translate-y-1 active:cursor-grabbing
-                    `}
-                  >
-                    {viewMode === 'grid' ? (
-                      <div className={`absolute top-3 left-3 z-10 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm ${selectedVideoIds.has(video.id) ? 'bg-primary-500 border-primary-500' : 'bg-black/30 border-white/80 hover:bg-black/40'}`}>
-                        {selectedVideoIds.has(video.id) && <Check size={12} className="text-white" strokeWidth={3} />}
-                      </div>
-                    ) : (
-                      <div className={`relative z-10 w-5 h-5 shrink-0 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm ml-1 ${selectedVideoIds.has(video.id) ? 'bg-primary-500 border-primary-500' : 'bg-gray-100 border-gray-300 hover:bg-gray-200'}`}>
-                        {selectedVideoIds.has(video.id) && <Check size={12} className="text-white" strokeWidth={3} />}
-                      </div>
-                    )}
+                {folderVideos.map((video: any) => {
+                  return (
+                    <div 
+                      key={video.id}
+                      draggable
+                      onDragStart={(e) => {
+                        let idsToMove = [video.id];
+                        if (selectedVideoIds.has(video.id)) {
+                          idsToMove = Array.from(selectedVideoIds);
+                        }
+                        e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
+                        e.dataTransfer.setData('sourceId', selectedFolderId);
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onClick={() => {
+                        const next = new Set(selectedVideoIds);
+                        if (next.has(video.id)) next.delete(video.id);
+                        else next.add(video.id);
+                        setSelectedVideoIds(next);
+                      }}
+                      className={`
+                        group relative cursor-pointer transition-all bg-white
+                        ${viewMode === 'grid' 
+                          ? `aspect-[9/14] rounded-2xl overflow-hidden border-2 ${selectedVideoIds.has(video.id) ? 'border-primary-500 shadow-md shadow-primary-500/20' : 'border-transparent shadow-sm hover:shadow-md'}`
+                          : `flex items-center gap-4 p-2.5 sm:p-3 rounded-2xl border-2 ${selectedVideoIds.has(video.id) ? 'bg-primary-50 border-primary-500 shadow-sm shadow-primary-500/10' : 'border-gray-100 hover:border-primary-200 shadow-sm'}`
+                        }
+                        hover:-translate-y-1 active:cursor-grabbing
+                      `}
+                    >
+                      {viewMode === 'grid' ? (
+                        <>
+                          <div className={`absolute top-3 left-3 z-10 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm ${selectedVideoIds.has(video.id) ? 'bg-primary-500 border-primary-500' : 'bg-black/30 border-white/80 hover:bg-black/40'}`}>
+                            {selectedVideoIds.has(video.id) && <Check size={12} className="text-white" strokeWidth={3} />}
+                          </div>
+                          <img src={video.thumbnailUrl || video.gcs_urls?.preview_thumbnail} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80" />
+                          <div className="absolute bottom-4 left-4 right-4 pointer-events-none">
+                            <p className="text-white text-sm font-bold leading-snug line-clamp-2">{video.title}</p>
+                            <p className="text-gray-300 text-xs mt-1 truncate">{video.author_name || video.author}</p>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100 shadow-sm border border-gray-200/60">
+                            <div className={`absolute top-2 left-2 z-10 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm ${selectedVideoIds.has(video.id) ? 'bg-primary-500 border-primary-500' : 'bg-black/30 border-white/80 hover:bg-black/40'}`}>
+                              {selectedVideoIds.has(video.id) && <Check size={12} className="text-white" strokeWidth={3} />}
+                            </div>
+                            <img src={video.thumbnailUrl || video.gcs_urls?.preview_thumbnail} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                          </div>
 
-                    {viewMode === 'grid' ? (
-                      <>
-                        <img src={video.thumbnailUrl || video.gcs_urls?.preview_thumbnail} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-80" />
-                        <div className="absolute bottom-4 left-4 right-4 pointer-events-none">
-                          <p className="text-white text-sm font-bold leading-snug line-clamp-2">{video.title}</p>
-                          <p className="text-gray-300 text-xs mt-1 truncate">{video.author_name || video.author}</p>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100">
-                          <img src={video.thumbnailUrl || video.gcs_urls?.preview_thumbnail} className="w-full h-full object-cover" />
-                        </div>
-                        <div className="flex-1 min-w-0 pr-4">
-                          <h4 className={`text-base font-bold truncate ${selectedVideoIds.has(video.id) ? 'text-primary-900' : 'text-gray-900'}`}>{video.title}</h4>
-                          <p className="text-sm text-gray-500 truncate mt-0.5">{video.author_name || video.author}</p>
-                        </div>
-                        <div className="text-xs text-gray-400 font-bold bg-gray-100 px-2 py-1 rounded-lg">{video.duration}</div>
-                      </>
-                    )}
-                  </div>
-                ))}
+                          {/* ✅ Fixed: No JS truncation, relying completely on line-clamp-2 and break-words */}
+                          <div className="flex-1 min-w-0 pr-2">
+                            <h4 className={`text-sm sm:text-base font-bold leading-snug whitespace-normal line-clamp-2 break-words ${selectedVideoIds.has(video.id) ? 'text-primary-900' : 'text-gray-900'}`}>
+                              {video.title}
+                            </h4>
+                            <p className="text-xs sm:text-sm text-gray-500 truncate mt-1.5">{video.author_name || video.author}</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

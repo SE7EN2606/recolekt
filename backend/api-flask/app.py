@@ -65,7 +65,6 @@ if not app:
     raise RuntimeError("Flask app not created. Check fetcher_api/__init__.py.")
 
 
-# ✅ PROXY FIX: Critical for Railway Load Balancer HTTPS detection
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
 
 
@@ -116,6 +115,7 @@ else:
         "https://recolekt.app",
         "https://www.recolekt.app",
         "https://staging.recolekt.app",
+        "https://recolekt-staging.up.railway.app",
     ]
     env_frontend = _norm_origin(os.getenv("FRONTEND_BASE_URL", ""))
     if env_frontend:
@@ -152,7 +152,6 @@ oauth.register(
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={"scope": "openid email profile"},
 )
-# ✅ Store on app so auth.py can access it without circular imports
 app.extensions["oauth"] = oauth
 logger.info("✅ OAuth initialized with Google provider")
 
@@ -162,15 +161,6 @@ logger.info("✅ OAuth initialized with Google provider")
 # ============================================
 from fetcher_api.api import register_blueprints
 register_blueprints(app)
-
-
-try:
-    from fetcher_api.api.routes.folders import folders_bp
-    if 'folders' not in app.blueprints:
-        app.register_blueprint(folders_bp)
-        logger.info("✅ Folders blueprint registered explicitly")
-except Exception as e:
-    logger.error(f"❌ Failed to register folders blueprint: {e}")
 
 
 # ============================================
@@ -199,38 +189,61 @@ def admin_page():
 
 
 # ============================================
-# 9. ERROR HANDLER
-# ============================================
-@app.errorhandler(Exception)
-def handle_error(e):
-    code = 500
-    message = str(e)
-    if isinstance(e, HTTPException):
-        code = e.code
-        message = e.description
-    logger.error("❌ Error %s: %s", code, message, exc_info=True)
-    return jsonify({"error": message, "code": code}), code
-
-
-# ============================================
-# 10. FRONTEND SERVING (PRODUCTION)
+# 9. ERROR HANDLER + FRONTEND SERVING
 # ============================================
 if not IS_LOCAL:
     base_dir = os.path.dirname(os.path.abspath(__file__))
     frontend_dir = os.path.join(base_dir, "frontend")
 
-    @app.route("/", defaults={"path": ""})
-    @app.route("/<path:path>")
-    def serve(path):
+    @app.route("/")
+    def serve_root():
+        index_path = os.path.join(frontend_dir, "index.html")
+        if os.path.exists(index_path):
+            return send_from_directory(frontend_dir, "index.html")
+        return jsonify({"status": "API running", "frontend": "not bundled"}), 200
+
+    @app.errorhandler(404)
+    def handle_404(e):
+        path = request.path.lstrip("/")
+
         if path.startswith("api/"):
-            return jsonify({"error": "Not Found"}), 404
-        if path != "" and os.path.exists(os.path.join(frontend_dir, path)):
+            return jsonify({"error": "Not Found", "code": 404}), 404
+
+        if path and os.path.exists(os.path.join(frontend_dir, path)):
             return send_from_directory(frontend_dir, path)
-        return send_from_directory(frontend_dir, "index.html")
+
+        index_path = os.path.join(frontend_dir, "index.html")
+        if os.path.exists(index_path):
+            return send_from_directory(frontend_dir, "index.html")
+
+        return jsonify({"error": "Not Found", "code": 404}), 404
+
+    @app.errorhandler(Exception)
+    def handle_error(e):
+        if isinstance(e, HTTPException) and e.code == 404:
+            return handle_404(e)
+        code = 500
+        message = str(e)
+        if isinstance(e, HTTPException):
+            code = e.code
+            message = e.description
+        logger.error("❌ Error %s: %s", code, message, exc_info=True)
+        return jsonify({"error": message, "code": code}), code
+
+else:
+    @app.errorhandler(Exception)
+    def handle_error(e):
+        code = 500
+        message = str(e)
+        if isinstance(e, HTTPException):
+            code = e.code
+            message = e.description
+        logger.error("❌ Error %s: %s", code, message, exc_info=True)
+        return jsonify({"error": message, "code": code}), code
 
 
 # ============================================
-# 11. MAIN ENTRY POINT
+# 10. MAIN ENTRY POINT
 # ============================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))

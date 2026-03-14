@@ -1,5 +1,5 @@
 import { API_BASE } from "../utils/api";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, User, AlertCircle, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../components/Button';
@@ -19,6 +19,20 @@ type ViewState = 'login' | 'register' | 'forgot' | 'reset' | 'verify';
 
 const LAST_AUTH_KEY = 'last_auth_method';
 
+function detectBrowserInfo(): { name: string; shouldRedirect: boolean } {
+  const ua = navigator.userAgent || '';
+  if (/Focus/i.test(ua)) return { name: 'Firefox Focus', shouldRedirect: true };
+  if (/Klar/i.test(ua)) return { name: 'Firefox Klar', shouldRedirect: true };
+  if (/DuckDuckGo/i.test(ua)) return { name: 'DuckDuckGo', shouldRedirect: true };
+  if (/FBAN|FBAV/i.test(ua)) return { name: 'Facebook In-App', shouldRedirect: true };
+  if (/Instagram/i.test(ua)) return { name: 'Instagram In-App', shouldRedirect: true };
+  if (/Line\//i.test(ua)) return { name: 'LINE In-App', shouldRedirect: true };
+  if (/iPhone|iPad/i.test(ua) && !/Safari/i.test(ua)) return { name: 'iOS WebView', shouldRedirect: true };
+  if ((navigator as any).brave) return { name: 'Brave', shouldRedirect: true };
+  if (/iPhone|iPad/i.test(ua) && /FxiOS/i.test(ua)) return { name: 'Firefox iOS', shouldRedirect: true };
+  return { name: 'Standard', shouldRedirect: false };
+}
+
 export const Auth: React.FC = () => {
   const [view, setView] = useState<ViewState>('login');
   const [emailLoading, setEmailLoading] = useState(false);
@@ -35,8 +49,10 @@ export const Auth: React.FC = () => {
 
   const navigate = useNavigate();
   const { user, verifyGoogleToken, loginUser, registerUser } = useAuth();
+  const googleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const lastAuthMethod = localStorage.getItem(LAST_AUTH_KEY);
+  const browserInfo = detectBrowserInfo();
 
   useEffect(() => {
     if (user) navigate('/gallery', { replace: true });
@@ -54,25 +70,54 @@ export const Auth: React.FC = () => {
     return () => clearTimeout(timer);
   }, [resendCooldown]);
 
-  const loginWithGoogle = useGoogleLogin({
+  const loginWithGooglePopup = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
+      if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
       setGoogleLoading(true);
       setErrorMsg('');
       try {
         await verifyGoogleToken(tokenResponse.access_token);
         localStorage.setItem(LAST_AUTH_KEY, 'google');
         navigate('/gallery');
-      } catch (err: any) {
-        setErrorMsg(err.message || "Google authentication failed.");
+      } catch {
+        doRedirectLogin();
       } finally {
         setGoogleLoading(false);
       }
     },
     onError: () => {
-      setErrorMsg("Google login was cancelled or failed.");
-      setGoogleLoading(false);
+      if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
+      doRedirectLogin();
+    },
+    onNonOAuthError: () => {
+      if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
+      doRedirectLogin();
     }
   });
+
+  const doRedirectLogin = () => {
+    setGoogleLoading(true);
+    window.location.assign(joinUrl(API_BASE, '/api/auth/google/login'));
+  };
+
+  const handleGoogleLogin = () => {
+    setErrorMsg('');
+    setGoogleLoading(true);
+
+    if (browserInfo.shouldRedirect) {
+      doRedirectLogin();
+      return;
+    }
+
+    googleTimeoutRef.current = setTimeout(() => doRedirectLogin(), 8000);
+
+    try {
+      loginWithGooglePopup();
+    } catch {
+      if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
+      doRedirectLogin();
+    }
+  };
 
   const handleResendCode = async () => {
     if (resendCooldown > 0 || !verificationEmail) return;
@@ -110,7 +155,6 @@ export const Auth: React.FC = () => {
           localStorage.setItem(LAST_AUTH_KEY, 'email');
           navigate('/gallery');
         }
-
       } else if (view === 'register') {
         const res = await registerUser(email, password, name);
         if (res) {
@@ -119,7 +163,6 @@ export const Auth: React.FC = () => {
           setResendCooldown(60);
           setView('verify');
         }
-
       } else if (view === 'forgot') {
         const res = await fetch(joinUrl(API_BASE, '/api/auth/forgot-password'), {
           method: 'POST',
@@ -133,7 +176,6 @@ export const Auth: React.FC = () => {
           const data = await res.json().catch(() => ({}));
           setErrorMsg(data.error || 'Failed to send reset code.');
         }
-
       } else if (view === 'reset') {
         const res = await fetch(joinUrl(API_BASE, '/api/auth/reset-password'), {
           method: 'POST',
@@ -146,7 +188,6 @@ export const Auth: React.FC = () => {
           const data = await res.json().catch(() => ({}));
           setErrorMsg(data.error || 'Invalid or expired code.');
         }
-
       } else if (view === 'verify') {
         const res = await fetch(joinUrl(API_BASE, '/api/auth/verify-email'), {
           method: 'POST',
@@ -172,7 +213,6 @@ export const Auth: React.FC = () => {
   return (
     <div className="min-h-screen w-full relative bg-white flex flex-col md:flex-row">
 
-      {/* ── BACKGROUND SPLIT ── */}
       <div className="fixed inset-0 flex pointer-events-none">
         <div className="hidden md:block w-1/2 h-full bg-[#0B0F19]" />
         <div className="w-full md:w-1/2 h-full bg-white" />
@@ -180,7 +220,7 @@ export const Auth: React.FC = () => {
 
       <div className="relative z-10 w-full max-w-[1280px] mx-auto min-h-screen flex flex-col md:flex-row px-6 md:px-8">
 
-        {/* ── LEFT PANEL ── */}
+        {/* Left Panel */}
         <div className="hidden md:flex w-1/2 flex-col justify-between py-16 pr-16 text-white h-full">
           <div>
             <Link to="/" className="inline-block hover:opacity-80 transition-opacity">
@@ -202,15 +242,12 @@ export const Auth: React.FC = () => {
           </div>
         </div>
 
-        {/* ── RIGHT PANEL ── */}
+        {/* Right Panel */}
         <div className="w-full md:w-1/2 flex flex-col justify-start items-center h-full relative pl-0 md:pl-16 pt-32 md:pt-28">
 
-          {/* ✅ Back to home — top-right of right panel */}
           <div className="absolute top-8 right-0">
-            <Link
-              to="/"
-              className="inline-flex items-center gap-1.5 text-xs font-black text-gray-400 hover:text-gray-700 transition-colors uppercase tracking-widest"
-            >
+            <Link to="/"
+              className="inline-flex items-center gap-1.5 text-xs font-black text-gray-400 hover:text-gray-700 transition-colors uppercase tracking-widest">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M19 12H5M12 5l-7 7 7 7" />
               </svg>
@@ -218,10 +255,9 @@ export const Auth: React.FC = () => {
             </Link>
           </div>
 
-
           <div className="w-full max-w-sm mx-auto px-1 md:px-0 md:max-w-sm" style={{ maxWidth: 'min(100%, 420px)' }}>
 
-            {/* ══ VERIFY VIEW ══ */}
+            {/* Verify */}
             {view === 'verify' && (
               <div className="text-center">
                 <div className="w-16 h-16 bg-primary-50 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -234,8 +270,7 @@ export const Auth: React.FC = () => {
                 </p>
                 {errorMsg && (
                   <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 text-sm text-left">
-                    <AlertCircle size={16} className="flex-shrink-0" />
-                    <span>{errorMsg}</span>
+                    <AlertCircle size={16} className="flex-shrink-0" /><span>{errorMsg}</span>
                   </div>
                 )}
                 <form onSubmit={handleSubmit} className="space-y-3">
@@ -243,38 +278,32 @@ export const Auth: React.FC = () => {
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:verifyAccount')}</label>
                     <div className="relative">
                       <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input
-                        type="text" name="code" placeholder="123456" required maxLength={6}
-                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm tracking-widest font-bold text-center"
-                      />
+                      <input type="text" name="code" placeholder="123456" required maxLength={6}
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm tracking-widest font-bold text-center" />
                     </div>
                   </div>
-                  <Button type="submit" fullWidth disabled={emailLoading} className="h-12 mt-2 text-sm font-black shadow-xl rounded-xl">
+                  <button
+                    type="submit"
+                    disabled={emailLoading}
+                    className="w-full mt-2 px-8 py-4 text-lg font-black text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-xl shadow-primary-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     {emailLoading ? t('common:processing') : t('auth:verifyEmail')}
-                  </Button>
+                  </button>
                 </form>
                 <div className="mt-4 text-center">
-                  <button
-                    type="button"
-                    onClick={handleResendCode}
-                    disabled={resendCooldown > 0}
+                  <button type="button" onClick={handleResendCode} disabled={resendCooldown > 0}
                     className="text-sm hover:underline disabled:opacity-40 disabled:no-underline"
-                    style={{ color: resendCooldown > 0 ? '#9ca3af' : '#f43f5e' }}
-                  >
-                    {resendCooldown > 0
-                      ? `${t('common:resendIn', 'Resend in')} ${resendCooldown}s`
-                      : t('common:didntReceive', "Didn't receive it? Resend")}
+                    style={{ color: resendCooldown > 0 ? '#9ca3af' : '#f43f5e' }}>
+                    {resendCooldown > 0 ? `${t('common:resendIn', 'Resend in')} ${resendCooldown}s` : t('common:didntReceive', "Didn't receive it? Resend")}
                   </button>
                 </div>
                 <div className="mt-3 text-center">
-                  <button type="button" onClick={() => setView('register')} className="text-xs text-gray-400 hover:text-gray-600">
-                    ← {t('auth:backTo')}
-                  </button>
+                  <button type="button" onClick={() => setView('register')} className="text-xs text-gray-400 hover:text-gray-600">← {t('auth:backTo')}</button>
                 </div>
               </div>
             )}
 
-            {/* ══ RESET VIEW — code + new password ══ */}
+            {/* Reset */}
             {view === 'reset' && (
               <>
                 <div className="text-center mb-6">
@@ -289,8 +318,7 @@ export const Auth: React.FC = () => {
                 </div>
                 {errorMsg && (
                   <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 text-sm">
-                    <AlertCircle size={16} className="flex-shrink-0" />
-                    <span>{errorMsg}</span>
+                    <AlertCircle size={16} className="flex-shrink-0" /><span>{errorMsg}</span>
                   </div>
                 )}
                 <form onSubmit={handleSubmit} className="space-y-3">
@@ -298,45 +326,38 @@ export const Auth: React.FC = () => {
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:verifyAccount')}</label>
                     <div className="relative">
                       <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input
-                        type="text" name="code" placeholder="123456" required maxLength={6}
-                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm tracking-widest font-bold text-center"
-                      />
+                      <input type="text" name="code" placeholder="123456" required maxLength={6}
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm tracking-widest font-bold text-center" />
                     </div>
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:newPassword')}</label>
                     <div className="relative">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input
-                        type={showNewPassword ? 'text' : 'password'}
-                        name="password" placeholder="••••••••" required
-                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-11 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPassword(p => !p)}
+                      <input type={showNewPassword ? 'text' : 'password'} name="password" placeholder="••••••••" required
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-11 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
+                      <button type="button" onClick={() => setShowNewPassword(p => !p)}
                         className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                        tabIndex={-1}
-                        aria-label={showNewPassword ? 'Hide password' : 'Show password'}
-                      >
+                        tabIndex={-1} aria-label={showNewPassword ? 'Hide password' : 'Show password'}>
                         {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
                     </div>
                   </div>
-                  <Button type="submit" fullWidth disabled={emailLoading} className="h-12 mt-2 text-sm font-black shadow-xl rounded-xl">
+                  <button
+                    type="submit"
+                    disabled={emailLoading}
+                    className="w-full mt-2 px-8 py-4 text-lg font-black text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-xl shadow-primary-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     {emailLoading ? t('common:processing') : t('auth:resetPassword')}
-                  </Button>
+                  </button>
                 </form>
                 <div className="mt-4 text-center">
-                  <button type="button" onClick={() => setView('forgot')} className="text-sm hover:underline" style={{ color: '#f43f5e' }}>
-                    ← {t('auth:backTo')}
-                  </button>
+                  <button type="button" onClick={() => setView('forgot')} className="text-sm hover:underline" style={{ color: '#f43f5e' }}>← {t('auth:backTo')}</button>
                 </div>
               </>
             )}
 
-            {/* ══ FORGOT VIEW ══ */}
+            {/* Forgot */}
             {view === 'forgot' && (
               <>
                 <div className="text-center mb-6">
@@ -345,8 +366,7 @@ export const Auth: React.FC = () => {
                 </div>
                 {errorMsg && (
                   <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 text-sm">
-                    <AlertCircle size={16} className="flex-shrink-0" />
-                    <span>{errorMsg}</span>
+                    <AlertCircle size={16} className="flex-shrink-0" /><span>{errorMsg}</span>
                   </div>
                 )}
                 <form onSubmit={handleSubmit} className="space-y-3">
@@ -354,28 +374,27 @@ export const Auth: React.FC = () => {
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:emailAddress')}</label>
                     <div className="relative">
                       <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input
-                        type="email" name="email" placeholder={t('auth:emailPlaceholder')} required
-                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
-                      />
+                      <input type="email" name="email" placeholder={t('auth:emailPlaceholder')} required
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
                     </div>
                   </div>
-                  <Button type="submit" fullWidth disabled={emailLoading} className="h-12 mt-2 text-sm font-black shadow-xl rounded-xl">
+                  <button
+                    type="submit"
+                    disabled={emailLoading}
+                    className="w-full mt-2 px-8 py-4 text-lg font-black text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-xl shadow-primary-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     {emailLoading ? t('common:processing') : t('auth:sendResetCode')}
-                  </Button>
+                  </button>
                 </form>
                 <div className="mt-4 text-center">
-                  <button type="button" onClick={() => setView('login')} className="text-sm hover:underline" style={{ color: '#f43f5e' }}>
-                  {t('auth:backTo')}
-                  </button>
+                  <button type="button" onClick={() => setView('login')} className="text-sm hover:underline" style={{ color: '#f43f5e' }}>{t('auth:backTo')}</button>
                 </div>
               </>
             )}
 
-            {/* ══ LOGIN / REGISTER VIEWS ══ */}
+            {/* Login / Register */}
             {(view === 'login' || view === 'register') && (
               <>
-                {/* In login/register view */}
                 <div className="text-center mb-8 -mt-6 md:mt-0 md:mb-6">
                   <h2 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">
                     {view === 'login' ? t('auth:welcome') : t('auth:createAccount')}
@@ -384,18 +403,16 @@ export const Auth: React.FC = () => {
 
                 {errorMsg && (
                   <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4 text-sm">
-                    <AlertCircle size={16} className="flex-shrink-0" />
-                    <span>{errorMsg}</span>
+                    <AlertCircle size={16} className="flex-shrink-0" /><span>{errorMsg}</span>
                   </div>
                 )}
 
-                {/* ✅ Google button — pill floats outside top-right */}
                 <div className="relative mb-4 mt-3">
                   <button
                     type="button"
-                    onClick={() => { setGoogleLoading(true); loginWithGoogle(); }}
+                    onClick={handleGoogleLogin}
                     disabled={googleLoading || emailLoading}
-                    className="w-full flex items-center justify-center gap-3 p-4 bg-white/40 hover:bg-white/80 text-gray-800 font-bold rounded-xl transition-all border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-3 p-4 bg-white/40 hover:bg-white/80 text-gray-800 font-bold rounded-xl transition-all border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 disabled:opacity-50 text-base"
                   >
                     {googleLoading ? (
                       <svg className="animate-spin w-5 h-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -405,10 +422,9 @@ export const Auth: React.FC = () => {
                     ) : (
                       <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
                     )}
-                    <span className="text-base">{googleLoading ? t('common:processing') : t('auth:googleContinue')}</span>
+                    <span>{googleLoading ? t('common:processing') : t('auth:googleContinue')}</span>
                   </button>
 
-                  {/* ✅ Pill outside button — slightly above and past right edge */}
                   {lastAuthMethod === 'google' && !googleLoading && (
                     <span className="absolute -top-3.5 -right-1 translate-x-1 inline-flex items-center gap-1 bg-gray-900 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shadow-md pointer-events-none">
                       <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -432,10 +448,8 @@ export const Auth: React.FC = () => {
                       <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:fullName')}</label>
                       <div className="relative">
                         <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                        <input
-                          type="text" name="name" placeholder={t('auth:namePlaceholder')} required
-                          className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
-                        />
+                        <input type="text" name="name" placeholder={t('auth:namePlaceholder')} required
+                          className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
                       </div>
                     </div>
                   )}
@@ -444,10 +458,8 @@ export const Auth: React.FC = () => {
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:emailAddress')}</label>
                     <div className="relative">
                       <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input
-                        type="email" name="email" placeholder={t('auth:emailPlaceholder')} required
-                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
-                      />
+                      <input type="email" name="email" placeholder={t('auth:emailPlaceholder')} required
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
                     </div>
                   </div>
 
@@ -455,46 +467,35 @@ export const Auth: React.FC = () => {
                     <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:password')}</label>
                     <div className="relative">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        name="password" placeholder="••••••••" required
-                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-11 outline-none focus:ring-2 focus:ring-primary-100 text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(prev => !prev)}
+                      <input type={showPassword ? 'text' : 'password'} name="password" placeholder="••••••••" required
+                        className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 pl-11 pr-11 outline-none focus:ring-2 focus:ring-primary-100 text-sm" />
+                      <button type="button" onClick={() => setShowPassword(prev => !prev)}
                         className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                        tabIndex={-1}
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      >
+                        tabIndex={-1} aria-label={showPassword ? 'Hide password' : 'Show password'}>
                         {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
                     </div>
                     {view === 'login' && (
                       <div className="text-right mt-1">
-                        <button
-                          type="button"
-                          onClick={() => setView('forgot')}
-                          className="text-xs hover:underline"
-                          style={{ color: '#f43f5e' }}
-                        >
+                        <button type="button" onClick={() => setView('forgot')} className="text-xs hover:underline" style={{ color: '#f43f5e' }}>
                           {t('auth:forgotPassword')}
                         </button>
                       </div>
                     )}
                   </div>
 
-                  <Button type="submit" fullWidth disabled={emailLoading || googleLoading} className="h-12 mt-4 text-sm font-black shadow-xl rounded-xl">
+                  <button
+                    type="submit"
+                    disabled={emailLoading || googleLoading}
+                    className="w-full mt-4 px-8 py-4 text-lg font-black text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-xl shadow-primary-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     {emailLoading ? t('common:processing') : (view === 'login' ? t('common:signIn') : t('auth:createAccount'))}
-                  </Button>
+                  </button>
                 </form>
 
-                <div className="mt-4 text-center">
-                  <button
-                    onClick={() => setView(view === 'login' ? 'register' : 'login')}
-                    type="button"
-                    className="text-sm font-black hover:underline text-primary-600"
-                  >
+                <div className="mt-5 text-center">
+                  <button onClick={() => setView(view === 'login' ? 'register' : 'login')} type="button"
+                    className="text-base font-black hover:underline text-primary-600">
                     {view === 'login' ? t('auth:noAccount') : t('auth:backTo')}
                   </button>
                 </div>

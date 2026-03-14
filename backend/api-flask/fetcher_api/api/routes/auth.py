@@ -7,24 +7,21 @@ import random
 import resend
 from datetime import datetime, timedelta, timezone
 
-
 from flask import Blueprint, request, jsonify, session, redirect, url_for, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
-
 
 from fetcher_api.api.helpers.auth import get_user_id_from_request
 from fetcher_api.adapters.db import execute, fetch_one
 from fetcher_api.utils.timestamps import get_unique_id
 
-
 logger = logging.getLogger("auth")
-auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
+# No url_prefix here — it comes from register_blueprints() in __init__.py
+auth_bp = Blueprint("auth", __name__)
 
 resend.api_key = os.getenv("RESEND_API_KEY")
 FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@recolekt.app")
 APP_URL = os.getenv("APP_URL", "https://recolekt.app")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://recolekt.app")
 
 
 def get_signing_key():
@@ -42,10 +39,18 @@ def create_jwt_token(user_id: str, email: str) -> str:
     return token if isinstance(token, str) else token.decode('utf-8')
 
 
+def _get_frontend_base() -> str:
+    env_url = os.getenv("FRONTEND_BASE_URL", "").strip().rstrip("/")
+    if env_url:
+        return env_url
+    host = request.host
+    scheme = request.scheme
+    return f"{scheme}://{host}"
+
+
 # ─────────────────────────────────────────────
 # EMAIL TEMPLATES
 # ─────────────────────────────────────────────
-
 
 def _base_html(lang: str, body_content: str) -> str:
     unsubscribe_label = "Se désabonner" if lang == "fr" else "Unsubscribe"
@@ -62,21 +67,12 @@ def _base_html(lang: str, body_content: str) -> str:
   <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f9fafb;padding:40px 20px;">
     <tr><td align="center">
       <table width="480" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);max-width:480px;">
-
-
-        <!-- Header -->
         <tr>
           <td style="background:#0B0F19;padding:28px 40px;">
             <p style="margin:0;color:#ffffff;font-size:22px;font-weight:900;letter-spacing:-0.5px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">recolekt</p>
           </td>
         </tr>
-
-
-        <!-- Body -->
         {body_content}
-
-
-        <!-- Footer -->
         <tr>
           <td style="padding:24px 40px;border-top:1px solid #f3f4f6;">
             <p style="margin:0;color:#9ca3af;font-size:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
@@ -86,8 +82,6 @@ def _base_html(lang: str, body_content: str) -> str:
             </p>
           </td>
         </tr>
-
-
       </table>
     </td></tr>
   </table>
@@ -180,33 +174,142 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
 
 
 # ─────────────────────────────────────────────
-# GOOGLE OAUTH — REDIRECT FLOW (popup-free)
+# GOOGLE OAUTH
 # ─────────────────────────────────────────────
-
 
 @auth_bp.route("/google/login", methods=["GET"])
 def google_login():
-    # Pull oauth from app.extensions — initialized once in app.py, no duplicate here
-    oauth = current_app.extensions["oauth"]
-    next_url = request.args.get("next", f"{FRONTEND_URL}/gallery")
+    frontend_base = _get_frontend_base()
+    next_url = request.args.get("next", f"{frontend_base}/gallery")
+    mode = request.args.get("mode", "")
     redirect_uri = url_for("auth.google_callback", _external=True)
-    return oauth.google.authorize_redirect(redirect_uri, state=next_url)
+
+    logger.info(f"🔑 Google login: mode={mode}, redirect_uri={redirect_uri}, next={next_url}, frontend={frontend_base}")
+
+    if mode == "cookieless":
+        import urllib.parse
+        client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": next_url,
+            "access_type": "online",
+            "prompt": "select_account",
+        }
+        google_auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
+        return redirect(google_auth_url)
+
+    try:
+        oauth = current_app.extensions["oauth"]
+        try:
+            session["oauth_next_url"] = next_url
+            session["oauth_frontend_base"] = frontend_base
+        except Exception as e:
+            logger.warning(f"⚠️ Could not write to session: {e}")
+        return oauth.google.authorize_redirect(redirect_uri, state=next_url)
+    except Exception as e:
+        logger.error(f"❌ Google login crashed: {e}", exc_info=True)
+        return redirect(f"{frontend_base}/auth?error=google_init_failed")
 
 
 @auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
-    oauth = current_app.extensions["oauth"]
-    frontend_next = request.args.get("state", f"{FRONTEND_URL}/gallery")
+    frontend_base = _get_frontend_base()
+
     try:
+        session_frontend = session.pop("oauth_frontend_base", None)
+        if session_frontend:
+            frontend_base = session_frontend
+    except Exception:
+        pass
+
+    try:
+        session_next = session.pop("oauth_next_url", None)
+    except Exception:
+        session_next = None
+
+    frontend_next = (
+        request.args.get("state")
+        or session_next
+        or f"{frontend_base}/gallery"
+    )
+
+    allowed_origins = [
+        "https://recolekt.app", "https://www.recolekt.app",
+        "https://staging.recolekt.app", "https://recolekt-staging.up.railway.app",
+        "http://localhost:3000", "http://localhost:5173",
+        "http://127.0.0.1:3000", "http://127.0.0.1:5173",
+    ]
+    allowed_origins.append(frontend_base)
+
+    if not any(frontend_next.startswith(o) for o in allowed_origins):
+        logger.warning(f"⚠️ Blocked open redirect to: {frontend_next}")
+        frontend_next = f"{frontend_base}/gallery"
+
+    logger.info(f"🔑 Google callback: frontend_base={frontend_base}, next={frontend_next}")
+
+    auth_code = request.args.get("code")
+    user_info = None
+
+    # Attempt 1: Authlib (works when session cookies exist)
+    try:
+        oauth = current_app.extensions["oauth"]
         token = oauth.google.authorize_access_token()
         user_info = token.get("userinfo") or {}
+        logger.info("✅ Google callback: Authlib flow succeeded")
+    except Exception as e:
+        logger.warning(f"⚠️ Authlib flow failed: {e}")
+
+    # Attempt 2: Manual token exchange (cookieless fallback)
+    if not user_info and auth_code:
+        logger.info("🔑 Trying manual token exchange...")
+        try:
+            redirect_uri = url_for("auth.google_callback", _external=True)
+            token_resp = requests.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code": auth_code,
+                    "client_id": os.getenv("GOOGLE_CLIENT_ID", ""),
+                    "client_secret": os.getenv("GOOGLE_CLIENT_SECRET", ""),
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+                timeout=10,
+            )
+            if token_resp.ok:
+                access_token = token_resp.json().get("access_token")
+                if access_token:
+                    info_resp = requests.get(
+                        "https://www.googleapis.com/oauth2/v3/userinfo",
+                        headers={"Authorization": f"Bearer {access_token}"},
+                        timeout=10,
+                    )
+                    if info_resp.ok:
+                        user_info = info_resp.json()
+                        logger.info("✅ Manual token exchange succeeded")
+                    else:
+                        logger.error(f"❌ Userinfo failed: {info_resp.status_code}")
+                else:
+                    logger.error("❌ No access_token in token response")
+            else:
+                logger.error(f"❌ Token exchange failed: {token_resp.status_code} {token_resp.text[:200]}")
+        except Exception as e:
+            logger.error(f"❌ Manual token exchange crashed: {e}", exc_info=True)
+
+    if not user_info:
+        logger.error("❌ Google callback: could not get user info")
+        return redirect(f"{frontend_base}/auth?error=google_failed")
+
+    try:
         email = (user_info.get("email") or "").strip().lower()
         google_id = user_info.get("sub", "")
         name = user_info.get("name", "")
         picture = user_info.get("picture", "")
 
         if not email:
-            return redirect(f"{FRONTEND_URL}/auth?error=no_email")
+            return redirect(f"{frontend_base}/auth?error=no_email")
 
         user = fetch_one(
             "SELECT user_id FROM users WHERE email = %s OR google_id = %s;",
@@ -225,11 +328,14 @@ def google_callback():
                 (user_id, email, name, google_id, picture), commit=True)
 
         jwt_token = create_jwt_token(user_id, email)
-        return redirect(f"{frontend_next}?token={jwt_token}")
+        separator = "&" if "?" in frontend_next else "?"
+        final_url = f"{frontend_next}{separator}token={jwt_token}"
+        logger.info(f"✅ Google callback: redirecting to {final_url[:100]}...")
+        return redirect(final_url)
 
     except Exception as e:
         logger.error("❌ Google callback crash: %s", e, exc_info=True)
-        return redirect(f"{FRONTEND_URL}/auth?error=google_failed")
+        return redirect(f"{frontend_base}/auth?error=google_failed")
 
 
 @auth_bp.route("/google/verify", methods=["POST", "OPTIONS"])
@@ -262,7 +368,9 @@ def google_verify():
         else:
             user_id = get_unique_id(email)
             execute(
-                "INSERT INTO users (user_id, email, name, google_id, picture, verified, created_at) VALUES (%s, %s, %s, %s, %s, TRUE, NOW()) ON CONFLICT (email) DO UPDATE SET google_id = EXCLUDED.google_id, picture = EXCLUDED.picture, verified = TRUE;",
+                "INSERT INTO users (user_id, email, name, google_id, picture, verified, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, TRUE, NOW()) "
+                "ON CONFLICT (email) DO UPDATE SET google_id = EXCLUDED.google_id, picture = EXCLUDED.picture, verified = TRUE;",
                 (user_id, email, name, google_id, picture), commit=True)
 
         return jsonify({
@@ -278,7 +386,6 @@ def google_verify():
 # ─────────────────────────────────────────────
 # EMAIL / PASSWORD
 # ─────────────────────────────────────────────
-
 
 @auth_bp.route("/login", methods=["POST", "OPTIONS"])
 def login():
@@ -442,7 +549,6 @@ def update_language():
     try:
         user_id = get_user_id_from_request()
         if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-
         data = request.get_json() or {}
         lang = data.get('language', 'en')
         execute("UPDATE users SET language = %s WHERE user_id = %s", (lang, user_id), commit=True)
