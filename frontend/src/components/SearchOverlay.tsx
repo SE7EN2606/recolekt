@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Play, User, ChevronRight } from 'lucide-react';
+import { Search, X, Play, ChevronRight } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -58,7 +58,6 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({ isOpen, onClose })
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-[200] flex flex-col">
-          {/* Subtle blurred backdrop */}
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -73,7 +72,6 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({ isOpen, onClose })
             exit={{ y: -20, opacity: 0 }}
             className="relative w-full max-w-2xl mx-auto mt-4 md:mt-20 px-4"
           >
-            {/* SAFE GLASSMORPHISM CONTAINER */}
             <div className="bg-white/85 backdrop-blur-2xl rounded-[32px] shadow-[0_16px_40px_rgba(0,0,0,0.12)] overflow-hidden border border-white/60">
               
               <div className="flex items-center p-4 border-b border-gray-200/50">
@@ -125,14 +123,11 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({ isOpen, onClose })
                           )}
                         </div>
                         <div className="flex-1 text-left min-w-0">
-                          <h4 className="font-bold text-gray-900 truncate group-hover:text-primary-600 transition-colors drop-shadow-sm">
+                          <h4 className="font-bold text-base text-gray-900 line-clamp-2 group-hover:text-primary-600 transition-colors leading-snug">
                             {video.title || video.summary?.topic || video.caption || 'Untitled Video'}
                           </h4>
-                          <span className="flex items-center gap-1 text-xs text-gray-600 font-medium mt-0.5">
-                            <User size={12} /> {video.author || 'Unknown'}
-                          </span>
                         </div>
-                        <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 mr-2" />
+                        <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 mr-2 shrink-0" />
                       </button>
                     ))}
                   </div>

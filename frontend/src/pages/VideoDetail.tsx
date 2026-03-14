@@ -83,9 +83,13 @@ const VideoDetailSkeleton = () => (
 const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any, showOriginal: boolean }) => {
   const { t } = useTranslation(['videoDetail']);
 
-  const activeWorkout = showOriginal && workoutData?.original 
-    ? workoutData.original 
-    : (workoutData?.french || workoutData?.translated || workoutData);
+  // ✅ FIXED: Properly route to the nested "english" or "original" objects based on toggle
+  let activeWorkout = workoutData;
+  if (workoutData?.english || workoutData?.original) {
+    activeWorkout = (showOriginal && workoutData.original) 
+      ? workoutData.original 
+      : (workoutData.english || workoutData);
+  }
 
   if (!activeWorkout || Object.keys(activeWorkout).length === 0) return null;
 
@@ -307,7 +311,6 @@ export const VideoDetail: React.FC = () => {
   const handleSaveEdit = () => { if (editedVideo && video) { if (typeof updateVideo === 'function') updateVideo(video.id, editedVideo); setVideo(editedVideo); setIsEditing(false); } };
   const handleShare = async () => { if (navigator.share) { try { await navigator.share({ title: video.title, url: window.location.href }); } catch (err) {} } else { await navigator.clipboard.writeText(window.location.href); alert(t('videoDetail:linkCopied', 'Link copied!')); } };
 
-  // ✅ REORDERED MENU ACTIONS: Delete is up, Report is down
   const actionItems: ActionItem[] = [
     { icon: IOSShareIcon, label: t('videoDetail:share', "Partager la vidéo"), onClick: handleShare },
     { icon: Pencil, label: t('videoDetail:editReel', "Modifier les détails"), onClick: () => setIsEditing(true) },
@@ -345,7 +348,11 @@ export const VideoDetail: React.FC = () => {
 
     const englishData = summaryObj.english || {};
     const originalData = summaryObj.original || {};
-    const langBlock = (showOriginal && Object.keys(originalData).length > 0) ? originalData : (Object.keys(englishData).length > 0 ? englishData : summaryObj);
+    
+    // Switch ALL summary data based on the showOriginal toggle
+    const langBlock = (showOriginal && Object.keys(originalData).length > 0) 
+      ? originalData 
+      : (Object.keys(englishData).length > 0 ? englishData : summaryObj);
 
     let recipeData = v.recipe;
     if (typeof recipeData === 'string') { try { recipeData = JSON.parse(recipeData); } catch (e) { recipeData = null; } }
@@ -578,7 +585,6 @@ export const VideoDetail: React.FC = () => {
             <WorkoutBlock workoutData={viewModel.workout} showOriginal={showOriginal} />
           )}
 
-          {/* ✅ COLLAPSIBLE CAPTION BLOCK */}
           {viewModel.caption && (
             <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5 mb-5">
               <div 
@@ -606,7 +612,6 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
-          {/* ✅ MOBILE TRANSCRIPT BLOCK (Hidden on Desktop) */}
           {viewModel.transcript && (
             <div className="md:hidden bg-white border border-gray-100 rounded-2xl shadow-sm p-5 mb-5">
               <div 
@@ -692,7 +697,6 @@ export const VideoDetail: React.FC = () => {
             </div>
           </div>
 
-          {/* ✅ DESKTOP TRANSCRIPT BLOCK (Closed by default) */}
           {viewModel.transcript && (
             <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5 flex flex-col shrink-0">
               <div 

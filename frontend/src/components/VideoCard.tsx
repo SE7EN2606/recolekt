@@ -229,7 +229,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         )}
 
         {/* ======================================================= */}
-        {/* GPU ACCELERATED PROCESSING STATE - NO GRID              */}
+        {/* RESTORED GPU ACCELERATED PROCESSING STATE               */}
         {/* ======================================================= */}
         {isProcessing && (
           <div className="absolute inset-0 z-40 bg-slate-900 overflow-hidden shadow-[0_0_20px_rgba(124,58,237,0.25)] border border-primary-500/40">
@@ -241,13 +241,15 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
             <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md z-10" />
 
-            {/* SEQUENTIAL, HARDWARE-ACCELERATED THIN SCANNERS */}
-            <div 
-              className={`absolute top-0 left-0 w-full h-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)] z-30 pointer-events-none will-change-transform ${scanState === 'h-active' ? 'h-active' : 'idle'}`}
-            />
-            <div 
-              className={`absolute top-0 left-0 h-full w-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)] z-30 pointer-events-none will-change-transform ${scanState === 'v-active' ? 'v-active' : 'idle'}`}
-            />
+            {/* EXACT CONTAINER HEIGHT SCANNER (GPU Accelerated) */}
+            <div className={`absolute top-[-100%] left-0 w-full h-full z-30 pointer-events-none will-change-transform ${scanState === 'h-active' ? 'h-active' : 'idle'}`}>
+              <div className="absolute bottom-0 left-0 w-full h-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)]" />
+            </div>
+
+            {/* EXACT CONTAINER WIDTH SCANNER (GPU Accelerated) */}
+            <div className={`absolute top-0 left-[-100%] w-full h-full z-30 pointer-events-none will-change-transform ${scanState === 'v-active' ? 'v-active' : 'idle'}`}>
+              <div className="absolute top-0 right-0 h-full w-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)]" />
+            </div>
 
             <div className="absolute inset-0 flex flex-col items-center justify-center z-40 pointer-events-none px-4 text-center">
               <Loader2 className="w-10 h-10 text-primary-400 animate-spin mb-3 drop-shadow-[0_0_10px_rgba(167,139,250,0.6)]" />
@@ -367,18 +369,20 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
       />
       
       <style>{`
-        /* GPU Accelerated Sequential Scanners (No layout jumpiness) */
+        /* PERFECT BOUNDS SCANNER - Hardware Accelerated (Translate3D) */
         @keyframes scan-h { 
-          0% { transform: translate3d(0, -10px, 0); opacity: 0; } 
-          10% { opacity: 1; } 
-          90% { opacity: 1; } 
-          100% { transform: translate3d(0, 800px, 0); opacity: 0; } 
+          0% { transform: translate3d(0, 0%, 0); opacity: 0; } 
+          5% { transform: translate3d(0, 0%, 0); opacity: 1; } 
+          50% { transform: translate3d(0, 100%, 0); opacity: 1; } 
+          95% { transform: translate3d(0, 0%, 0); opacity: 1; }
+          100% { transform: translate3d(0, 0%, 0); opacity: 0; } 
         }
         @keyframes scan-v { 
-          0% { transform: translate3d(-10px, 0, 0); opacity: 0; } 
-          10% { opacity: 1; } 
-          90% { opacity: 1; } 
-          100% { transform: translate3d(600px, 0, 0); opacity: 0; } 
+          0% { transform: translate3d(0%, 0, 0); opacity: 0; } 
+          5% { transform: translate3d(0%, 0, 0); opacity: 1; } 
+          50% { transform: translate3d(100%, 0, 0); opacity: 1; } 
+          95% { transform: translate3d(0%, 0, 0); opacity: 1; }
+          100% { transform: translate3d(0%, 0, 0); opacity: 0; } 
         }
 
         .h-active { animation: scan-h 4s linear forwards; }
