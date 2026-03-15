@@ -12,7 +12,6 @@ def fetch_saved_reels(user_id: str):
     Returns the latest processed + processing reels for a given user.
     Sorted by creation date DESC.
     """
-
     sql = """
         SELECT *
         FROM reels
@@ -43,7 +42,6 @@ def search_reels(user_id: str, q: str):
       - transcription
       - author name
     """
-
     sql = """
         SELECT *
         FROM reels

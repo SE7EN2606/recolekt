@@ -195,12 +195,14 @@ if not IS_LOCAL:
     base_dir = os.path.dirname(os.path.abspath(__file__))
     frontend_dir = os.path.join(base_dir, "frontend")
 
+
     @app.route("/")
     def serve_root():
         index_path = os.path.join(frontend_dir, "index.html")
         if os.path.exists(index_path):
             return send_from_directory(frontend_dir, "index.html")
         return jsonify({"status": "API running", "frontend": "not bundled"}), 200
+
 
     @app.errorhandler(404)
     def handle_404(e):
@@ -218,6 +220,7 @@ if not IS_LOCAL:
 
         return jsonify({"error": "Not Found", "code": 404}), 404
 
+
     @app.errorhandler(Exception)
     def handle_error(e):
         if isinstance(e, HTTPException) and e.code == 404:
@@ -229,6 +232,7 @@ if not IS_LOCAL:
             message = e.description
         logger.error("❌ Error %s: %s", code, message, exc_info=True)
         return jsonify({"error": message, "code": code}), code
+
 
 else:
     @app.errorhandler(Exception)
