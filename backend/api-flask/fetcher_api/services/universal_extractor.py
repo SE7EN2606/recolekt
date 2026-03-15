@@ -1,4 +1,3 @@
-# fetcher_api/services/universal_extractor.py
 """
 Universal Content Extractor - BILINGUAL TWO-CALL approach
 Call 1: Extract structured data (title, recipe/guide, hashtags, location, etc.)
@@ -200,8 +199,11 @@ class UniversalExtractor:
         highlights_raw = safe_list(result_data.get("highlights", []))
         location_obj = result_data.get("location", None)
 
-        # Recipe fields
+        # Recipe fields (Updated for Multi-Recipe Compilations)
         recipe_obj = result_data.get("recipe") or {}
+        is_compilation = bool(recipe_obj.get("is_compilation", False))
+        ideas_en = safe_list(recipe_obj.get("ideas", []))
+        
         ingredients_en = normalize_ingredients(recipe_obj.get("ingredients", []))
         instructions_en = safe_list(recipe_obj.get("instructions", []))
         tips_en = safe_list(recipe_obj.get("tips", []))
@@ -244,6 +246,8 @@ class UniversalExtractor:
             "highlights_raw": highlights_raw,
             "location": location_obj,
             "prompt": safe_str(result_data.get("prompt", "")).strip() or None,
+            "is_compilation": is_compilation,  # ✅ ADDED
+            "ideas_en": ideas_en,              # ✅ ADDED
             "ingredients_en": ingredients_en,
             "instructions_en": instructions_en,
             "tips_en": tips_en,
@@ -281,6 +285,7 @@ class UniversalExtractor:
             "summary_en": summary_en,
             "summary_og": summary_en,
             "title_og": parsed["title_en"],
+            "ideas_og": parsed.get("ideas_en"), # Pass through ideas
             "ingredients_og": parsed["ingredients_en"],
             "instructions_og": parsed["instructions_en"],
             "tips_og": parsed["tips_en"],
@@ -301,7 +306,8 @@ class UniversalExtractor:
                 instructions=parsed["instructions_en"] or None,
                 tips=parsed["tips_en"] or None,
                 notes=parsed["notes_en"] or None,
-                workout=parsed.get("workout"),  # <---- ADD THIS LINE HERE
+                workout=parsed.get("workout"), 
+                ideas=parsed.get("ideas_en") or None, # ✅ Pass ideas for translation
             )
         )
 
@@ -324,18 +330,20 @@ class UniversalExtractor:
             result, parsed
         )
 
-        # Catch translated workout if Mistral provides it
+        # Catch translated workout and ideas if Mistral provides them
         workout_og = result.get("translated_workout") or result.get("workout_original") or result.get("workout")
+        ideas_og = safe_list(result.get("translated_ideas", [])) or parsed.get("ideas_en")
 
         return {
             "summary_en": summary_en,
             "summary_og": summary_og,
             "title_og": title_og,
+            "ideas_og": ideas_og, # ✅ Added translated ideas
             "ingredients_og": ingredients_og,
             "instructions_og": instructions_og,
             "tips_og": tips_og,
             "notes_og": notes_og,
-            "workout_og": workout_og, # <--- Added support for workout translation
+            "workout_og": workout_og,
             "translated_headlines": safe_list(result.get("headlines", [])),
         }
 
@@ -449,12 +457,14 @@ class UniversalExtractor:
             },
         }
 
-        # ── Recipe object ──
+        # ── Recipe object (UPDATED with is_compilation and ideas) ──
         recipe_data = None
-        if parsed["ingredients_en"] or parsed["instructions_en"]:
+        if parsed["ingredients_en"] or parsed["instructions_en"] or parsed.get("ideas_en"):
             recipe_data = {
                 "english": {
                     "title": title_en,
+                    "is_compilation": parsed.get("is_compilation", False),
+                    "ideas": parsed.get("ideas_en") or None,
                     "servings": parsed["servings"] or "1",
                     "prep_time": parsed["prep_time"] or None,
                     "cook_time": parsed["cook_time"] or None,
@@ -466,6 +476,8 @@ class UniversalExtractor:
                 },
                 "original": {
                     "title": title_og,
+                    "is_compilation": parsed.get("is_compilation", False),
+                    "ideas": summary_result.get("ideas_og") or None,
                     "servings": parsed["servings"] or "1",
                     "prep_time": parsed["prep_time"] or None,
                     "cook_time": parsed["cook_time"] or None,

@@ -1,4 +1,3 @@
-# fetcher_api/services/extractor_prompts.py
 """
 All Mistral AI prompts for the Universal Extractor.
 Separated from business logic for maintainability.
@@ -236,7 +235,8 @@ def build_summary_prompt_bilingual(
     instructions: Optional[List] = None,
     tips: Optional[List] = None,
     notes: Optional[List] = None,
-    workout: Optional[dict] = None,  # ✅ ADDED: Accept workout data parameter
+    workout: Optional[dict] = None,
+    ideas: Optional[List] = None,  # ✅ ADDED: Compilation ideas translation
 ) -> str:
     lang_name = get_lang_name(original_lang)
 
@@ -268,10 +268,14 @@ def build_summary_prompt_bilingual(
         translation_input += f'\n"notes_en": {json.dumps(notes, ensure_ascii=False)}'
         translation_output_fields.append('"notes": ["translated note 1", ...]')
         
-    # ✅ ADDED: If a workout exists, pass it to Mistral to translate
     if workout:
         translation_input += f'\n"workout_en": {json.dumps(workout, ensure_ascii=False)}'
         translation_output_fields.append('"translated_workout": {"duration": "...", "format": "...", "level": "...", "equipment": ["..."], "groups": [{"title": "...", "items": [{"info": "...", "name": "..."}]}], "tips": ["..."]}')
+
+    # ✅ ADDED: Pass ideas to be translated if it's a compilation
+    if ideas:
+        translation_input += f'\n"ideas_en": {json.dumps(ideas, ensure_ascii=False)}'
+        translation_output_fields.append('"translated_ideas": [{"headline": "translated headline", "text": "translated text", "emoji": "emoji"}]')
 
     has_translation = bool(translation_input)
 
@@ -319,14 +323,21 @@ def _build_type_specific_block(content_type: str) -> str:
     if content_type == "recipe":
         return """
 9. **recipe** object: Extract the recipe details.
-   - **servings**: Number of PORTIONS this recipe makes.
+   - **is_compilation**: Boolean. Set to true ONLY if the video shows 3 or more DIFFERENT recipes/dishes (e.g., "7 waffle recipes", "3 healthy breakfasts").
+   - **ideas**: If 'is_compilation' is true, extract an ARRAY of objects for each dish/idea shown:
+     - "headline": Name of the specific dish.
+     - "text": A 1-2 sentence summary of the main ingredients or the specific twist.
+     - "emoji": One emoji representing that specific dish.
+   - **servings**: (For single recipes) Number of portions.
    - **prep_time**: Time to prepare/assemble ingredients. 
    - **cook_time**: Active cooking/heating time.
    - **total_time**: Total duration from start to finish.
-   - **ingredients**: ARRAY OF OBJECTS. Each must have: "item", "quantity", "unit", "emoji".
-   - **instructions**: Detailed, actionable steps.
+   - **ingredients**: (For single recipes) ARRAY OF OBJECTS. Each must have: "item", "quantity", "unit", "emoji".
+   - **instructions**: (For single recipes) Detailed, actionable steps.
    - **tips**: Extract specific chef secrets or nuances.
    - **notes**: Important context.
+
+   CRITICAL: If 'is_compilation' is true, the 'ideas' array is mandatory and ingredients/instructions can be left empty.
 
 10. **workout** object: null
 11. **location** object: null
@@ -353,6 +364,8 @@ def _build_type_specific_block(content_type: str) -> str:
     # Fallback for general content
     return """
 9. **recipe** object: CREATE if the content is a RECIPE.
+   - **is_compilation**: Boolean. Set to true ONLY if the video shows 3 or more DIFFERENT recipes/dishes.
+   - **ideas**: If 'is_compilation' is true, extract an ARRAY of objects: {"headline": "...", "text": "...", "emoji": "..."}.
    - **servings**: Number of portions.
    - **prep_time**: ESTIMATE based on complexity.
    - **cook_time**: ESTIMATE based on the dish type.
