@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, ChevronDown, Heart, FolderInput, AlertCircle, X, EllipsisVertical, Archive, AlignLeft, Pencil, Save, Globe, Folder, Clock, Activity, Flame, Dumbbell, Lightbulb } from 'lucide-react';
+import { ArrowLeft, Trash2, ChevronDown, Heart, FolderInput, AlertCircle, X, EllipsisVertical, Archive, AlignLeft, Pencil, Save, Globe, Folder, Clock, Activity, Flame, Dumbbell, Lightbulb, ListChecks } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { getAuthHeaders } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -83,7 +83,6 @@ const VideoDetailSkeleton = () => (
 const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any, showOriginal: boolean }) => {
   const { t } = useTranslation(['videoDetail']);
 
-  // ✅ FIXED: Properly route to the nested "english" or "original" objects based on toggle
   let activeWorkout = workoutData;
   if (workoutData?.english || workoutData?.original) {
     activeWorkout = (showOriginal && workoutData.original) 
@@ -354,12 +353,14 @@ export const VideoDetail: React.FC = () => {
       ? originalData 
       : (Object.keys(englishData).length > 0 ? englishData : summaryObj);
 
+    // Parse Recipe
     let recipeData = v.recipe;
     if (typeof recipeData === 'string') { try { recipeData = JSON.parse(recipeData); } catch (e) { recipeData = null; } }
     if (recipeData && recipeData.recipe) recipeData = recipeData.recipe;
     let activeRecipe = null;
     if (recipeData && Object.keys(recipeData).length > 0) activeRecipe = showOriginal && recipeData.original ? recipeData.original : (recipeData.english || recipeData);
 
+    // Parse Workout
     let workoutData = v.workout;
     if (typeof workoutData === 'string') {
       try { workoutData = JSON.parse(workoutData); } catch (e) { workoutData = null; }
@@ -568,16 +569,47 @@ export const VideoDetail: React.FC = () => {
             )}
           </div>
 
+          {/* ✅ UPDATED: Handle Compilation vs Classic Recipe */}
           {viewModel.recipe && (
             <div className="mb-5">
-              <RecipeDetailsCard
-                recipe={viewModel.recipe}
-                servingScale={servingScale}
-                scaleQuantity={scaleQuantity}
-                onServingScaleChange={setServingScale}
-                useMetric={useMetric}
-                onToggleMetric={setUseMetric}
-              />
+              {viewModel.recipe.is_compilation && viewModel.recipe.ideas && viewModel.recipe.ideas.length > 0 ? (
+                /* Compilation Ideas UI */
+                <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
+                  <div className="bg-emerald-50/60 p-4 md:p-5 border-b border-gray-50 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <ListChecks className="text-emerald-600" size={20} />
+                      <h3 className="font-bold text-gray-900 text-lg">
+                        {viewModel.recipe.ideas.length} {t('videoDetail:ideasTitle', 'Ideas in this video')}
+                      </h3>
+                    </div>
+                  </div>
+                  <div className="p-4 md:p-5 space-y-4">
+                    {viewModel.recipe.ideas.map((idea: any, idx: number) => (
+                      <div key={idx} className="flex gap-4 p-4 rounded-xl bg-gray-50 border border-gray-100/60 transition hover:bg-gray-100/50 hover:shadow-sm">
+                        {idea.emoji && (
+                          <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm border border-gray-100 shrink-0">
+                            {idea.emoji}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-bold text-gray-900 text-sm mb-1">{idea.headline}</h4>
+                          <p className="text-sm text-gray-600 leading-relaxed">{idea.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* Classic Single Recipe UI */
+                <RecipeDetailsCard
+                  recipe={viewModel.recipe}
+                  servingScale={servingScale}
+                  scaleQuantity={scaleQuantity}
+                  onServingScaleChange={setServingScale}
+                  useMetric={useMetric}
+                  onToggleMetric={setUseMetric}
+                />
+              )}
             </div>
           )}
 
