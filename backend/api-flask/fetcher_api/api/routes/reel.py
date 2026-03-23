@@ -7,7 +7,6 @@ import json
 import logging
 
 from flask import Blueprint, request, jsonify
-from google.cloud import storage
 
 from fetcher_api.adapters.db import execute, fetch_all, fetch_one
 from fetcher_api.api.helpers.auth import get_user_id_from_request
@@ -24,7 +23,6 @@ reel_bp = Blueprint("reels", __name__)
 
 
 def add_no_cache_headers(response):
-    """Disable caching for dynamic lists — gallery always gets fresh data."""
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
@@ -32,7 +30,6 @@ def add_no_cache_headers(response):
 
 
 def add_short_cache_headers(response):
-    """Short private cache for single reel detail — instant back-navigation."""
     response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=30"
     return response
 
@@ -74,38 +71,21 @@ def _build_canonical_summary(row_dict, caption: str):
     if isinstance(summary_text, dict) and "english" in summary_text:
         summary_obj = summary_text
     else:
-        bullets = json_loads_maybe(
-            row_dict.get("summary_bullets"),
-            default=row_dict.get("summary_bullets"),
-        )
-        hashtags = json_loads_maybe(
-            row_dict.get("summary_hashtags"),
-            default=row_dict.get("summary_hashtags"),
-        )
-        emojis = json_loads_maybe(
-            row_dict.get("summary_emojis"),
-            default=row_dict.get("summary_emojis"),
-        )
+        bullets = json_loads_maybe(row_dict.get("summary_bullets"), default=row_dict.get("summary_bullets"))
+        hashtags = json_loads_maybe(row_dict.get("summary_hashtags"), default=row_dict.get("summary_hashtags"))
+        emojis = json_loads_maybe(row_dict.get("summary_emojis"), default=row_dict.get("summary_emojis"))
 
-        if not isinstance(bullets, list):
-            bullets = []
-        if not isinstance(hashtags, list):
-            hashtags = []
-        if not isinstance(emojis, list):
-            emojis = []
+        if not isinstance(bullets, list): bullets = []
+        if not isinstance(hashtags, list): hashtags = []
+        if not isinstance(emojis, list): emojis = []
 
         summary_obj = build_bilingual_summary_object(
             summary_title=summary_title_db,
             summary_text=summary_text if isinstance(summary_text, str) else "",
-            bullets=bullets,
-            hashtags=hashtags,
-            emojis=emojis,
-            caption=caption,
+            bullets=bullets, hashtags=hashtags, emojis=emojis, caption=caption,
         )
 
-    english_preview, summary_title_str = extract_english_preview_and_title(
-        summary_obj, summary_title_db
-    )
+    english_preview, summary_title_str = extract_english_preview_and_title(summary_obj, summary_title_db)
 
     if not summary_title_str and caption:
         summary_title_str = caption[:50]
@@ -158,7 +138,6 @@ def list_saved_reels():
 
                 caption = row_dict.get("caption") or ""
                 gcs_urls = json_loads_maybe(row_dict.get("gcs_urls"), default={})
-
                 summary_obj, summary_title_str, _ = _build_canonical_summary(row_dict, caption)
 
                 transformed_rows.append({
@@ -210,7 +189,6 @@ def list_saved_reels():
                 continue
 
             caption = row_dict.get("caption") or ""
-
             row_dict["recipe"] = json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe"))
             row_dict["workout"] = json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout"))
             row_dict["transcription"] = parse_transcription(row_dict.get("transcription"))
@@ -280,13 +258,11 @@ def update_reel(process_id):
             return jsonify({"error": "No valid fields to update"}), 400
 
         params.extend([process_id, user_id])
-
         execute(
             f"UPDATE reels SET {', '.join(updates)}, updated_at = NOW() WHERE id = %s AND user_id = %s",
             tuple(params),
             commit=True
         )
-
         logger.info(f"✅ Updated reel {process_id}: {data}")
 
         return jsonify({
@@ -302,12 +278,20 @@ def update_reel(process_id):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# GET SINGLE
+# GET SINGLE + DELETE (combined to avoid Flask endpoint name conflict)
 # ──────────────────────────────────────────────────────────────────────────────
 
-@reel_bp.route("/reel/<process_id>", methods=["GET"])
-def get_reel(process_id):
-    """Fetch a single reel by ID — used by VideoDetail for fast direct lookup."""
+@reel_bp.route("/reel/<process_id>", methods=["GET", "DELETE", "OPTIONS"])
+def reel_detail(process_id):
+    if request.method == "OPTIONS":
+        return "", 200
+    if request.method == "GET":
+        return _get_reel(process_id)
+    if request.method == "DELETE":
+        return _delete_reel(process_id)
+
+
+def _get_reel(process_id):
     try:
         try:
             user_id = get_user_id_from_request()
@@ -367,7 +351,6 @@ def get_reel(process_id):
             row_dict["created_at"] = row_dict["created_at"].isoformat()
 
         logger.info(f"✅ GET /reel/{process_id} -> {row_dict['id']}")
-
         return add_short_cache_headers(jsonify(row_dict))
 
     except Exception as e:
@@ -375,15 +358,7 @@ def get_reel(process_id):
         return jsonify({"error": "Internal error"}), 500
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# DELETE
-# ──────────────────────────────────────────────────────────────────────────────
-
-@reel_bp.route("/reel/<process_id>", methods=["DELETE", "OPTIONS"])
-def delete_reel(process_id):
-    if request.method == "OPTIONS":
-        return "", 200
-
+def _delete_reel(process_id):
     try:
         try:
             user_id = get_user_id_from_request()
@@ -403,26 +378,31 @@ def delete_reel(process_id):
         actual_id = reel_dict["id"]
 
         try:
+            from fetcher_api.adapters.gcs_client import gcs_client
             from fetcher_api.services.storage import generate_gcs_paths
 
-            storage_client = storage.Client()
-            bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-analysis")
-            bucket = storage_client.bucket(bucket_name)
+            if not gcs_client.available:
+                logger.warning("GCS not available — skipping file deletion")
+            else:
+                bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
+                bucket = gcs_client.client.bucket(bucket_name)
 
-            source_url = reel_dict.get("source_url") or ""
-            is_fb = "facebook.com" in source_url.lower() or "fb." in source_url.lower()
-            p_code = "FB" if is_fb else "IG"
-            shortcode = actual_id.split("--")[0] if "--" in actual_id else actual_id.split("_")[0]
+                source_url = reel_dict.get("source_url") or ""
+                is_fb = "facebook.com" in source_url.lower() or "fb." in source_url.lower()
+                p_code = "FB" if is_fb else "IG"
+                shortcode = actual_id.split("--")[0] if "--" in actual_id else actual_id.split("_")[0]
 
-            gcs_paths = generate_gcs_paths(shortcode, p_code, user_id)
-            target_folder = "/".join(gcs_paths["video"].split("/")[:-1]) + "/"
+                gcs_paths = generate_gcs_paths(shortcode, p_code, user_id)
+                target_folder = "/".join(gcs_paths["video"].split("/")[:-1]) + "/"
 
-            logger.info(f"🔍 Attempting to clear GCS folder: {target_folder}")
-            blobs = list(bucket.list_blobs(prefix=target_folder))
-            if blobs:
-                for blob in blobs:
-                    blob.delete()
-                logger.info(f"✅ Deleted {len(blobs)} files from GCS folder: {target_folder}")
+                logger.info(f"🔍 Attempting to clear GCS folder: {target_folder}")
+                blobs = list(bucket.list_blobs(prefix=target_folder))
+                if blobs:
+                    for blob in blobs:
+                        blob.delete()
+                    logger.info(f"✅ Deleted {len(blobs)} files from GCS: {target_folder}")
+                else:
+                    logger.info(f"ℹ️ No GCS files found at: {target_folder}")
 
         except Exception as gcs_error:
             logger.error(f"❌ GCS deletion error for {actual_id}: {gcs_error}")
@@ -433,7 +413,6 @@ def delete_reel(process_id):
             commit=True
         )
         logger.info(f"✅ Deleted reel {actual_id} from database")
-
         return jsonify({"status": "deleted", "id": actual_id}), 200
 
     except Exception as e:
