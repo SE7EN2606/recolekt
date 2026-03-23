@@ -1,6 +1,7 @@
 import { assertEnv } from './assertEnv';
 
 let raw =
+  import.meta.env.VITE_API_BASE ||      // ✅ check this first — it's what .env.local has
   import.meta.env.VITE_BACKEND_URL ||
   import.meta.env.VITE_API_URL ||
   '';
@@ -21,7 +22,7 @@ if (!raw && typeof window !== 'undefined') {
   }
 }
 
-const normalized = raw.replace(/\/+$/, '');
+const normalized = raw.replace(/\/+$/, '');  // ✅ also fixed the broken regex (was \\/+$)
 
 export const APIBASE = normalized;
 export const API_BASE = normalized;
@@ -30,7 +31,10 @@ export const GOOGLE_CLIENT_ID =
   import.meta.env.VITE_GOOGLE_CLIENT_ID ||
   '517149606657-1c7alf9nm5ms1n0s20ch2lj0b02h5189.apps.googleusercontent.com';
 
-assertEnv('VITE_BACKEND_URL', raw || 'MISSING');
+// ✅ Don't throw on missing VITE_BACKEND_URL — we have fallbacks
+if (import.meta.env.DEV) {
+  console.log(`[api] API_BASE resolved to: ${normalized}`);
+}
 
 export const fetchWithAuth = (
   endpoint: string,

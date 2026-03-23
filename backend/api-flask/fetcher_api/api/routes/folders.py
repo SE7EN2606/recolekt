@@ -10,12 +10,23 @@ logger = logging.getLogger(__name__)
 folders_bp = Blueprint("folders", __name__, url_prefix="/api/folders")
 
 
-@folders_bp.route("", methods=["GET"])
-def get_folders():
+def _get_user_or_401():
+    """Returns (user_id, None) or (None, 401 response)."""
     try:
         user_id = get_user_id_from_request()
         if not user_id:
-            return jsonify({"error": "Unauthorized"}), 401
+            return None, (jsonify({"error": "Unauthorized"}), 401)
+        return user_id, None
+    except ValueError:
+        return None, (jsonify({"error": "Unauthorized"}), 401)
+
+
+@folders_bp.route("", methods=["GET"])
+def get_folders():
+    try:
+        user_id, err = _get_user_or_401()
+        if err:
+            return err
 
         rows = fetch_all(
             """
@@ -34,19 +45,14 @@ def get_folders():
 
         folders_dict = {}
         for row in rows:
-            f_id = row["id"] if isinstance(row, dict) else row[0]
-            f_name = row["name"] if isinstance(row, dict) else row[1]
-            folders_dict[f_id] = {
-                "id": f_id,
-                "name": f_name,
-                "subFolders": []
-            }
+            f_id  = row["id"]        if isinstance(row, dict) else row[0]
+            f_name = row["name"]     if isinstance(row, dict) else row[1]
+            folders_dict[f_id] = {"id": f_id, "name": f_name, "subFolders": []}
 
         root_folders = []
         for row in rows:
-            f_id = row["id"] if isinstance(row, dict) else row[0]
+            f_id = row["id"]        if isinstance(row, dict) else row[0]
             p_id = row["parent_id"] if isinstance(row, dict) else row[2]
-
             folder = folders_dict[f_id]
             if p_id and p_id in folders_dict:
                 folders_dict[p_id]["subFolders"].append(folder)
@@ -63,9 +69,9 @@ def get_folders():
 @folders_bp.route("", methods=["POST"])
 def create_folder():
     try:
-        user_id = get_user_id_from_request()
-        if not user_id:
-            return jsonify({"error": "Unauthorized"}), 401
+        user_id, err = _get_user_or_401()
+        if err:
+            return err
 
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
@@ -85,11 +91,8 @@ def create_folder():
         if parent_id:
             existing = fetch_one(
                 """
-                SELECT id
-                FROM folders
-                WHERE user_id = %s
-                  AND LOWER(name) = LOWER(%s)
-                  AND parent_id = %s
+                SELECT id FROM folders
+                WHERE user_id = %s AND LOWER(name) = LOWER(%s) AND parent_id = %s
                 LIMIT 1
                 """,
                 (user_id, name, parent_id)
@@ -97,11 +100,8 @@ def create_folder():
         else:
             existing = fetch_one(
                 """
-                SELECT id
-                FROM folders
-                WHERE user_id = %s
-                  AND LOWER(name) = LOWER(%s)
-                  AND parent_id IS NULL
+                SELECT id FROM folders
+                WHERE user_id = %s AND LOWER(name) = LOWER(%s) AND parent_id IS NULL
                 LIMIT 1
                 """,
                 (user_id, name)
@@ -111,21 +111,13 @@ def create_folder():
             return jsonify({"error": f"Un dossier '{name}' existe déjà."}), 400
 
         folder_id = f"fld_{int(time.time() * 1000)}"
-
         execute(
-            """
-            INSERT INTO folders (id, user_id, name, parent_id)
-            VALUES (%s, %s, %s, %s)
-            """,
+            "INSERT INTO folders (id, user_id, name, parent_id) VALUES (%s, %s, %s, %s)",
             (folder_id, user_id, name, parent_id),
             commit=True
         )
 
-        return jsonify({
-            "id": folder_id,
-            "name": name,
-            "subFolders": []
-        }), 201
+        return jsonify({"id": folder_id, "name": name, "subFolders": []}), 201
 
     except Exception as e:
         logger.error(f"Failed to create folder: {e}", exc_info=True)
@@ -135,9 +127,9 @@ def create_folder():
 @folders_bp.route("/<folder_id>", methods=["PUT"])
 def update_folder(folder_id):
     try:
-        user_id = get_user_id_from_request()
-        if not user_id:
-            return jsonify({"error": "Unauthorized"}), 401
+        user_id, err = _get_user_or_401()
+        if err:
+            return err
 
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
@@ -157,12 +149,9 @@ def update_folder(folder_id):
         if parent_id:
             dup = fetch_one(
                 """
-                SELECT id
-                FROM folders
-                WHERE user_id = %s
-                  AND LOWER(name) = LOWER(%s)
-                  AND parent_id = %s
-                  AND id != %s
+                SELECT id FROM folders
+                WHERE user_id = %s AND LOWER(name) = LOWER(%s)
+                  AND parent_id = %s AND id != %s
                 LIMIT 1
                 """,
                 (user_id, name, parent_id, folder_id)
@@ -170,12 +159,9 @@ def update_folder(folder_id):
         else:
             dup = fetch_one(
                 """
-                SELECT id
-                FROM folders
-                WHERE user_id = %s
-                  AND LOWER(name) = LOWER(%s)
-                  AND parent_id IS NULL
-                  AND id != %s
+                SELECT id FROM folders
+                WHERE user_id = %s AND LOWER(name) = LOWER(%s)
+                  AND parent_id IS NULL AND id != %s
                 LIMIT 1
                 """,
                 (user_id, name, folder_id)
@@ -200,9 +186,9 @@ def update_folder(folder_id):
 @folders_bp.route("/<folder_id>", methods=["DELETE"])
 def delete_folder(folder_id):
     try:
-        user_id = get_user_id_from_request()
-        if not user_id:
-            return jsonify({"error": "Unauthorized"}), 401
+        user_id, err = _get_user_or_401()
+        if err:
+            return err
 
         existing = fetch_one(
             "SELECT id FROM folders WHERE id = %s AND user_id = %s LIMIT 1",
@@ -223,7 +209,6 @@ def delete_folder(folder_id):
             (folder_id, user_id),
             commit=True
         )
-
         execute(
             "DELETE FROM folders WHERE id = %s AND user_id = %s",
             (folder_id, user_id),

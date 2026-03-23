@@ -184,72 +184,90 @@ def _get_deepgram_usage():
     api_key = os.getenv("DEEPGRAM_API_KEY", "")
     if not api_key:
         return {"error": "DEEPGRAM_API_KEY not set"}
-    try:
-        headers = {"Authorization": f"Token {api_key}"}
 
+    headers = {"Authorization": f"Token {api_key}"}
+
+    # ── Step 1: Get project ID ──────────────────────────────────────────────
+    try:
         projects_resp = requests.get(
-            "https://api.deepgram.com/v1/projects", headers=headers, timeout=10,
+            "https://api.deepgram.com/v1/projects", headers=headers, timeout=10
         )
         if projects_resp.status_code != 200:
             return {"error": f"Projects API: HTTP {projects_resp.status_code}"}
 
         projects = projects_resp.json().get("projects", [])
         if not projects:
-            return {"error": "No projects found"}
+            return {"error": "No Deepgram projects found"}
 
         project_id   = projects[0].get("project_id")
         project_name = projects[0].get("name", "Unknown")
 
-        balances = {}
-        try:
-            br = requests.get(
-                f"https://api.deepgram.com/v1/projects/{project_id}/balances",
-                headers=headers, timeout=10,
-            )
-            if br.status_code == 200:
-                bd = br.json().get("balances", [])
-                if bd:
-                    balances = {"amount": bd[0].get("amount"), "units": bd[0].get("units", "usd")}
-            else:
-                logger.warning(f"Deepgram balances: HTTP {br.status_code} — {br.text[:200]}")
-        except Exception as e:
-            logger.warning(f"Deepgram balances error: {e}")
-
-        usage = {}
-        try:
-            now   = datetime.utcnow()
-            start = now.replace(day=1).strftime("%Y-%m-%d")
-            end   = now.strftime("%Y-%m-%d")
-            ur = requests.get(
-                f"https://api.deepgram.com/v1/projects/{project_id}/usage?start={start}&end={end}",
-                headers=headers, timeout=10,
-            )
-            if ur.status_code == 200:
-                total_hours = total_requests = 0
-                for result in ur.json().get("results", []):
-                    total_hours    += result.get("hours",    0)
-                    total_requests += result.get("requests", 0)
-                usage = {
-                    "total_hours":    round(total_hours, 4),
-                    "total_requests": total_requests,
-                    "total_minutes":  round(total_hours * 60, 2),
-                }
-            else:
-                logger.warning(f"Deepgram usage: HTTP {ur.status_code} — {ur.text[:200]}")
-        except Exception as e:
-            logger.warning(f"Deepgram usage error: {e}")
-
-        return {
-            "project_name":     project_name,
-            "project_id":       project_id,
-            "balance":          balances,
-            "usage_this_month": usage,
-            "period":           datetime.utcnow().strftime("%B %Y"),
-        }
     except Exception as e:
-        logger.error(f"Deepgram usage error: {e}")
+        logger.error(f"Deepgram projects error: {e}")
         return {"error": str(e)}
 
+    result = {
+        "project_name": project_name,
+        "project_id":   project_id,
+        "period":       datetime.utcnow().strftime("%B %Y"),
+        "balance":      None,
+        "usage_this_month": None,
+        "scope_errors": [],  # surfaced in dashboard so you know exactly what's missing
+    }
+
+    # ── Step 2: Balance ─────────────────────────────────────────────────────
+    try:
+        br = requests.get(
+            f"https://api.deepgram.com/v1/projects/{project_id}/balances",
+            headers=headers, timeout=10,
+        )
+        if br.status_code == 200:
+            bd = br.json().get("balances", [])
+            if bd:
+                result["balance"] = {
+                    "amount": bd[0].get("amount"),
+                    "units":  bd[0].get("units", "usd"),
+                }
+        elif br.status_code == 403:
+            msg = "billing:read scope missing — regenerate API key in Deepgram console"
+            result["scope_errors"].append(msg)
+            logger.debug(f"Deepgram balances: {msg}")  # downgraded from WARNING
+        else:
+            logger.debug(f"Deepgram balances: HTTP {br.status_code} — {br.text[:200]}")
+    except Exception as e:
+        logger.debug(f"Deepgram balances exception: {e}")
+
+    # ── Step 3: Usage ───────────────────────────────────────────────────────
+    try:
+        now   = datetime.utcnow()
+        start = now.replace(day=1).strftime("%Y-%m-%d")
+        end   = now.strftime("%Y-%m-%d")
+
+        ur = requests.get(
+            f"https://api.deepgram.com/v1/projects/{project_id}/usage"
+            f"?start={start}&end={end}",
+            headers=headers, timeout=10,
+        )
+        if ur.status_code == 200:
+            total_hours = total_requests = 0
+            for r in ur.json().get("results", []):
+                total_hours    += r.get("hours",    0)
+                total_requests += r.get("requests", 0)
+            result["usage_this_month"] = {
+                "total_hours":    round(total_hours, 4),
+                "total_minutes":  round(total_hours * 60, 2),
+                "total_requests": total_requests,
+            }
+        elif ur.status_code == 403:
+            msg = "usage:read scope missing — regenerate API key in Deepgram console"
+            result["scope_errors"].append(msg)
+            logger.debug(f"Deepgram usage: {msg}")  # downgraded from WARNING
+        else:
+            logger.debug(f"Deepgram usage: HTTP {ur.status_code} — {ur.text[:200]}")
+    except Exception as e:
+        logger.debug(f"Deepgram usage exception: {e}")
+
+    return result
 
 def _get_gcs_usage():
     # ✅ Explicitly pass credentials from env — same as storage.py does

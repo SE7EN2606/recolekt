@@ -325,17 +325,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [user?.id, fetchVideos]);
 
   const addVideo = useCallback(async (url: string, forceRetry: boolean = false): Promise<AddVideoResult> => {
-    if (!navigator.onLine) throw new Error("You are offline."); // ✅ OFFLINE CHECK
+    if (!navigator.onLine) throw new Error("You are offline.");
 
     const cleanUrl = (url || '').trim().split('?')[0];
     const currentVideos = videosRef.current;
     const existing = currentVideos.find((v: any) => v.originalUrl === cleanUrl);
-    
-    if (!forceRetry && existing && existing.status !== 'error' && existing.category !== 'Failed') {
+
+    // ✅ FIXED: Only return early if status is genuinely done/completed
+    // Never short-circuit for 'processing' — always re-check with backend
+    if (!forceRetry && existing && existing.status === 'done') {
       return {
         clientTempId: existing.id,
         processId: existing.id,
-        status: existing.category === 'Processing' ? 'processing' : 'done',
+        status: 'done',
         sourceUrl: cleanUrl,
         createdAt: existing.savedAt,
         previewUrl: (existing as any).thumbnailUrl,
@@ -354,23 +356,49 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (response.status === 409) throw new Error('This video has already been saved.');
     if (response.status === 401) {
       localStorage.removeItem('auth_token');
-      throw new Error('Not authenticated');
+      throw new Error('Not authenticated. Please log in again.');
     }
 
     let result: any = null;
     try { result = await response.json(); } catch {}
     if (!response.ok) throw new Error(result?.error || 'Failed to import video.');
 
+    // ✅ Backend said it already exists and is done — no need to re-add
+    if (result?.status === 'completed' || result?.message?.includes('already exists')) {
+      return {
+        clientTempId: result.reel_id,
+        processId: result.reel_id,
+        status: 'done',
+        sourceUrl: cleanUrl,
+        createdAt: new Date().toISOString(),
+        previewUrl: result?.preview_url ?? null,
+      };
+    }
+
     const createdAt = new Date().toISOString();
     const videoId = result?.reel_id || `temp_${cleanUrl.split('/').pop()}_${Date.now()}`;
 
     const newVideo: any = {
-      id: videoId, title: 'Processing...', author: result?.author_name || 'Instagram User', platform: 'instagram',
-      thumbnailUrl: result?.preview_url ?? '', duration: '', savedAt: createdAt, category: 'Processing',
-      tags: [], summary: {}, transcript: '', transcription: null, originalUrl: cleanUrl, isFavorite: false,
-      folderId: 'unsorted', status: 'processing', errorMessage: null,
+      id: videoId,
+      title: 'Processing...',
+      author: result?.author_name || 'Instagram User',
+      platform: 'instagram',
+      thumbnailUrl: result?.preview_url ?? '',
+      duration: '',
+      savedAt: createdAt,
+      category: 'Processing',
+      tags: [],
+      summary: {},
+      transcript: '',
+      transcription: null,
+      originalUrl: cleanUrl,
+      isFavorite: false,
+      folderId: 'unsorted',
+      status: 'processing',
+      errorMessage: null,
     };
 
+    // ✅ Replace any stale entry for this URL (stuck processing, error, etc.)
     setVideos((prev) => [newVideo, ...(prev || []).filter((v: any) => v.originalUrl !== cleanUrl)]);
 
     window.setTimeout(() => {
@@ -379,8 +407,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, 5000);
 
     return {
-      clientTempId: `temp_${Date.now()}`, processId: videoId, status: 'processing',
-      sourceUrl: cleanUrl, createdAt, previewUrl: result?.preview_url ?? null,
+      clientTempId: `temp_${Date.now()}`,
+      processId: videoId,
+      status: 'processing',
+      sourceUrl: cleanUrl,
+      createdAt,
+      previewUrl: result?.preview_url ?? null,
     };
   }, [user, fetchVideos, setVideos]);
 
