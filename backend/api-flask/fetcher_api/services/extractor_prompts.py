@@ -236,7 +236,7 @@ def build_summary_prompt_bilingual(
     tips: Optional[List] = None,
     notes: Optional[List] = None,
     workout: Optional[dict] = None,
-    ideas: Optional[List] = None,  # ✅ ADDED: Compilation ideas translation
+    ideas: Optional[List] = None, 
 ) -> str:
     lang_name = get_lang_name(original_lang)
 
@@ -272,10 +272,9 @@ def build_summary_prompt_bilingual(
         translation_input += f'\n"workout_en": {json.dumps(workout, ensure_ascii=False)}'
         translation_output_fields.append('"translated_workout": {"duration": "...", "format": "...", "level": "...", "equipment": ["..."], "groups": [{"title": "...", "items": [{"info": "...", "name": "..."}]}], "tips": ["..."]}')
 
-    # ✅ ADDED: Pass ideas to be translated if it's a compilation
     if ideas:
         translation_input += f'\n"ideas_en": {json.dumps(ideas, ensure_ascii=False)}'
-        translation_output_fields.append('"translated_ideas": [{"headline": "translated headline", "text": "translated text", "emoji": "emoji"}]')
+        translation_output_fields.append('"translated_ideas": [{"headline": "translated headline", "text": "translated text (keep EXACT quantities and metric units)", "emoji": "emoji"}]')
 
     has_translation = bool(translation_input)
 
@@ -307,7 +306,7 @@ REQUIREMENTS FOR BOTH SUMMARIES:
 {_BANNED_OPENER_BLOCK}
 TRANSLATION QUALITY RULES:
 - The {lang_name} title must sound NATURAL.
-- Keep metric units unchanged.
+- Keep metric units and exact quantities unchanged.
 
 Output ONLY valid JSON:
 {{
@@ -326,7 +325,7 @@ def _build_type_specific_block(content_type: str) -> str:
    - **is_compilation**: Boolean. Set to true ONLY if the video shows 3 or more DIFFERENT recipes/dishes (e.g., "7 waffle recipes", "3 healthy breakfasts").
    - **ideas**: If 'is_compilation' is true, extract an ARRAY of objects for each dish/idea shown:
      - "headline": Name of the specific dish.
-     - "text": A 1-2 sentence summary of the main ingredients or the specific twist.
+     - "text": ACTIONABLE mini-recipe. You MUST include EXACT quantities, measurements, and ingredients if provided (e.g., 'Mix 40g flour, 2 eggs, and 10ml milk'). DO NOT write vague, generic descriptions like 'A delicious waffle with cheese'. Make it a mini-tutorial.
      - "emoji": One emoji representing that specific dish.
    - **servings**: (For single recipes) Number of portions.
    - **prep_time**: Time to prepare/assemble ingredients. 
@@ -365,7 +364,7 @@ def _build_type_specific_block(content_type: str) -> str:
     return """
 9. **recipe** object: CREATE if the content is a RECIPE.
    - **is_compilation**: Boolean. Set to true ONLY if the video shows 3 or more DIFFERENT recipes/dishes.
-   - **ideas**: If 'is_compilation' is true, extract an ARRAY of objects: {"headline": "...", "text": "...", "emoji": "..."}.
+   - **ideas**: If 'is_compilation' is true, extract an ARRAY of objects: {"headline": "...", "text": "ACTIONABLE mini-recipe with EXACT quantities and steps", "emoji": "..."}.
    - **servings**: Number of portions.
    - **prep_time**: ESTIMATE based on complexity.
    - **cook_time**: ESTIMATE based on the dish type.
