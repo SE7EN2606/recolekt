@@ -1,8 +1,9 @@
 import { API_BASE } from "../utils/api";
 import React, { useState } from 'react';
-import { X } from 'lucide-react';
+import { X, BookmarkCheck } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 
 const PasteIcon = ({ className = "" }: { className?: string }) => (
   <svg className={className} viewBox="0 0 32 32" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -22,9 +23,10 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [alreadySaved, setAlreadySaved] = useState(false);
   const { addVideo } = useData();
-  const { t } = useTranslation(['modals', 'common']); // ✅ Using 'modals'
-
+  const { t } = useTranslation(['modals', 'common']);
+  const navigate = useNavigate();
   const [isVisible, setIsVisible] = useState(false);
 
   React.useEffect(() => {
@@ -32,6 +34,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
       setIsVisible(true);
       setUrl('');
       setError('');
+      setAlreadySaved(false);
       document.body.style.overflow = 'hidden';
     } else {
       const timer = setTimeout(() => setIsVisible(false), 300);
@@ -44,9 +47,17 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
     try {
       const text = await navigator.clipboard.readText();
       setUrl(text);
+      setError('');
+      setAlreadySaved(false);
     } catch (err) {
       console.error('Failed to read clipboard:', err);
     }
+  };
+
+  const handleClose = () => {
+    setAlreadySaved(false);
+    setError('');
+    onClose();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,19 +68,29 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
 
     setIsLoading(true);
     setError('');
+    setAlreadySaved(false);
 
     try {
-      await addVideo(url.trim());
+      const result = await addVideo(url.trim());
+
       setUrl('');
       onClose();
-    } catch (err: any) {
-      // ✅ Map backend errors to translation keys
-      const backendError = String(err.message || '').toLowerCase();
-      let translatedError = t('modals:importFailed'); 
 
-      if (backendError.includes('already been saved')) {
-        translatedError = t('modals:errorAlreadySaved');
-      } else if (backendError.includes('not authenticated') || backendError.includes('authentication required')) {
+      // ✅ Always redirect to gallery after submit — processing or done
+      navigate('/gallery');
+
+    } catch (err: any) {
+      const backendError = String(err.message || '').toLowerCase();
+
+      // ✅ Already saved — show inline notice instead of error, still offer redirect
+      if (backendError.includes('already been saved') || backendError.includes('already exists')) {
+        setAlreadySaved(true);
+        setIsLoading(false);
+        return;
+      }
+
+      let translatedError = t('modals:importFailed');
+      if (backendError.includes('not authenticated') || backendError.includes('authentication required')) {
         translatedError = t('modals:errorNotAuth');
       } else if (backendError.includes('provide either file or url') || backendError.includes('invalid url')) {
         translatedError = t('modals:errorInvalidUrl');
@@ -95,10 +116,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
       }`}
     >
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
 
       {/* Modal */}
       <div
@@ -116,64 +134,94 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
             <h2 className="text-xl font-bold text-gray-900">
               {t('modals:saveNewVideo')}
             </h2>
-            <button
-              onClick={onClose}
-              className="p-2 -mr-2 text-gray-400 hover:bg-white/50 rounded-full transition-colors"
-            >
+            <button onClick={handleClose} className="p-2 -mr-2 text-gray-400 hover:bg-white/50 rounded-full transition-colors">
               <X size={20} />
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* URL Input + Paste Button */}
-            <div className="relative">
-              <input
-                type="text"
-                value={url}
-                onChange={(e) => { setUrl(e.target.value); setError(''); }}
-                placeholder={t('modals:pastePlaceholder')}
-                className="w-full h-[50px] pl-4 pr-16 bg-white/50 border border-white/40 rounded-xl focus:bg-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none text-gray-900 placeholder-gray-400 backdrop-blur-sm"
-                style={{ fontSize: '16px' }}
-                autoFocus
-                disabled={isLoading}
-              />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+          {/* ✅ Already saved notice */}
+          {alreadySaved ? (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <BookmarkCheck size={20} className="text-emerald-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-bold text-emerald-800">
+                    {t('modals:errorAlreadySaved', 'Already in your collection')}
+                  </p>
+                  <p className="text-xs text-emerald-600 mt-0.5">
+                    {t('modals:alreadySavedHint', 'This reel is already saved. Go to your gallery to find it.')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={handlePaste}
-                  disabled={isLoading}
-                  className="flex items-center justify-center w-[36px] h-[36px] bg-white/60 hover:bg-white/80 text-gray-600 rounded-lg transition-all border border-white/40 disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
-                  title={t('modals:pasteTitle')}
+                  onClick={handleClose}
+                  className="flex-1 px-4 py-2.5 border border-white/40 bg-white/40 text-gray-700 rounded-xl hover:bg-white/60 transition-colors font-semibold"
                 >
-                  <PasteIcon className="w-4 h-4" />
+                  {t('common:cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { handleClose(); navigate('/gallery'); }}
+                  className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-bold shadow-sm"
+                >
+                  {t('modals:goToGallery', 'Go to Gallery')}
                 </button>
               </div>
             </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* URL Input + Paste Button */}
+              <div className="relative">
+                <input
+                  type="text"
+                  value={url}
+                  onChange={(e) => { setUrl(e.target.value); setError(''); setAlreadySaved(false); }}
+                  placeholder={t('modals:pastePlaceholder')}
+                  className="w-full h-[50px] pl-4 pr-16 bg-white/50 border border-white/40 rounded-xl focus:bg-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none text-gray-900 placeholder-gray-400 backdrop-blur-sm"
+                  style={{ fontSize: '16px' }}
+                  autoFocus
+                  disabled={isLoading}
+                />
+                <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                  <button
+                    type="button"
+                    onClick={handlePaste}
+                    disabled={isLoading}
+                    className="flex items-center justify-center w-[36px] h-[36px] bg-white/60 hover:bg-white/80 text-gray-600 rounded-lg transition-all border border-white/40 disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm"
+                    title={t('modals:pasteTitle')}
+                  >
+                    <PasteIcon className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
 
-            {/* Error */}
-            {error && (
-              <p className="text-sm text-red-600 font-medium">{error}</p>
-            )}
+              {/* Error */}
+              {error && (
+                <p className="text-sm text-red-600 font-medium">{error}</p>
+              )}
 
-            {/* Actions */}
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={isLoading}
-                className="flex-1 px-4 py-2.5 border border-white/40 bg-white/40 text-gray-700 rounded-xl hover:bg-white/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold backdrop-blur-sm"
-              >
-                {t('common:cancel')}
-              </button>
-              <button
-                type="submit"
-                disabled={!url.trim() || isLoading}
-                className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold shadow-sm shadow-primary-600/20"
-              >
-                {isLoading ? t('common:processing') : t('common:save')}
-              </button>
-            </div>
-          </form>
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  disabled={isLoading}
+                  className="flex-1 px-4 py-2.5 border border-white/40 bg-white/40 text-gray-700 rounded-xl hover:bg-white/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold backdrop-blur-sm"
+                >
+                  {t('common:cancel')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={!url.trim() || isLoading}
+                  className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold shadow-sm shadow-primary-600/20"
+                >
+                  {isLoading ? t('common:processing') : t('common:save')}
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       </div>
     </div>

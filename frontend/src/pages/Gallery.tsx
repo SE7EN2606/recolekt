@@ -248,68 +248,31 @@ export const Gallery: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-24 md:mb-12">
-        {displayedVideos.map((video: any) => {
-          const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
-          const thumb = getThumbnail(video);
-          
-          if (video.category === 'Processing' || video.status === 'processing') {
-            return (
-              <div key={videoId} className="relative aspect-[9/16] rounded-2xl bg-slate-900 overflow-hidden cursor-default shadow-[0_0_20px_rgba(124,58,237,0.25)] border border-primary-500/40">
-                
-                {thumb ? (
-                  <img src={thumb} alt="Processing" className="absolute inset-0 w-full h-full object-cover opacity-40 blur-md scale-110 z-0" />
-                ) : (
-                  <div className="absolute inset-0 bg-slate-900 z-0" />
-                )}
+  {displayedVideos.map((video: any) => {
+    const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
 
-                <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md z-10" />
-
-                <div className={`absolute top-[-100%] left-0 w-full h-full z-30 pointer-events-none will-change-transform ${scanState === 'h-active' ? 'h-active' : 'idle'}`}>
-                  <div className="absolute bottom-0 left-0 w-full h-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)]" />
-                </div>
-
-                <div className={`absolute top-0 left-[-100%] w-full h-full z-30 pointer-events-none will-change-transform ${scanState === 'v-active' ? 'v-active' : 'idle'}`}>
-                  <div className="absolute top-0 right-0 h-full w-[1px] bg-primary-400 shadow-[0_0_8px_1px_rgba(167,139,250,1)]" />
-                </div>
-
-                <div className="absolute inset-0 flex flex-col items-center justify-center z-40 pointer-events-none px-4 text-center">
-                  <Loader2 className="w-10 h-10 text-primary-400 animate-spin mb-3 drop-shadow-[0_0_10px_rgba(167,139,250,0.6)]" />
-                  
-                  <span 
-                    key={msgIndex}
-                    className="text-primary-200 text-[12px] font-medium tracking-widest lowercase drop-shadow-md ai-message will-change-transform"
-                  >
-                    {t(`gallery:${PROCESSING_MESSAGES[msgIndex]}`, 'processing...')}
-                  </span>
-                </div>
-              </div>
-            );
-          }
-
-          return (
-            <div 
-              key={videoId}
-              draggable={!selectionMode}
-              onDragStart={(e) => {
-                let idsToMove = [videoId];
-                if (selectedIds.has(videoId)) {
-                  idsToMove = Array.from(selectedIds);
-                }
-                e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
-                e.dataTransfer.setData('sourceId', video.folderId || 'unsorted');
-                e.dataTransfer.effectAllowed = 'move';
-              }}
-              className={!selectionMode ? "cursor-grab active:cursor-grabbing" : ""}
-            >
-              <VideoCard 
-                video={video} 
-                selectionMode={selectionMode}
-                selected={selectedIds.has(videoId)}
-                onToggleSelect={() => toggleSelect(videoId)}
-              />
-            </div>
-          );
-        })}
+    return (
+      <div
+        key={videoId}
+        draggable={!selectionMode && video.category !== 'Processing'}
+        onDragStart={(e) => {
+          let idsToMove = [videoId];
+          if (selectedIds.has(videoId)) idsToMove = Array.from(selectedIds);
+          e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
+          e.dataTransfer.setData('sourceId', video.folderId || 'unsorted');
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        className={!selectionMode && video.category !== 'Processing' ? "cursor-grab active:cursor-grabbing" : ""}
+      >
+        <VideoCard
+          video={video}
+          selectionMode={selectionMode}
+          selected={selectedIds.has(videoId)}
+          onToggleSelect={() => toggleSelect(videoId)}
+        />
+      </div>
+    );
+  })}
       </div>
 
       {!dataLoading && displayedVideos.length === 0 && (

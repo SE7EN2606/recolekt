@@ -298,12 +298,6 @@ def _get_reel(process_id):
         except ValueError:
             return jsonify({"error": "Authentication required"}), 401
 
-        if "--" in process_id:
-            shortcode = process_id.split("--")[0]
-        else:
-            shortcode = process_id.split("-")[0]
-        shortcode = shortcode.rstrip("-")
-
         row = fetch_one(
             """
             SELECT
@@ -314,12 +308,12 @@ def _get_reel(process_id):
                 is_long_video, duration, recipe, workout, transcription,
                 gcs_urls
             FROM reels
-            WHERE user_id = %s AND (id = %s OR id LIKE %s)
+            WHERE user_id = %s AND id = %s
             LIMIT 1
             """,
-            (user_id, process_id, f"{shortcode}%"),
+            (user_id, process_id),
         )
-
+        
         if not row:
             return jsonify({"error": "Reel not found"}), 404
 

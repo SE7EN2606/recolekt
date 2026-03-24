@@ -5,6 +5,7 @@ import shutil
 import logging
 from datetime import datetime
 
+
 from fetcher_api.services.transcription import transcribe_video_deepgram
 from fetcher_api.services.ai_service import analyze_instagram_video
 from fetcher_api.services.db_insert import insert_reel_into_db
@@ -20,6 +21,7 @@ from fetcher_api.api.helpers.normalizers import (
 )
 from fetcher_api.utils.ocr_utils import maybe_ocr_and_merge_text
 
+
 # ✅ CORRECTED IMPORTS: This file imports FROM video_analysis.py
 from fetcher_api.services.video_analysis import (
     download_instagram_video, 
@@ -27,10 +29,13 @@ from fetcher_api.services.video_analysis import (
     download_instagram_thumbnail
 )
 
+
 logger = logging.getLogger("api")
+
 
 FREE_MAX_DURATION = 180
 PRO_MAX_DURATION = 360
+
 
 
 def cleanup_video_from_gcs(shortcode, platform_code="IG", user_id=None):
@@ -48,6 +53,7 @@ def cleanup_video_from_gcs(shortcode, platform_code="IG", user_id=None):
         return False
 
 
+
 def _extract_title_from_ai_summary(ai_summary: dict) -> str:
     """Pull the best available title string out of the AI bilingual summary block."""
     if not isinstance(ai_summary, dict):
@@ -62,13 +68,16 @@ def _extract_title_from_ai_summary(ai_summary: dict) -> str:
     ).strip()
 
 
+
 def background_process(result, video_path, temp_dir, shortcode, caption, url,
                        save_to_gcs, author_name, save_dir, user_id):
     from fetcher_api.adapters.gcs_client import gcs_client
 
+
     is_facebook = "facebook.com" in url.lower() or "fb." in url.lower()
     platform_code = "FB" if is_facebook else "IG"
     gcs_paths = generate_gcs_paths(shortcode, platform_code, user_id)
+
 
     try:
         # 0. Ensure critical fields are always in result (needed for error handler)
@@ -76,6 +85,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
         result["source_url"] = url
         result["caption"] = caption
         result["author_name"] = author_name
+
 
         # 1. Download & Metadata
         if not os.path.exists(video_path):
@@ -86,7 +96,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
                 return
             
             meta = ensure_dict(dl_result.get("metadata", {}))
-            post_obj = dl_result.get("post") # ✅ Grab the raw post object for the thumbnail
+            post_obj = dl_result.get("post")
             
             caption     = caption     or meta.get("caption", "")
             author_name = author_name or meta.get("username", "")
@@ -96,6 +106,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             post_obj = None
             meta = {}
 
+
         # 2. Duration & Strategy
         duration, duration_seconds = get_video_duration(video_path)
         user_tier  = get_user_tier(user_id)
@@ -104,9 +115,10 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             (user_tier == "pro"  and duration_seconds > PRO_MAX_DURATION)
         )
 
+
         # 3. Transcription
         if is_too_long:
-            transcription_data = {"status": "bookmark_only", "transcript": "", "detected_language": "en"}
+            transcription_data = {"status": "bookmark_only", "transcript": "", "detected_language": "unknown"}
         else:
             raw = transcribe_video_deepgram(video_path)
             if isinstance(raw, str) and raw.strip().startswith("{"):
@@ -117,21 +129,34 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
         final_transcript = transcription_data.get("transcript", "")
         if isinstance(final_transcript, dict):
             final_transcript = final_transcript.get("transcript", "")
-        transcription_data["transcript"]         = final_transcript
-        transcription_data["detected_language"]  = transcription_data.get("detected_language") or "en"
-        if transcription_data["detected_language"] == "unknown":
-            transcription_data["detected_language"] = "en"
+        transcription_data["transcript"] = final_transcript
+
+        # ✅ FIX: Don't blindly default to "en".
+        # If transcript is empty (music_only, silent, etc.), pass "unknown" so the
+        # extractor can detect the real language from the caption instead.
+        raw_lang = transcription_data.get("detected_language") or ""
+        if not raw_lang or raw_lang == "unknown":
+            if not final_transcript.strip():
+                # No speech detected — let the extractor detect lang from caption
+                transcription_data["detected_language"] = "unknown"
+                logger.info("🌍 No transcript — passing 'unknown' lang so extractor detects from caption")
+            else:
+                # Has transcript but lang detection failed — safe to default to "en"
+                transcription_data["detected_language"] = "en"
+        else:
+            transcription_data["detected_language"] = raw_lang
+
 
         # ---------------------------------------------------------
-        # 4. 🚨 THUMBNAIL LOGIC (FIXED) 🚨
+        # 4. THUMBNAIL LOGIC
         # ---------------------------------------------------------
         thumbnail_path = os.path.join(os.path.dirname(video_path), f"{shortcode}_thumb.jpg")
         thumb_success = False
 
+
         # Attempt 1 (Instagram): Get the official gallery poster
         if post_obj and not is_facebook:
             logger.info("📸 Attempting to download official Instagram gallery poster...")
-            # ✅ Add 'url' as the third argument here
             thumb_success = download_instagram_thumbnail(post_obj, thumbnail_path, url)
             
         # Attempt 1 (Facebook): Get the official thumbnail if yt-dlp extracted it
@@ -148,10 +173,12 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             except Exception as e:
                 logger.warning(f"⚠️ Failed to download Facebook thumbnail: {e}")
 
-        # Attempt 2 (Fallback): If official posters fail, slice the first frame with FFmpeg
+
+        # Attempt 2 (Fallback): FFmpeg first-frame extraction
         if not thumb_success:
             logger.info("🔄 Falling back to FFmpeg first-frame extraction...")
             generate_reel_thumbnail(video_path, thumbnail_path)
+
 
         # Upload the thumbnail to GCS
         if os.path.exists(thumbnail_path) and save_to_gcs and gcs_client.available:
@@ -165,13 +192,13 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             )
             result["gcs_urls"] = {"preview_thumbnail": thumb_url}
             
-            # ✅ FIXED: Reverted to only updating the JSON column. No database schema changes needed!
             execute(
                 "UPDATE reels SET gcs_urls = %s::jsonb WHERE id = %s",
                 (json.dumps(result["gcs_urls"]), result["process_id"]),
                 commit=True,
             )
         # ---------------------------------------------------------
+
 
         # 5. AI Analysis
         merged_text = final_transcript
@@ -180,6 +207,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
         except Exception:
             pass
 
+
         ai_res = ensure_dict(
             analyze_instagram_video(
                 merged_text, caption, transcription_data["detected_language"],
@@ -187,7 +215,8 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             )
         )
 
-        # ── Parse AI summary & extract title before saving ──────────────────
+
+        # ── Parse AI summary & extract title ────────────────────────────────
         ai_summary = ai_res.get("summary", {})
         if isinstance(ai_summary, str):
             try:
@@ -197,11 +226,12 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
         if not isinstance(ai_summary, dict):
             ai_summary = {}
 
+
         summary_title = _extract_title_from_ai_summary(ai_summary)
-        # Fall back to caption first line if AI didn't produce a title
         if not summary_title and caption:
             summary_title = caption.split("\n")[0][:80].strip()
         # ────────────────────────────────────────────────────────────────────
+
 
         # 6. Final Result Object
         result.update({
@@ -222,6 +252,9 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             "prompt":               ai_res.get("prompt"),
             "transcription":        transcription_data,
             "processing_strategy":  "bookmark" if is_too_long else "full",
+            # ✅ Save the extractor's detected language at the top level
+            # This is the real language (detected from caption/OCR when transcript is empty)
+            "detected_language":    ai_res.get("detected_language", "unknown"),
         })
 
         # 7. GCS Upload (Video + Result JSON)
@@ -230,6 +263,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             video_url = save_video_to_gcs(video_path, shortcode, platform_code)
             save_result_json_to_gcs(result, result["process_id"], temp_dir, shortcode, platform_code)
 
+
             base_url = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/"
             result["gcs_urls"].update({
                 "result_json": base_url + gcs_paths["result_json"],
@@ -237,16 +271,19 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             })
             video_uploaded = bool(video_url)
 
+
         # 8. Final DB Save & Cleanup
         insert_reel_into_db(result)
         if video_uploaded:
             cleanup_video_from_gcs(shortcode, platform_code, user_id)
+
 
         cleanup_file(video_path)
         if os.path.exists(thumbnail_path):
             cleanup_file(thumbnail_path)
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
+
 
     except Exception as e:
         logger.error(f"❌ Background Process Failed: {e}", exc_info=True)

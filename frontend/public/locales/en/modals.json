@@ -5,7 +5,9 @@
   "pastePlaceholder": "Insert Instagram link here",
   "pasteTitle": "Paste from clipboard",
   "importFailed": "Failed to import video",
-  "errorAlreadySaved": "This video has already been saved.",
+  "errorAlreadySaved": "This reel is already saved.",
+  "alreadySavedHint": "Go to your gallery to find it.",
+  "goToGallery": "Go to Gallery",
   "errorNotAuth": "Not authenticated. Please log in again.",
   "errorInvalidUrl": "Please provide a valid URL.",
   "errorServer": "Failed to process video. Please try again.",
@@ -19,5 +21,8 @@
   "subCollectionNamePlaceholder": "Sub-collection name...",
   "collectionNamePlaceholder": "Collection name...",
   "folderExists": "A folder named '{{name}}' already exists",
-  "createNewCollection": "Create New Collection"
+  "createNewCollection": "Create New Collection",
+  "deleteReelTitle": "Delete this reel?",
+  "deleteReelMessage": "This action cannot be undone.",
+  "deleteReelConfirm": "Delete"
 }

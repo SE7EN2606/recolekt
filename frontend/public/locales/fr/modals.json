@@ -5,7 +5,9 @@
   "pastePlaceholder": "Insérez le lien Instagram ici",
   "pasteTitle": "Coller depuis le presse-papiers",
   "importFailed": "Échec de l'importation de la vidéo",
-  "errorAlreadySaved": "Cette vidéo a déjà été enregistrée.",
+  "errorAlreadySaved": "Ce reel est déjà enregistré.",
+  "alreadySavedHint": "Rendez-vous dans votre galerie pour le retrouver.",
+  "goToGallery": "Aller à la galerie",
   "errorNotAuth": "Non authentifié. Veuillez vous reconnecter.",
   "errorInvalidUrl": "Veuillez fournir un lien valide.",
   "errorServer": "Échec du traitement de la vidéo. Veuillez réessayer.",
@@ -19,5 +21,8 @@
   "subCollectionNamePlaceholder": "Nom du sous-dossier...",
   "collectionNamePlaceholder": "Nom de la collection...",
   "folderExists": "Un dossier '{{name}}' existe déjà",
-  "createNewCollection": "Créer une nouvelle collection"
+  "createNewCollection": "Créer une nouvelle collection",
+  "deleteReelTitle": "Supprimer cette vidéo ?",
+  "deleteReelMessage": "Cette action est irréversible.",
+  "deleteReelConfirm": "Supprimer"
 }
