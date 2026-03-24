@@ -254,8 +254,8 @@ def import_share():
     is_facebook = "facebook.com" in url_lower or "fb." in url_lower
 
     if is_facebook:
-        from fetcher_api.adapters.facebook_client import facebook_client
-        extracted = facebook_client.extract_shortcode(url)
+        from fetcher_api.adapters.meta_client import meta_client
+        extracted = meta_client.extract_shortcode(url)
         shortcode = extracted if extracted else "unknown"
         platform_id = "FB"
     else:
@@ -278,8 +278,8 @@ def import_share():
     try:
         # Download logic based on platform
         if is_facebook:
-            from fetcher_api.adapters.facebook_client import facebook_client
-            dl = facebook_client.download_facebook_video(url, video_path)
+            from fetcher_api.adapters.meta_client import meta_client
+            dl = meta_client.download_video(url, video_path)
         else:
             from fetcher_api.services.video_analysis import download_instagram_video
             dl = download_instagram_video(url, video_path)

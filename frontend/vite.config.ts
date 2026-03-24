@@ -10,7 +10,6 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       devOptions: { enabled: true },
-      // ✅ Removed assets/*.png to stop Workbox caching conflicts
       includeAssets: [
         'favicon.ico', 
         'apple-touch-icon.png', 
@@ -20,9 +19,10 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg,json}'],
         navigateFallback: '/index.html',
+        navigateFallbackAllowlist: [/^\/(?!legal).*/],  // ✅ exclude /legal from SW intercept
       },
       manifest: {
-        id: '/?v=25', // Bumped
+        id: '/?v=26',
         name: 'Recolekt',
         short_name: 'Recolekt',
         description: 'Your personal video organizer',
@@ -32,13 +32,13 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: '/android-chrome-192x192.png', // Removed /assets
+            src: '/android-chrome-192x192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any maskable'
           },
           {
-            src: '/android-chrome-512x512.png', // Removed /assets
+            src: '/android-chrome-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'

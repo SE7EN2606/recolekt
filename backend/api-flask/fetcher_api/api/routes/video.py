@@ -1,4 +1,3 @@
-# fetcher_api/api/routes/video.py
 import os
 import json
 import tempfile
@@ -12,6 +11,7 @@ from werkzeug.utils import secure_filename
 from fetcher_api.adapters.db import execute, fetch_one
 from fetcher_api.adapters.gcs_client import gcs_client
 from fetcher_api.adapters.instagram_client import instagram_client
+from fetcher_api.adapters.meta_client import meta_client
 from fetcher_api.utils.files import save_uploaded_file, cleanup_file
 from fetcher_api.utils.timestamps import get_timestamp, get_unique_id
 from fetcher_api.services.video_analysis import (
@@ -36,7 +36,7 @@ def _extract_url_from_request():
     logger.info(f"🔍 Query args: {dict(request.args)}")
     logger.info(f"🔍 Form keys: {list(request.form.keys())}")
     logger.info(f"🔍 Files keys: {list(request.files.keys())}")
-    
+
     if request.is_json or 'application/json' in str(request.content_type):
         try:
             data = request.get_json(force=True, silent=True)
@@ -73,10 +73,11 @@ def _extract_url_from_request():
     logger.error("❌ NO URL FOUND ANYWHERE")
     return None
 
+
 @video_bp.route("/summarize", methods=["POST"])
 def summarize():
     logger.info("📥 /summarize called")
-    
+
     try:
         user_id = get_user_id_from_request()
         logger.info(f"✅ User authenticated: {user_id}")
@@ -116,10 +117,10 @@ def summarize():
             """,
             (user_id, url)
         )
-        
+
         if existing_reel:
             logger.info(f"📌 Reel already exists: {existing_reel['id']}")
-            
+
             if existing_reel.get('status') == 'error' or force_retry:
                 logger.info(f"⚠️ Reprocessing requested! Deleting old record...")
                 execute("DELETE FROM reels WHERE id = %s", (existing_reel['id'],))
@@ -140,7 +141,7 @@ def summarize():
     }
 
     try:
-        platform_id = "IG"  # Default
+        platform_id = "IG"
         shortcode = "unknown"
 
         if file and file.filename:
@@ -149,43 +150,33 @@ def summarize():
             shortcode = get_unique_id(filename).rstrip("-")
             result["process_id"] = f"{shortcode}--{get_timestamp()}--{get_unique_id(url or filename)}"
             logger.info(f"📁 File upload: {result['process_id']}")
-        
+
         else:
-            # ---------------------------------------------------------
-            # ✅ FIXED: Facebook vs Instagram Routing
-            # ---------------------------------------------------------
-            url_lower = url.lower()
-            is_facebook = "facebook.com" in url_lower or "fb." in url_lower
-            
+            is_facebook = meta_client.is_facebook_url(url)
+
             if is_facebook:
                 logger.info(f"🔗 Processing Facebook URL: {url}")
-                from fetcher_api.adapters.facebook_client import facebook_client
-                extracted = facebook_client.extract_shortcode(url)
-                shortcode = extracted if extracted else "unknown"
+                shortcode = meta_client.extract_shortcode(url) or "unknown"
                 platform_id = "FB"
             else:
                 logger.info(f"🔗 Processing Instagram URL: {url}")
-                extracted = instagram_client.extract_shortcode(url)
-                shortcode = extracted if extracted else "unknown"
+                shortcode = instagram_client.extract_shortcode(url) or "unknown"
                 platform_id = "IG"
 
             shortcode = shortcode.rstrip("-")
 
-            # Fallback for completely unknown IDs to prevent collisions
-            if not shortcode or shortcode == "unknown" or shortcode == "None":
+            if not shortcode or shortcode in ("unknown", "None"):
                 shortcode = f"{platform_id.lower()}_{uuid.uuid4().hex[:10]}"
                 logger.info(f"🔄 Assigned dynamic shortcode: {shortcode}")
 
             result["process_id"] = f"{shortcode}--{get_timestamp()}--{get_unique_id(url)}"
             video_path = os.path.join(temp_dir, f"{result['process_id']}.mp4")
             logger.info(f"🆔 Process ID: {result['process_id']}")
-
             logger.info(f"⏭️ Skipping metadata fetch - will be done in background")
 
-        # ✅ FIXED: Dynamically use FB_reels or IG_reels based on platform
         gcs_paths = generate_gcs_paths(shortcode, platform_id)
         result["gcs_paths"] = gcs_paths
-        
+
         logger.info(f"⏭️ Skipping thumbnail generation - will be done in background")
 
         result["gcs_urls"] = {"preview_thumbnail": None, "video": None}
@@ -195,7 +186,7 @@ def summarize():
         logger.info(f"   ID: {result['process_id']}")
         logger.info(f"   User: {user_id}")
         logger.info(f"   URL: {url}")
-        
+
         execute(
             """
             INSERT INTO reels (id, user_id, source_url, status, folder_id, gcs_urls, created_at)
@@ -211,7 +202,6 @@ def summarize():
 
     try:
         logger.info(f"🚀 Starting background processing thread...")
-        # ✅ NOTE: Save dir is None here, but processing.py will still use the gcs_paths correctly.
         threading.Thread(
             target=background_process,
             args=(result, video_path, temp_dir, shortcode, "", url, save_to_gcs, "", None, user_id),

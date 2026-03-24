@@ -82,8 +82,21 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <div>
                 <h4 className="font-bold mb-4">{t('common:legal')}</h4>
                 <ul className="space-y-2 text-sm text-gray-400">
-                  <li><a href="#" className="hover:text-white">{t('common:privacy')}</a></li>
-                  <li><a href="#" className="hover:text-white">{t('common:terms')}</a></li>
+                  <li>
+                    <a href="/legal" target="_blank" rel="noopener noreferrer" className="hover:text-white">
+                      {t('common:privacy')}
+                    </a>
+                  </li>
+                  <li>
+                    <a href="/legal#terms" target="_blank" rel="noopener noreferrer" className="hover:text-white">
+                      {t('common:terms')}
+                    </a>
+                  </li>
+                  <li>
+                    <a href="/legal#deletion" target="_blank" rel="noopener noreferrer" className="hover:text-white">
+                      {t('common:dataDeletion')}
+                    </a>
+                  </li>
                 </ul>
               </div>
             </div>
