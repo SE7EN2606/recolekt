@@ -1,3 +1,4 @@
+# fetcher_api/api/routes/video.py
 import os
 import json
 import tempfile
@@ -10,7 +11,6 @@ from werkzeug.utils import secure_filename
 
 from fetcher_api.adapters.db import execute, fetch_one
 from fetcher_api.adapters.gcs_client import gcs_client
-from fetcher_api.adapters.instagram_client import instagram_client
 from fetcher_api.adapters.meta_client import meta_client
 from fetcher_api.utils.files import save_uploaded_file, cleanup_file
 from fetcher_api.utils.timestamps import get_timestamp, get_unique_id
@@ -30,6 +30,7 @@ video_bp = Blueprint("video", __name__)
 TEMP_DIR_BASE = os.path.join(tempfile.gettempdir(), "recolekt_processing")
 os.makedirs(TEMP_DIR_BASE, exist_ok=True)
 
+
 def _extract_url_from_request():
     """Ultra-robust URL extraction with full logging"""
     logger.info(f"🔍 Content-Type: {request.content_type}")
@@ -37,7 +38,7 @@ def _extract_url_from_request():
     logger.info(f"🔍 Form keys: {list(request.form.keys())}")
     logger.info(f"🔍 Files keys: {list(request.files.keys())}")
 
-    if request.is_json or 'application/json' in str(request.content_type):
+    if request.is_json or "application/json" in str(request.content_type):
         try:
             data = request.get_json(force=True, silent=True)
             logger.info(f"✅ JSON data: {data}")
@@ -97,7 +98,7 @@ def summarize():
         elif request.args:
             save_to_gcs = request.args.get("save_to_gcs", "true").lower() == "true"
             force_retry = request.args.get("force_retry", "false").lower() == "true"
-    except:
+    except Exception:
         pass
 
     file = request.files.get("file")
@@ -115,21 +116,21 @@ def summarize():
             FROM reels 
             WHERE user_id = %s AND source_url = %s
             """,
-            (user_id, url)
+            (user_id, url),
         )
 
         if existing_reel:
             logger.info(f"📌 Reel already exists: {existing_reel['id']}")
 
-            if existing_reel.get('status') == 'error' or force_retry:
-                logger.info(f"⚠️ Reprocessing requested! Deleting old record...")
-                execute("DELETE FROM reels WHERE id = %s", (existing_reel['id'],))
+            if existing_reel.get("status") == "error" or force_retry:
+                logger.info("⚠️ Reprocessing requested! Deleting old record...")
+                execute("DELETE FROM reels WHERE id = %s", (existing_reel["id"],))
             else:
                 return jsonify({
-                    "reel_id": existing_reel['id'],
-                    "status": existing_reel.get('status', 'completed'),
+                    "reel_id": existing_reel["id"],
+                    "status": existing_reel.get("status", "completed"),
                     "message": "This reel already exists in your collection",
-                    "preview_url": existing_reel.get('preview_url')
+                    "preview_url": existing_reel.get("preview_url"),
                 }), 200
 
     temp_dir = tempfile.mkdtemp(dir=TEMP_DIR_BASE)
@@ -137,7 +138,7 @@ def summarize():
     result = {
         "process_id": "",
         "summary": {},
-        "caption": ""
+        "caption": "",
     }
 
     try:
@@ -160,7 +161,7 @@ def summarize():
                 platform_id = "FB"
             else:
                 logger.info(f"🔗 Processing Instagram URL: {url}")
-                shortcode = instagram_client.extract_shortcode(url) or "unknown"
+                shortcode = meta_client.extract_shortcode(url) or "unknown"
                 platform_id = "IG"
 
             shortcode = shortcode.rstrip("-")
@@ -172,17 +173,17 @@ def summarize():
             result["process_id"] = f"{shortcode}--{get_timestamp()}--{get_unique_id(url)}"
             video_path = os.path.join(temp_dir, f"{result['process_id']}.mp4")
             logger.info(f"🆔 Process ID: {result['process_id']}")
-            logger.info(f"⏭️ Skipping metadata fetch - will be done in background")
+            logger.info("⏭️ Skipping metadata fetch - will be done in background")
 
         gcs_paths = generate_gcs_paths(shortcode, platform_id)
         result["gcs_paths"] = gcs_paths
 
-        logger.info(f"⏭️ Skipping thumbnail generation - will be done in background")
+        logger.info("⏭️ Skipping thumbnail generation - will be done in background")
 
         result["gcs_urls"] = {"preview_thumbnail": None, "video": None}
         gcs_urls_json = json.dumps(result["gcs_urls"])
 
-        logger.info(f"💾 Inserting into database...")
+        logger.info("💾 Inserting into database...")
         logger.info(f"   ID: {result['process_id']}")
         logger.info(f"   User: {user_id}")
         logger.info(f"   URL: {url}")
@@ -194,25 +195,25 @@ def summarize():
             """,
             (result["process_id"], user_id, url, gcs_urls_json),
         )
-        logger.info(f"✅ Database record created (caption/author will be added by background)")
+        logger.info("✅ Database record created (caption/author will be added by background)")
 
     except Exception as e:
         logger.error(f"❌ Error in main processing: {e}", exc_info=True)
         return jsonify({"error": "Internal error"}), 500
 
     try:
-        logger.info(f"🚀 Starting background processing thread...")
+        logger.info("🚀 Starting background processing thread...")
         threading.Thread(
             target=background_process,
             args=(result, video_path, temp_dir, shortcode, "", url, save_to_gcs, "", None, user_id),
             daemon=True,
         ).start()
-        logger.info(f"✅ Background thread started")
+        logger.info("✅ Background thread started")
     except Exception as e:
         logger.error(f"❌ Failed to start background thread: {e}", exc_info=True)
 
     return jsonify({
         "status": "processing",
         "reel_id": result["process_id"],
-        "preview_url": None
+        "preview_url": None,
     })
