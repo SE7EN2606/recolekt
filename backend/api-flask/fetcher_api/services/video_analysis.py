@@ -1,6 +1,7 @@
 import os
 import logging
 import subprocess
+import tempfile
 import yt_dlp
 from typing import Dict, Optional
 import requests
@@ -11,6 +12,37 @@ from fetcher_api.adapters.meta_client import meta_client
 logger = logging.getLogger("video_analysis")
 
 
+# ── Cookie helpers ────────────────────────────────────────────────────────────
+
+def _write_cookies_file(env_var: str, filename: str) -> Optional[str]:
+    """Write cookie content from env var to a temp file, return path or None."""
+    content = os.environ.get(env_var, "").strip()
+    if not content:
+        logger.warning(f"⚠️ {env_var} not set, skipping cookies")
+        return None
+    try:
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=f"_{filename}", delete=False, encoding="utf-8"
+        )
+        tmp.write(content)
+        tmp.close()
+        logger.info(f"🍪 Wrote cookies to {tmp.name}")
+        return tmp.name
+    except Exception as e:
+        logger.warning(f"⚠️ Could not write cookies file: {e}")
+        return None
+
+
+def _cleanup_cookies_file(path: Optional[str]):
+    try:
+        if path and os.path.exists(path):
+            os.unlink(path)
+    except Exception:
+        pass
+
+
+# ── Thumbnail generation ──────────────────────────────────────────────────────
+
 def generate_reel_thumbnail(video_path: str, output_path: str, time_offset: float = 0.0) -> bool:
     try:
         if not os.path.exists(video_path):
@@ -18,10 +50,10 @@ def generate_reel_thumbnail(video_path: str, output_path: str, time_offset: floa
             return False
 
         cmd = [
-            'ffmpeg', '-y', '-i', video_path,
-            '-vframes', '1', '-ss', str(time_offset),
-            '-c:v', 'libwebp', '-q:v', '75',
-            output_path
+            "ffmpeg", "-y", "-i", video_path,
+            "-vframes", "1", "-ss", str(time_offset),
+            "-c:v", "libwebp", "-q:v", "75",
+            output_path,
         ]
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -37,10 +69,16 @@ def generate_reel_thumbnail(video_path: str, output_path: str, time_offset: floa
         return False
 
 
-def download_instagram_thumbnail_bytes(post, source_url: str = None) -> Optional[bytes]:
+# ── Thumbnail download ────────────────────────────────────────────────────────
+
+def download_instagram_thumbnail_bytes(post: dict | None, source_url: str = None) -> Optional[bytes]:
     thumbnail_url = None
     headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        )
     }
 
     if source_url:
@@ -55,9 +93,10 @@ def download_instagram_thumbnail_bytes(post, source_url: str = None) -> Optional
             logger.warning(f"⚠️ Failed to scrape og:image: {e}")
 
     if not thumbnail_url and post:
-        if hasattr(post, "thumbnail_url") and post.thumbnail_url:
-            thumbnail_url = post.thumbnail_url
-            logger.info("📸 Using thumbnail_url from post info...")
+        thumb = post.get("thumbnail_url") or post.get("preview_image_url")
+        if thumb:
+            thumbnail_url = thumb
+            logger.info("📸 Using thumbnail_url from metadata...")
 
     if not thumbnail_url:
         logger.warning("⚠️ No thumbnail URL found.")
@@ -72,7 +111,7 @@ def download_instagram_thumbnail_bytes(post, source_url: str = None) -> Optional
         return None
 
 
-def download_instagram_thumbnail(post, output_path: str, source_url: str = None) -> bool:
+def download_instagram_thumbnail(post: dict | None, output_path: str, source_url: str = None) -> bool:
     try:
         content = download_instagram_thumbnail_bytes(post, source_url)
         if not content:
@@ -91,14 +130,19 @@ def download_instagram_thumbnail(post, output_path: str, source_url: str = None)
         return False
 
 
+# ── Video download ────────────────────────────────────────────────────────────
+
 def download_instagram_video(url: str, output_path: str) -> Dict:
     """
     Downloads Instagram or Facebook video.
+
     Strategy:
-      1. oEmbed (Instagram) or yt-dlp metadata (Facebook) via meta_client
-      2. yt-dlp for actual video download
+      1. Metadata via meta_client (Instagram oEmbed or Facebook yt-dlp)
+      2. Video download via yt-dlp with cookies (IG_COOKIES_CONTENT / FB_COOKIES_CONTENT env vars)
+      3. Fallback: yt-dlp without cookies
     """
     shortcode = meta_client.extract_shortcode(url)
+    is_facebook = meta_client.is_facebook_url(url)
 
     # ── Step 1: metadata ──────────────────────────────────────────────
     graph_meta = None
@@ -109,17 +153,41 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
     except Exception as e:
         logger.warning(f"⚠️ Metadata fetch failed, continuing: {e}")
 
-    # ── Step 2: yt-dlp download ───────────────────────────────────────
+    # ── Step 2: pick cookies ──────────────────────────────────────────
+    cookies_path = None
+    if is_facebook:
+        cookies_path = _write_cookies_file("FB_COOKIES_CONTENT", "fb_cookies.txt")
+        logger.info("🔵 Using Facebook cookies")
+    else:
+        cookies_path = _write_cookies_file("IG_COOKIES_CONTENT", "ig_cookies.txt")
+        logger.info("🟣 Using Instagram cookies")
+
+    # ── Step 3: yt-dlp download ───────────────────────────────────────
     try:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
         ydl_opts = {
             "outtmpl": output_path,
             "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "quiet": True,
             "no_warnings": True,
+            "http_headers": {
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                )
+            },
         }
+
+        if cookies_path:
+            ydl_opts["cookiefile"] = cookies_path
+            logger.info(f"🍪 yt-dlp using cookies from {cookies_path}")
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
+
+        _cleanup_cookies_file(cookies_path)
 
         if os.path.exists(output_path):
             logger.info(f"✅ yt-dlp download saved to {output_path}")
@@ -134,9 +202,11 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
                     "source":        "meta_oembed+ytdlp",
                 },
             }
+
         raise ValueError("yt-dlp finished but file missing")
 
     except Exception as e:
+        _cleanup_cookies_file(cookies_path)
         logger.error(f"❌ yt-dlp download failed: {e}", exc_info=True)
         return {
             "success": False,
