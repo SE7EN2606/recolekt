@@ -35,18 +35,27 @@ def _get_user_by_platform_id(platform: str, platform_user_id: str) -> str | None
 
 def _send_instagram_dm(recipient_id: str, text: str):
     token = os.getenv("INSTAGRAM_PAGE_ACCESS_TOKEN", "")
-    ig_account_id = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")  # 17841477914830252
+    ig_account_id = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
+    if not token or not ig_account_id:
+        logger.warning("⚠️ Missing INSTAGRAM_PAGE_ACCESS_TOKEN or INSTAGRAM_BUSINESS_ACCOUNT_ID")
+        return
     try:
         resp = requests.post(
             f"https://graph.facebook.com/v21.0/{ig_account_id}/messages",
             json={
                 "recipient": {"id": recipient_id},
                 "message": {"text": text},
-                "messaging_product": "instagram"   # ← NEW required field
+                "messaging_product": "instagram"
             },
             params={"access_token": token},
             timeout=10,
         )
+        if resp.status_code != 200:
+            logger.warning(f"⚠️ DM send failed: {resp.text[:300]}")
+        else:
+            logger.info(f"✅ DM sent to {recipient_id}")
+    except Exception as e:
+        logger.error(f"❌ DM send error: {e}")
 
 
 def _trigger_processing(user_id: str, url: str, sender_id: str):
