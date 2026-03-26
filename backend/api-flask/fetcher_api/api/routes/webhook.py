@@ -168,14 +168,32 @@ def instagram_webhook():
         return "Forbidden", 403
 
     data = request.get_json(silent=True) or {}
-    logger.info(f"📨 Webhook received: {str(data)[:300]}")
+    logger.info(f"📨 Webhook received: {str(data)[:500]}")
 
     for entry in data.get("entry", []):
         for event in entry.get("messaging", []):
             sender_id = event.get("sender", {}).get("id")
-            text = event.get("message", {}).get("text", "")
-            if not sender_id or not text:
+            if not sender_id:
                 continue
+
+            message = event.get("message", {})
+
+            # 1. Plain text URL (typed manually)
+            text = message.get("text", "")
+
+            # 2. Reel/post shared as attachment
+            if not text:
+                for att in message.get("attachments", []):
+                    payload_url = att.get("payload", {}).get("url", "")
+                    if payload_url:
+                        text = payload_url
+                        break
+
+            logger.info(f"📩 sender={sender_id} text={text[:200]}")
+
+            if not text:
+                continue
+
             if "instagram.com/reel" in text or "instagram.com/p/" in text:
                 threading.Thread(
                     target=handle_inbound_reel,
