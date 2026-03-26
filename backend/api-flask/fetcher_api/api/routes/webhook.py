@@ -1,5 +1,4 @@
 # fetcher_api/api/routes/webhook.py
-
 import os
 import re
 import logging
@@ -15,6 +14,7 @@ from fetcher_api.api.helpers.auth import get_user_id_from_request
 logger = logging.getLogger("webhook")
 
 webhook_bp = Blueprint("webhook", __name__)
+
 
 # ----------------------------------------------------------------
 # Helpers
@@ -35,7 +35,7 @@ def _get_user_by_platform_id(platform: str, platform_user_id: str) -> str | None
 
 def _send_instagram_dm(recipient_id: str, text: str):
     token = os.getenv("INSTAGRAM_PAGE_ACCESS_TOKEN", "")
-    ig_account_id = os.getenv("INSTAGRAM_ACCOUNT_ID", "")
+    ig_account_id = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
     if not token or not ig_account_id:
         logger.warning("⚠️ Missing INSTAGRAM_PAGE_ACCESS_TOKEN or INSTAGRAM_ACCOUNT_ID")
         return
@@ -67,7 +67,6 @@ def _trigger_processing(user_id: str, url: str, sender_id: str):
         from fetcher_api.utils.timestamps import get_timestamp, get_unique_id
         import tempfile, os, json
 
-        # Check duplicate
         existing = fetch_one(
             "SELECT id FROM reels WHERE user_id = %s AND source_url = %s",
             (user_id, url)
@@ -75,7 +74,7 @@ def _trigger_processing(user_id: str, url: str, sender_id: str):
         if existing:
             _send_instagram_dm(
                 sender_id,
-                f"✅ You already have this reel saved! View it here: https://recolekt.app"
+                "✅ You already have this reel saved! View it here: https://recolekt.app"
             )
             return
 
@@ -108,7 +107,7 @@ def _trigger_processing(user_id: str, url: str, sender_id: str):
             if status and status["status"] == "done":
                 _send_instagram_dm(
                     sender_id,
-                    f"✨ Done! Your reel is saved on Recolekt.\nView it here: https://recolekt.app"
+                    "✨ Done! Your reel is saved on Recolekt.\nView it here: https://recolekt.app"
                 )
             else:
                 _send_instagram_dm(
@@ -135,7 +134,6 @@ def handle_inbound_reel(sender_id: str, text: str):
     user_id = _get_user_by_platform_id("instagram", sender_id)
 
     if not user_id:
-        # Not linked yet — send linking URL with one-time token
         token = secrets.token_urlsafe(24)
         expires_at = datetime.utcnow() + timedelta(hours=24)
         execute(
@@ -193,10 +191,6 @@ def instagram_webhook():
 
 @webhook_bp.route("/connect/instagram", methods=["POST"])
 def connect_instagram():
-    """
-    Frontend POSTs { token } after user logs in via Google OAuth.
-    We validate the token, link their Recolekt user_id to the Instagram sender_id.
-    """
     try:
         user_id = get_user_id_from_request()
     except ValueError:
@@ -208,8 +202,8 @@ def connect_instagram():
 
     row = fetch_one(
         """
-        SELECT platform, platform_user_id, expires_at 
-        FROM linking_tokens 
+        SELECT platform, platform_user_id, expires_at
+        FROM linking_tokens
         WHERE token = %s
         """,
         (token,)
