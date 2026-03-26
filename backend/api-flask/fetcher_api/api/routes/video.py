@@ -112,8 +112,8 @@ def summarize():
         url = str(url).strip()
         existing_reel = fetch_one(
             """
-            SELECT id, status, (gcs_urls::jsonb->>'preview_thumbnail') as preview_url 
-            FROM reels 
+            SELECT id, status, (gcs_urls::jsonb->>'preview_thumbnail') as preview_url
+            FROM reels
             WHERE user_id = %s AND source_url = %s
             """,
             (user_id, url),
