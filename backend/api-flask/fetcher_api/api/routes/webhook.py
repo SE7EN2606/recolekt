@@ -1,6 +1,7 @@
 # fetcher_api/api/routes/webhook.py
 import os
 import re
+import json
 import logging
 import threading
 import secrets
@@ -15,10 +16,6 @@ logger = logging.getLogger("webhook")
 
 webhook_bp = Blueprint("webhook", __name__)
 
-
-# ----------------------------------------------------------------
-# Helpers
-# ----------------------------------------------------------------
 
 def _extract_reel_url(text: str) -> str | None:
     match = re.search(r'(https?://(?:www\.)?instagram\.com/(?:reel|p)/[^\s"\'<>]+)', text)
@@ -59,7 +56,6 @@ def _send_instagram_dm(recipient_id: str, text: str):
 
 
 def _trigger_processing(user_id: str, url: str, sender_id: str):
-    """Calls /summarize internally and replies via DM."""
     try:
         from fetcher_api.api.helpers.processing import background_process
         from fetcher_api.adapters.meta_client import meta_client
@@ -73,17 +69,13 @@ def _trigger_processing(user_id: str, url: str, sender_id: str):
             (user_id, url)
         )
         if existing:
-            _send_instagram_dm(
-                sender_id,
-                "✅ You already have this reel saved! View it here: https://recolekt.app"
-            )
+            _send_instagram_dm(sender_id, "✅ You already have this reel saved! View it here: https://recolekt.app")
             return
 
         shortcode = meta_client.extract_shortcode(url) or "unknown"
         process_id = f"{shortcode}--{get_timestamp()}--{get_unique_id(url)}"
         video_path = os.path.join(tempfile.mkdtemp(), f"{process_id}.mp4")
         temp_dir = os.path.dirname(video_path)
-
         gcs_paths = generate_gcs_paths(shortcode, "IG")
         result = {
             "process_id": process_id,
@@ -106,25 +98,37 @@ def _trigger_processing(user_id: str, url: str, sender_id: str):
             background_process(result, video_path, temp_dir, shortcode, "", url, True, "", None, user_id)
             status = fetch_one("SELECT status FROM reels WHERE id = %s", (process_id,))
             if status and status["status"] == "done":
-                _send_instagram_dm(
-                    sender_id,
-                    "✨ Done! Your reel is saved on Recolekt.\nView it here: https://recolekt.app"
-                )
+                _send_instagram_dm(sender_id, "✨ Done! Your reel is saved on Recolekt.\nView it here: https://recolekt.app")
             else:
-                _send_instagram_dm(
-                    sender_id,
-                    "⚠️ Something went wrong processing your reel. Please try again!"
-                )
+                _send_instagram_dm(sender_id, "⚠️ Something went wrong processing your reel. Please try again!")
 
         threading.Thread(target=process_and_reply, daemon=True).start()
-        _send_instagram_dm(
-            sender_id,
-            "⏳ Got it! I'm processing your reel now. I'll message you when it's ready."
-        )
+        _send_instagram_dm(sender_id, "⏳ Got it! I'm processing your reel now. I'll message you when it's ready.")
 
     except Exception as e:
         logger.error(f"❌ _trigger_processing error: {e}", exc_info=True)
         _send_instagram_dm(sender_id, "⚠️ Something went wrong. Please try again!")
+
+
+def _process_message_event(sender_id: str, message: dict):
+    """Handle a single message event regardless of which format it came from."""
+    text = message.get("text", "")
+
+    # Reel/post shared as attachment
+    if not text:
+        for att in message.get("attachments", []):
+            payload_url = att.get("payload", {}).get("url", "")
+            if payload_url:
+                text = payload_url
+                break
+
+    logger.info(f"📩 sender={sender_id} text={text[:200] if text else '(empty)'}")
+
+    if not text:
+        return
+
+    if "instagram.com/reel" in text or "instagram.com/p/" in text:
+        threading.Thread(target=handle_inbound_reel, args=(sender_id, text), daemon=True).start()
 
 
 def handle_inbound_reel(sender_id: str, text: str):
@@ -156,10 +160,6 @@ def handle_inbound_reel(sender_id: str, text: str):
     _trigger_processing(user_id, url, sender_id)
 
 
-# ----------------------------------------------------------------
-# Webhook — Instagram DM
-# ----------------------------------------------------------------
-
 @webhook_bp.route("/webhook/instagram", methods=["GET", "POST"])
 def instagram_webhook():
     if request.method == "GET":
@@ -168,45 +168,29 @@ def instagram_webhook():
         return "Forbidden", 403
 
     data = request.get_json(silent=True) or {}
-    logger.info(f"📨 Webhook received: {str(data)[:500]}")
+    logger.info(f"📨 FULL PAYLOAD: {json.dumps(data)[:800]}")
 
     for entry in data.get("entry", []):
+
+        # ── Format A: new Instagram API → entry.changes[].value (matches test button)
+        for change in entry.get("changes", []):
+            if change.get("field") != "messages":
+                continue
+            val = change.get("value", {})
+            sender_id = val.get("sender", {}).get("id")
+            message = val.get("message", {})
+            if sender_id and message:
+                _process_message_event(sender_id, message)
+
+        # ── Format B: Messenger-style → entry.messaging[]
         for event in entry.get("messaging", []):
             sender_id = event.get("sender", {}).get("id")
-            if not sender_id:
-                continue
-
             message = event.get("message", {})
-
-            # 1. Plain text URL (typed manually)
-            text = message.get("text", "")
-
-            # 2. Reel/post shared as attachment
-            if not text:
-                for att in message.get("attachments", []):
-                    payload_url = att.get("payload", {}).get("url", "")
-                    if payload_url:
-                        text = payload_url
-                        break
-
-            logger.info(f"📩 sender={sender_id} text={text[:200]}")
-
-            if not text:
-                continue
-
-            if "instagram.com/reel" in text or "instagram.com/p/" in text:
-                threading.Thread(
-                    target=handle_inbound_reel,
-                    args=(sender_id, text),
-                    daemon=True
-                ).start()
+            if sender_id and message:
+                _process_message_event(sender_id, message)
 
     return "OK", 200
 
-
-# ----------------------------------------------------------------
-# Account linking — called from frontend /connect page
-# ----------------------------------------------------------------
 
 @webhook_bp.route("/connect/instagram", methods=["POST"])
 def connect_instagram():
@@ -220,11 +204,7 @@ def connect_instagram():
         return jsonify({"error": "Token required"}), 400
 
     row = fetch_one(
-        """
-        SELECT platform, platform_user_id, expires_at
-        FROM linking_tokens
-        WHERE token = %s
-        """,
+        "SELECT platform, platform_user_id, expires_at FROM linking_tokens WHERE token = %s",
         (token,)
     )
 
@@ -242,16 +222,11 @@ def connect_instagram():
         """,
         (user_id, row["platform"], row["platform_user_id"])
     )
-
     execute("DELETE FROM linking_tokens WHERE token = %s", (token,))
 
     logger.info(f"✅ Linked {row['platform']} account {row['platform_user_id']} to user {user_id}")
     return jsonify({"success": True, "platform": row["platform"]}), 200
 
-
-# ----------------------------------------------------------------
-# Check link status (for frontend /connect page polling)
-# ----------------------------------------------------------------
 
 @webhook_bp.route("/connect/status", methods=["GET"])
 def connect_status():
