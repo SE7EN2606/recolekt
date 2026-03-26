@@ -38,7 +38,7 @@ def _send_instagram_dm(recipient_id: str, text: str):
         return
     try:
         resp = requests.post(
-            f"https://graph.facebook.com/v21.0/{ig_account_id}/messages",
+            f"https://graph.instagram.com/v21.0/{ig_account_id}/messages",
             json={
                 "recipient": {"id": recipient_id},
                 "message": {"text": text},
