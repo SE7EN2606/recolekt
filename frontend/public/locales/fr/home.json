@@ -25,5 +25,9 @@
   "limitError": "Limite atteinte.",
   "duplicateError": "Cette vidéo est déjà dans votre collection.",
   "genericError": "Échec de l'importation. Veuillez réessayer.",
-  "networkError": "Erreur réseau. Veuillez vérifier votre connexion."
+  "networkError": "Erreur réseau. Veuillez vérifier votre connexion.",
+  "moveModeOn": "Fonction déplacement :",
+  "moveModeHint": "Sélectionnez une collection",
+  "move": "Déplacer"
+
 }

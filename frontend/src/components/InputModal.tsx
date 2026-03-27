@@ -1,18 +1,109 @@
 import { API_BASE } from "../utils/api";
-import React, { useState, useEffect } from 'react';
-import { X, ChevronDown, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, ChevronDown, AlertTriangle, LayoutGrid, Folders } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { createPortal } from 'react-dom';
 
 interface InputModalProps {
   isOpen: boolean;
   onClose: () => void;
-  // ✅ Updated to allow asynchronous submission handling
   onSubmit: (value: string, parentId?: string) => Promise<void> | void;
   title: string;
   placeholder?: string;
   confirmLabel?: string;
   parentOptions?: { id: string; name: string }[];
 }
+
+// ✅ Modern dropdown — renders via portal to escape any stacking context
+const ParentDropdown: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
+  options: { id: string; name: string }[];
+}> = ({ value, onChange, options }) => {
+  const { t } = useTranslation(['modals']);
+  const [isOpen, setIsOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+        triggerRef.current && !triggerRef.current.contains(e.target as Node)
+      ) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleToggle = () => {
+    if (!isOpen && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+    }
+    setIsOpen(p => !p);
+  };
+
+  const selectedLabel = value
+    ? `Dans "${options.find(o => o.id === value)?.name}"`
+    : t('modals:noParent', 'Aucun parent (niveau principal)');
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={handleToggle}
+        className="w-full flex items-center justify-between px-4 py-3 bg-white/50 border border-white/40 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-gray-900 font-medium cursor-pointer backdrop-blur-sm hover:bg-white/80"
+        style={{ fontSize: '16px' }}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          {value ? <Folders size={16} className="text-primary-600 shrink-0" /> : <LayoutGrid size={16} className="text-primary-600 shrink-0" />}
+          <span className="truncate">{selectedLabel}</span>
+        </div>
+        <ChevronDown size={16} className={`ml-2 flex-shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && createPortal(
+        <div
+          ref={dropdownRef}
+          className="fixed z-[9999] bg-white border border-gray-100 rounded-xl shadow-xl py-1.5 max-h-72 overflow-y-auto"
+          style={{ top: pos.top, left: pos.left, width: pos.width }}
+        >
+          {/* Top level option */}
+          <button
+            type="button"
+            onClick={() => { onChange(''); setIsOpen(false); }}
+            className={`w-full text-left flex items-center gap-2.5 px-3 py-2 text-sm transition-colors
+              ${!value ? 'bg-primary-50 text-primary-900 font-bold' : 'text-gray-700 hover:bg-primary-50 hover:text-primary-900 font-medium'}
+            `}
+          >
+            <LayoutGrid size={16} className="text-primary-600 shrink-0" />
+            <span className="truncate">{t('modals:noParent', 'Aucun parent (niveau principal)')}</span>
+          </button>
+
+          {options.length > 0 && <div className="h-px bg-gray-100 my-1.5 mx-2" />}
+
+          {options.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => { onChange(opt.id); setIsOpen(false); }}
+              className={`w-full text-left flex items-center gap-2.5 px-3 py-2 text-sm transition-colors
+                ${value === opt.id ? 'bg-primary-50 text-primary-900 font-bold' : 'text-gray-700 hover:bg-primary-50 hover:text-primary-900 font-medium'}
+              `}
+            >
+              <Folders size={16} className="text-primary-600 shrink-0" />
+              <span className="truncate">Dans "{opt.name}"</span>
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+};
 
 export const InputModal: React.FC<InputModalProps> = ({
   isOpen,
@@ -28,8 +119,6 @@ export const InputModal: React.FC<InputModalProps> = ({
   const [parentId, setParentId] = useState('');
   const [isVisible, setIsVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // ✅ Added error state for the 400 Bad Request
   const [actionError, setActionError] = useState<string | null>(null);
 
   const displayPlaceholder = placeholder || t('modals:collectionNamePlaceholder', 'Nom de la collection...');
@@ -50,20 +139,15 @@ export const InputModal: React.FC<InputModalProps> = ({
     }
   }, [isOpen]);
 
-  // ✅ Wrapped in try/catch to display the inline error properly
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!value.trim()) return;
-
     setIsSubmitting(true);
     setActionError(null);
-    
     try {
       await onSubmit(value, parentId || undefined);
-      // Only close if it was successful
       onClose();
     } catch (error: any) {
-      // Catch the error thrown by DataContext and show it nicely in the UI
       setActionError(t('modals:folderExists', { name: value.trim(), defaultValue: `A folder named '${value.trim()}' already exists here.` }));
     } finally {
       setIsSubmitting(false);
@@ -92,22 +176,12 @@ export const InputModal: React.FC<InputModalProps> = ({
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
                     {t('modals:parentCollection', 'Collection parente')}
                   </label>
-                  <div className="relative">
-                    <select
-                      value={parentId}
-                      onChange={(e) => { setParentId(e.target.value); setActionError(null); }}
-                      className="w-full appearance-none px-4 py-3 bg-white/50 border border-white/40 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all text-gray-900 font-medium cursor-pointer backdrop-blur-sm"
-                      style={{ fontSize: '16px' }}
-                    >
-                      <option value="">{t('modals:noParent', 'Aucun parent (niveau principal)')}</option>
-                      {parentOptions.map((opt) => (
-                        <option key={opt.id} value={opt.id}>
-                          Dans "{opt.name}"
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none shrink-0" />
-                  </div>
+                  {/* ✅ Modern dropdown replaces native <select> */}
+                  <ParentDropdown
+                    value={parentId}
+                    onChange={(val) => { setParentId(val); setActionError(null); }}
+                    options={parentOptions}
+                  />
                 </div>
               )}
 
@@ -116,9 +190,9 @@ export const InputModal: React.FC<InputModalProps> = ({
                   {t('common:name', 'Nom')}
                 </label>
                 <input
-                  id="collection-input-field" 
-                  name="collection-title-generic" 
-                  autoComplete="off" 
+                  id="collection-input-field"
+                  name="collection-title-generic"
+                  autoComplete="off"
                   data-1p-ignore="true"
                   type="text"
                   value={value}
@@ -129,8 +203,6 @@ export const InputModal: React.FC<InputModalProps> = ({
                   }`}
                   style={{ fontSize: '16px' }}
                 />
-                
-                {/* ✅ Inline Red Error Message */}
                 {actionError && (
                   <div className="flex items-center gap-1.5 text-red-500 text-xs font-bold mt-2 animate-fade-in">
                     <AlertTriangle size={14} />
@@ -141,19 +213,10 @@ export const InputModal: React.FC<InputModalProps> = ({
             </div>
 
             <div className="flex justify-end gap-3">
-              <button 
-                type="button" 
-                onClick={onClose}
-                disabled={isSubmitting}
-                className="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl shadow-sm hover:bg-gray-50 transition-all text-sm active:scale-95 disabled:opacity-50"
-              >
+              <button type="button" onClick={onClose} disabled={isSubmitting} className="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl shadow-sm hover:bg-gray-50 transition-all text-sm active:scale-95 disabled:opacity-50">
                 {t('common:cancel', 'Annuler')}
               </button>
-              <button 
-                type="submit" 
-                disabled={!value.trim() || isSubmitting}
-                className="px-5 py-2.5 bg-primary-600 border border-transparent text-white font-bold rounded-xl shadow-sm hover:bg-primary-700 hover:shadow-lg hover:shadow-primary-500/20 transition-all text-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+              <button type="submit" disabled={!value.trim() || isSubmitting} className="px-5 py-2.5 bg-primary-600 border border-transparent text-white font-bold rounded-xl shadow-sm hover:bg-primary-700 hover:shadow-lg hover:shadow-primary-500/20 transition-all text-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
                 {isSubmitting ? '...' : displayConfirmLabel}
               </button>
             </div>

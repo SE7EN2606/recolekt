@@ -25,5 +25,8 @@
   "limitError": "Limit reached.",
   "duplicateError": "This video has already been saved to your collection.",
   "genericError": "Failed to import this URL. Please try again.",
-  "networkError": "Network error. Please check your connection and try again."
+  "networkError": "Network error. Please check your connection and try again.",
+  "moveModeOn": "Move mode on:",
+  "moveModeHint": "Select a collection",
+  "move": "Move"
 }

@@ -190,8 +190,21 @@ export const Gallery: React.FC = () => {
       <div className="flex flex-col gap-6 mb-8">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-gray-900">{getFolderTitle()}</h1>
-            <p className="text-gray-500 text-xs md:text-sm mt-1">{getFolderSubtitle()}</p>
+            {selectionMode ? (
+              <>
+                <h1 className="text-xl md:text-2xl font-bold text-gray-900">
+                  {t('gallery:moveModeOn', 'Move mode on')}
+                </h1>
+                <p className="text-gray-500 text-xs md:text-sm mt-1">
+                  {t('gallery:moveModeHint', 'Select videos then tap Move')}
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="text-xl md:text-2xl font-bold text-gray-900">{getFolderTitle()}</h1>
+                <p className="text-gray-500 text-xs md:text-sm mt-1">{getFolderSubtitle()}</p>
+              </>
+            )}
           </div>
           
           <div className="flex items-center gap-2">
@@ -210,10 +223,10 @@ export const Gallery: React.FC = () => {
                   >
                     <CircleX size={26} strokeWidth={1.5} />
                   </button>
-                  <Button variant="primary" size="sm" className="h-10 px-6 gap-2" disabled={selectedIds.size === 0} onClick={() => setIsMoveModalOpen(true)}>
-                    <span>{t('gallery:move')}</span>
+                  <Button variant="primary" size="sm" className="h-10 px-3 md:px-6 gap-1.5 whitespace-nowrap" disabled={selectedIds.size === 0} onClick={() => setIsMoveModalOpen(true)}>
+                    <span className="truncate max-w-[60px] md:max-w-none">{t('gallery:move')}</span>
                     {selectedIds.size > 0 && (
-                      <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] font-bold min-w-[20px] text-center">{selectedIds.size}</span>
+                      <span className="flex-shrink-0 bg-white/20 px-1.5 py-0.5 rounded text-[10px] font-bold min-w-[20px] text-center">{selectedIds.size}</span>
                     )}
                   </Button>
                   <button onClick={handleDelete} disabled={selectedIds.size === 0} className="w-10 h-10 flex items-center justify-center rounded-full bg-red-50 text-red-600 hover:bg-red-100 transition-colors disabled:opacity-50">

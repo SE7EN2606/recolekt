@@ -20,7 +20,6 @@ interface MobileMenuProps {
 }
 
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
-  // ✅ logout → signOut
   const { isAuthenticated, loading, signOut } = useAuth();
   const { folders, addFolder, videos } = useData();
   const { t } = useTranslation(['common', 'sidebar', 'gallery', 'header', 'modals']);
@@ -41,9 +40,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
       requestAnimationFrame(() => requestAnimationFrame(() => setAnimateOpen(true)));
     } else {
       setAnimateOpen(false);
-      const timer = setTimeout(() => {
-        setShouldRender(false);
-      }, 500);
+      const timer = setTimeout(() => setShouldRender(false), 500);
       return () => clearTimeout(timer);
     }
   }, [isOpen]);
@@ -58,7 +55,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     onClose();
   };
 
-  // ✅ logout() → signOut()
   const handleLogout = async () => {
     await signOut();
     onClose();
@@ -98,7 +94,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
         `}
       >
         <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4">
-
           <div className="h-[80px] md:h-[95px] flex-shrink-0" />
 
           <div className="flex-1 overflow-y-auto py-4 pb-32">
@@ -116,9 +111,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       <button onClick={() => handleNav('/gallery')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
                         <LayoutGrid size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:myVideos', 'My videos')}</span>
-                        <span className="text-[10px] font-black bg-primary-100/80 text-primary-700 px-2 py-1 rounded-md tracking-wider">
-                          {videos.length}
-                        </span>
+                        <span className="text-[10px] font-black bg-primary-100/80 text-primary-700 px-2 py-1 rounded-md tracking-wider">{videos.length}</span>
                       </button>
 
                       <button onClick={() => handleNav('/organizer')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
@@ -130,38 +123,29 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       <button onClick={() => handleNav('/gallery/unsorted')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
                         <Inbox size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('sidebar:unsorted', 'Unsorted')}</span>
-                        <span className="text-[10px] font-black bg-primary-100/80 text-primary-700 px-2 py-1 rounded-md tracking-wider">
-                          {getDirectVideoCount('unsorted')}
-                        </span>
+                        <span className="text-[10px] font-black bg-primary-100/80 text-primary-700 px-2 py-1 rounded-md tracking-wider">{getDirectVideoCount('unsorted')}</span>
                       </button>
 
-                      {/* FAVORITES (Always Pink) */}
                       <button onClick={() => handleNav('/gallery/favorites')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-[#f43f5e]/10">
                         <Heart size={22} className="text-[#f43f5e]" />
                         <span className="text-[#f43f5e] font-bold flex-1 text-left">{t('gallery:favorites', 'Favorites')}</span>
-                        <span className="text-[10px] font-black bg-[#f43f5e]/10 text-[#f43f5e] px-2 py-1 rounded-md tracking-wider">
-                          {getFavoritesCount()}
-                        </span>
+                        <span className="text-[10px] font-black bg-[#f43f5e]/10 text-[#f43f5e] px-2 py-1 rounded-md tracking-wider">{getFavoritesCount()}</span>
                       </button>
                     </div>
                   </section>
 
                   {/* Collections Section */}
                   <section>
-                    <div className="flex items-center justify-between px-4 mb-3">
+                    {/* ✅ FolderPlus aligned with badges: pl-4 pr-4 matches p-5 rows */}
+                    <div className="flex items-center justify-between pl-4 pr-4 mb-3">
                       <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] drop-shadow-sm">{t('sidebar:collections', 'Collections')}</h3>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setIsManageModalOpen(true)} className="text-primary-600 text-xs font-bold uppercase tracking-wider hover:text-primary-700 transition-colors">{t('common:edit', 'Edit')}</button>
-                        <button onClick={() => setIsModalOpen(true)} className="text-primary-600 active:scale-95 hover:text-primary-700 transition-colors"><FolderPlus size={24} /></button>
-                      </div>
+                      <button onClick={() => setIsModalOpen(true)} className="text-primary-600 active:scale-95 hover:text-primary-700 transition-colors">
+                        <FolderPlus size={22} />
+                      </button>
                     </div>
                     <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-[28px] overflow-hidden shadow-sm">
-
                       {customFolders.length === 0 && (
-                        <button
-                          onClick={() => setIsModalOpen(true)}
-                          className="w-full p-5 text-sm text-gray-500 font-medium hover:text-primary-600 hover:bg-white/80 transition-colors"
-                        >
+                        <button onClick={() => setIsModalOpen(true)} className="w-full p-5 text-sm text-gray-500 font-medium hover:text-primary-600 hover:bg-white/80 transition-colors">
                           + {t('sidebar:createCollection', 'Create a collection')}
                         </button>
                       )}
@@ -175,29 +159,18 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                                 <FolderClosed size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
                                 <span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{folder.name}</span>
                               </div>
-                              <span className="text-[10px] font-black bg-primary-100/80 text-primary-700 px-2 py-1 rounded-md tracking-wider">
-                                {getDirectVideoCount(folder.id)}
-                              </span>
+                              <span className="text-[10px] font-black bg-primary-100/80 text-primary-700 px-2 py-1 rounded-md tracking-wider">{getDirectVideoCount(folder.id)}</span>
                             </button>
 
-                            {/* Nested Sub-folders */}
                             {hasSubs && (
                               <div className="bg-white/30">
                                 {folder.subFolders.map((sub: any) => (
-                                  <button
-                                    key={sub.id}
-                                    onClick={() => handleNav(`/gallery/${sub.id}`)}
-                                    className="w-full flex items-center justify-between pl-14 pr-5 py-4 group transition-all hover:bg-white/80"
-                                  >
+                                  <button key={sub.id} onClick={() => handleNav(`/gallery/${sub.id}`)} className="w-full flex items-center justify-between pl-14 pr-5 py-4 group transition-all hover:bg-white/80">
                                     <div className="flex items-center gap-3">
                                       <CornerDownRight size={18} strokeWidth={2.5} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
-                                      <span className="text-gray-700 font-medium group-hover:text-primary-600 transition-colors">
-                                        {sub.name}
-                                      </span>
+                                      <span className="text-gray-700 font-medium group-hover:text-primary-600 transition-colors">{sub.name}</span>
                                     </div>
-                                    <span className="text-[10px] font-black bg-gray-100 text-gray-500 group-hover:bg-primary-100/80 group-hover:text-primary-700 px-2 py-1 rounded-md tracking-wider transition-colors">
-                                      {getDirectVideoCount(sub.id)}
-                                    </span>
+                                    <span className="text-[10px] font-black bg-gray-100 text-gray-500 group-hover:bg-primary-100/80 group-hover:text-primary-700 px-2 py-1 rounded-md tracking-wider transition-colors">{getDirectVideoCount(sub.id)}</span>
                                   </button>
                                 ))}
                               </div>
@@ -219,9 +192,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
                   {/* Account Section */}
                   <section>
-                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] px-4 mb-3 drop-shadow-sm">
-                      {t('common:account', 'Account')}
-                    </h3>
+                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] px-4 mb-3 drop-shadow-sm">{t('common:account', 'Account')}</h3>
                     <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-[28px] overflow-hidden shadow-sm">
                       <button onClick={() => handleNav('/settings/account')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
                         <User size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
@@ -258,10 +229,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     </div>
                   </section>
 
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center justify-center gap-2 p-5 bg-white/80 backdrop-blur-md border border-white/70 text-red-600 rounded-[28px] font-bold shadow-sm active:scale-95 hover:bg-red-50 hover:border-red-100 hover:text-red-700 transition-all"
-                  >
+                  <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 p-5 bg-white/80 backdrop-blur-md border border-white/70 text-red-600 rounded-[28px] font-bold shadow-sm active:scale-95 hover:bg-red-50 hover:border-red-100 hover:text-red-700 transition-all">
                     <LogOut size={20} />
                     {t('common:signOut', 'Sign Out')}
                   </button>
@@ -275,38 +243,28 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       { label: t('common:pricing', 'Pricing'), path: '/billing' },
                       { label: t('common:support', 'Support'), path: '/help?section=contact' },
                     ].map((link) => (
-                      <Link
-                        key={link.path}
-                        to={link.path}
-                        onClick={onClose}
-                        className={`block text-3xl font-black tracking-tight hover:text-primary-600 transition-colors py-2 ${location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'}`}
-                      >
+                      <Link key={link.path} to={link.path} onClick={onClose} className={`block text-3xl font-black tracking-tight hover:text-primary-600 transition-colors py-2 ${location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'}`}>
                         {link.label}
                       </Link>
                     ))}
                   </div>
-
                   <div className="pt-8 border-t border-gray-200 space-y-4">
                     <Button fullWidth variant="primary" onClick={() => handleNav('/auth')} className="h-14 text-base font-bold shadow-xl shadow-primary-600/20">
                       {t('common:signIn', 'Sign In')}
                     </Button>
                     <p className="text-center text-gray-500 text-sm font-medium">
                       {t('common:noAccount', "Don't have an account?")}{' '}
-                      <button onClick={() => handleNav('/auth')} className="text-primary-600 font-bold hover:underline">
-                        {t('common:signUp', 'Sign Up')}
-                      </button>
+                      <button onClick={() => handleNav('/auth')} className="text-primary-600 font-bold hover:underline">{t('common:signUp', 'Sign Up')}</button>
                     </p>
                   </div>
                 </div>
               )}
 
-              {/* Clickable Logo to cancel/return to Gallery */}
               <div className="py-8 mt-auto flex justify-center">
                 <button onClick={() => handleNav('/gallery')} className="transition-transform active:scale-95">
                   <img src={LogoBlack} alt="Recolekt" className="h-8" />
                 </button>
               </div>
-
               <div className="h-20 md:h-0" />
             </div>
           </div>

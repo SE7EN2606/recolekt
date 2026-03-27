@@ -4,7 +4,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutGrid, Heart, Archive, Share2,
   Download, SquarePen, FolderPlus, CornerDownRight, FolderClosed, Inbox,
-  FolderOpen, Pencil
+  FolderOpen,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { Button } from './Button';
@@ -174,16 +174,11 @@ export const Sidebar: React.FC = () => {
           </div>
 
           <div className="flex-1">
-            <div className="flex items-center justify-between mb-2 px-0.5">
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{t('sidebar:collections', 'Collections')}</h3>
-              <div className="flex items-center gap-1">
-                 <button onClick={() => setIsManageModalOpen(true)} className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600 transition-colors" title="Manage Collections">
-                   <Pencil size={12} />
-                 </button>
-                 <button onClick={() => setIsInputModalOpen(true)} className="p-1 hover:bg-primary-50 rounded text-gray-400 hover:text-primary-600 transition-colors" title="New Collection">
-                   <FolderPlus size={12} />
-                 </button>
-              </div>
+            <div className="flex items-center justify-between mb-2 pl-0.5 pr-3.5">
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{t('sidebar:collections', 'Collections')}</h3>
+                <button onClick={() => setIsInputModalOpen(true)} className="p-1 hover:bg-primary-50 rounded text-gray-400 hover:text-primary-600 transition-colors" title="New Collection">
+                  <FolderPlus size={18} />
+                </button>
             </div>
 
             <div className="space-y-1">
