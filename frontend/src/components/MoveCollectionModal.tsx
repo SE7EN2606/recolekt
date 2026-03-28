@@ -85,7 +85,9 @@ export const MoveCollectionModal: React.FC<MoveCollectionModalProps> = ({
         <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-white/50 rounded-t-2xl">
           <div>
             <h3 className="text-lg font-bold text-gray-900">
-              {t('modals:moveTo', `Move ${count} ${count === 1 ? 'video' : 'videos'}`)}
+              {count > 1 
+                ? t('modals:moveMultipleVideos', { count, defaultValue: `Move ${count} videos` }) 
+                : t('modals:moveSingleVideo', 'Move video')}
             </h3>
             <p className="text-gray-500 text-xs mt-0.5">{t('modals:selectDestination', 'Select a destination')}</p>
           </div>

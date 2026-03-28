@@ -554,7 +554,7 @@ export const VideoDetail: React.FC = () => {
           {/* AI Summary */}
           <div className="bg-primary-50 rounded-2xl p-5 md:p-6 mb-6">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-primary-700 font-bold text-sm uppercase tracking-wide">AI Summary</h3>
+              <h3 className="text-primary-700 font-bold text-sm uppercase tracking-wide">{t('videoDetail:aiSummary', 'AI Summary')}</h3>
               {viewModel.hasTranslation && !isEditing && (
                 <button
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleLanguage(); }}
@@ -657,8 +657,8 @@ export const VideoDetail: React.FC = () => {
           {/* Mobile edit actions */}
           {isEditing && (
             <div className="md:hidden mt-4 flex gap-2">
-              <button onClick={() => setIsEditing(false)} className="flex-1 py-3 bg-gray-200 rounded-xl text-sm font-bold text-gray-700">Cancel</button>
-              <button onClick={handleSaveEdit} className="flex-1 py-3 bg-primary-600 rounded-xl text-sm font-bold text-white shadow-lg">Save Changes</button>
+              <button onClick={() => setIsEditing(false)} className="flex-1 py-3 bg-gray-200 rounded-xl text-sm font-bold text-gray-700">{t('common:cancel', 'Cancel')}</button>
+              <button onClick={handleSaveEdit} className="flex-1 py-3 bg-primary-600 rounded-xl text-sm font-bold text-white shadow-lg">{t('common:saveChanges', 'Save Changes')}</button>
             </div>
           )}
 
@@ -666,7 +666,7 @@ export const VideoDetail: React.FC = () => {
           {/* ✅ Open on Instagram/Facebook — MOBILE ONLY */}
           {viewModel.originalUrl && (
             <div className="md:hidden flex flex-col gap-2 shrink-0 mt-4">
-              <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-widest pl-1">Original Link</h4>
+              <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-widest pl-1">{t('videoDetail:originalLink', 'Original Link')}</h4>
               <a href={viewModel.originalUrl} target="_blank" rel="noreferrer" className="block w-full">
                 {viewModel.platform === 'facebook' ? (
                   <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-white font-bold text-sm shadow-sm transition bg-[#1877F2] hover:bg-[#166FE5]">

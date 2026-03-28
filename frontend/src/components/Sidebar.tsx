@@ -99,9 +99,10 @@ export const Sidebar: React.FC = () => {
 
   return (
     <>
-      <aside className="hidden md:flex flex-col w-[280px] h-fit min-h-[calc(100vh-110px)] sticky top-24 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] glass-sidebar rounded-3xl p-4 pb-6">
+      <aside className="hidden md:flex flex-col w-[280px] shrink-0 sticky top-24 self-start z-20 bg-white/70 backdrop-blur-2xl border border-white/80 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)] rounded-[2rem] p-4 pb-4 transition-all max-h-[calc(100vh-7rem)]">
         
-        <div className="mb-8 px-0.5">
+        {/* Fixed Top Section - Will NOT scroll */}
+        <div className="mb-6 px-0.5 shrink-0">
           <Button
             fullWidth
             variant="primary"
@@ -113,7 +114,8 @@ export const Sidebar: React.FC = () => {
           </Button>
         </div>
 
-        <div className="space-y-8">
+        {/* Scrollable Inner Section - Invisible Scrollbar */}
+        <div className="flex-1 overflow-y-auto space-y-8 pb-4 pr-1 -mr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
           <div>
             <div className="mb-2 px-0.5">
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{t('sidebar:library', 'Library')}</h3>
@@ -173,7 +175,7 @@ export const Sidebar: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex-1">
+          <div>
             <div className="flex items-center justify-between mb-2 pl-0.5 pr-3.5">
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{t('sidebar:collections', 'Collections')}</h3>
                 <button onClick={() => setIsInputModalOpen(true)} className="p-1 hover:bg-primary-50 rounded text-gray-400 hover:text-primary-600 transition-colors" title="New Collection">
@@ -223,12 +225,10 @@ export const Sidebar: React.FC = () => {
                               className="rounded-xl transition-all duration-200"
                             >
                               <NavLink to={`/gallery/${sub.id}`} 
-                                // ✅ ONLY THIS LINE CHANGED: Added `group`, updated hover text and bg colors
                                 className={({ isActive }) => `group flex items-center gap-2.5 py-2.5 pr-3 rounded-xl text-[14px] transition-all border pl-7 ${isActive ? 'text-primary-700 border-primary-100/30 bg-primary-50/30' : 'text-gray-500 hover:text-primary-600 hover:bg-primary-50 border-transparent'}`}
                               >
                                 {({ isActive }) => (
                                   <>
-                                    {/* ✅ ADDED group-hover to the icon so it turns purple too */}
                                     <CornerDownRight size={14} className={isActive ? 'text-primary-600' : 'text-gray-300 group-hover:text-primary-600'} strokeWidth={isActive ? 2.5 : 2} />
                                     <span className="truncate font-medium">{sub.name}</span>
                                   </>

@@ -354,7 +354,6 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           <span className="text-xs text-gray-400 font-medium truncate max-w-[120px] group-hover/author:text-gray-700 transition-colors">
             {author}
           </span>
-          <ExternalLink size={12} className="text-gray-400 group-hover/author:text-gray-700 transition-colors" />
         </a>
       </div>
 

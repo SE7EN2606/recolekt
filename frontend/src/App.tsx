@@ -38,12 +38,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const mainBottomPadding = user && !showFooter ? 'pb-24' : 'pb-6';
 
   return (
-    <div className="min-h-screen flex flex-col font-sans text-gray-900 selection:bg-primary-100 overflow-x-hidden">
+    <div className="min-h-screen flex flex-col font-sans text-gray-900 selection:bg-primary-100">
       {!isAuthPage && <Header />}
 
       <main className={`flex-1 w-full mx-auto ${isAuthPage ? 'pt-0' : `max-w-[1280px] px-4 md:px-8 ${mainBottomPadding} md:pb-0 pt-[80px] md:pt-[110px]`}`}>
-        <div className="flex gap-6">
-          {showSidebar && <div className="hidden md:block w-[280px] flex-shrink-0"><Sidebar /></div>}
+        <div className="flex gap-6 items-start">
+           {showSidebar && <Sidebar />}
           <div className="flex-1 w-full min-w-0 animate-fade-in">{children}</div>
         </div>
       </main>

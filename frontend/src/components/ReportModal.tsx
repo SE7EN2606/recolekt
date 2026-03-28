@@ -1,6 +1,7 @@
 import { API_BASE } from "../utils/api";
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface ReportModalProps {
   isOpen: boolean;
@@ -9,6 +10,7 @@ interface ReportModalProps {
 }
 
 export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initialUrl = '' }) => {
+  const { t } = useTranslation(['modals', 'common']);
   const [reportStep, setReportStep] = useState(1);
   const [reportData, setReportData] = useState({
     contentType: '',
@@ -20,13 +22,13 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
   const getErrorOptions = (contentType: string) => {
     switch (contentType) {
       case 'recipe':
-        return ['Wrong poster', 'Wrong content', 'Language error', 'Recipe instructions missing', 'Ingredients missing'];
+        return ['errWrongPoster', 'errWrongContent', 'errLangError', 'errRecipeMissing', 'errIngredientsMissing'];
       case 'workout':
-        return ['Wrong poster', 'Wrong content', 'Language error', 'Workout routine missing', 'Exercise steps unclear'];
+        return ['errWrongPoster', 'errWrongContent', 'errLangError', 'errWorkoutMissing', 'errExerciseUnclear'];
       case 'beauty':
-        return ['Wrong poster', 'Wrong content', 'Language error', 'Make-up routine missing', 'Product list incomplete'];
+        return ['errWrongPoster', 'errWrongContent', 'errLangError', 'errMakeupMissing', 'errProductsIncomplete'];
       case 'other':
-        return ['Wrong poster', 'Wrong content', 'Language error'];
+        return ['errWrongPoster', 'errWrongContent', 'errLangError'];
       default:
         return [];
     }
@@ -34,15 +36,15 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
 
   const handleNext = () => {
     if (reportStep === 1 && !reportData.contentType) {
-      alert('Please select a content type');
+      alert(t('modals:alertSelectType', 'Please select a content type'));
       return;
     }
     if (reportStep === 2 && reportData.errorType.length === 0) {
-      alert('Please select at least one error type');
+      alert(t('modals:alertSelectError', 'Please select at least one error type'));
       return;
     }
     if (reportStep === 3 && !reportData.details.trim()) {
-      alert('Please provide some details');
+      alert(t('modals:alertProvideDetails', 'Please provide some details'));
       return;
     }
     setReportStep(reportStep + 1);
@@ -50,7 +52,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
 
   const handleSubmit = async () => {
     if (!reportData.url.trim()) {
-      alert('Please provide a URL');
+      alert(t('modals:alertProvideUrl', 'Please provide a URL'));
       return;
     }
 
@@ -63,7 +65,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
     //   body: JSON.stringify(reportData)
     // });
 
-    alert('Report submitted successfully! Thank you for your feedback.');
+    alert(t('modals:alertSuccess', 'Report submitted successfully! Thank you for your feedback.'));
     handleClose();
   };
 
@@ -78,16 +80,16 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
     onClose();
   };
 
-  const toggleErrorType = (error: string) => {
-    if (reportData.errorType.includes(error)) {
+  const toggleErrorType = (errorKey: string) => {
+    if (reportData.errorType.includes(errorKey)) {
       setReportData({
         ...reportData,
-        errorType: reportData.errorType.filter(e => e !== error)
+        errorType: reportData.errorType.filter(e => e !== errorKey)
       });
     } else {
       setReportData({
         ...reportData,
-        errorType: [...reportData.errorType, error]
+        errorType: [...reportData.errorType, errorKey]
       });
     }
   };
@@ -100,7 +102,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-bold text-gray-900">Report Content Issue</h2>
+            <h2 className="text-lg font-bold text-gray-900">{t('modals:reportTitle', 'Report Content Issue')}</h2>
             <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs font-bold rounded">
               {reportStep}/4
             </span>
@@ -125,8 +127,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
           {/* Step 1: Content Type */}
           {reportStep === 1 && (
             <div>
-              <h3 className="font-bold text-gray-900 mb-2">What type of content is this?</h3>
-              <p className="text-sm text-gray-500 mb-4">Select the category that best describes this reel</p>
+              <h3 className="font-bold text-gray-900 mb-2">{t('modals:reportStep1Title', 'What type of content is this?')}</h3>
+              <p className="text-sm text-gray-500 mb-4">{t('modals:reportStep1Desc', 'Select the category that best describes this reel')}</p>
               <div className="space-y-2">
                 {['recipe', 'workout', 'beauty', 'other'].map((type) => (
                   <button
@@ -138,7 +140,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                    {t(`modals:type_${type}`, type.charAt(0).toUpperCase() + type.slice(1))}
                   </button>
                 ))}
               </div>
@@ -148,22 +150,22 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
           {/* Step 2: Error Type */}
           {reportStep === 2 && (
             <div>
-              <h3 className="font-bold text-gray-900 mb-2">What's wrong with this content?</h3>
-              <p className="text-sm text-gray-500 mb-4">Select all that apply</p>
+              <h3 className="font-bold text-gray-900 mb-2">{t('modals:reportStep2Title', "What's wrong with this content?")}</h3>
+              <p className="text-sm text-gray-500 mb-4">{t('modals:reportStep2Desc', 'Select all that apply')}</p>
               <div className="space-y-2">
-                {getErrorOptions(reportData.contentType).map((error) => (
+                {getErrorOptions(reportData.contentType).map((errorKey) => (
                   <button
-                    key={error}
-                    onClick={() => toggleErrorType(error)}
+                    key={errorKey}
+                    onClick={() => toggleErrorType(errorKey)}
                     className={`w-full p-4 rounded-lg border-2 text-left font-medium transition ${
-                      reportData.errorType.includes(error)
+                      reportData.errorType.includes(errorKey)
                         ? 'border-primary-600 bg-primary-50 text-primary-900'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span>{error}</span>
-                      {reportData.errorType.includes(error) && (
+                      <span>{t(`modals:${errorKey}`)}</span>
+                      {reportData.errorType.includes(errorKey) && (
                         <span className="text-primary-600">✓</span>
                       )}
                     </div>
@@ -176,8 +178,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
           {/* Step 3: Details */}
           {reportStep === 3 && (
             <div>
-              <h3 className="font-bold text-gray-900 mb-2">Describe the issue in more detail</h3>
-              <p className="text-sm text-gray-500 mb-4">Help us understand what went wrong (optional but helpful)</p>
+              <h3 className="font-bold text-gray-900 mb-2">{t('modals:reportStep3Title', 'Describe the issue in more detail')}</h3>
+              <p className="text-sm text-gray-500 mb-4">{t('modals:reportStep3Desc', 'Help us understand what went wrong (optional but helpful)')}</p>
               <textarea
                 value={reportData.details}
                 onChange={(e) => {
@@ -185,11 +187,11 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
                     setReportData({ ...reportData, details: e.target.value });
                   }
                 }}
-                placeholder="E.g., The recipe ingredients are missing, or the workout instructions are unclear..."
+                placeholder={t('modals:reportStep3Placeholder', 'E.g., The recipe ingredients are missing, or the workout instructions are unclear...')}
                 className="w-full h-32 p-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none text-sm"
               />
               <div className="text-right text-xs text-gray-500 mt-1">
-                {reportData.details.length}/300 characters
+                {t('modals:characters', '{{count}}/300 characters', { count: reportData.details.length })}
               </div>
             </div>
           )}
@@ -197,8 +199,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
           {/* Step 4: URL */}
           {reportStep === 4 && (
             <div>
-              <h3 className="font-bold text-gray-900 mb-2">Source URL</h3>
-              <p className="text-sm text-gray-500 mb-4">Provide the Reel URL or the Recolekt link for reference</p>
+              <h3 className="font-bold text-gray-900 mb-2">{t('modals:reportStep4Title', 'Source URL')}</h3>
+              <p className="text-sm text-gray-500 mb-4">{t('modals:reportStep4Desc', 'Provide the Reel URL or the Recolekt link for reference')}</p>
               <input
                 type="url"
                 value={reportData.url}
@@ -209,19 +211,21 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
               
               {/* Summary */}
               <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <h4 className="text-xs font-bold text-gray-700 uppercase mb-3">Report Summary</h4>
+                <h4 className="text-xs font-bold text-gray-700 uppercase mb-3">{t('modals:reportSummary', 'Report Summary')}</h4>
                 <div className="space-y-2 text-sm">
                   <div>
-                    <span className="font-semibold text-gray-700">Content Type:</span>{' '}
-                    <span className="text-gray-900">{reportData.contentType}</span>
+                    <span className="font-semibold text-gray-700">{t('modals:contentType', 'Content Type:')}</span>{' '}
+                    <span className="text-gray-900">{t(`modals:type_${reportData.contentType}`, reportData.contentType)}</span>
                   </div>
                   <div>
-                    <span className="font-semibold text-gray-700">Issues:</span>{' '}
-                    <span className="text-gray-900">{reportData.errorType.join(', ')}</span>
+                    <span className="font-semibold text-gray-700">{t('modals:issues', 'Issues:')}</span>{' '}
+                    <span className="text-gray-900">
+                      {reportData.errorType.map(err => t(`modals:${err}`)).join(', ')}
+                    </span>
                   </div>
                   {reportData.details && (
                     <div>
-                      <span className="font-semibold text-gray-700">Details:</span>{' '}
+                      <span className="font-semibold text-gray-700">{t('modals:details', 'Details:')}</span>{' '}
                       <span className="text-gray-900">{reportData.details}</span>
                     </div>
                   )}
@@ -237,21 +241,21 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, initi
             onClick={handleClose}
             className="flex-1 px-4 py-3 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium transition"
           >
-            Cancel
+            {t('common:cancel', 'Cancel')}
           </button>
           {reportStep < 4 ? (
             <button
               onClick={handleNext}
               className="flex-1 px-4 py-3 rounded-lg bg-primary-600 text-white hover:bg-primary-700 font-medium transition"
             >
-              Next
+              {t('common:next', 'Next')}
             </button>
           ) : (
             <button
               onClick={handleSubmit}
               className="flex-1 px-4 py-3 rounded-lg bg-green-600 text-white hover:bg-green-700 font-medium transition"
             >
-              Submit Report
+              {t('modals:submitReport', 'Submit Report')}
             </button>
           )}
         </div>
