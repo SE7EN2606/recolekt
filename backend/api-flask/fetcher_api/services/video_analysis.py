@@ -114,12 +114,62 @@ def _write_cookies(env_var: str, suffix: str) -> Optional[str]:
         return None
 
 
-# ── YOUTUBE: No download, use transcript API + oEmbed ─────────────────────────
-def fetch_youtube_data(url: str) -> Dict:
+def _download_youtube_audio(url: str, output_dir: str) -> Optional[str]:
     """
-    For YouTube: fetch transcript via youtube-transcript-api and
-    metadata via oEmbed. No video download needed.
-    Returns a result dict compatible with the background_process pipeline.
+    Download audio-only from YouTube using yt-dlp with player_client bypass.
+    Returns path to .mp3 file or None on failure.
+    Much lighter than full video — ~1MB for a 60s Short.
+    """
+    try:
+        import yt_dlp
+        audio_path = os.path.join(output_dir, "yt_audio.mp3")
+        ydl_opts = {
+            "outtmpl":   os.path.join(output_dir, "yt_audio.%(ext)s"),
+            "format":    "bestaudio/best",
+            "postprocessors": [{
+                "key":            "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "128",
+            }],
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["web_safari", "web_embedded", "web"],
+                }
+            },
+            "quiet":       True,
+            "no_warnings": True,
+        }
+
+        # Use cookies if available
+        cookies_path = _write_cookies("YT_COOKIES_CONTENT", "yt_cookies.txt")
+        if cookies_path:
+            ydl_opts["cookiefile"] = cookies_path
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        if os.path.exists(audio_path):
+            size_kb = os.path.getsize(audio_path) // 1024
+            logger.info(f"✅ YouTube audio downloaded: {audio_path} ({size_kb}KB)")
+            if cookies_path and os.path.exists(cookies_path):
+                os.unlink(cookies_path)
+            return audio_path
+
+        logger.warning("⚠️ YouTube audio download: file not found after yt-dlp")
+        return None
+
+    except Exception as e:
+        logger.error(f"❌ YouTube audio download error: {e}")
+        return None
+
+
+# ── YOUTUBE: transcript API + oEmbed, audio fallback ─────────────────────────
+def fetch_youtube_data(url: str, temp_dir: Optional[str] = None) -> Dict:
+    """
+    For YouTube:
+      1. Metadata via oEmbed (free, no auth)
+      2. Transcript via youtube-transcript-api (no download needed)
+      3. If no transcript → download audio only for Deepgram fallback
     """
     try:
         from fetcher_api.api.helpers.normalizers import extract_youtube_id
@@ -130,15 +180,15 @@ def fetch_youtube_data(url: str) -> Dict:
             logger.error("❌ Could not extract YouTube video ID")
             return {"success": False, "metadata": {}, "post": None, "transcript": ""}
 
-        # ── 1. Metadata via oEmbed (free, no auth) ──────────────────
+        # ── 1. Metadata via oEmbed ───────────────────────────────────
         metadata = {"username": "", "caption": "", "likes": 0, "comments": 0, "thumbnail_url": ""}
         try:
             oembed_url = f"https://www.youtube.com/oembed?url={url}&format=json"
             r = requests.get(oembed_url, timeout=10)
             if r.status_code == 200:
                 oe = r.json()
-                metadata["username"] = oe.get("author_name", "")
-                metadata["caption"]  = oe.get("title", "")
+                metadata["username"]      = oe.get("author_name", "")
+                metadata["caption"]       = oe.get("title", "")
                 metadata["thumbnail_url"] = oe.get("thumbnail_url", "")
                 logger.info(f"✅ YouTube oEmbed: title='{metadata['caption']}' author='{metadata['username']}'")
             else:
@@ -146,63 +196,65 @@ def fetch_youtube_data(url: str) -> Dict:
         except Exception as e:
             logger.warning(f"⚠️ YouTube oEmbed error: {e}")
 
-        # ── 2. Transcript via youtube-transcript-api ─────────────────
-        transcript_text = ""
-        detected_language = "unknown"
+        # ── 2. Transcript via youtube-transcript-api v1.x ────────────
+        transcript_text   = ""
+        detected_language = "en"
         try:
-            from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
+            from youtube_transcript_api import YouTubeTranscriptApi
 
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            LANGS = ['en', 'fr', 'es', 'de', 'pt', 'it', 'nl', 'ar', 'ja', 'ko', 'zh']
+            ytt_api = YouTubeTranscriptApi()
 
-            # Prefer manual transcript, fall back to auto-generated
-            transcript = None
             try:
-                transcript = transcript_list.find_manually_created_transcript(
-                    ['en', 'fr', 'es', 'de', 'pt', 'it', 'nl', 'ar', 'ja', 'ko', 'zh']
-                )
-                detected_language = transcript.language_code
-                logger.info(f"✅ Found manual transcript: {transcript.language_code}")
-            except Exception:
-                pass
-
-            if not transcript:
-                try:
-                    transcript = transcript_list.find_generated_transcript(
-                        ['en', 'fr', 'es', 'de', 'pt', 'it', 'nl', 'ar', 'ja', 'ko', 'zh']
-                    )
-                    detected_language = transcript.language_code
-                    logger.info(f"✅ Found auto-generated transcript: {transcript.language_code}")
-                except Exception:
-                    pass
-
-            if transcript:
+                transcript_list = ytt_api.list(video_id)
+                transcript = transcript_list.find_transcript(LANGS)
                 fetched = transcript.fetch()
-                transcript_text = " ".join(
-                    entry.get("text", "") for entry in fetched
-                ).strip()
-                logger.info(f"✅ YouTube transcript fetched: {len(transcript_text)} chars")
-            else:
-                logger.warning("⚠️ No transcript available for this video")
+                detected_language = transcript.language_code or "en"
+                logger.info(f"✅ Transcript via list: lang={detected_language}, generated={transcript.is_generated}")
+            except Exception:
+                fetched = ytt_api.fetch(video_id, languages=LANGS)
+                detected_language = getattr(fetched, 'language_code', 'en') or 'en'
+                logger.info(f"✅ Transcript via direct fetch: lang={detected_language}")
+
+            raw_data = fetched.to_raw_data() if hasattr(fetched, 'to_raw_data') else fetched
+            transcript_text = " ".join(
+                entry.get("text", "") if isinstance(entry, dict) else getattr(entry, "text", "")
+                for entry in raw_data
+            ).strip()
+
+            logger.info(f"✅ YouTube transcript: {len(transcript_text)} chars, lang={detected_language}")
 
         except Exception as e:
             logger.warning(f"⚠️ youtube-transcript-api error: {e}")
 
+        # ── 3. Audio fallback if no captions ────────────────────────
+        audio_path = None
+        if not transcript_text.strip():
+            logger.info("⚠️ No captions found — falling back to audio download for Deepgram")
+            audio_dir = temp_dir or tempfile.mkdtemp()
+            audio_path = _download_youtube_audio(url, audio_dir)
+            if audio_path:
+                logger.info(f"✅ Audio fallback ready for Deepgram: {audio_path}")
+            else:
+                logger.warning("⚠️ Audio fallback also failed — will summarize from title only")
+
         return {
-            "success": True,
-            "metadata": metadata,
-            "post": None,
-            "transcript": transcript_text,
+            "success":           True,
+            "metadata":          metadata,
+            "post":              None,
+            "transcript":        transcript_text,
             "detected_language": detected_language,
-            "is_youtube": True,
+            "is_youtube":        True,
+            "audio_path":        audio_path,  # None if captions found, path if audio fallback
         }
 
     except Exception as e:
         logger.error(f"❌ fetch_youtube_data error: {e}")
-        return {"success": False, "metadata": {}, "post": None, "transcript": ""}
+        return {"success": False, "metadata": {}, "post": None, "transcript": "", "audio_path": None}
 
 
 def _yt_dlp_download(url: str, output_path: str, platform: str) -> Dict:
-    """Generic yt-dlp downloader for TikTok (YouTube now uses fetch_youtube_data)."""
+    """Generic yt-dlp downloader for TikTok."""
     cookies_path = None
     try:
         import yt_dlp
@@ -254,8 +306,8 @@ def _yt_dlp_download(url: str, output_path: str, platform: str) -> Dict:
             "video_path": actual_path,
             "metadata": {
                 "username": info.get("uploader") or info.get("channel") or "",
-                "caption": info.get("description") or info.get("title") or "",
-                "likes": info.get("like_count", 0) or 0,
+                "caption":  info.get("description") or info.get("title") or "",
+                "likes":    info.get("like_count", 0) or 0,
                 "comments": info.get("comment_count", 0) or 0,
             },
             "post": None
@@ -274,10 +326,11 @@ def _yt_dlp_download(url: str, output_path: str, platform: str) -> Dict:
 def download_instagram_video(url: str, output_path: str) -> Dict:
     url_lower = url.lower()
 
-    # ── YOUTUBE — no download, use transcript API ──────────────────────────────
+    # ── YOUTUBE — transcript API, audio fallback ──────────────────────────────
     if "youtube.com" in url_lower or "youtu.be" in url_lower:
-        logger.info(f"🎬 YouTube URL detected — using transcript API (no download): {url}")
-        return fetch_youtube_data(url)
+        logger.info(f"🎬 YouTube URL — using transcript API (no download): {url}")
+        output_dir = os.path.dirname(output_path)
+        return fetch_youtube_data(url, temp_dir=output_dir)
 
     # ── TIKTOK ────────────────────────────────────────────────────────────────
     if "tiktok.com" in url_lower:
@@ -339,8 +392,8 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
         logger.info(f"✅ Final username: '{username}'")
         metadata = {
             "username": username,
-            "caption": post.caption if post.caption else "",
-            "likes": getattr(post, "likes", 0),
+            "caption":  post.caption if post.caption else "",
+            "likes":    getattr(post, "likes", 0),
             "comments": getattr(post, "comments", 0),
         }
         logger.info(f"📊 Metadata: @{metadata['username']} | ❤️ {metadata['likes']} | 💬 {metadata['comments']}")

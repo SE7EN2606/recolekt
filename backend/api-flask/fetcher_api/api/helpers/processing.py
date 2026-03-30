@@ -21,7 +21,6 @@ from fetcher_api.api.helpers.normalizers import (
 )
 from fetcher_api.utils.ocr_utils import maybe_ocr_and_merge_text
 
-
 from fetcher_api.services.video_analysis import (
     download_instagram_video,
     generate_reel_thumbnail,
@@ -29,12 +28,10 @@ from fetcher_api.services.video_analysis import (
     fetch_youtube_data,
 )
 
-
 logger = logging.getLogger("api")
 
-
-FREE_MAX_DURATION  = 180
-PRO_MAX_DURATION   = 360
+FREE_MAX_DURATION    = 180
+PRO_MAX_DURATION     = 360
 MAX_DURATION_SECONDS = 300
 
 
@@ -71,61 +68,78 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
     from fetcher_api.adapters.gcs_client import gcs_client
     from fetcher_api.adapters.meta_client import meta_client
 
-    url_lower = url.lower()
+    url_lower   = url.lower()
     is_youtube  = "youtube.com" in url_lower or "youtu.be" in url_lower
     is_facebook = "facebook.com" in url_lower or "fb." in url_lower
     is_tiktok   = "tiktok.com" in url_lower
 
-    if is_youtube:
-        platform_code = "YT"
-    elif is_facebook:
-        platform_code = "FB"
-    elif is_tiktok:
-        platform_code = "TT"
-    else:
-        platform_code = "IG"
-
+    platform_code = "YT" if is_youtube else "FB" if is_facebook else "TT" if is_tiktok else "IG"
     gcs_paths = generate_gcs_paths(shortcode, platform_code, user_id)
 
     try:
-        result["user_id"]    = user_id
-        result["source_url"] = url
-        result["caption"]    = caption
+        result["user_id"]     = user_id
+        result["source_url"]  = url
+        result["caption"]     = caption
         result["author_name"] = author_name
 
         # ══════════════════════════════════════════════════════════════
-        # YOUTUBE PATH — no download, transcript API + oEmbed
+        # YOUTUBE PATH — transcript API + oEmbed, audio fallback
         # ══════════════════════════════════════════════════════════════
         if is_youtube:
-            logger.info(f"🎬 YouTube path: fetching transcript + metadata (no download)")
+            logger.info("🎬 YouTube path: fetching transcript + metadata (no download)")
 
-            yt = fetch_youtube_data(url)
+            yt = fetch_youtube_data(url, temp_dir=temp_dir)
             if not yt.get("success"):
                 result["status"] = "error"
                 insert_reel_into_db(result)
                 return
 
-            meta = yt.get("metadata", {})
+            meta        = yt.get("metadata", {})
             caption     = caption     or meta.get("caption", "")
             author_name = author_name or meta.get("username", "")
             result["caption"]     = caption
             result["author_name"] = author_name
 
             transcript_text   = yt.get("transcript", "")
-            detected_language = yt.get("detected_language", "unknown")
-            if not detected_language or detected_language == "unknown":
-                detected_language = "en" if transcript_text.strip() else "unknown"
+            detected_language = yt.get("detected_language", "en") or "en"
+            audio_path        = yt.get("audio_path")   # set when captions unavailable
+            processing_strategy = "youtube_captions"
+
+            # ── Audio fallback → Deepgram ────────────────────────────
+            if not transcript_text.strip() and audio_path and os.path.exists(audio_path):
+                logger.info(f"🎵 No captions — running Deepgram on audio: {audio_path}")
+                try:
+                    raw = transcribe_video_deepgram(audio_path)
+                    if isinstance(raw, str) and raw.strip().startswith("{"):
+                        td = json_loads_maybe(raw, default={"transcript": raw})
+                    else:
+                        td = raw if isinstance(raw, dict) else {"transcript": str(raw)}
+
+                    transcript_text   = td.get("transcript", "") or ""
+                    if isinstance(transcript_text, dict):
+                        transcript_text = transcript_text.get("transcript", "")
+                    detected_language = td.get("detected_language", "en") or "en"
+                    processing_strategy = "youtube_audio_deepgram"
+                    logger.info(f"✅ Deepgram transcript: {len(transcript_text)} chars, lang={detected_language}")
+                except Exception as e:
+                    logger.error(f"❌ Deepgram on YouTube audio failed: {e}")
+                finally:
+                    try:
+                        if audio_path and os.path.exists(audio_path):
+                            os.unlink(audio_path)
+                    except Exception:
+                        pass
 
             transcription_data = {
                 "transcript":        transcript_text,
                 "detected_language": detected_language,
-                "status":            "youtube_captions",
+                "status":            processing_strategy,
             }
-            logger.info(f"✅ YouTube transcript: {len(transcript_text)} chars, lang={detected_language}")
+            logger.info(f"✅ YouTube transcript ready: {len(transcript_text)} chars, strategy={processing_strategy}")
 
-            # Thumbnail — download from oEmbed thumbnail_url
-            thumbnail_path = os.path.join(temp_dir, f"{shortcode}_thumb.jpg")
-            thumb_success  = False
+            # ── Thumbnail from oEmbed ────────────────────────────────
+            thumbnail_path   = os.path.join(temp_dir, f"{shortcode}_thumb.jpg")
+            thumb_success    = False
             thumb_url_oembed = meta.get("thumbnail_url", "")
             if thumb_url_oembed:
                 try:
@@ -144,7 +158,10 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
                     gcs_paths["preview_thumbnail"]
                 )
                 thumb_blob.upload_from_filename(thumbnail_path, content_type="image/jpeg")
-                thumb_url = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/{gcs_paths['preview_thumbnail']}"
+                thumb_url = (
+                    f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/"
+                    f"{gcs_paths['preview_thumbnail']}"
+                )
                 result["gcs_urls"] = {"preview_thumbnail": thumb_url}
                 execute(
                     "UPDATE reels SET gcs_urls = %s::jsonb WHERE id = %s",
@@ -152,7 +169,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
                     commit=True,
                 )
 
-            # AI analysis — use transcript + caption as merged text
+            # ── AI Analysis ──────────────────────────────────────────
             merged_text = transcript_text
             if caption and caption not in transcript_text:
                 merged_text = f"{transcript_text}\n\n{caption}".strip()
@@ -192,11 +209,10 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
                 "workout":             json_stringify(ai_res.get("workout")),
                 "prompt":              ai_res.get("prompt"),
                 "transcription":       transcription_data,
-                "processing_strategy": "youtube_captions",
+                "processing_strategy": processing_strategy,
                 "detected_language":   ai_res.get("detected_language", detected_language),
             })
 
-            # Save result JSON to GCS (no video to upload)
             if save_to_gcs and gcs_client.available:
                 save_result_json_to_gcs(result, result["process_id"], temp_dir, shortcode, platform_code)
                 base_url = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/"
@@ -233,16 +249,15 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
                 insert_reel_into_db(result)
                 return
 
-            meta = ensure_dict(dl_result.get("metadata", {}))
-            post_obj = dl_result.get("post")
-
+            meta        = ensure_dict(dl_result.get("metadata", {}))
+            post_obj    = dl_result.get("post")
             caption     = caption     or meta.get("caption", "")
             author_name = author_name or meta.get("username", "")
             result["caption"]     = caption
             result["author_name"] = author_name
         else:
             post_obj = None
-            meta = {}
+            meta     = {}
 
         # 2. Duration Check
         duration, duration_seconds = get_video_duration(video_path)
@@ -250,7 +265,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
 
         # 3. Transcription
         if is_too_long:
-            logger.info(f"⏳ Video > 5min ({duration_seconds}s). Triggering Smart Bookmark Fallback.")
+            logger.info(f"⏳ Video > 5min ({duration_seconds}s). Smart Bookmark Fallback.")
             transcription_data = {"status": "bookmark_only", "transcript": "", "detected_language": "unknown"}
         else:
             raw = transcribe_video_deepgram(video_path)
@@ -266,16 +281,13 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
 
         raw_lang = transcription_data.get("detected_language") or ""
         if not raw_lang or raw_lang == "unknown":
-            if not final_transcript.strip():
-                transcription_data["detected_language"] = "unknown"
-            else:
-                transcription_data["detected_language"] = "en"
+            transcription_data["detected_language"] = "en" if final_transcript.strip() else "unknown"
         else:
             transcription_data["detected_language"] = raw_lang
 
         # 4. Thumbnail
         thumbnail_path = os.path.join(os.path.dirname(video_path), f"{shortcode}_thumb.jpg")
-        thumb_success = False
+        thumb_success  = False
 
         if post_obj and not is_facebook:
             thumb_success = download_instagram_thumbnail(post_obj, thumbnail_path, url)
@@ -294,9 +306,14 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             generate_reel_thumbnail(video_path, thumbnail_path)
 
         if os.path.exists(thumbnail_path) and save_to_gcs and gcs_client.available:
-            thumb_blob = gcs_client.client.bucket(gcs_client.analysis_bucket_name).blob(gcs_paths["preview_thumbnail"])
+            thumb_blob = gcs_client.client.bucket(gcs_client.analysis_bucket_name).blob(
+                gcs_paths["preview_thumbnail"]
+            )
             thumb_blob.upload_from_filename(thumbnail_path, content_type="image/jpeg")
-            thumb_url = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/{gcs_paths['preview_thumbnail']}"
+            thumb_url = (
+                f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/"
+                f"{gcs_paths['preview_thumbnail']}"
+            )
             result["gcs_urls"] = {"preview_thumbnail": thumb_url}
             execute(
                 "UPDATE reels SET gcs_urls = %s::jsonb WHERE id = %s",
@@ -356,11 +373,11 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
         video_uploaded = False
         if save_to_gcs and gcs_client.available:
             if not is_too_long:
-                video_url = save_video_to_gcs(video_path, shortcode, platform_code)
+                video_url      = save_video_to_gcs(video_path, shortcode, platform_code)
                 video_uploaded = bool(video_url)
             else:
                 video_url = None
-                logger.info("⏩ Bookmark mode: Skipping MP4 upload to GCS.")
+                logger.info("⏩ Bookmark mode: Skipping MP4 upload.")
 
             save_result_json_to_gcs(result, result["process_id"], temp_dir, shortcode, platform_code)
             base_url = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/"
