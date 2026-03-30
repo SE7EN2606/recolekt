@@ -96,9 +96,63 @@ def get_instagram_video_duration(url: str) -> Optional[int]:
         return None
 
 
+def _yt_dlp_download(url: str, output_path: str, platform: str) -> Dict:
+    """Generic yt-dlp downloader for YouTube and TikTok."""
+    try:
+        import yt_dlp
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        ydl_opts = {
+            "outtmpl": output_path,
+            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "quiet": True,
+            "no_warnings": True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+
+        # yt-dlp may add extension — find the actual file
+        actual_path = output_path
+        if not os.path.exists(actual_path):
+            for ext in ["mp4", "webm", "mkv"]:
+                candidate = f"{output_path}.{ext}"
+                if os.path.exists(candidate):
+                    actual_path = candidate
+                    break
+
+        if not os.path.exists(actual_path):
+            raise ValueError(f"yt-dlp finished but file missing at {output_path}")
+
+        logger.info(f"✅ {platform} video saved to {actual_path}")
+        return {
+            "success": True,
+            "video_path": actual_path,
+            "metadata": {
+                "username": info.get("uploader") or info.get("channel") or "",
+                "caption": info.get("description") or info.get("title") or "",
+                "likes": info.get("like_count", 0) or 0,
+                "comments": info.get("comment_count", 0) or 0,
+            },
+            "post": None
+        }
+    except Exception as e:
+        logger.error(f"❌ {platform} yt-dlp download error: {e}")
+        return {"success": False, "metadata": {}, "post": None}
+
+
 def download_instagram_video(url: str, output_path: str) -> Dict:
     url_lower = url.lower()
 
+    # ── YOUTUBE FLOW ──────────────────────────────────────────────────
+    if "youtube.com" in url_lower or "youtu.be" in url_lower:
+        logger.info(f"⬇️ Downloading YouTube video: {url}")
+        return _yt_dlp_download(url, output_path, "YouTube")
+
+    # ── TIKTOK FLOW ───────────────────────────────────────────────────
+    if "tiktok.com" in url_lower:
+        logger.info(f"⬇️ Downloading TikTok video: {url}")
+        return _yt_dlp_download(url, output_path, "TikTok")
+
+    # ── FACEBOOK FLOW ─────────────────────────────────────────────────
     if "facebook.com" in url_lower or "fb." in url_lower:
         try:
             logger.info(f"⬇️ Downloading Facebook video: {url}")
@@ -110,6 +164,7 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
             logger.error(f"❌ Facebook download error: {e}")
             return {"success": False, "metadata": {}, "post": None}
 
+    # ── INSTAGRAM FLOW ────────────────────────────────────────────────
     try:
         logger.info(f"⬇️ Downloading Instagram video: {url}")
         shortcode = instagram_client.extract_shortcode(url)

@@ -30,6 +30,37 @@ video_bp = Blueprint("video", __name__)
 TEMP_DIR_BASE = os.path.join(tempfile.gettempdir(), "recolekt_processing")
 os.makedirs(TEMP_DIR_BASE, exist_ok=True)
 
+SUPPORTED_DOMAINS = [
+    "instagram.com",
+    "facebook.com", "fb.watch", "fb.com",
+    "youtube.com", "youtu.be",
+    "tiktok.com", "vm.tiktok.com", "vt.tiktok.com",
+]
+
+
+def is_supported_url(url: str) -> bool:
+    """Check if URL is from a supported platform."""
+    if not url:
+        return False
+    url_lower = url.lower()
+    return any(domain in url_lower for domain in SUPPORTED_DOMAINS)
+
+
+def detect_platform(url: str) -> str:
+    """Return platform code: IG, FB, YT, TT or UNKNOWN."""
+    if not url:
+        return "UNKNOWN"
+    url_lower = url.lower()
+    if "instagram.com" in url_lower:
+        return "IG"
+    if "facebook.com" in url_lower or "fb.watch" in url_lower or "fb.com" in url_lower:
+        return "FB"
+    if "youtube.com" in url_lower or "youtu.be" in url_lower:
+        return "YT"
+    if "tiktok.com" in url_lower:
+        return "TT"
+    return "UNKNOWN"
+
 
 def _extract_url_from_request():
     """Ultra-robust URL extraction with full logging"""
@@ -63,7 +94,10 @@ def _extract_url_from_request():
     try:
         raw_data = request.get_data(as_text=True)
         logger.info(f"🔍 Raw body (first 300 chars): {raw_data[:300]}")
-        match = re.search(r'(https?://(?:www\.)?(?:instagram|facebook|fb)\.[^\s"\'<>]+)', raw_data)
+        match = re.search(
+            r'(https?://(?:www\.)?(?:instagram|facebook|fb|youtube|youtu\.be|tiktok|vm\.tiktok|vt\.tiktok)\.[^\s"\'<>]+)',
+            raw_data
+        )
         if match:
             found = match.group(1)
             logger.info(f"✅ Found URL via regex: {found}")
@@ -73,6 +107,18 @@ def _extract_url_from_request():
 
     logger.error("❌ NO URL FOUND ANYWHERE")
     return None
+
+
+def _extract_shortcode(url: str, platform: str) -> str:
+    """Extract shortcode/video ID based on platform."""
+    if platform == "YT":
+        from fetcher_api.api.helpers.normalizers import extract_youtube_id
+        return extract_youtube_id(url) or "unknown"
+    if platform == "TT":
+        match = re.search(r"/video/(\d+)", url)
+        return match.group(1) if match else "unknown"
+    # IG and FB use meta_client
+    return meta_client.extract_shortcode(url) or "unknown"
 
 
 @video_bp.route("/summarize", methods=["POST"])
@@ -107,6 +153,14 @@ def summarize():
     if not file and not url:
         logger.error("❌ No file or URL provided")
         return jsonify({"error": "Provide either file or URL"}), 400
+
+    # ── Platform validation ───────────────────────────────────────────
+    if url and not is_supported_url(url):
+        logger.warning(f"❌ Unsupported URL: {url}")
+        return jsonify({
+            "error": "unsupported_platform",
+            "message": "Only Instagram, Facebook, YouTube, and TikTok URLs are supported."
+        }), 422
 
     if url:
         url = str(url).strip()
@@ -153,16 +207,9 @@ def summarize():
             logger.info(f"📁 File upload: {result['process_id']}")
 
         else:
-            is_facebook = meta_client.is_facebook_url(url)
-
-            if is_facebook:
-                logger.info(f"🔗 Processing Facebook URL: {url}")
-                shortcode = meta_client.extract_shortcode(url) or "unknown"
-                platform_id = "FB"
-            else:
-                logger.info(f"🔗 Processing Instagram URL: {url}")
-                shortcode = meta_client.extract_shortcode(url) or "unknown"
-                platform_id = "IG"
+            platform_id = detect_platform(url)
+            shortcode = _extract_shortcode(url, platform_id)
+            logger.info(f"🔗 Processing {platform_id} URL: {url}")
 
             shortcode = shortcode.rstrip("-")
 
