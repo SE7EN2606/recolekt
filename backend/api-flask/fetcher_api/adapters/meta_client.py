@@ -3,7 +3,9 @@ Meta client — handles both Instagram and Facebook public posts.
 
 Instagram:
   - Metadata via public unauthenticated oEmbed (no token)
-  - Video download via instaloader (safe, no cookies needed)
+  - Video download: yt-dlp when IG_USE_YTDLP_ONLY=true (Railway/prod)
+                    instaloader otherwise (local dev, works without cookies)
+  - Set IG_COOKIES_CONTENT (Netscape format) env var for yt-dlp reliability
 
 Facebook:
   - Metadata + video download via yt-dlp
@@ -12,6 +14,7 @@ Facebook:
 import os
 import re
 import logging
+import tempfile
 import requests
 import instaloader
 import yt_dlp
@@ -75,6 +78,25 @@ class MetaClient:
             if candidate not in ('reel', 'reels', 'p', 'tv', 'stories', 'explore'):
                 return candidate
         return None
+
+    # ----------------------------------------------------------------
+    # Cookies helper (for yt-dlp)
+    # ----------------------------------------------------------------
+    def _write_cookies(self, env_var: str, suffix: str) -> Optional[str]:
+        content = os.environ.get(env_var, "").strip()
+        if not content:
+            return None
+        try:
+            tmp = tempfile.NamedTemporaryFile(
+                mode="w", suffix=f"_{suffix}", delete=False, encoding="utf-8"
+            )
+            tmp.write(content)
+            tmp.close()
+            logger.info(f"🍪 Wrote {env_var} cookies → {tmp.name}")
+            return tmp.name
+        except Exception as e:
+            logger.warning(f"⚠️ Could not write cookies file: {e}")
+            return None
 
     # ----------------------------------------------------------------
     # Instagram — oEmbed (public, no token)
@@ -176,7 +198,106 @@ class MetaClient:
         return None
 
     # ----------------------------------------------------------------
-    # Instagram — instaloader download (no login, no cookies)
+    # Instagram — yt-dlp download
+    # Used when IG_USE_YTDLP_ONLY=true (Railway/prod)
+    # ----------------------------------------------------------------
+    def _download_instagram_video_ytdlp(self, url: str, output_path: str) -> dict:
+        cookies_path = None
+        try:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            ydl_opts = {
+                "outtmpl":             output_path,
+                "format":              "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "merge_output_format": "mp4",
+                "quiet":               True,
+                "no_warnings":         True,
+                "http_headers": {
+                    "User-Agent": (
+                        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                        "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                        "Version/17.0 Mobile/15E148 Safari/604.1"
+                    ),
+                    "Referer": "https://www.instagram.com/",
+                },
+            }
+
+            cookies_path = self._write_cookies("IG_COOKIES_CONTENT", "ig_cookies.txt")
+            if cookies_path:
+                ydl_opts["cookiefile"] = cookies_path
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+
+            # Resolve actual output path (yt-dlp may append extension)
+            actual_path = output_path
+            if not os.path.exists(actual_path):
+                for ext in ["mp4", "webm", "mkv"]:
+                    candidate = f"{output_path}.{ext}"
+                    if os.path.exists(candidate):
+                        actual_path = candidate
+                        break
+
+            if not os.path.exists(actual_path):
+                raise ValueError(f"yt-dlp finished but file missing at {output_path}")
+
+            logger.info(f"✅ Instagram video downloaded via yt-dlp: {actual_path}")
+
+            # Download platform thumbnail
+            thumbnail_path = None
+            thumb_url = (
+                info.get("thumbnail") or
+                ((info.get("thumbnails") or [{}])[-1].get("url", ""))
+            )
+            if thumb_url:
+                thumb_out = os.path.join(os.path.dirname(output_path), "thumbnail.jpg")
+                try:
+                    r = requests.get(thumb_url, timeout=15)
+                    if r.status_code == 200 and len(r.content) > 1000:
+                        with open(thumb_out, "wb") as f:
+                            f.write(r.content)
+                        thumbnail_path = thumb_out
+                        logger.info(f"✅ Instagram yt-dlp thumbnail saved → {thumb_out}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Instagram thumbnail download failed: {e}")
+
+            # Build metadata from yt-dlp info
+            meta = {
+                "username":      info.get("uploader") or info.get("channel") or "",
+                "caption":       info.get("description") or info.get("title") or "",
+                "likes":         info.get("like_count", 0) or 0,
+                "comments":      info.get("comment_count", 0) or 0,
+                "thumbnail_url": thumb_url or "",
+            }
+
+            # Enrich sparse metadata from oEmbed
+            if not meta["username"] or not meta["caption"]:
+                oembed = self._get_instagram_oembed(url)
+                if oembed:
+                    meta["username"] = meta["username"] or oembed.get("author_name", "")
+                    meta["caption"]  = meta["caption"]  or oembed.get("title", "")
+                    logger.info("✅ Instagram metadata enriched from oEmbed")
+
+            return {
+                "success":        True,
+                "video_path":     actual_path,
+                "thumbnail_path": thumbnail_path,
+                "metadata":       meta,
+                "post":           None,
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Instagram yt-dlp download error: {e}")
+            return {"success": False, "error": str(e), "metadata": {}, "post": None, "thumbnail_path": None}
+        finally:
+            if cookies_path and os.path.exists(cookies_path):
+                try:
+                    os.unlink(cookies_path)
+                except Exception:
+                    pass
+
+    # ----------------------------------------------------------------
+    # Instagram — instaloader download (local dev only)
     # ----------------------------------------------------------------
     def _download_instagram_video_instaloader(self, url: str, output_path: str) -> dict:
         try:
@@ -188,7 +309,6 @@ class MetaClient:
 
             post = instaloader.Post.from_shortcode(self.loader.context, shortcode)
 
-            # Username — try multiple methods
             username = None
             if hasattr(post, "owner_username") and post.owner_username:
                 username = post.owner_username
@@ -209,8 +329,8 @@ class MetaClient:
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/124.0.0.0 Safari/537.36"
                 ),
-                "Accept":   "*/*",
-                "Referer":  "https://www.instagram.com/",
+                "Accept":  "*/*",
+                "Referer": "https://www.instagram.com/",
             }
 
             resp = requests.get(post.video_url, stream=True, headers=headers, timeout=30)
@@ -224,9 +344,8 @@ class MetaClient:
 
             logger.info(f"✅ Instagram video saved via instaloader → {output_path}")
 
-            # Thumbnail — use post object thumbnail URL
             thumbnail_path = None
-            thumb_url = getattr(post, "url", None)  # post.url = display image / cover
+            thumb_url = getattr(post, "url", None)
             if thumb_url:
                 thumb_out = os.path.join(os.path.dirname(output_path), f"{shortcode}_thumb.jpg")
                 try:
@@ -257,23 +376,25 @@ class MetaClient:
 
         except Exception as e:
             logger.error(f"❌ Instagram instaloader download error: {e}")
-            return {
-                "success":        False,
-                "error":          str(e),
-                "metadata":       {},
-                "post":           None,
-                "thumbnail_path": None,
-            }
+            return {"success": False, "error": str(e), "metadata": {}, "post": None, "thumbnail_path": None}
 
     # ----------------------------------------------------------------
     # download_video — routes by platform
-    # Instagram: instaloader (no cookies, safe while awaiting Meta review)
-    # Facebook:  yt-dlp
+    #
+    #   IG_USE_YTDLP_ONLY=true  → yt-dlp (Railway / prod / staging)
+    #   not set                 → instaloader (local dev)
+    #
+    # Facebook always uses yt-dlp.
     # ----------------------------------------------------------------
     def download_video(self, url: str, output_path: str, post_info=None) -> dict:
         if self.is_instagram_url(url):
-            logger.info(f"⬇️ Instagram download via instaloader: {url}")
-            return self._download_instagram_video_instaloader(url, output_path)
+            use_ytdlp = os.environ.get("IG_USE_YTDLP_ONLY", "").lower() in ("true", "1", "yes")
+            if use_ytdlp:
+                logger.info(f"⬇️ Instagram download via yt-dlp [IG_USE_YTDLP_ONLY]: {url}")
+                return self._download_instagram_video_ytdlp(url, output_path)
+            else:
+                logger.info(f"⬇️ Instagram download via instaloader [local]: {url}")
+                return self._download_instagram_video_instaloader(url, output_path)
 
         elif self.is_facebook_url(url):
             try:
