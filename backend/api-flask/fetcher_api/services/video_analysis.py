@@ -3,6 +3,7 @@
 import os
 import logging
 import subprocess
+import tempfile
 from typing import Dict, Optional
 
 from fetcher_api.adapters.instagram_client import instagram_client
@@ -96,17 +97,49 @@ def get_instagram_video_duration(url: str) -> Optional[int]:
         return None
 
 
+def _write_cookies(env_var: str, suffix: str) -> Optional[str]:
+    """Write cookie content from env var to temp file, return path or None."""
+    content = os.environ.get(env_var, "").strip()
+    if not content:
+        logger.warning(f"⚠️ {env_var} not set, skipping cookies")
+        return None
+    try:
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=f"_{suffix}", delete=False, encoding="utf-8"
+        )
+        tmp.write(content)
+        tmp.close()
+        logger.info(f"🍪 Wrote {env_var} cookies to {tmp.name}")
+        return tmp.name
+    except Exception as e:
+        logger.warning(f"⚠️ Could not write cookies file: {e}")
+        return None
+
+
 def _yt_dlp_download(url: str, output_path: str, platform: str) -> Dict:
     """Generic yt-dlp downloader for YouTube and TikTok."""
+    cookies_path = None
     try:
         import yt_dlp
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
         ydl_opts = {
             "outtmpl": output_path,
             "format": "best[ext=mp4]/best",
             "quiet": True,
             "no_warnings": True,
         }
+
+        # Load platform-specific cookies
+        if platform == "YouTube":
+            cookies_path = _write_cookies("YT_COOKIES_CONTENT", "yt_cookies.txt")
+        elif platform == "TikTok":
+            cookies_path = _write_cookies("TT_COOKIES_CONTENT", "tt_cookies.txt")
+
+        if cookies_path:
+            ydl_opts["cookiefile"] = cookies_path
+            logger.info(f"🍪 yt-dlp using cookies for {platform}")
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
 
@@ -137,6 +170,12 @@ def _yt_dlp_download(url: str, output_path: str, platform: str) -> Dict:
     except Exception as e:
         logger.error(f"❌ {platform} yt-dlp download error: {e}")
         return {"success": False, "metadata": {}, "post": None}
+    finally:
+        if cookies_path and os.path.exists(cookies_path):
+            try:
+                os.unlink(cookies_path)
+            except Exception:
+                pass
 
 
 def download_instagram_video(url: str, output_path: str) -> Dict:
