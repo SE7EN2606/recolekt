@@ -103,7 +103,7 @@ def _yt_dlp_download(url: str, output_path: str, platform: str) -> Dict:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         ydl_opts = {
             "outtmpl": output_path,
-            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "format": "best[ext=mp4]/best",
             "quiet": True,
             "no_warnings": True,
         }
