@@ -125,7 +125,8 @@ def _yt_dlp_download(url: str, output_path: str, platform: str) -> Dict:
 
         ydl_opts = {
             "outtmpl": output_path,
-            "format": "best[ext=mp4]/best",
+            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best",
+            "merge_output_format": "mp4",
             "quiet": True,
             "no_warnings": True,
         }
