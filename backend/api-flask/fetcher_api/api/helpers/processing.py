@@ -3,8 +3,8 @@ import os
 import json
 import shutil
 import logging
+import requests
 from datetime import datetime
-
 
 from fetcher_api.services.transcription import transcribe_video_deepgram
 from fetcher_api.services.ai_service import analyze_instagram_video
@@ -22,7 +22,7 @@ from fetcher_api.api.helpers.normalizers import (
 from fetcher_api.utils.ocr_utils import maybe_ocr_and_merge_text
 
 from fetcher_api.services.video_analysis import (
-    download_instagram_video,
+    download_instagram_video,   # TikTok only
     generate_reel_thumbnail,
     download_instagram_thumbnail,
     fetch_youtube_data,
@@ -83,7 +83,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
         result["author_name"] = author_name
 
         # ══════════════════════════════════════════════════════════════
-        # YOUTUBE PATH — transcript API + oEmbed, audio fallback
+        # YOUTUBE PATH
         # ══════════════════════════════════════════════════════════════
         if is_youtube:
             logger.info("🎬 YouTube path: fetching transcript + metadata (no download)")
@@ -100,9 +100,9 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             result["caption"]     = caption
             result["author_name"] = author_name
 
-            transcript_text   = yt.get("transcript", "")
-            detected_language = yt.get("detected_language", "en") or "en"
-            audio_path        = yt.get("audio_path")   # set when captions unavailable
+            transcript_text     = yt.get("transcript", "")
+            detected_language   = yt.get("detected_language", "en") or "en"
+            audio_path          = yt.get("audio_path")
             processing_strategy = "youtube_captions"
 
             # ── Audio fallback → Deepgram ────────────────────────────
@@ -118,7 +118,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
                     transcript_text   = td.get("transcript", "") or ""
                     if isinstance(transcript_text, dict):
                         transcript_text = transcript_text.get("transcript", "")
-                    detected_language = td.get("detected_language", "en") or "en"
+                    detected_language   = td.get("detected_language", "en") or "en"
                     processing_strategy = "youtube_audio_deepgram"
                     logger.info(f"✅ Deepgram transcript: {len(transcript_text)} chars, lang={detected_language}")
                 except Exception as e:
@@ -137,21 +137,28 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             }
             logger.info(f"✅ YouTube transcript ready: {len(transcript_text)} chars, strategy={processing_strategy}")
 
-            # ── Thumbnail from oEmbed ────────────────────────────────
-            thumbnail_path   = os.path.join(temp_dir, f"{shortcode}_thumb.jpg")
-            thumb_success    = False
-            thumb_url_oembed = meta.get("thumbnail_url", "")
-            if thumb_url_oembed:
-                try:
-                    import requests as req
-                    r = req.get(thumb_url_oembed, timeout=15)
-                    if r.status_code == 200:
-                        with open(thumbnail_path, "wb") as f:
-                            f.write(r.content)
-                        thumb_success = True
-                        logger.info("✅ YouTube thumbnail downloaded from oEmbed")
-                except Exception as e:
-                    logger.warning(f"⚠️ YouTube thumbnail download failed: {e}")
+            # ── Thumbnail — prefer already-downloaded from fetch_youtube_data ──
+            thumbnail_path = os.path.join(temp_dir, f"{shortcode}_thumb.jpg")
+            thumb_success  = False
+
+            yt_thumb = yt.get("thumbnail_path")
+            if yt_thumb and os.path.exists(yt_thumb):
+                if yt_thumb != thumbnail_path:
+                    shutil.copy2(yt_thumb, thumbnail_path)
+                thumb_success = True
+                logger.info(f"✅ YouTube thumbnail from fetch_youtube_data → {thumbnail_path}")
+            else:
+                thumb_url_oembed = meta.get("thumbnail_url", "")
+                if thumb_url_oembed:
+                    try:
+                        r = requests.get(thumb_url_oembed, timeout=15)
+                        if r.status_code == 200:
+                            with open(thumbnail_path, "wb") as f:
+                                f.write(r.content)
+                            thumb_success = True
+                            logger.info("✅ YouTube thumbnail downloaded from oEmbed (fallback)")
+                    except Exception as e:
+                        logger.warning(f"⚠️ YouTube thumbnail download failed: {e}")
 
             if thumb_success and save_to_gcs and gcs_client.available:
                 thumb_blob = gcs_client.client.bucket(gcs_client.analysis_bucket_name).blob(
@@ -183,7 +190,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
 
             ai_summary = ai_res.get("summary", {})
             if isinstance(ai_summary, str):
-                try: ai_summary = json.loads(ai_summary)
+                try:    ai_summary = json.loads(ai_summary)
                 except Exception: ai_summary = {}
             if not isinstance(ai_summary, dict):
                 ai_summary = {}
@@ -238,11 +245,15 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
         # ══════════════════════════════════════════════════════════════
 
         # 1. Download & Metadata
+        #    Instagram → meta_client (instaloader, no cookies, no login)
+        #    Facebook  → meta_client (yt-dlp)
+        #    TikTok    → download_instagram_video (yt-dlp internally)
+        dl_result = {}
         if not os.path.exists(video_path):
-            if is_facebook:
-                dl_result = ensure_dict(meta_client.download_video(url, video_path))
-            else:
+            if is_tiktok:
                 dl_result = ensure_dict(download_instagram_video(url, video_path))
+            else:
+                dl_result = ensure_dict(meta_client.download_video(url, video_path))
 
             if not dl_result.get("success"):
                 result["status"] = "error"
@@ -256,8 +267,9 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             result["caption"]     = caption
             result["author_name"] = author_name
         else:
-            post_obj = None
-            meta     = {}
+            post_obj  = None
+            meta      = {}
+            dl_result = {}
 
         # 2. Duration Check
         duration, duration_seconds = get_video_duration(video_path)
@@ -286,13 +298,20 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
             transcription_data["detected_language"] = raw_lang
 
         # 4. Thumbnail
+        #    Priority: platform thumbnail returned by downloader → instaloader post object → FFmpeg
         thumbnail_path = os.path.join(os.path.dirname(video_path), f"{shortcode}_thumb.jpg")
         thumb_success  = False
 
-        if post_obj and not is_facebook:
+        platform_thumb = dl_result.get("thumbnail_path")
+        if platform_thumb and os.path.exists(platform_thumb):
+            if platform_thumb != thumbnail_path:
+                shutil.copy2(platform_thumb, thumbnail_path)
+            thumb_success = True
+            logger.info(f"✅ Using platform thumbnail → {thumbnail_path}")
+        elif post_obj and not is_facebook:
+            # instaloader Post object — use download_instagram_thumbnail helper
             thumb_success = download_instagram_thumbnail(post_obj, thumbnail_path, url)
         elif is_facebook and meta.get("thumbnail"):
-            import requests
             try:
                 r = requests.get(meta.get("thumbnail"), timeout=15)
                 if r.status_code == 200:
@@ -338,7 +357,7 @@ def background_process(result, video_path, temp_dir, shortcode, caption, url,
 
         ai_summary = ai_res.get("summary", {})
         if isinstance(ai_summary, str):
-            try: ai_summary = json.loads(ai_summary)
+            try:    ai_summary = json.loads(ai_summary)
             except Exception: ai_summary = {}
         if not isinstance(ai_summary, dict):
             ai_summary = {}

@@ -234,12 +234,12 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         {isProcessing && (
           <div className="absolute inset-0 z-40 bg-slate-900 overflow-hidden shadow-[0_0_20px_rgba(124,58,237,0.25)] border border-primary-500/40">
             {thumbnailUrl ? (
-              <img src={thumbnailUrl} alt="Processing" className="absolute inset-0 w-full h-full object-cover opacity-40 blur-md scale-110 z-0" />
+              <img src={thumbnailUrl} alt="Processing" className="absolute inset-0 w-full h-full object-cover opacity-70 blur-sm scale-110 z-0" />
             ) : (
               <div className="absolute inset-0 bg-slate-900 z-0" />
             )}
 
-            <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md z-10" />
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm z-10" />
 
             {/* EXACT CONTAINER HEIGHT SCANNER (GPU Accelerated) */}
             <div className={`absolute top-[-100%] left-0 w-full h-full z-30 pointer-events-none will-change-transform ${scanState === 'h-active' ? 'h-active' : 'idle'}`}>
@@ -343,18 +343,20 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
       <div className="pt-3 px-0.5">
         <p className="text-sm font-bold text-gray-900 leading-snug line-clamp-2 mb-1">{displayTitle}</p>
         
-        <a
-          href={sourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => { e.stopPropagation(); if (isDisabled) e.preventDefault(); }}
-          className="inline-flex items-center gap-1.5 group/author w-max"
-        >
-          <PlatformIconAuthor platform={platform} />
-          <span className="text-xs text-gray-400 font-medium truncate max-w-[120px] group-hover/author:text-gray-700 transition-colors">
-            {author}
-          </span>
-        </a>
+        {!isProcessing && (
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => { e.stopPropagation(); if (isDisabled) e.preventDefault(); }}
+            className="inline-flex items-center gap-1.5 group/author w-max"
+          >
+            <PlatformIconAuthor platform={platform} />
+            <span className="text-xs text-gray-400 font-medium truncate max-w-[120px] group-hover/author:text-gray-700 transition-colors">
+              {author}
+            </span>
+          </a>
+        )}
       </div>
 
       <ConfirmModal
