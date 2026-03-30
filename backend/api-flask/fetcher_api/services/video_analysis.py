@@ -131,15 +131,32 @@ def _yt_dlp_download(url: str, output_path: str, platform: str) -> Dict:
             "no_warnings": True,
         }
 
-        # Load platform-specific cookies
         if platform == "YouTube":
             cookies_path = _write_cookies("YT_COOKIES_CONTENT", "yt_cookies.txt")
-        elif platform == "TikTok":
-            cookies_path = _write_cookies("TT_COOKIES_CONTENT", "tt_cookies.txt")
+            if cookies_path:
+                ydl_opts["cookiefile"] = cookies_path
+                logger.info("🍪 yt-dlp using cookies for YouTube")
 
-        if cookies_path:
-            ydl_opts["cookiefile"] = cookies_path
-            logger.info(f"🍪 yt-dlp using cookies for {platform}")
+        elif platform == "TikTok":
+            # TikTok needs mobile user agent to avoid 530 rate limit
+            ydl_opts.update({
+                "http_headers": {
+                    "User-Agent": (
+                        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                        "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                        "Version/17.0 Mobile/15E148 Safari/604.1"
+                    ),
+                    "Referer": "https://www.tiktok.com/",
+                },
+                "sleep_interval": 1,
+                "max_sleep_interval": 3,
+            })
+            cookies_path = _write_cookies("TT_COOKIES_CONTENT", "tt_cookies.txt")
+            if cookies_path:
+                ydl_opts["cookiefile"] = cookies_path
+                logger.info("🍪 yt-dlp using cookies for TikTok")
+            else:
+                logger.info("ℹ️ TikTok: no cookies, trying without")
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)

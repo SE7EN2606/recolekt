@@ -8,54 +8,69 @@ import { ActionSheet, ActionItem } from '../components/ActionSheet';
 import { MoveCollectionModal } from '../components/MoveCollectionModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ReportModal } from '../components/ReportModal';
-import { EditableTitle, EditableBullets, EditableHashtags } from '../components/VideoDetailComponents';
+import { EditableTitle, EditableBullets } from '../components/VideoDetailComponents';
 import { RecipeDetailsCard } from '../components/RecipeDetailsCard';
 import { scaleQuantity } from '../utils/conversionUtils';
 import { useTranslation } from 'react-i18next';
 import { getCategory, getTopic } from '../utils/videoUtils';
 import { API_BASE } from '../utils/api';
 import { useScrollLock } from '../utils/useScrollLock';
-import { CustomMessageSquareMoreIcon, IOSShareIcon, CategoryIcon, TopicIcon, HashtagsIcon, PlatformIconAuthor, PlatformIconBtn } from '../components/CustomIcons';
-
+import {
+  CustomMessageSquareMoreIcon, IOSShareIcon,
+  CategoryIcon, TopicIcon, HashtagsIcon,
+  PlatformIconAuthor, PlatformButton,
+} from '../components/CustomIcons';
 
 /* ─── HELPERS ─── */
-const formatDuration = (val: number | string | undefined): string => {
+const fmt = (val: number | string | undefined): string => {
   if (!val) return '0:00';
   if (typeof val === 'string') {
     if (val.includes(':')) return val;
-    const parsed = parseInt(val, 10);
-    if (isNaN(parsed)) return '0:00';
-    val = parsed;
+    const n = parseInt(val, 10);
+    if (isNaN(n)) return '0:00';
+    val = n;
   }
-  const mins = Math.floor((val as number) / 60);
-  const secs = Math.floor((val as number) % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+  const m = Math.floor((val as number) / 60);
+  const s = Math.floor((val as number) % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
-
-const apiUrl = (path: string) => {
-  const p = String(path || '').replace(/^\/+/, '');
-  return API_BASE ? `${API_BASE}/${p}` : `/${p}`;
+const apiUrl = (p: string) => {
+  const clean = String(p || '').replace(/^\/+/, '');
+  return API_BASE ? `${API_BASE}/${clean}` : `/${clean}`;
 };
-
 
 const fetchGcsJson = async (url: string) => {
   if (!url) return null;
   try {
-    const res = await fetch(`${url}?v=${Date.now()}`, { method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store' });
-    return res.ok ? res.json() : null;
+    const r = await fetch(`${url}?v=${Date.now()}`, { method: 'GET', mode: 'cors', credentials: 'omit', cache: 'no-store' });
+    return r.ok ? r.json() : null;
   } catch { return null; }
 };
 
-
-const safeString = (val: any): string => {
+const safe = (val: any): string => {
   if (!val) return '';
   if (typeof val === 'string') return val;
-  if (Array.isArray(val)) return safeString(val[0]);
+  if (Array.isArray(val)) return safe(val[0]);
   if (typeof val === 'object') return String(val.text || val.title || val.summary || val.transcript || val.caption || val.headline || val.name || '');
   return String(val);
 };
 
+const inferLang = (text: string): string => {
+  if (/[àâäéèêëîïôöùûüçæœ]/i.test(text)) return 'FR';
+  if (/[áíóúñ¿¡]/i.test(text))            return 'ES';
+  if (/[äöüß]/i.test(text))               return 'DE';
+  if (/[ãõâêîôûáéíóúç]/i.test(text))      return 'PT';
+  return 'EN';
+};
+
+const detectPlatform = (url: string): string => {
+  const u = url.toLowerCase();
+  if (u.includes('facebook.com') || u.includes('fb.watch') || u.includes('fb.com')) return 'facebook';
+  if (u.includes('youtube.com') || u.includes('youtu.be')) return 'youtube';
+  if (u.includes('tiktok.com')) return 'tiktok';
+  return 'instagram';
+};
 
 const HASHTAG_STYLE = `
   .hashtag-links a { display:inline-flex !important; align-items:center !important; justify-content:center !important;
@@ -67,18 +82,8 @@ const HASHTAG_STYLE = `
     box-shadow:0 2px 6px rgba(8,145,178,.25) !important; transform:translateY(-1px); }
 `;
 
-
-const inferLangFromText = (text: string): string => {
-  if (/[àâäéèêëîïôöùûüçæœ]/i.test(text)) return 'FR';
-  if (/[áíóúñ¿¡]/i.test(text))            return 'ES';
-  if (/[äöüß]/i.test(text))               return 'DE';
-  if (/[ãõâêîôûáéíóúç]/i.test(text))      return 'PT';
-  return 'EN';
-};
-
-
 /* ─── SKELETON ─── */
-const VideoDetailSkeleton = () => (
+const Skeleton = () => (
   <div className="animate-pulse relative w-full px-0 pb-12">
     <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-12 items-start">
       <div className="min-w-0 w-full">
@@ -88,7 +93,6 @@ const VideoDetailSkeleton = () => (
     </div>
   </div>
 );
-
 
 /* ─── ACCORDION ─── */
 const Accordion = ({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) => {
@@ -100,9 +104,7 @@ const Accordion = ({ icon, label, children }: { icon: React.ReactNode; label: st
           <div className="p-1.5 bg-gray-100 text-gray-600 rounded-md">{icon}</div>
           <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{label}</h4>
         </div>
-        <div className="p-1 rounded-full group-hover:bg-gray-50 transition-colors">
-          <ChevronDown size={20} className={`text-gray-400 transition-transform duration-300 ${open ? 'rotate-180' : ''}`} />
-        </div>
+        <ChevronDown size={20} className={`text-gray-400 transition-transform duration-300 ${open ? 'rotate-180' : ''}`} />
       </div>
       <div className={`grid transition-all duration-300 ease-in-out ${open ? 'grid-rows-[1fr] opacity-100 mt-4' : 'grid-rows-[0fr] opacity-0'}`}>
         <div className="overflow-hidden">{children}</div>
@@ -111,29 +113,24 @@ const Accordion = ({ icon, label, children }: { icon: React.ReactNode; label: st
   );
 };
 
-
-/* ─── WORKOUT BLOCK ─── */
+/* ─── WORKOUT ─── */
 const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any; showOriginal: boolean }) => {
   const { t } = useTranslation(['videoDetail']);
   const active = (workoutData?.english || workoutData?.original)
     ? (showOriginal && workoutData.original ? workoutData.original : workoutData.english ?? workoutData)
     : workoutData;
   if (!active || Object.keys(active).length === 0) return null;
-
-
   return (
     <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
       <div className="bg-orange-100/60 p-4 md:p-5 border-b border-gray-50 flex items-center gap-3">
         <Dumbbell className="text-orange-600" size={20} />
-        <h3 className="font-bold text-gray-900 text-lg">{t('workoutDetails', "Plan d'entraînement")}</h3>
+        <h3 className="font-bold text-gray-900 text-lg">{t('workoutDetails', "Workout Plan")}</h3>
       </div>
-
-
       <div className="grid grid-cols-3 divide-x divide-gray-50 border-b border-gray-50">
         {[
-          { icon: <Clock size={16} className="text-orange-500 mb-1" />, label: t('time', 'Durée'), val: active.duration },
+          { icon: <Clock size={16} className="text-orange-500 mb-1" />, label: t('time', 'Duration'), val: active.duration },
           { icon: <Activity size={16} className="text-orange-500 mb-1" />, label: t('format', 'Format'), val: active.format },
-          { icon: <Flame size={16} className="text-orange-500 mb-1" />, label: t('level', 'Niveau'), val: active.level },
+          { icon: <Flame size={16} className="text-orange-500 mb-1" />, label: t('level', 'Level'), val: active.level },
         ].map(({ icon, label, val }) => (
           <div key={label} className="p-4 flex flex-col items-center justify-center text-center gap-1">
             {icon}
@@ -142,11 +139,9 @@ const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any; showOri
           </div>
         ))}
       </div>
-
-
       {active.equipment?.length > 0 && (
         <div className="p-6 border-b border-gray-50">
-          <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t('equipment', 'Équipement')}</h4>
+          <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t('equipment', 'Equipment')}</h4>
           <div className="flex flex-wrap gap-2">
             {active.equipment.map((eq: string, i: number) => (
               <div key={i} className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-sm font-bold">{eq}</div>
@@ -154,18 +149,14 @@ const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any; showOri
           </div>
         </div>
       )}
-
-
       {active.groups?.length > 0 && (
         <div className="p-6 bg-gray-50/30">
-          <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t('exercises', 'Circuit / Exercices')}</h4>
+          <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">{t('exercises', 'Exercises')}</h4>
           <div className="space-y-6">
             {active.groups.map((group: any, idx: number) => (
               <div key={idx} className="relative">
                 {idx > 0 && <div className="absolute -top-3 left-0 right-0 border-t border-dashed border-gray-200" />}
-                {group.title && (
-                  <h5 className="font-bold text-gray-900 text-sm bg-white border border-gray-200 shadow-sm inline-block px-3 py-1.5 rounded-lg mb-4">{group.title}</h5>
-                )}
+                {group.title && <h5 className="font-bold text-gray-900 text-sm bg-white border border-gray-200 shadow-sm inline-block px-3 py-1.5 rounded-lg mb-4">{group.title}</h5>}
                 <ul className="space-y-4">
                   {group.items?.map((item: any, i: number) => {
                     const info = (item.info || '').replace(/min(?:ute)?\s*\d+/i, '').replace(/^[-/]\s*/, '').replace(/\s*[-/]$/, '').trim();
@@ -185,13 +176,11 @@ const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any; showOri
           </div>
         </div>
       )}
-
-
       {active.tips?.length > 0 && (
         <div className="bg-yellow-50/50 border-t border-yellow-100 p-6">
           <div className="flex items-center gap-2 mb-4">
             <Lightbulb className="text-yellow-600" size={18} />
-            <h4 className="text-xs font-black text-yellow-700 uppercase tracking-widest">{t('trainerTips', 'Conseils du coach')}</h4>
+            <h4 className="text-xs font-black text-yellow-700 uppercase tracking-widest">{t('trainerTips', 'Coach Tips')}</h4>
           </div>
           <ul className="space-y-2">
             {active.tips.map((tip: string, i: number) => (
@@ -207,17 +196,25 @@ const WorkoutBlock = ({ workoutData, showOriginal }: { workoutData: any; showOri
   );
 };
 
-
 /* ─── HASHTAG LIST ─── */
 const HashtagList = ({ tags }: { tags: string[] }) => (
   <div className="hashtag-links flex flex-wrap flex-1 gap-1.5">
     {tags.map((tag, idx) => {
-      const clean = safeString(tag).replace('#', '');
+      const clean = safe(tag).replace('#', '');
       return <a key={idx} href={`https://www.instagram.com/explore/tags/${clean}/`} target="_blank" rel="noopener noreferrer">#{clean}</a>;
     })}
   </div>
 );
 
+/* ─── ORIGINAL LINK SECTION ─── */
+const OriginalLink = ({ url, platform, t, className = '' }: { url: string; platform: string; t: any; className?: string }) => (
+  <div className={`flex flex-col gap-2 shrink-0 ${className}`}>
+    <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-widest pl-1">
+      {t('videoDetail:originalLink', 'Original Link')}
+    </h4>
+    <PlatformButton platform={platform} url={url} t={t} />
+  </div>
+);
 
 /* ══════════════════════════════════════════════════════════════
    MAIN COMPONENT
@@ -228,7 +225,6 @@ export const VideoDetail: React.FC = () => {
   const { videos, folders, deleteVideos, moveVideos, toggleFavorite, updateVideo, getVideoById } = useData();
   const { showOriginal, toggleLanguage } = useLanguage();
   const { t } = useTranslation(['videoDetail', 'common', 'modals']);
-
 
   const [video, setVideo]                             = useState<any>(null);
   const [galleryThumbnail, setGalleryThumbnail]       = useState('');
@@ -242,34 +238,30 @@ export const VideoDetail: React.FC = () => {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen]     = useState(false);
 
-
   useScrollLock(isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen);
 
-
-  const fetchBackendJsonNoStore = useCallback(async (url: string) => {
-    const res = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'include', headers: { ...getAuthHeaders() } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
+  const fetchBackend = useCallback(async (url: string) => {
+    const r = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'include', headers: { ...getAuthHeaders() } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
   }, []);
-
 
   const enrichVideo = useCallback(async () => {
     if (!id || !navigator.onLine) { setLoading(false); return; }
     try {
-      const dbResult = await fetchBackendJsonNoStore(apiUrl(`api/reel/${encodeURIComponent(id)}`));
-      if (!dbResult) { setLoading(false); return; }
-      const gcsResult = dbResult.gcs_urls?.result_json ? await fetchGcsJson(dbResult.gcs_urls.result_json) : null;
+      const db = await fetchBackend(apiUrl(`api/reel/${encodeURIComponent(id)}`));
+      if (!db) { setLoading(false); return; }
+      const gcs = db.gcs_urls?.result_json ? await fetchGcsJson(db.gcs_urls.result_json) : null;
       setVideo((prev: any) => ({
-        ...(prev || {}), ...dbResult, ...(gcsResult || {}), __raw: dbResult,
-        thumbnailUrl: dbResult.thumbnailUrl || dbResult.gcs_urls?.preview_thumbnail || prev?.thumbnailUrl || '',
+        ...(prev || {}), ...db, ...(gcs || {}), __raw: db,
+        thumbnailUrl: db.thumbnailUrl || db.gcs_urls?.preview_thumbnail || prev?.thumbnailUrl || '',
       }));
     } catch (err) {
       console.error('Enrichment error', err);
     } finally {
       setLoading(false);
     }
-  }, [id, fetchBackendJsonNoStore]);
-
+  }, [id, fetchBackend]);
 
   useEffect(() => {
     if (!id) return;
@@ -281,17 +273,14 @@ export const VideoDetail: React.FC = () => {
     }
   }, [id, videos, getVideoById]);
 
-
   const fetchedId = useRef<string | null>(null);
   useEffect(() => {
     if (id && fetchedId.current !== id) { fetchedId.current = id; enrichVideo(); }
   }, [id, enrichVideo]);
 
-
   useEffect(() => {
     if (isEditing && video) setEditedVideo(JSON.parse(JSON.stringify(video)));
   }, [isEditing, video]);
-
 
   const handleEditField = (field: string, value: any) => {
     setEditedVideo((prev: any) => {
@@ -313,7 +302,6 @@ export const VideoDetail: React.FC = () => {
     });
   };
 
-
   const handleToggleFavorite = () => toggleFavorite(video.id);
   const handleArchive  = () => { moveVideos([video.id], 'archive'); setIsActionSheetOpen(false); };
   const handleDelete   = () => { deleteVideos([video.id]); setIsDeleteConfirmOpen(false); navigate('/gallery'); };
@@ -328,17 +316,15 @@ export const VideoDetail: React.FC = () => {
     else { await navigator.clipboard.writeText(window.location.href); alert(t('videoDetail:linkCopied', 'Link copied!')); }
   };
 
-
   const actionItems: ActionItem[] = video ? [
-    { icon: IOSShareIcon,  label: t('videoDetail:share', 'Partager la vidéo'), onClick: handleShare },
-    { icon: Pencil,        label: t('videoDetail:editReel', 'Modifier les détails'), onClick: () => setIsEditing(true) },
-    { icon: Heart,         label: video.isFavorite ? t('videoDetail:removeFromFavorites', 'Retirer des favoris') : t('videoDetail:addToFavorites', 'Add to Favorites'), onClick: handleToggleFavorite, variant: video.isFavorite ? 'default' : 'primary' },
-    { icon: FolderInput,   label: t('videoDetail:moveToCollection', 'Déplacer vers une collection'), onClick: () => setIsMoveModalOpen(true) },
-    { icon: Archive,       label: t('videoDetail:archive', 'Archiver la vidéo'), onClick: handleArchive },
-    { icon: Trash2,        label: t('videoDetail:deleteReel', 'Supprimer le clip'), onClick: () => setIsDeleteConfirmOpen(true), variant: 'danger' },
-    { icon: AlertCircle,   label: t('videoDetail:reportIssue', 'Signaler un problème'), onClick: () => setIsReportModalOpen(true) },
+    { icon: IOSShareIcon,  label: t('videoDetail:share', 'Share'), onClick: handleShare },
+    { icon: Pencil,        label: t('videoDetail:editReel', 'Edit details'), onClick: () => setIsEditing(true) },
+    { icon: Heart,         label: video.isFavorite ? t('videoDetail:removeFromFavorites', 'Remove from Favorites') : t('videoDetail:addToFavorites', 'Add to Favorites'), onClick: handleToggleFavorite, variant: video.isFavorite ? 'default' : 'primary' },
+    { icon: FolderInput,   label: t('videoDetail:moveToCollection', 'Move to Collection'), onClick: () => setIsMoveModalOpen(true) },
+    { icon: Archive,       label: t('videoDetail:archive', 'Archive'), onClick: handleArchive },
+    { icon: Trash2,        label: t('videoDetail:deleteReel', 'Delete'), onClick: () => setIsDeleteConfirmOpen(true), variant: 'danger' },
+    { icon: AlertCircle,   label: t('videoDetail:reportIssue', 'Report issue'), onClick: () => setIsReportModalOpen(true) },
   ] : [];
-
 
   const findFolderById = (targetId: string, list: any[]): any | null => {
     for (const f of list) {
@@ -348,23 +334,19 @@ export const VideoDetail: React.FC = () => {
     return null;
   };
 
-
   const folderName = useMemo(() => {
     const fid = video?.folderId || video?.folder_id || video?.folderid;
     if (!fid || ['all', 'unsorted', 'default'].includes(fid)) return null;
     return findFolderById(fid, folders || [])?.name ?? null;
   }, [video, folders]);
 
-
   const viewModel = useMemo(() => {
     if (!video) return null;
     const v = isEditing && editedVideo ? editedVideo : video;
 
-
     let summaryObj = v.summary;
     if (typeof summaryObj === 'string') { try { summaryObj = JSON.parse(summaryObj); } catch { summaryObj = {}; } }
     summaryObj = summaryObj || {};
-
 
     const englishData        = summaryObj.english  || {};
     const originalData       = summaryObj.original || {};
@@ -373,9 +355,7 @@ export const VideoDetail: React.FC = () => {
     const contentIsDifferent = englishHasContent && originalHasContent &&
       (originalData.title !== englishData.title || originalData.summary !== englishData.summary);
 
-
     const langBlock = (showOriginal && originalHasContent) ? originalData : (englishHasContent ? englishData : summaryObj);
-
 
     const _ext   = (v.detected_language || '').toLowerCase();
     const _trans = (v.transcription?.detected_language || '').toLowerCase();
@@ -383,8 +363,7 @@ export const VideoDetail: React.FC = () => {
     if (_ext && _ext !== 'unknown' && _ext !== 'en')            langCode = _ext.toUpperCase();
     else if (_trans && _trans !== 'unknown' && _trans !== 'en') langCode = _trans.toUpperCase();
     else if (contentIsDifferent)
-      langCode = inferLangFromText((originalData.title || '') + ' ' + (originalData.summary || ''));
-
+      langCode = inferLang((originalData.title || '') + ' ' + (originalData.summary || ''));
 
     let recipeData = v.recipe;
     if (typeof recipeData === 'string') { try { recipeData = JSON.parse(recipeData); } catch { recipeData = null; } }
@@ -393,68 +372,59 @@ export const VideoDetail: React.FC = () => {
       ? (showOriginal && recipeData.original ? recipeData.original : recipeData.english || recipeData)
       : null;
 
-
     let workoutData = v.workout;
     if (typeof workoutData === 'string') { try { workoutData = JSON.parse(workoutData); } catch { workoutData = null; } }
     if (workoutData && Object.keys(workoutData).length === 0) workoutData = null;
 
-
-    let extractedTranscript = '';
+    let transcript = '';
     if (v.transcription) {
       const raw = v.transcription.transcript || v.transcription.text || (typeof v.transcription === 'string' ? v.transcription : '');
-      extractedTranscript = (typeof raw === 'string' && raw.trim().startsWith('{'))
+      transcript = (typeof raw === 'string' && raw.trim().startsWith('{'))
         ? (() => { try { return JSON.parse(raw).transcript || raw; } catch { return raw; } })()
         : (typeof raw === 'string' ? raw : '');
     } else if (v.transcript) {
-      extractedTranscript = typeof v.transcript === 'string' ? v.transcript : (v.transcript.text || '');
+      transcript = typeof v.transcript === 'string' ? v.transcript : (v.transcript.text || '');
     }
 
-
     const rawDate = v.savedAt || v.created_at;
-    const formattedDate = rawDate
-      ? (() => { try { return new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return safeString(rawDate); } })()
+    const savedAt = rawDate
+      ? (() => { try { return new Date(rawDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return safe(rawDate); } })()
       : '';
 
-
-    const sourceUrl = safeString(v.source_url || v.originalUrl || '');
-
+    const sourceUrl = safe(v.source_url || v.originalUrl || '');
 
     return {
       id:             v.id || v.process_id,
-      title:          safeString(langBlock.title || summaryObj.title || v.summary_title || v.title || v.caption?.split('\n')[0]?.substring(0, 56) || 'Saved Reel'),
-      author:         safeString(v.author_name || v.author || 'Unknown'),
-      category:       safeString(v.summary_category || v.category || getCategory(v) || ''),
-      subCategory:    safeString(v.summary_topic || v.subCategory || v.topic || getTopic(v) || ''),
-      summary:        safeString(langBlock.summary || summaryObj.summary || v.summary_text || ''),
+      title:          safe(langBlock.title || summaryObj.title || v.summary_title || v.title || v.caption?.split('\n')[0]?.substring(0, 56) || 'Saved Reel'),
+      author:         safe(v.author_name || v.author || 'Unknown'),
+      category:       safe(v.summary_category || v.category || getCategory(v) || ''),
+      subCategory:    safe(v.summary_topic || v.subCategory || v.topic || getTopic(v) || ''),
+      summary:        safe(langBlock.summary || summaryObj.summary || v.summary_text || ''),
       bullets:        Array.isArray(langBlock.headlines) ? langBlock.headlines : (Array.isArray(v.summary_bullets) ? v.summary_bullets : (Array.isArray(v.bullets) ? v.bullets : [])),
       tags:           Array.isArray(langBlock.hashtags)  ? langBlock.hashtags  : (Array.isArray(v.summary_hashtags) ? v.summary_hashtags : (Array.isArray(v.tags) ? v.tags : [])),
-      transcript:     extractedTranscript.trim(),
+      transcript:     transcript.trim(),
       caption:        typeof v.caption === 'string' ? v.caption.trim() : (v.caption?.text || v.caption?.caption || '').trim(),
       recipe:         activeRecipe,
       workout:        workoutData,
-      thumbnailUrl:   safeString(v.thumbnailUrl || v.gcs_urls?.preview_thumbnail || v.preview || '') || galleryThumbnail,
+      thumbnailUrl:   safe(v.thumbnailUrl || v.gcs_urls?.preview_thumbnail || v.preview || '') || galleryThumbnail,
       originalUrl:    sourceUrl,
-      platform:       sourceUrl.includes('facebook') ? 'facebook' : 'instagram',
-      savedAt:        formattedDate,
+      platform:       detectPlatform(sourceUrl),
+      savedAt,
       hasTranslation: contentIsDifferent,
       languageCode:   langCode,
-      duration:       formatDuration(v.duration || v.duration_seconds),
+      duration:       fmt(v.duration || v.duration_seconds),
     };
   }, [video, editedVideo, isEditing, showOriginal, galleryThumbnail]);
 
-
-  if (loading || !viewModel) return <VideoDetailSkeleton />;
-
+  if (loading || !viewModel) return <Skeleton />;
 
   return (
     <div className="animate-fade-in relative px-0 pb-20 md:pb-6">
       <style>{HASHTAG_STYLE}</style>
       <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-6 items-start">
 
-
-        {/* ======================= LEFT COLUMN ======================= */}
+        {/* ── LEFT COLUMN ── */}
         <div className="min-w-0 w-full flex flex-col">
-
 
           {/* Thumbnail */}
           <div className="relative w-full aspect-[9/8] bg-black rounded-2xl overflow-hidden shadow-sm mb-5 group mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0">
@@ -497,12 +467,10 @@ export const VideoDetail: React.FC = () => {
             </div>
           </div>
 
-
           {/* Title */}
           <div className="mb-3">
             <EditableTitle title={viewModel.title} isEditMode={isEditing} value={viewModel.title} onChange={val => handleEditField('title', val)} />
           </div>
-
 
           {/* Author + Date */}
           <div className="mb-6 flex items-center justify-between">
@@ -516,16 +484,14 @@ export const VideoDetail: React.FC = () => {
               <div className="flex items-center gap-1.5 text-xs text-gray-400">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
-                  <path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7" />
-                  <path d="M7 3v4a1 1 0 0 0 1 1h7" />
+                  <path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7" /><path d="M7 3v4a1 1 0 0 0 1 1h7" />
                 </svg>
                 <span>{viewModel.savedAt}</span>
               </div>
             )}
           </div>
 
-
-          {/* Mobile: Category + Hashtags card */}
+          {/* Mobile: Category + Hashtags */}
           <div className="md:hidden mb-6 bg-violet-50 border border-violet-200 rounded-xl overflow-hidden p-4">
             <div className="pb-3 mb-3 border-b border-violet-200/70 relative flex items-center">
               <div className="flex flex-col gap-2 pr-10 flex-1">
@@ -550,20 +516,14 @@ export const VideoDetail: React.FC = () => {
             </div>
           </div>
 
-
           {/* AI Summary */}
           <div className="bg-primary-50 rounded-2xl p-5 md:p-6 mb-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-primary-700 font-bold text-sm uppercase tracking-wide">{t('videoDetail:aiSummary', 'AI Summary')}</h3>
               {viewModel.hasTranslation && !isEditing && (
-                <button
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleLanguage(); }}
-                  className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm bg-primary-600 hover:bg-primary-700 text-white transition-colors"
-                >
+                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleLanguage(); }} className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm bg-primary-600 hover:bg-primary-700 text-white transition-colors">
                   <Globe size={14} />
-                  <span className="text-[11px] font-bold uppercase">
-                    {showOriginal ? viewModel.languageCode : 'EN'}
-                  </span>
+                  <span className="text-[11px] font-bold uppercase">{showOriginal ? viewModel.languageCode : 'EN'}</span>
                 </button>
               )}
             </div>
@@ -582,14 +542,13 @@ export const VideoDetail: React.FC = () => {
                     <span className="leading-relaxed">
                       {bullet.headline
                         ? <><span className="font-bold text-gray-900">{bullet.headline}:</span> {bullet.text}</>
-                        : safeString(bullet)}
+                        : safe(bullet)}
                     </span>
                   </div>
                 ))}
               </div>
             )}
           </div>
-
 
           {/* Recipe */}
           {viewModel.recipe && (
@@ -598,16 +557,12 @@ export const VideoDetail: React.FC = () => {
                 <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
                   <div className="bg-emerald-50/60 p-4 md:p-5 border-b border-gray-50 flex items-center gap-3">
                     <ListChecks className="text-emerald-600" size={20} />
-                    <h3 className="font-bold text-gray-900 text-lg">
-                      {viewModel.recipe.ideas.length} {t('videoDetail:ideasTitle', 'Ideas in this video')}
-                    </h3>
+                    <h3 className="font-bold text-gray-900 text-lg">{viewModel.recipe.ideas.length} {t('videoDetail:ideasTitle', 'Ideas in this video')}</h3>
                   </div>
                   <div className="p-4 md:p-5 space-y-4">
                     {viewModel.recipe.ideas.map((idea: any, idx: number) => (
                       <div key={idx} className="flex gap-4 p-4 rounded-xl bg-gray-50 border border-gray-100/60 hover:bg-gray-100/50 hover:shadow-sm transition">
-                        {idea.emoji && (
-                          <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm border border-gray-100 shrink-0">{idea.emoji}</div>
-                        )}
+                        {idea.emoji && <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm border border-gray-100 shrink-0">{idea.emoji}</div>}
                         <div className="flex-1 min-w-0">
                           <h4 className="font-bold text-gray-900 text-sm mb-1">{idea.headline}</h4>
                           <p className="text-sm text-gray-600 leading-relaxed">{idea.text}</p>
@@ -617,42 +572,29 @@ export const VideoDetail: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <RecipeDetailsCard
-                  recipe={viewModel.recipe}
-                  servingScale={servingScale}
-                  scaleQuantity={scaleQuantity}
-                  onServingScaleChange={setServingScale}
-                  useMetric={useMetric}
-                  onToggleMetric={setUseMetric}
-                />
+                <RecipeDetailsCard recipe={viewModel.recipe} servingScale={servingScale} scaleQuantity={scaleQuantity} onServingScaleChange={setServingScale} useMetric={useMetric} onToggleMetric={setUseMetric} />
               )}
             </div>
           )}
 
-
           {/* Workout */}
           {viewModel.workout && <WorkoutBlock workoutData={viewModel.workout} showOriginal={showOriginal} />}
 
-
-          {/* Caption accordion */}
+          {/* Caption */}
           {viewModel.caption && (
-            <Accordion icon={<AlignLeft size={16} />} label={t('videoDetail:caption', 'Légende')}>
+            <Accordion icon={<AlignLeft size={16} />} label={t('videoDetail:caption', 'Caption')}>
               <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{viewModel.caption}</div>
             </Accordion>
           )}
 
-
-          {/* Transcript accordion (mobile only) */}
+          {/* Transcript (mobile) */}
           {viewModel.transcript && (
             <div className="md:hidden">
-              <Accordion icon={<CustomMessageSquareMoreIcon size={16} />} label={t('videoDetail:transcript', 'Transcription')}>
-                <div className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap font-medium italic border-l-2 border-gray-100 pl-4">
-                  "{viewModel.transcript}"
-                </div>
+              <Accordion icon={<CustomMessageSquareMoreIcon size={16} />} label={t('videoDetail:transcript', 'Transcript')}>
+                <div className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap font-medium italic border-l-2 border-gray-100 pl-4">"{viewModel.transcript}"</div>
               </Accordion>
             </div>
           )}
-
 
           {/* Mobile edit actions */}
           {isEditing && (
@@ -662,65 +604,38 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
-
-          {/* ✅ Open on Instagram/Facebook — MOBILE ONLY */}
+          {/* Original Link (mobile) */}
           {viewModel.originalUrl && (
-            <div className="md:hidden flex flex-col gap-2 shrink-0 mt-4">
-              <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-widest pl-1">{t('videoDetail:originalLink', 'Original Link')}</h4>
-              <a href={viewModel.originalUrl} target="_blank" rel="noreferrer" className="block w-full">
-                {viewModel.platform === 'facebook' ? (
-                  <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-white font-bold text-sm shadow-sm transition bg-[#1877F2] hover:bg-[#166FE5]">
-                    <PlatformIconBtn platform="facebook" />
-                    View on Facebook
-                  </button>
-                ) : (
-                  <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-white font-bold text-sm shadow-sm transition bg-gradient-to-r from-[#F58529] via-[#DD2A7B] to-[#8134AF] hover:opacity-90">
-                    <PlatformIconBtn platform="instagram" />
-                    View on Instagram
-                  </button>
-                )}
-              </a>
-            </div>
+            <OriginalLink url={viewModel.originalUrl} platform={viewModel.platform} t={t} className="md:hidden mt-4" />
           )}
-
-
         </div>
-        {/* ======================= END LEFT COLUMN ======================= */}
+        {/* ── END LEFT COLUMN ── */}
 
-
-        {/* ======================= RIGHT COLUMN (DESKTOP) ======================= */}
+        {/* ── RIGHT COLUMN (desktop) ── */}
         <div className="hidden md:flex flex-col w-full gap-5 mt-0">
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col shrink-0 divide-y divide-gray-100">
-
-
             <div className="p-5 flex flex-col gap-3 hover:bg-gray-50/50 transition-colors">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 bg-violet-50 text-violet-600 rounded-md"><CategoryIcon size={16} /></div>
                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Category</span>
               </div>
-              {isEditing ? (
-                <input className="text-lg font-bold border-b border-primary-200 w-full" value={viewModel.category} onChange={e => handleEditField('category', e.target.value)} />
-              ) : (
-                <div className="text-lg font-bold text-gray-900 pl-1 leading-snug">{viewModel.category}</div>
-              )}
+              {isEditing
+                ? <input className="text-lg font-bold border-b border-primary-200 w-full" value={viewModel.category} onChange={e => handleEditField('category', e.target.value)} />
+                : <div className="text-lg font-bold text-gray-900 pl-1 leading-snug">{viewModel.category}</div>
+              }
             </div>
-
-
             {(isEditing || viewModel.subCategory) && (
               <div className="p-5 flex flex-col gap-3 hover:bg-gray-50/50 transition-colors">
                 <div className="flex items-center gap-2">
                   <div className="p-1.5 bg-pink-50 text-pink-600 rounded-md"><TopicIcon size={16} /></div>
                   <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Topic</span>
                 </div>
-                {isEditing ? (
-                  <input className="text-lg font-bold border-b border-primary-200 w-full" value={viewModel.subCategory} onChange={e => handleEditField('topic', e.target.value)} />
-                ) : (
-                  <div className="text-lg font-bold text-gray-900 pl-1 leading-snug">{viewModel.subCategory}</div>
-                )}
+                {isEditing
+                  ? <input className="text-lg font-bold border-b border-primary-200 w-full" value={viewModel.subCategory} onChange={e => handleEditField('topic', e.target.value)} />
+                  : <div className="text-lg font-bold text-gray-900 pl-1 leading-snug">{viewModel.subCategory}</div>
+                }
               </div>
             )}
-
-
             <div className="p-5 flex flex-col gap-3 bg-gray-50/30">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 bg-cyan-50 text-cyan-600 rounded-md"><HashtagsIcon size={16} /></div>
@@ -729,7 +644,7 @@ export const VideoDetail: React.FC = () => {
               <div className="hashtag-links flex flex-wrap gap-2 pl-1">
                 {viewModel.tags?.length > 0
                   ? viewModel.tags.map((tag: string, idx: number) => {
-                      const c = safeString(tag).replace('#', '');
+                      const c = safe(tag).replace('#', '');
                       return <a key={idx} href={`https://www.instagram.com/explore/tags/${c}/`} target="_blank" rel="noopener noreferrer">#{c}</a>;
                     })
                   : <span className="text-gray-400 text-xs italic">No tags</span>
@@ -738,63 +653,26 @@ export const VideoDetail: React.FC = () => {
             </div>
           </div>
 
-
-          {/* Transcript accordion (desktop) */}
+          {/* Transcript (desktop) */}
           {viewModel.transcript && (
-            <Accordion icon={<CustomMessageSquareMoreIcon size={16} />} label={t('videoDetail:transcript', 'Transcription')}>
-              <div className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap font-medium italic border-l-2 border-gray-100 pl-4">
-                "{viewModel.transcript}"
-              </div>
+            <Accordion icon={<CustomMessageSquareMoreIcon size={16} />} label={t('videoDetail:transcript', 'Transcript')}>
+              <div className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap font-medium italic border-l-2 border-gray-100 pl-4">"{viewModel.transcript}"</div>
             </Accordion>
           )}
 
-
-          {/* ✅ Open on Instagram/Facebook — DESKTOP ONLY */}
+          {/* Original Link (desktop) */}
           {viewModel.originalUrl && (
-            <div className="flex flex-col gap-2 shrink-0">
-              <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-widest pl-1">Original Link</h4>
-              <a href={viewModel.originalUrl} target="_blank" rel="noreferrer" className="block w-full">
-                {viewModel.platform === 'facebook' ? (
-                  <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-white font-bold text-sm shadow-sm transition bg-[#1877F2] hover:bg-[#166FE5]">
-                    <PlatformIconBtn platform="facebook" />
-                    View on Facebook
-                  </button>
-                ) : (
-                  <button className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-white font-bold text-sm shadow-sm transition bg-gradient-to-r from-[#F58529] via-[#DD2A7B] to-[#8134AF] hover:opacity-90">
-                    <PlatformIconBtn platform="instagram" />
-                    View on Instagram
-                  </button>
-                )}
-              </a>
-            </div>
+            <OriginalLink url={viewModel.originalUrl} platform={viewModel.platform} t={t} />
           )}
-
-
         </div>
-        {/* ======================= END RIGHT COLUMN ======================= */}
-
+        {/* ── END RIGHT COLUMN ── */}
 
       </div>
 
-
       {/* ─── MODALS ─── */}
       <ActionSheet isOpen={isActionSheetOpen} onClose={() => setIsActionSheetOpen(false)} actions={actionItems} />
-      <MoveCollectionModal
-        isOpen={isMoveModalOpen}
-        onClose={() => setIsMoveModalOpen(false)}
-        videoIds={video ? [video.id] : []}
-        onMove={(folderId: string) => { moveVideos([video.id], folderId); setIsMoveModalOpen(false); }}
-      />
-      <ConfirmModal
-        isOpen={isDeleteConfirmOpen}
-        onClose={() => setIsDeleteConfirmOpen(false)}
-        onConfirm={handleDelete}
-        title={t('modals:deleteReelTitle', 'Delete Reel')}
-        message={t('modals:deleteReelMessage', 'Are you sure you want to delete this reel? This action cannot be undone.')}
-        confirmLabel={t('modals:confirmDelete', 'Delete')}
-        cancelLabel={t('common:cancel', 'Cancel')}
-        variant="danger"
-      />
+      <MoveCollectionModal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} videoIds={video ? [video.id] : []} onMove={(folderId: string) => { moveVideos([video.id], folderId); setIsMoveModalOpen(false); }} />
+      <ConfirmModal isOpen={isDeleteConfirmOpen} onClose={() => setIsDeleteConfirmOpen(false)} onConfirm={handleDelete} title={t('modals:deleteReelTitle', 'Delete Reel')} message={t('modals:deleteReelMessage', 'Are you sure?')} confirmLabel={t('modals:confirmDelete', 'Delete')} cancelLabel={t('common:cancel', 'Cancel')} variant="danger" />
       <ReportModal isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)} videoId={video?.id} />
     </div>
   );
