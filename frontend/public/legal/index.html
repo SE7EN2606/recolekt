@@ -8,12 +8,12 @@
     :root {
       --brand: #1a1a2e;
       --accent: #e94560;
-      --bg: #f9f9f9;
+      --bg: transparent;
       --card: #ffffff;
       --text: #2d2d2d;
       --muted: #666;
       --border: #e0e0e0;
-      --radius: 10px;
+      --radius: 1.5rem;
       --font: 'Segoe UI', system-ui, sans-serif;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -23,57 +23,21 @@
       color: var(--text);
       line-height: 1.7;
     }
-    header {
-      background: var(--brand);
-      color: white;
-      padding: 32px 40px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-    header .logo { font-size: 1.8rem; font-weight: 700; letter-spacing: -0.5px; }
-    header .logo span { color: var(--accent); }
-    header nav a {
-      color: rgba(255,255,255,0.8);
-      text-decoration: none;
-      margin-left: 24px;
-      font-size: 0.9rem;
-      transition: color 0.2s;
-    }
-    header nav a:hover { color: white; }
-    .page-tabs {
-      background: var(--brand);
-      border-top: 1px solid rgba(255,255,255,0.1);
-      display: flex;
-      gap: 4px;
-      padding: 0 40px;
-    }
-    .page-tabs a {
-      color: rgba(255,255,255,0.6);
-      text-decoration: none;
-      padding: 12px 20px;
-      font-size: 0.85rem;
-      border-bottom: 3px solid transparent;
-      transition: all 0.2s;
-    }
-    .page-tabs a:hover, .page-tabs a.active {
-      color: white;
-      border-bottom-color: var(--accent);
-    }
-    .container { max-width: 860px; margin: 0 auto; padding: 48px 24px; }
+    .container { max-width: 900px; margin: 0 auto; padding: 20px 24px 80px; }
     .doc-section {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 40px 48px;
-      margin-bottom: 32px;
+      margin-bottom: 40px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.03);
     }
     .doc-section h1 {
-      font-size: 1.6rem;
+      font-size: 2rem;
+      font-weight: 800;
       color: var(--brand);
-      margin-bottom: 6px;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
     }
     .doc-section .effective {
       font-size: 0.85rem;
@@ -83,259 +47,114 @@
       border-bottom: 1px solid var(--border);
     }
     .doc-section h2 {
-      font-size: 1rem;
-      font-weight: 700;
+      font-size: 0.9rem;
+      font-weight: 800;
       color: var(--brand);
-      margin: 28px 0 10px;
+      margin: 32px 0 12px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
-      font-size: 0.8rem;
+      letter-spacing: 1px;
     }
     .doc-section p, .doc-section li {
-      font-size: 0.95rem;
+      font-size: 1rem;
       color: var(--text);
-      margin-bottom: 8px;
-    }
-    .doc-section ul, .doc-section ol {
-      padding-left: 20px;
       margin-bottom: 12px;
     }
-    .doc-section li { margin-bottom: 6px; }
-    .tag {
-      display: inline-block;
-      background: #f0f4ff;
-      color: #3355cc;
-      border-radius: 4px;
-      padding: 2px 8px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      margin-bottom: 4px;
+    .doc-section ul { padding-left: 20px; margin-bottom: 16px; }
+    .doc-section li { margin-bottom: 8px; }
+    .status-box {
+      border-radius: 1rem;
+      padding: 18px 24px;
+      margin: 24px 0;
+      font-size: 0.9rem;
+      line-height: 1.5;
     }
-    .tag.red { background: #fff0f0; color: #cc2222; }
-    .tag.green { background: #f0fff4; color: #1a7a3c; }
+    .status-box.info { background: #f0f7ff; border-left: 4px solid #3b82f6; color: #1e40af; }
+    .status-box.warn { background: #fffaf0; border-left: 4px solid #f6ad55; color: #9c4221; }
+    
     .deletion-flow {
-      background: #f9faff;
-      border: 1px solid #d0d8f0;
-      border-radius: 8px;
-      padding: 20px 24px;
-      margin: 16px 0;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 1rem;
+      padding: 24px;
+      margin: 20px 0;
     }
-    .deletion-flow .step {
-      display: flex;
-      gap: 14px;
-      align-items: flex-start;
-      margin-bottom: 14px;
-    }
+    .deletion-flow .step { display: flex; gap: 16px; margin-bottom: 16px; }
     .deletion-flow .step:last-child { margin-bottom: 0; }
     .deletion-flow .step-num {
-      background: var(--accent);
+      background: var(--brand);
       color: white;
       border-radius: 50%;
-      width: 26px;
-      height: 26px;
+      width: 28px;
+      height: 28px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 0.75rem;
+      font-size: 0.8rem;
       font-weight: 700;
       flex-shrink: 0;
-      margin-top: 1px;
     }
-    .deletion-flow .step-text { font-size: 0.92rem; }
-    .status-box {
-      border-radius: 8px;
-      padding: 14px 18px;
-      margin: 20px 0;
-      font-size: 0.88rem;
-    }
-    .status-box.info { background: #eef4ff; border-left: 4px solid #3355cc; }
-    .status-box.warn { background: #fff8e6; border-left: 4px solid #f0a500; }
-    footer {
+    
+    footer.legal-footer {
       text-align: center;
-      padding: 32px;
+      padding: 40px;
       color: var(--muted);
-      font-size: 0.82rem;
+      font-size: 0.85rem;
       border-top: 1px solid var(--border);
+      margin-top: 40px;
     }
+    .legal-footer strong { color: var(--brand); }
+
     @media (max-width: 600px) {
-      .doc-section { padding: 24px 20px; }
-      header { padding: 20px; }
+      .doc-section { padding: 32px 24px; border-radius: 1.25rem; }
     }
   </style>
 </head>
 <body>
 
-<header>
-  <div class="logo">re<span>colekt</span></div>
-  <nav>
-    <a href="https://recolekt.app">Home</a>
-    <a href="mailto:info@recolekt.app">Contact</a>
-  </nav>
-</header>
-
-<div class="page-tabs">
-  <a href="#privacy" class="active">Privacy Policy</a>
-  <a href="#terms">Terms of Service</a>
-  <a href="#deletion">Data Deletion</a>
-</div>
-
 <div class="container">
 
-  <!-- ===== PRIVACY POLICY ===== -->
   <div class="doc-section" id="privacy">
     <h1>Privacy Policy</h1>
-    <div class="effective">Effective Date: October 7, 2025 &nbsp;|&nbsp; Last Updated: March 24, 2026</div>
+    <div class="effective">Effective Date: October 7, 2025 &nbsp;|&nbsp; Last Updated: March 31, 2026</div>
 
     <h2>1. Introduction</h2>
-    <p>Recolekt ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our web application at <strong>recolekt.app</strong>.</p>
-    <p>By using Recolekt, you agree to the collection and use of information in accordance with this policy. This policy also describes how Recolekt interacts with Meta's platforms (Instagram and Facebook) under the <a href="https://developers.facebook.com/terms/dfc_platform_terms/" target="_blank">Meta Platform Terms</a>.</p>
+    <p>Recolekt ("we," "our," or "us") is a service operated by <strong>SE7EN SOLUTIONS OÜ</strong>, a company registered in Estonia (Registry Code: 16834571). We are committed to protecting your privacy and this policy explains how we handle your data at <strong>recolekt.app</strong>.</p>
+    <p>By using Recolekt, you agree to the collection and use of information in accordance with this policy. We strictly adhere to the <a href="https://developers.facebook.com/terms/dfc_platform_terms/" target="_blank">Meta Platform Terms</a> regarding data obtained from Instagram and Facebook.</p>
 
     <h2>2. Information We Collect</h2>
     <ul>
-      <li><strong>Account Information:</strong> When you sign in with Google, we collect your name, email address, and profile picture via Google OAuth 2.0.</li>
-      <li><strong>Instagram / Meta Data:</strong> With your explicit consent via Meta OAuth, we collect your Instagram username, profile picture, and publicly accessible Reel metadata (captions, hashtags, media URLs, transcriptions generated by our system). We access only data you expressly authorize.</li>
-      <li><strong>User-Submitted Content:</strong> Reel URLs or content links you submit for processing.</li>
-      <li><strong>Technical Data:</strong> IP address, device type, browser type, and usage analytics for app improvement and troubleshooting.</li>
-      <li><strong>Payment Data:</strong> If you subscribe, billing is handled securely by Stripe. We do not store raw card details.</li>
-    </ul>
-
-    <h2>3. How We Use Your Information</h2>
-    <ul>
-      <li>Authenticate your account and maintain your session.</li>
-      <li>Process and analyze Reel content to extract metadata, summaries, transcriptions, ingredients, hashtags, and categories using AI services.</li>
-      <li>Store your curated Reel library and associated metadata.</li>
-      <li>Send transactional emails (account, billing, support).</li>
-      <li>Improve app performance, fix bugs, and develop new features.</li>
-      <li>Comply with applicable legal obligations.</li>
+      <li><strong>Account Information:</strong> Name, email, and profile picture via Google OAuth 2.0.</li>
+      <li><strong>Meta Platform Data:</strong> With your explicit consent via Meta OAuth, we access your Instagram username and publicly accessible Reel metadata to provide curation services.</li>
+      <li><strong>User Content:</strong> Any Reel URLs or links you choose to save to your library.</li>
     </ul>
 
     <div class="status-box info">
-      <strong>Meta Platform Policy:</strong> Data obtained via Meta's Graph API is used solely to provide and improve Recolekt's core service to you. We do not use this data for advertising profiling, selling to third parties, or any purpose unrelated to the functionality you authorized.
+      <strong>Compliance Note:</strong> Data obtained via Meta's Graph API is used solely to provide and improve Recolekt's core curation service. We never sell this data or use it for advertising profiling.
     </div>
 
-    <h2>4. Third-Party Services</h2>
-    <p>Recolekt integrates the following third-party services to deliver its functionality. Each has its own privacy policy:</p>
-    <ul>
-      <li><strong>Google OAuth</strong> — authentication (accounts.google.com)</li>
-      <li><strong>Meta Graph API</strong> — Instagram Reel metadata access</li>
-      <li><strong>Mistral AI / OpenAI</strong> — AI-generated summaries and categorization</li>
-      <li><strong>Deepgram</strong> — speech-to-text transcription</li>
-      <li><strong>Google Cloud Storage</strong> — media file storage</li>
-      <li><strong>Stripe</strong> — payment processing</li>
-      <li><strong>NeonDB / PostgreSQL</strong> — secure structured data storage</li>
-    </ul>
-    <p>We do not sell, rent, or share your personal data with third parties for marketing purposes.</p>
-
-    <h2>5. Data Retention</h2>
-    <p>We retain your data for as long as your account is active or as needed to provide services. You may request deletion at any time (see Section 9). Meta-sourced data is deleted promptly upon account removal or upon Meta's deletion request callback.</p>
-
-    <h2>6. Data Security</h2>
-    <p>We implement industry-standard security measures including HTTPS/TLS encryption, environment-variable-protected API keys, and access-controlled databases. No method of internet transmission is 100% secure, but we take all reasonable precautions.</p>
-
-    <h2>7. Children's Privacy</h2>
-    <p>Recolekt is not intended for use by children under the age of 13. We do not knowingly collect information from children under 13. If you believe a child has provided us with personal data, contact us immediately at <a href="mailto:info@recolekt.app">info@recolekt.app</a>.</p>
-
-    <h2>8. Your Rights</h2>
-    <p>Depending on your location (including users in the EEA/GDPR jurisdictions), you may have the right to access, correct, or delete your personal data. To exercise any of these rights, contact us at <a href="mailto:info@recolekt.app">info@recolekt.app</a>.</p>
-
-    <h2>9. Data Deletion</h2>
-    <p>You can request deletion of all your data, including any data obtained via Meta's platform, at any time. See our <a href="#deletion">Data Deletion Instructions</a> below. Meta users who disconnect Recolekt from their Facebook/Instagram settings will trigger an automatic data deletion request to our system.</p>
-
-    <h2>10. Changes to This Policy</h2>
-    <p>We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated "Last Updated" date. Continued use of Recolekt after changes constitutes your acceptance.</p>
-
-    <h2>11. Contact Us</h2>
-    <p>For any questions or concerns about this Privacy Policy:<br>
-    📧 <a href="mailto:info@recolekt.app">info@recolekt.app</a><br>
-    🌐 <a href="https://recolekt.app">recolekt.app</a></p>
+    <h2>3. Data Deletion</h2>
+    <p>You may request full deletion of your account and all associated Meta data at any time through your account settings or by contacting us directly.</p>
   </div>
 
-  <!-- ===== TERMS OF SERVICE ===== -->
   <div class="doc-section" id="terms">
     <h1>Terms of Service</h1>
-    <div class="effective">Effective Date: October 7, 2025 &nbsp;|&nbsp; Last Updated: March 24, 2026</div>
+    <div class="effective">Last Updated: March 31, 2026</div>
 
-    <h2>1. Acceptance of Terms</h2>
-    <p>By accessing or using Recolekt ("the App," available at <strong>recolekt.app</strong>), you agree to be bound by these Terms of Service ("Terms"). If you do not agree, do not use the App.</p>
-
-    <h2>2. Eligibility</h2>
-    <ul>
-      <li>You must be at least 13 years old to use Recolekt.</li>
-      <li>By using the App, you represent that you meet this requirement.</li>
-      <li>If you are using the App on behalf of an organization, you represent that you have authority to bind that organization to these Terms.</li>
-    </ul>
-
-    <h2>3. Description of Service</h2>
-    <p>Recolekt is a content curation platform that processes social media Reels (from Instagram and TikTok) to extract and organize metadata including AI-generated summaries, transcriptions, ingredient lists, hashtags, and categories. The App uses Meta's Graph API and is subject to <a href="https://developers.facebook.com/terms/" target="_blank">Meta's Platform Terms</a>.</p>
-
-    <h2>4. Use of the App</h2>
-    <p>You agree to:</p>
-    <ul>
-      <li>Use the App only for lawful purposes and in accordance with these Terms.</li>
-      <li>Not submit content or Reel links that you do not have rights to process.</li>
-      <li>Not reverse-engineer, scrape, or extract data from the App's infrastructure.</li>
-      <li>Not interfere with, disrupt, or attempt to gain unauthorized access to the App's servers or networks.</li>
-      <li>Comply with Meta's Platform Terms when using features that connect to Instagram or Facebook.</li>
-    </ul>
-
-    <h2>5. Meta Platform Compliance</h2>
-    <p>When you connect your Instagram or Facebook account, you authorize Recolekt to access your account data via Meta's Graph API in accordance with the permissions you grant. You may revoke this access at any time via your <a href="https://www.facebook.com/settings?tab=applications" target="_blank">Facebook App Settings</a>. Upon revocation, Recolekt will delete your Meta-sourced data.</p>
-
-    <div class="status-box warn">
-      <strong>Important:</strong> Recolekt uses Meta data exclusively to deliver the core service described above. Data from Meta is never used for advertising targeting, sold to third parties, or applied to any purpose beyond what you authorized.
-    </div>
-
-    <h2>6. User Content</h2>
-    <p>You retain full ownership of any content you submit. By submitting Reel links or content, you grant Recolekt a limited, non-exclusive, royalty-free license to process and display that content within the App for your personal use. We do not claim ownership over your curated data.</p>
-
-    <h2>7. Prohibited Conduct</h2>
-    <ul>
-      <li>Violate any applicable laws or regulations (including GDPR, Estonian data law, or Meta's policies).</li>
-      <li>Submit content that infringes third-party intellectual property rights.</li>
-      <li>Use the App to distribute spam, malware, or harmful content.</li>
-      <li>Attempt to access other users' data or accounts.</li>
-    </ul>
-
-    <h2>8. Subscriptions and Billing</h2>
-    <p>Recolekt offers free and paid subscription tiers. Paid features are billed through Stripe. Subscription fees are non-refundable except where required by applicable law. You may cancel your subscription at any time via your account settings, and access will continue until the end of the current billing period.</p>
-
-    <h2>9. Termination</h2>
-    <p>We reserve the right to suspend or terminate your account at our sole discretion, with or without notice, if you violate these Terms or applicable law. Upon termination, your data will be deleted per our Privacy Policy.</p>
-
-    <h2>10. Disclaimers</h2>
-    <p>The App is provided "as is" without warranties of any kind, express or implied. We do not guarantee uninterrupted, error-free service. AI-generated summaries and metadata are provided for informational purposes and may not always be accurate.</p>
-
-    <h2>11. Limitation of Liability</h2>
-    <p>To the fullest extent permitted by applicable law, Recolekt shall not be liable for any indirect, incidental, special, or consequential damages arising from your use of the App, including loss of data or revenue.</p>
-
-    <h2>12. Governing Law</h2>
-    <p>These Terms are governed by the laws of the Republic of Estonia, without regard to conflict of law principles. Any disputes shall be subject to the exclusive jurisdiction of Estonian courts.</p>
-
-    <h2>13. Changes to These Terms</h2>
-    <p>We may update these Terms from time to time. We will notify you by posting the revised Terms on this page with an updated "Last Updated" date. Your continued use of the App after changes constitutes acceptance.</p>
-
-    <h2>14. Contact Us</h2>
-    <p>For questions about these Terms:<br>
-    📧 <a href="mailto:info@recolekt.app">info@recolekt.app</a><br>
-    🌐 <a href="https://recolekt.app">recolekt.app</a></p>
+    <h2>1. The Agreement</h2>
+    <p>These terms constitute a legally binding agreement between you and <strong>SE7EN SOLUTIONS OÜ</strong> regarding your use of Recolekt.</p>
+    
+    <h2>2. Governing Law</h2>
+    <p>These Terms are governed by the laws of the Republic of Estonia. Any disputes shall be subject to the exclusive jurisdiction of Estonian courts.</p>
   </div>
 
-  <!-- ===== DATA DELETION ===== -->
   <div class="doc-section" id="deletion">
     <h1>Data Deletion Instructions</h1>
-    <div class="effective">Last Updated: March 24, 2026</div>
+    <div class="effective">Last Updated: March 31, 2026</div>
 
-    <p>Recolekt is committed to your right to erasure under GDPR and Meta Platform Policy. You can request deletion of your personal data and any Instagram/Facebook data we hold at any time using the methods below.</p>
-
-    <div class="status-box info">
-      <strong>Meta Platform Requirement:</strong> When you remove the Recolekt app from your Facebook or Instagram account settings, Meta automatically sends us a signed deletion request. We process this within 30 days and confirm deletion to you.
-    </div>
-
-    <h2>Option A – Delete via Recolekt Account Settings</h2>
     <div class="deletion-flow">
       <div class="step">
         <div class="step-num">1</div>
-        <div class="step-text">Sign in to your Recolekt account at <strong>recolekt.app</strong>.</div>
+        <div class="step-text">Sign in to your account at <strong>recolekt.app</strong>.</div>
       </div>
       <div class="step">
         <div class="step-num">2</div>
@@ -343,86 +162,19 @@
       </div>
       <div class="step">
         <div class="step-num">3</div>
-        <div class="step-text">Click <strong>"Delete My Account & All Data"</strong>. This permanently removes all your data from our systems, including any Instagram metadata we have processed on your behalf.</div>
-      </div>
-      <div class="step">
-        <div class="step-num">4</div>
-        <div class="step-text">You will receive a confirmation email at your registered address within 24 hours.</div>
+        <div class="step-text">Click <strong>"Delete My Account & All Data"</strong> to trigger immediate permanent erasure.</div>
       </div>
     </div>
-
-    <h2>Option B – Revoke Instagram / Facebook Access</h2>
-    <div class="deletion-flow">
-      <div class="step">
-        <div class="step-num">1</div>
-        <div class="step-text">Go to <strong>Facebook Settings → Security and Login → Apps and Websites</strong>, or visit <a href="https://www.facebook.com/settings?tab=applications" target="_blank">facebook.com/settings?tab=applications</a>.</div>
-      </div>
-      <div class="step">
-        <div class="step-num">2</div>
-        <div class="step-text">Find <strong>Recolekt</strong> and click <strong>Remove</strong>.</div>
-      </div>
-      <div class="step">
-        <div class="step-num">3</div>
-        <div class="step-text">Meta will automatically notify Recolekt. All Instagram/Facebook data linked to your account will be deleted within <strong>30 days</strong>.</div>
-      </div>
-      <div class="step">
-        <div class="step-num">4</div>
-        <div class="step-text">You can check the status of your deletion request by emailing us at <a href="mailto:info@recolekt.app">info@recolekt.app</a> with the subject line <strong>"Data Deletion Request"</strong>. We will provide a confirmation code and status URL.</div>
-      </div>
-    </div>
-
-    <h2>Option C – Email Request</h2>
-    <p>Send a deletion request to <a href="mailto:info@recolekt.app">info@recolekt.app</a> with the subject line <strong>"Data Deletion Request"</strong>. Include your registered email address. We will process your request and confirm deletion within <strong>30 days</strong>.</p>
-
-    <h2>What Gets Deleted</h2>
-    <ul>
-      <li>Your account profile (name, email)</li>
-      <li>All Reel metadata and library content you have saved</li>
-      <li>AI-generated summaries, transcriptions, and ingredient data tied to your account</li>
-      <li>Any Instagram/Facebook data (username, profile picture, media metadata) obtained via Meta's Graph API</li>
-      <li>Subscription and billing history (except records required by law)</li>
-    </ul>
-
-    <h2>Confirmation</h2>
-    <p>After deletion, you will receive a confirmation email containing a <strong>unique confirmation code</strong> and a status URL to verify the deletion was completed. This is required by Meta's Platform Policy.</p>
-
-    <h2>Contact</h2>
-    <p>📧 <a href="mailto:info@recolekt.app">info@recolekt.app</a><br>
-    🌐 <a href="https://recolekt.app">recolekt.app</a></p>
+    <p>Alternatively, revoking access via your Facebook App Settings will trigger an automatic deletion request which we process within 30 days.</p>
   </div>
 
+  <footer class="legal-footer">
+    &copy; 2026 <strong>SE7EN SOLUTIONS OÜ</strong>. All rights reserved.<br>
+    Joa 3A-59, Tallinn 10127, Estonia | Registry Code: 14215655<br>
+    Contact: <a href="mailto:info@recolekt.app">info@recolekt.app</a>
+  </footer>
+
 </div>
-
-<footer>
-  &copy; 2025–2026 Recolekt. All rights reserved. &nbsp;|&nbsp;
-  <a href="#privacy">Privacy Policy</a> &nbsp;|&nbsp;
-  <a href="#terms">Terms of Service</a> &nbsp;|&nbsp;
-  <a href="#deletion">Data Deletion</a> &nbsp;|&nbsp;
-  <a href="mailto:info@recolekt.app">info@recolekt.app</a>
-</footer>
-
-<script>
-  // Smooth scroll + active tab highlight
-  document.querySelectorAll('.page-tabs a').forEach(link => {
-    link.addEventListener('click', function(e) {
-      document.querySelectorAll('.page-tabs a').forEach(a => a.classList.remove('active'));
-      this.classList.add('active');
-    });
-  });
-
-  // Highlight active tab on scroll
-  const sections = ['privacy', 'terms', 'deletion'];
-  window.addEventListener('scroll', () => {
-    let current = '';
-    sections.forEach(id => {
-      const el = document.getElementById(id);
-      if (el && window.scrollY >= el.offsetTop - 100) current = id;
-    });
-    document.querySelectorAll('.page-tabs a').forEach(a => {
-      a.classList.toggle('active', a.getAttribute('href') === '#' + current);
-    });
-  });
-</script>
 
 </body>
 </html>
