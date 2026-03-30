@@ -62,5 +62,7 @@
   "alertSelectError": "Please select at least one error type",
   "alertProvideDetails": "Please provide some details",
   "alertProvideUrl": "Please provide a URL",
-  "alertSuccess": "Report submitted successfully! Thank you for your feedback."
+  "alertSuccess": "Report submitted successfully! Thank you for your feedback.",
+  "errorUnsupportedPlatform": "Only Instagram, Facebook, YouTube and TikTok URLs are supported.",
+  "supportedPlatforms": "Instagram · Facebook · YouTube · TikTok"
 }

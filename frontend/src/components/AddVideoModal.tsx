@@ -14,6 +14,19 @@ const PasteIcon = ({ className = "" }: { className?: string }) => (
   </svg>
 );
 
+const SUPPORTED_DOMAINS = [
+  'instagram.com',
+  'facebook.com', 'fb.watch', 'fb.com',
+  'youtube.com', 'youtu.be',
+  'tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com',
+];
+
+const isSupportedUrl = (url: string): boolean => {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  return SUPPORTED_DOMAINS.some(d => lower.includes(d));
+};
+
 interface AddVideoModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -66,6 +79,12 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
     if (isLoading) return;
     if (!url.trim()) return;
 
+    // ── Platform validation ───────────────────────────────────────────
+    if (!isSupportedUrl(url.trim())) {
+      setError(t('modals:errorUnsupportedPlatform', 'Only Instagram, Facebook, YouTube and TikTok URLs are supported.'));
+      return;
+    }
+
     setIsLoading(true);
     setError('');
     setAlreadySaved(false);
@@ -75,14 +94,11 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
 
       setUrl('');
       onClose();
-
-      // ✅ Always redirect to gallery after submit — processing or done
       navigate('/gallery');
 
     } catch (err: any) {
       const backendError = String(err.message || '').toLowerCase();
 
-      // ✅ Already saved — show inline notice instead of error, still offer redirect
       if (backendError.includes('already been saved') || backendError.includes('already exists')) {
         setAlreadySaved(true);
         setIsLoading(false);
@@ -92,6 +108,8 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
       let translatedError = t('modals:importFailed');
       if (backendError.includes('not authenticated') || backendError.includes('authentication required')) {
         translatedError = t('modals:errorNotAuth');
+      } else if (backendError.includes('unsupported_platform') || backendError.includes('unsupported platform')) {
+        translatedError = t('modals:errorUnsupportedPlatform', 'Only Instagram, Facebook, YouTube and TikTok URLs are supported.');
       } else if (backendError.includes('provide either file or url') || backendError.includes('invalid url')) {
         translatedError = t('modals:errorInvalidUrl');
       } else if (backendError.includes('failed to import') || backendError.includes('internal error')) {
@@ -115,10 +133,8 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
         isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
     >
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
 
-      {/* Modal */}
       <div
         className={`
           relative bg-white/90 backdrop-blur-xl border border-white/40
@@ -129,7 +145,6 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6">
-          {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-gray-900">
               {t('modals:saveNewVideo')}
@@ -139,7 +154,6 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
             </button>
           </div>
 
-          {/* ✅ Already saved notice */}
           {alreadySaved ? (
             <div className="space-y-4">
               <div className="flex items-start gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
@@ -172,7 +186,6 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* URL Input + Paste Button */}
               <div className="relative">
                 <input
                   type="text"
@@ -197,12 +210,15 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
                 </div>
               </div>
 
-              {/* Error */}
+              {/* Platform hint */}
+              <p className="text-xs text-gray-400 -mt-1">
+                {t('modals:supportedPlatforms', 'Instagram · Facebook · YouTube · TikTok')}
+              </p>
+
               {error && (
                 <p className="text-sm text-red-600 font-medium">{error}</p>
               )}
 
-              {/* Actions */}
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
