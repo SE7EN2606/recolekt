@@ -1,150 +1,192 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Recolekt – Legal & Compliance</title>
-  <style>
-    :root {
-      --brand: #1a1a2e;
-      --accent: #e94560;
-      --bg: transparent;
-      --card: #ffffff;
-      --text: #2d2d2d;
-      --muted: #666;
-      --border: #e0e0e0;
-      --radius: 1.5rem;
-      --font: 'Segoe UI', system-ui, sans-serif;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: var(--font);
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.7;
-    }
-    .container { max-width: 900px; margin: 0 auto; padding: 20px 24px 80px; }
-    .doc-section {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 40px 48px;
-      margin-bottom: 40px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.03);
-    }
-    .doc-section h1 {
-      font-size: 2rem;
-      font-weight: 800;
-      color: var(--brand);
-      margin-bottom: 8px;
-      letter-spacing: -0.5px;
-    }
-    .doc-section .effective {
-      font-size: 0.85rem;
-      color: var(--muted);
-      margin-bottom: 32px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid var(--border);
-    }
-    .doc-section h2 {
-      font-size: 0.9rem;
-      font-weight: 800;
-      color: var(--brand);
-      margin: 32px 0 12px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-    .doc-section p, .doc-section li {
-      font-size: 1rem;
-      color: var(--text);
-      margin-bottom: 12px;
-    }
-    .doc-section ul { padding-left: 20px; margin-bottom: 16px; }
-    .doc-section li { margin-bottom: 8px; }
-    .status-box {
-      border-radius: 1rem;
-      padding: 18px 24px;
-      margin: 24px 0;
-      font-size: 0.9rem;
-      line-height: 1.5;
-    }
-    .status-box.info { background: #f0f7ff; border-left: 4px solid #3b82f6; color: #1e40af; }
-    .status-box.warn { background: #fffaf0; border-left: 4px solid #f6ad55; color: #9c4221; }
-    
-    .deletion-flow {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 1rem;
-      padding: 24px;
-      margin: 20px 0;
-    }
-    .deletion-flow .step { display: flex; gap: 16px; margin-bottom: 16px; }
-    .deletion-flow .step:last-child { margin-bottom: 0; }
-    .deletion-flow .step-num {
-      background: var(--brand);
-      color: white;
-      border-radius: 50%;
-      width: 28px;
-      height: 28px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.8rem;
-      font-weight: 700;
-      flex-shrink: 0;
-    }
-    
-    footer.legal-footer {
-      text-align: center;
-      padding: 40px;
-      color: var(--muted);
-      font-size: 0.85rem;
-      border-top: 1px solid var(--border);
-      margin-top: 40px;
-    }
-    .legal-footer strong { color: var(--brand); }
+<style>
+  :root {
+    --brand: #1a1a2e;
+    --accent: #e94560;
+    --card: #ffffff;
+    --text: #2d2d2d;
+    --muted: #666;
+    --border: #e0e0e0;
+    --radius: 1.5rem;
+    --font: 'Segoe UI', system-ui, sans-serif;
+  }
+  .legal-page-container { 
+    font-family: var(--font);
+    color: var(--text);
+    line-height: 1.7;
+    max-width: 900px; 
+    margin: 0 auto; 
+    padding: 40px 24px 80px; /* Reduced top padding to sit closer to your header */
+  }
+  .doc-section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 40px 48px;
+    margin-bottom: 40px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+  }
+  .doc-section h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--brand);
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  .doc-section .effective {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 32px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .doc-section h2 {
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: var(--brand);
+    margin: 32px 0 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .doc-section p, .doc-section li {
+    font-size: 1rem;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  .doc-section ul { padding-left: 20px; margin-bottom: 16px; }
+  .doc-section li { margin-bottom: 8px; }
+  .status-box {
+    border-radius: 1rem;
+    padding: 18px 24px;
+    margin: 24px 0;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+  .status-box.info { background: #f0f7ff; border-left: 4px solid #3b82f6; color: #1e40af; }
+  .status-box.warn { background: #fffaf0; border-left: 4px solid #f6ad55; color: #9c4221; }
+  .deletion-flow {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 1rem;
+    padding: 24px;
+    margin: 20px 0;
+  }
+  .deletion-flow .step { display: flex; gap: 16px; margin-bottom: 16px; }
+  .deletion-flow .step:last-child { margin-bottom: 0; }
+  .deletion-flow .step-num {
+    background: var(--brand);
+    color: white;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .legal-footer {
+    text-align: center;
+    padding: 40px;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  @media (max-width: 600px) {
+    .doc-section { padding: 32px 24px; border-radius: 1.25rem; }
+  }
+</style>
 
-    @media (max-width: 600px) {
-      .doc-section { padding: 32px 24px; border-radius: 1.25rem; }
-    }
-  </style>
-</head>
-<body>
-
-<div class="container">
+<div class="legal-page-container">
 
   <div class="doc-section" id="privacy">
     <h1>Privacy Policy</h1>
     <div class="effective">Effective Date: October 7, 2025 &nbsp;|&nbsp; Last Updated: March 31, 2026</div>
 
     <h2>1. Introduction</h2>
-    <p>Recolekt ("we," "our," or "us") is a service operated by <strong>SE7EN SOLUTIONS OÜ</strong>, a company registered in Estonia (Registry Code: 16834571). We are committed to protecting your privacy and this policy explains how we handle your data at <strong>recolekt.app</strong>.</p>
-    <p>By using Recolekt, you agree to the collection and use of information in accordance with this policy. We strictly adhere to the <a href="https://developers.facebook.com/terms/dfc_platform_terms/" target="_blank">Meta Platform Terms</a> regarding data obtained from Instagram and Facebook.</p>
+    <p>Recolekt ("we," "our," or "us") is a service operated by <strong>SE7EN SOLUTIONS OÜ</strong>, a company registered in Estonia (Registry Code: 16834571). We are committed to protecting your privacy. This policy explains how we handle your information at <strong>recolekt.app</strong>.</p>
 
     <h2>2. Information We Collect</h2>
     <ul>
-      <li><strong>Account Information:</strong> Name, email, and profile picture via Google OAuth 2.0.</li>
-      <li><strong>Meta Platform Data:</strong> With your explicit consent via Meta OAuth, we access your Instagram username and publicly accessible Reel metadata to provide curation services.</li>
-      <li><strong>User Content:</strong> Any Reel URLs or links you choose to save to your library.</li>
+      <li><strong>Account Information:</strong> Name, email address, and profile picture via Google OAuth 2.0.</li>
+      <li><strong>Instagram / Meta Data:</strong> With your explicit consent, we collect Instagram username, profile picture, and publicly accessible Reel metadata.</li>
+      <li><strong>User-Submitted Content:</strong> Reel URLs or content links you submit.</li>
+      <li><strong>Technical Data:</strong> IP address, device type, browser type, and usage analytics.</li>
+      <li><strong>Payment Data:</strong> Billing is handled securely by Stripe; we do not store raw card details.</li>
+    </ul>
+
+    <h2>3. How We Use Your Information</h2>
+    <ul>
+      <li>Authenticate your account and maintain your session.</li>
+      <li>Process Reel content to extract metadata, summaries, and transcriptions using AI services.</li>
+      <li>Store your curated Reel library.</li>
+      <li>Send transactional emails regarding account and billing.</li>
     </ul>
 
     <div class="status-box info">
-      <strong>Compliance Note:</strong> Data obtained via Meta's Graph API is used solely to provide and improve Recolekt's core curation service. We never sell this data or use it for advertising profiling.
+      <strong>Compliance Note:</strong> Data obtained via Meta's Graph API is used solely to provide and improve Recolekt's core curation service. We do not use this data for advertising profiling or selling to third parties.
     </div>
 
-    <h2>3. Data Deletion</h2>
-    <p>You may request full deletion of your account and all associated Meta data at any time through your account settings or by contacting us directly.</p>
+    <h2>4. Third-Party Services</h2>
+    <p>Recolekt integrates third-party services including Google OAuth, Meta Graph API, Mistral AI, OpenAI, Deepgram, Google Cloud Storage, Stripe, and NeonDB.</p>
+
+    <h2>5. Data Retention</h2>
+    <p>We retain data as long as your account is active. Meta-sourced data is deleted promptly upon account removal or revocation of access.</p>
+
+    <h2>6. Data Security</h2>
+    <p>We implement industry-standard HTTPS/TLS encryption and access-controlled databases.</p>
+
+    <h2>7. Children's Privacy</h2>
+    <p>Recolekt is not intended for use by children under 13.</p>
+
+    <h2>8. Your Rights</h2>
+    <p>EEA/GDPR users have the right to access, correct, or delete personal data.</p>
+
+    <h2>9. Data Deletion</h2>
+    <p>You can request full deletion of your account and all associated Meta data at any time.</p>
+
+    <h2>10. Contact Us</h2>
+    <p>📧 info@recolekt.app<br>🌐 recolekt.app</p>
   </div>
 
   <div class="doc-section" id="terms">
     <h1>Terms of Service</h1>
     <div class="effective">Last Updated: March 31, 2026</div>
 
-    <h2>1. The Agreement</h2>
-    <p>These terms constitute a legally binding agreement between you and <strong>SE7EN SOLUTIONS OÜ</strong> regarding your use of Recolekt.</p>
-    
-    <h2>2. Governing Law</h2>
-    <p>These Terms are governed by the laws of the Republic of Estonia. Any disputes shall be subject to the exclusive jurisdiction of Estonian courts.</p>
+    <h2>1. Acceptance of Terms</h2>
+    <p>By accessing Recolekt, you agree to be bound by these terms. These terms constitute a legally binding agreement between you and <strong>SE7EN SOLUTIONS OÜ</strong>.</p>
+
+    <h2>2. Eligibility</h2>
+    <p>You must be at least 13 years old to use the App.</p>
+
+    <h2>3. Description of Service</h2>
+    <p>Recolekt provides curation tools for social media Reels using Meta's Graph API.</p>
+
+    <h2>4. Use of the App</h2>
+    <p>You agree to use the App only for lawful purposes and comply with Meta's Platform Terms.</p>
+
+    <h2>5. Meta Platform Compliance</h2>
+    <p>Revoking access via Facebook Settings will trigger data deletion within Recolekt.</p>
+
+    <h2>6. User Content</h2>
+    <p>You retain full ownership of any content you submit.</p>
+
+    <h2>7. Prohibited Conduct</h2>
+    <p>Users may not violate regulations (GDPR, Estonian law), infringe intellectual property, or distribute malware.</p>
+
+    <h2>8. Subscriptions and Billing</h2>
+    <p>Fees are non-refundable except where required by law. Billing is via Stripe.</p>
+
+    <h2>9. Termination</h2>
+    <p>We reserve the right to suspend accounts for violations of these Terms.</p>
+
+    <h2>10. Disclaimers</h2>
+    <p>The App is provided "as is" without warranties of any kind.</p>
+
+    <h2>11. Limitation of Liability</h2>
+    <p>Recolekt is not liable for indirect or consequential damages arising from app use.</p>
+
+    <h2>12. Governing Law</h2>
+    <p>Governed by the laws of the Republic of Estonia. Registry Code: 16834571.</p>
   </div>
 
   <div class="doc-section" id="deletion">
@@ -154,27 +196,19 @@
     <div class="deletion-flow">
       <div class="step">
         <div class="step-num">1</div>
-        <div class="step-text">Sign in to your account at <strong>recolekt.app</strong>.</div>
+        <div class="step-text">Sign in to Recolekt and navigate to <strong>Settings → Account → Delete Account</strong>.</div>
       </div>
       <div class="step">
         <div class="step-num">2</div>
-        <div class="step-text">Navigate to <strong>Settings → Account → Delete Account</strong>.</div>
-      </div>
-      <div class="step">
-        <div class="step-num">3</div>
-        <div class="step-text">Click <strong>"Delete My Account & All Data"</strong> to trigger immediate permanent erasure.</div>
+        <div class="step-text">Click <strong>"Delete My Account & All Data"</strong>.</div>
       </div>
     </div>
-    <p>Alternatively, revoking access via your Facebook App Settings will trigger an automatic deletion request which we process within 30 days.</p>
+    <p>Confirming your company info: <strong>SE7EN SOLUTIONS OÜ</strong>, Sepapaja tn 6, Tallinn 15551, Estonia.</p>
   </div>
 
-  <footer class="legal-footer">
+  <div class="legal-footer">
     &copy; 2026 <strong>SE7EN SOLUTIONS OÜ</strong>. All rights reserved.<br>
-    Joa 3A-59, Tallinn 10127, Estonia | Registry Code: 14215655<br>
-    Contact: <a href="mailto:info@recolekt.app">info@recolekt.app</a>
-  </footer>
-
+    Registry Code: 16834571<br>
+    Contact: info@recolekt.app
+  </div>
 </div>
-
-</body>
-</html>
