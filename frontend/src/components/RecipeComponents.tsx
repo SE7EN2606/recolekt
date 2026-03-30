@@ -3,6 +3,7 @@ import { API_BASE } from "../utils/api";
 
 import React from 'react';
 import { ChefHat, Clock, Flame, Users } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 // ============================================================
 // TYPES
@@ -148,6 +149,7 @@ export const RecipeMeta: React.FC<RecipeMetaProps> = ({
   setServingScale,
   showOriginal,
 }) => {
+  const { t } = useTranslation(['videoDetail']);
   const prepTimeRaw = (recipe.prep_time || '').trim();
   const cookTimeRaw = (recipe.cook_time || '').trim();
   const servingsRaw = (recipe.servings || '').trim();
@@ -172,7 +174,9 @@ export const RecipeMeta: React.FC<RecipeMetaProps> = ({
       {/* Header */}
       <div className="bg-tertiary-50/50 p-5 border-b border-gray-50 flex items-center gap-3">
         <ChefHat className="text-tertiary-600" size={20} />
-        <h3 className="font-bold text-gray-900 text-lg">Recipe Details</h3>
+        <h3 className="font-bold text-gray-900 text-lg">
+          {t('videoDetail:recipeDetails', 'Recipe Details')}
+        </h3>
       </div>
 
       {/* Grid: Prep / Cook / Yields */}
@@ -180,7 +184,7 @@ export const RecipeMeta: React.FC<RecipeMetaProps> = ({
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Clock className="text-tertiary-500 mb-1" size={16} />
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            Prep
+            {t('videoDetail:prep', 'Prep')}
           </span>
           <span className="text-sm font-bold text-gray-900">
             {displayPrepTime}
@@ -190,7 +194,7 @@ export const RecipeMeta: React.FC<RecipeMetaProps> = ({
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Flame className="text-tertiary-500 mb-1" size={16} />
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            Cook
+            {t('videoDetail:cook', 'Cook')}
           </span>
           <span className="text-sm font-bold text-gray-900">
             {displayCookTime}
@@ -200,7 +204,7 @@ export const RecipeMeta: React.FC<RecipeMetaProps> = ({
         <div className="p-4 flex flex-col items-center justify-center text-center gap-1">
           <Users className="text-tertiary-500 mb-1" size={16} />
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            Yields
+            {t('videoDetail:servings', 'Servings')}
           </span>
           <span className="text-sm font-bold text-gray-900">
             {displayServings}
@@ -227,6 +231,7 @@ export const Ingredients: React.FC<IngredientsProps> = ({
   showOriginal,
   caption,
 }) => {
+  const { t } = useTranslation(['videoDetail']);
   const groups = Array.isArray(recipe.ingredients_groups)
     ? recipe.ingredients_groups
     : [];
@@ -256,7 +261,7 @@ export const Ingredients: React.FC<IngredientsProps> = ({
   return (
     <div className="p-6 border-b border-gray-50">
       <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">
-        Ingredients
+        {t('videoDetail:ingredients', 'Ingredients')}
       </h4>
 
       <div className="space-y-6">
@@ -303,6 +308,7 @@ export const Ingredients: React.FC<IngredientsProps> = ({
 // ============================================================
 
 export const Steps: React.FC<StepsProps> = ({ recipe }) => {
+  const { t } = useTranslation(['videoDetail']);
   console.log('🔍 Steps selectedRecipe:', {
     title: recipe.title,
     servings: recipe.servings,
@@ -322,7 +328,7 @@ export const Steps: React.FC<StepsProps> = ({ recipe }) => {
   return (
     <div className="p-6 bg-gray-50/30">
       <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">
-        Method
+        {t('videoDetail:method', 'Method')}
       </h4>
       <div className="space-y-6">
         {steps.map((step, i) => (

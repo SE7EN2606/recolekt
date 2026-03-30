@@ -83,19 +83,17 @@ export const AppSettings: React.FC = () => {
 
   return (
     <div className="w-full pt-6 md:pt-0 pb-0 md:pb-6 animate-fade-in">
-      {/* ✅ FIXED: Removed px-4 */}
       <div className="flex flex-col gap-4 md:gap-6 mb-6 md:mb-8 md:px-0">
         <div>
           <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-            {t('settings:appSettings')}
+            {t('settings:appSettings', 'App Settings')}
           </h1>
           <p className="text-gray-500 text-xs md:text-sm mt-1">
-            {t('settings:manageAccount')}
+            {t('settings:manageAccount', 'Manage your account and preferences')}
           </p>
         </div>
       </div>
 
-      {/* ✅ FIXED: Removed px-4 */}
       <div className="space-y-5 md:space-y-6 md:px-0">
         {/* User Card */}
         <div className="bg-white rounded-2xl md:rounded-3xl shadow-sm p-5 md:p-8 border border-gray-100">
@@ -112,7 +110,7 @@ export const AppSettings: React.FC = () => {
                 {user?.name || 'User'}
               </h2>
               <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">
-                {t('settings:personalAccount')}
+                {t('settings:personalAccount', 'Personal Account')}
               </p>
             </div>
           </div>
@@ -120,7 +118,7 @@ export const AppSettings: React.FC = () => {
           <div className="pt-6 md:pt-8 border-t border-gray-100">
             <div className="flex items-center justify-between mb-4 md:mb-6">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                {t('settings:currentPlan')}
+                {t('settings:currentPlan', 'Current Plan')}
               </span>
               <span
                 className={`
@@ -130,7 +128,7 @@ export const AppSettings: React.FC = () => {
                   ${isPro ? 'bg-[#8b5cf6] shadow-purple-500/20' : 'bg-[#f43f5e] shadow-rose-500/20'}
                 `}
               >
-                {isPro ? t('settings:pro') : t('settings:free')}
+                {isPro ? t('settings:pro', 'PRO') : t('settings:free', 'FREE')}
               </span>
             </div>
 
@@ -142,10 +140,10 @@ export const AppSettings: React.FC = () => {
                   </div>
                   <div>
                     <div className="font-black text-sm md:text-base text-gray-900">
-                      {t('settings:unlimitedClips')}
+                      {t('settings:unlimitedClips', 'Unlimited Clips')}
                     </div>
                     <div className="text-[11px] md:text-xs font-medium text-primary-600">
-                      {t('settings:unstoppable')}
+                      {t('settings:unstoppable', 'You are unstoppable.')}
                     </div>
                   </div>
                 </div>
@@ -154,10 +152,10 @@ export const AppSettings: React.FC = () => {
               <>
                 <div className="flex items-center justify-between mb-2.5 md:mb-3">
                   <span className="text-xs md:text-sm font-bold text-gray-900">
-                    {t('settings:usageLimit')}
+                    {t('settings:usageLimit', 'Usage Limit')}
                   </span>
                   <span className="text-[#f43f5e] text-[11px] md:text-xs font-black bg-rose-50 px-2 py-1 rounded-lg">
-                    {t('settings:clipsLeft', { count: remaining })}
+                    {t('settings:clipsLeft', 'Only {{count}} clips left', { count: remaining })}
                   </span>
                 </div>
 
@@ -175,7 +173,7 @@ export const AppSettings: React.FC = () => {
                       {clipsUsed}
                     </div>
                     <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest">
-                      {t('settings:used')}
+                      {t('settings:used', 'Used')}
                     </div>
                   </div>
                   <div className="p-3.5 md:p-4 bg-gray-50 rounded-2xl border border-gray-100 text-center">
@@ -184,7 +182,7 @@ export const AppSettings: React.FC = () => {
                       {clipsLimit}
                     </div>
                     <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest">
-                      {t('settings:limit')}
+                      {t('settings:limit', 'Limit')}
                     </div>
                   </div>
                 </div>
@@ -199,10 +197,10 @@ export const AppSettings: React.FC = () => {
             <div className="absolute top-0 right-0 w-56 md:w-64 h-56 md:h-64 bg-primary-600/20 blur-[80px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
             <div className="relative z-10">
               <h3 className="text-xl md:text-3xl font-black mb-5 md:mb-6 tracking-tight">
-                {t('settings:unlockUnlimited')}
+                {t('settings:unlockUnlimited', 'Unlock Unlimited Clips')}
               </h3>
               <div className="space-y-2.5 md:space-y-3 mb-6 md:mb-8">
-                {[t('settings:feat1'), t('settings:feat2'), t('settings:feat3')].map((feat, i) => (
+                {[t('settings:feat1', 'Unlimited videos & collections'), t('settings:feat2', 'AI auto-categorization'), t('settings:feat3', 'Priority support')].map((feat, i) => (
                   <div key={i} className="flex items-center gap-2.5 md:gap-3 text-xs md:text-sm text-gray-300">
                     <Check size={16} className="text-green-400 flex-shrink-0" />
                     <span>{feat}</span>
@@ -218,7 +216,7 @@ export const AppSettings: React.FC = () => {
                 "
                 onClick={() => navigate('/billing')}
               >
-                <Zap size={18} className="text-yellow-500 fill-current mr-2" /> {t('settings:upgrade')}
+                <Zap size={18} className="text-yellow-500 fill-current mr-2" /> {t('settings:upgrade', 'Upgrade to Pro')}
               </Button>
             </div>
           </div>
@@ -228,7 +226,7 @@ export const AppSettings: React.FC = () => {
         <div className="grid md:grid-cols-[1.5fr_1fr] gap-5 md:gap-6">
           <section>
             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-1.5 md:px-2 mb-2.5 md:mb-3">
-              {t('settings:preferences')}
+              {t('settings:preferences', 'Preferences')}
             </h3>
             <div className="bg-white rounded-2xl md:rounded-3xl border border-gray-100 overflow-hidden shadow-sm">
               {/* Language */}
@@ -238,7 +236,7 @@ export const AppSettings: React.FC = () => {
                     <Globe size={18} />
                   </div>
                   <span className="font-bold text-sm md:text-base text-gray-900">
-                    {t('settings:language')}
+                    {t('settings:language', 'Language')}
                   </span>
                 </div>
                 
@@ -249,8 +247,8 @@ export const AppSettings: React.FC = () => {
                     onChange={(e) => updateUserLanguage(e.target.value)}
                     className="appearance-none bg-gray-50 border border-gray-100 text-gray-900 font-black text-xs md:text-sm rounded-xl px-4 py-2 pr-8 outline-none focus:ring-2 focus:ring-primary-100 cursor-pointer transition-all"
                   >
-                    <option value="en">English</option>
-                    <option value="fr">Français</option>
+                    <option value="en">{t('settings:english', 'English')}</option>
+                    <option value="fr">{t('settings:french', 'Français')}</option>
                   </select>
                   <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
                     <ChevronRight size={14} className="rotate-90" />
@@ -265,7 +263,7 @@ export const AppSettings: React.FC = () => {
                     {darkMode ? <Moon size={18} /> : <Sun size={18} />}
                   </div>
                   <span className="font-bold text-sm md:text-base text-gray-900">
-                    {t('settings:darkMode')}
+                    {t('settings:darkMode', 'Dark Mode')}
                   </span>
                 </div>
                 <button
@@ -289,17 +287,17 @@ export const AppSettings: React.FC = () => {
 
           <section>
             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-1.5 md:px-2 mb-2.5 md:mb-3">
-              {t('settings:resources')}
+              {t('settings:resources', 'Resources')}
             </h3>
             <div className="bg-white rounded-2xl md:rounded-3xl border border-gray-100 overflow-hidden shadow-sm">
               <SettingItem
                 icon={HelpCircle}
-                label={t('settings:helpSupport')}
+                label={t('settings:helpSupport', 'Help & Support')}
                 onClick={() => navigate('/help?section=how-to')}
               />
               <SettingItem
                 icon={Info}
-                label={t('settings:about')}
+                label={t('settings:about', 'About Recolekt')}
                 onClick={() => navigate('/help?section=about')}
               />
             </div>
@@ -319,7 +317,7 @@ export const AppSettings: React.FC = () => {
               transition-all shadow-sm
             "
           >
-            <LogOut size={16} /> {t('settings:signOut')}
+            <LogOut size={16} /> {t('settings:signOut', 'Sign Out')}
           </button>
         </div>
       </div>
@@ -328,9 +326,9 @@ export const AppSettings: React.FC = () => {
         isOpen={showLogoutConfirm} 
         onClose={() => setShowLogoutConfirm(false)} 
         onConfirm={handleLogout} 
-        title={t('settings:signOut')}
-        message={t('settings:confirmSignOut')}
-        confirmLabel={t('settings:signOut')}
+        title={t('settings:signOut', 'Sign Out')}
+        message={t('settings:confirmSignOut', 'Are you sure you want to log out?')}
+        confirmLabel={t('settings:signOut', 'Sign Out')}
       />
     </div>
   );

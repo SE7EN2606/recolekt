@@ -178,7 +178,7 @@ export const Sidebar: React.FC = () => {
           <div>
             <div className="flex items-center justify-between mb-2 pl-0.5 pr-3.5">
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{t('sidebar:collections', 'Collections')}</h3>
-                <button onClick={() => setIsInputModalOpen(true)} className="p-1 hover:bg-primary-50 rounded text-gray-400 hover:text-primary-600 transition-colors" title="New Collection">
+                <button onClick={() => setIsInputModalOpen(true)} className="p-1 hover:bg-primary-50 rounded text-gray-400 hover:text-primary-600 transition-colors" title={t('sidebar:newCollection')}>
                   <FolderPlus size={18} />
                 </button>
             </div>

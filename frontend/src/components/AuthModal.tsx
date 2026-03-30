@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE } from '../utils/api';
+import { useTranslation } from 'react-i18next';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ function joinUrl(base: string, path: string) {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
+  const { t } = useTranslation(['auth', 'common']);
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -47,7 +49,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         }
       }
     } catch (err: any) {
-      setLocalError(err?.message || 'An unexpected error occurred.');
+      setLocalError(err?.message || t('auth:errorServer', 'An unexpected error occurred.'));
     }
   };
 
@@ -59,13 +61,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         <button
           onClick={onClose}
           className="absolute right-4 top-4 text-gray-400 transition-colors hover:text-gray-600"
-          aria-label="Close auth modal"
+          aria-label={t('common:close', 'Close auth modal')}
         >
           <X size={24} />
         </button>
 
         <h2 className="mb-6 text-2xl font-bold text-gray-900">
-          {isSignUp ? 'Create Account' : 'Sign In'}
+          {isSignUp ? t('auth:signUp', 'Create Account') : t('auth:signIn', 'Sign In')}
         </h2>
 
         {(localError || error) && (
@@ -78,7 +80,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           {isSignUp && (
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
-                Name
+                {t('common:name', 'Name')}
               </label>
               <input
                 type="text"
@@ -86,7 +88,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 onChange={(e) => setName(e.target.value)}
                 required
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 outline-none focus:ring-2 focus:ring-primary-500"
-                placeholder="Your Name"
+                placeholder={t('auth:yourNamePlaceholder', 'Your Name')}
               />
             </div>
           )}
@@ -107,7 +109,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
-              Password
+              {t('common:password', 'Password')}
             </label>
             <input
               type="password"
@@ -125,7 +127,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             disabled={loading}
             className="w-full rounded-lg bg-primary-600 py-2.5 font-medium text-white transition-colors hover:bg-primary-700 disabled:opacity-50"
           >
-            {loading ? 'Processing...' : isSignUp ? 'Create Account' : 'Sign In'}
+            {loading ? t('common:loading', 'Processing...') : (isSignUp ? t('auth:signUp', 'Create Account') : t('auth:signIn', 'Sign In'))}
           </button>
         </form>
 
@@ -134,7 +136,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             <div className="w-full border-t border-gray-300" />
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="bg-white px-2 text-gray-500">Or continue with</span>
+            <span className="bg-white px-2 text-gray-500">{t('auth:orContinueWith', 'Or continue with')}</span>
           </div>
         </div>
 
@@ -162,11 +164,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
             />
           </svg>
-          Continue with Google
+          {t('auth:continueWithGoogle', 'Continue with Google')}
         </button>
 
         <p className="mt-6 text-center text-sm text-gray-600">
-          {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
+          {isSignUp ? t('auth:alreadyHaveAccount', 'Already have an account?') : t('auth:noAccount', "Don't have an account?")}{' '}
           <button
             type="button"
             onClick={() => {
@@ -175,7 +177,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             }}
             className="font-medium text-primary-600 hover:text-primary-700"
           >
-            {isSignUp ? 'Sign In' : 'Sign Up'}
+            {isSignUp ? t('auth:signIn', 'Sign In') : t('auth:signUp', 'Sign Up')}
           </button>
         </p>
       </div>

@@ -2,6 +2,7 @@ import { API_BASE } from "../utils/api";
 // components/AISummaryCard.tsx
 
 import React, { useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 type HeadlineItem =
   | string
@@ -72,10 +73,6 @@ const extractEmojiPrefix = (s: string) => {
 
 /**
  * Normalize summaryData into { english, original }.
- * Supports:
- * - { english: {...}, original: {...} }
- * - { EN: {...}, OG: {...} }
- * - { summary: { english: {...}, original: {...} } }
  */
 const normalizeBilingual = (data: any): { english?: LangBlock; original?: LangBlock } => {
   if (!data || typeof data === 'string') return {};
@@ -148,6 +145,8 @@ export const AISummaryCard: React.FC<AISummaryCardProps> = ({
   summaryData,
   showOriginal,
 }) => {
+  const { t } = useTranslation(['videoDetail']);
+
   const { displaySummary, bullets } = useMemo(() => {
     if (typeof summaryData === 'string') {
       return {
@@ -227,7 +226,7 @@ export const AISummaryCard: React.FC<AISummaryCardProps> = ({
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
       <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
         <div className="text-xs uppercase tracking-wide text-gray-600 font-semibold">
-          AI Summary
+          {t('videoDetail:aiSummary', 'AI Summary')}
         </div>
       </div>
 
@@ -237,7 +236,7 @@ export const AISummaryCard: React.FC<AISummaryCardProps> = ({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             className="w-full min-h-[96px] px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none"
-            placeholder="Edit summary..."
+            placeholder={t('videoDetail:editSummaryPlaceholder', 'Edit summary...')}
           />
         ) : displaySummary ? (
           <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
@@ -248,7 +247,7 @@ export const AISummaryCard: React.FC<AISummaryCardProps> = ({
         {bullets.length > 0 && (
           <div>
             <div className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-3">
-              Highlights
+              {t('videoDetail:highlights', 'Highlights')}
             </div>
             <ul className="space-y-3">
               {bullets.map((b, idx) => (

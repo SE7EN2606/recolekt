@@ -1,351 +1,395 @@
 import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ExternalLink, Trash2, TriangleAlert, Loader2, SquarePen, Check } from 'lucide-react';
-import { useAuth, getAuthHeaders } from '../context/AuthContext';
-import { InstallShortcutModal } from '../components/InstallShortcutModal';
-import shortcutsIcon from '/assets/shortcuts_icon.png';
+import { User, Globe, Crown, Video, LogOut, HelpCircle, Info, Moon, Sun, Check, Zap, Infinity, ChartPie, Activity, AlertTriangle, BarChart3 } from 'lucide-react';
+import { Button } from '../components/Button';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { useData } from '../context/DataContext';
 import { useTranslation } from 'react-i18next';
+import { useLanguage } from '../context/LanguageContext'; // If you use a custom context for language
 
-interface TokenInfo {
-  has_token: boolean;
-  prefix?: string;
-  created_at?: string;
-  last_used_at?: string;
+interface MistralLimits {
+  status: string;
+  remaining_requests?: string;
+  total_limit?: string;
+  reset_seconds?: string;
+  model?: string;
+  error?: string;
 }
-
-const COUNTRIES = [
-  "United States", "United Kingdom", "France", "Canada", "Germany", "Australia", 
-  "Afghanistan", "Albania", "Algeria", "American Samoa", "Andorra", "Angola", 
-  "Anguilla", "Antarctica", "Antigua and Barbuda", "Argentina", "Armenia", "Aruba", 
-  "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", 
-  "Belarus", "Belgium", "Belize", "Benin", "Bermuda", "Bhutan", "Bolivia", 
-  "Bosnia and Herzegovina", "Botswana", "Bouvet Island", "Brazil", "British Indian Ocean Territory", 
-  "Brunei Darussalam", "Bulgaria", "Burkina Faso", "Burundi", "Cambodia", "Cameroon", 
-  "Cape Verde", "Cayman Islands", "Central African Republic", "Chad", "Chile", "China", 
-  "Christmas Island", "Cocos (Keeling) Islands", "Colombia", "Comoros", "Congo", 
-  "Congo, The Democratic Republic of The", "Cook Islands", "Costa Rica", "Cote D'ivoire", 
-  "Croatia", "Cuba", "Cyprus", "Czech Republic", "Denmark", "Djibouti", "Dominica", 
-  "Dominican Republic", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", 
-  "Estonia", "Ethiopia", "Falkland Islands (Malvinas)", "Faroe Islands", "Fiji", "Finland", 
-  "French Guiana", "French Polynesia", "French Southern Territories", "Gabon", "Gambia", 
-  "Georgia", "Germany", "Ghana", "Gibraltar", "Greece", "Greenland", "Grenada", "Guadeloupe", 
-  "Guam", "Guatemala", "Guinea", "Guinea-bissau", "Guyana", "Haiti", 
-  "Heard Island and Mcdonald Islands", "Holy See (Vatican City State)", "Honduras", "Hong Kong", 
-  "Hungary", "Iceland", "India", "Indonesia", "Iran, Islamic Republic of", "Iraq", "Ireland", 
-  "Israel", "Italy", "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati", 
-  "Korea, Democratic People's Republic of", "Korea, Republic of", "Kuwait", "Kyrgyzstan", 
-  "Lao People's Democratic Republic", "Latvia", "Lebanon", "Lesotho", "Liberia", 
-  "Libyan Arab Jamahiriya", "Liechtenstein", "Lithuania", "Luxembourg", "Macao", 
-  "Macedonia, The Former Yugoslav Republic of", "Madagascar", "Malawi", "Malaysia", "Maldives", 
-  "Mali", "Malta", "Marshall Islands", "Martinique", "Mauritania", "Mauritius", "Mayotte", 
-  "Mexico", "Micronesia, Federated States of", "Moldova, Republic of", "Monaco", "Mongolia", 
-  "Montserrat", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nauru", "Nepal", "Netherlands", 
-  "Netherlands Antilles", "New Caledonia", "New Zealand", "Nicaragua", "Niger", "Nigeria", 
-  "Niue", "Norfolk Island", "Northern Mariana Islands", "Norway", "Oman", "Pakistan", "Palau", 
-  "Palestinian Territory, Occupied", "Panama", "Papua New Guinea", "Paraguay", "Peru", 
-  "Philippines", "Pitcairn", "Poland", "Portugal", "Puerto Rico", "Qatar", "Reunion", "Romania", 
-  "Russian Federation", "Rwanda", "Saint Helena", "Saint Kitts and Nevis", "Saint Lucia", 
-  "Saint Pierre and Miquelon", "Saint Vincent and The Grenadines", "Samoa", "San Marino", 
-  "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Serbia and Montenegro", "Seychelles", 
-  "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa", 
-  "South Georgia and The South Sandwich Islands", "Spain", "Sri Lanka", "Sudan", "Suriname", 
-  "Svalbard and Jan Mayen", "Swaziland", "Sweden", "Switzerland", "Syrian Arab Republic", 
-  "Taiwan, Province of China", "Tajikistan", "Tanzania, United Republic of", "Thailand", 
-  "Timor-leste", "Togo", "Tokelau", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", 
-  "Turkmenistan", "Turks and Caicos Islands", "Tuvalu", "Uganda", "Ukraine", "United Arab Emirates", 
-  "United Kingdom", "United States", "United States Minor Outlying Islands", "Uruguay", 
-  "Uzbekistan", "Vanuatu", "Venezuela", "Viet Nam", "Virgin Islands, British", 
-  "Virgin Islands, U.S.", "Wallis and Futuna", "Western Sahara", "Yemen", "Zambia", "Zimbabwe"
-];
 
 export const AccountSettings: React.FC = () => {
   const navigate = useNavigate();
-  const { user, loading, isAuthenticated } = useAuth();
-  const { t } = useTranslation(['account', 'common']);
-  
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
-  const [country, setCountry] = useState('');
-  const [isEditing, setIsEditing] = useState(false);
-  
-  const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null);
-  const [isLoadingToken, setIsLoadingToken] = useState(true);
-  const [isGenerating, setIsGenerating] = useState(false);
-  
-  const [showShortcutModal, setShowShortcutModal] = useState(false);
-  const [shortcutData, setShortcutData] = useState<any>(null);
-  const [isLoadingShortcut, setIsLoadingShortcut] = useState(false);
+  const { logout, user } = useData();
+  const { t, i18n } = useTranslation(['settings', 'common']);
+  const [darkMode, setDarkMode] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [mistralLimits, setMistralLimits] = useState<MistralLimits | null>(null);
+  const [loadingLimits, setLoadingLimits] = useState(true);
 
-  // ✅ Bulletproof image fallback state
-  const [imgError, setImgError] = useState(false);
+  const lang = i18n.language.toUpperCase().startsWith('FR') ? 'FR' : 'EN';
+  
+  const isPro = user?.isPro || false;
+  const clipsUsed = 4;
+  const clipsLimit = 5;
+
+  // ✅ Fetch Mistral rate limits
+  useEffect(() => {
+    fetch('/api/rate-limits')
+      .then(res => res.json())
+      .then((data: MistralLimits) => {
+        setMistralLimits(data);
+        setLoadingLimits(false);
+      })
+      .catch(err => {
+        console.error('Failed to load Mistral limits:', err);
+        setLoadingLimits(false);
+      });
+  }, []);
 
   useEffect(() => {
-    if (user) {
-      setEmail(user.email || '');
-      setName(user.name || '');
-    }
     window.scrollTo(0, 0);
-  }, [user]);
+  }, []);
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      navigate('/auth');
-    }
-  }, [loading, isAuthenticated, navigate]);
-
-  useEffect(() => {
-    if (user) fetchTokenInfo();
-  }, [user]);
-
-  useEffect(() => {
-    if (!country) {
-      fetch('https://ipapi.co/json/')
-        .then(res => res.json())
-        .then(data => setCountry(data.country_name || t('account:unknown')))
-        .catch(() => setCountry(t('account:unknown')));
-    }
-  }, [t, country]);
-
-  const fetchTokenInfo = async () => {
-    setIsLoadingToken(true);
-    try {
-      const response = await fetch(`${API_BASE}/api_token/info`, {
-        headers: getAuthHeaders(),
-        credentials: 'include',
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setTokenInfo(data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch token info:', error);
-    } finally {
-      setIsLoadingToken(false);
-    }
+  const handleLogout = () => {
+    logout();
+    navigate('/');
   };
 
-  const generateToken = async () => {
-    const confirmed = confirm(t('account:revokeConfirm'));
-    if (!confirmed) return;
+  const SettingItem = ({ icon: Icon, label, onClick, badge, variant = 'default', rightContent }: any) => (
+    <button 
+      onClick={onClick}
+      className={`w-full flex items-center justify-between p-5 transition-colors border-b border-gray-50 last:border-0 rounded-xl mb-1
+        ${variant === 'promo' ? 'bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-600/20' : 'bg-white hover:bg-gray-50 text-gray-900'}
+      `}
+    >
+      <div className="flex items-center gap-4">
+        <div className={`p-2.5 rounded-xl ${variant === 'promo' ? 'bg-white/20 text-white' : 'bg-gray-50 text-gray-500'}`}>
+          <Icon size={20} />
+        </div>
+        <span className={`font-bold text-sm`}>{label}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        {rightContent}
+        {badge && (
+          <span className="px-2 py-0.5 bg-primary-600 text-white text-[9px] font-black rounded uppercase tracking-wider">
+            {badge}
+          </span>
+        )}
+      </div>
+    </button>
+  );
+
+  // ✅ Mistral Status Badge
+  const MistralStatus = () => {
+    if (loadingLimits) return <div className="w-5 h-5 bg-gray-200 rounded-full animate-spin" />;
     
-    setIsGenerating(true);
-    try {
-      const response = await fetch(`${API_BASE}/api_token/generate`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        credentials: 'include',
-      });
-      
-      if (!response.ok) throw new Error('Failed to generate token');
-      
-      const data = await response.json();
-      const copyToken = confirm(`${t('account:tokenGenerated')}\n\n${data.token}\n\n${t('account:tokenWarning')}`);
-      
-      if (copyToken) {
-        await navigator.clipboard.writeText(data.token);
-        alert(t('account:copied'));
-      }
-      await fetchTokenInfo();
-    } catch (error) {
-      console.error('Failed to generate token:', error);
-      alert(t('account:generateFailed'));
-    } finally {
-      setIsGenerating(false);
+    if (mistralLimits?.status === 'error') {
+      return (
+        <div className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">
+          <AlertTriangle size={12} />
+          {t('settings:error', 'Error')}
+        </div>
+      );
     }
-  };
 
-  const handleInstallShortcut = async () => {
-    try {
-      setIsLoadingShortcut(true);
-      const response = await fetch(`${API_BASE}/api_token/install-shortcut`, {
-        headers: getAuthHeaders(),
-        credentials: 'include',
-      });
-
-      if (!response.ok) throw new Error('Failed to get shortcut info');
-
-      const data = await response.json();
-      setShortcutData(data);
-      setShowShortcutModal(true);
-    } catch (error) {
-      console.error('Error:', error);
-      alert(t('account:shortcutFailed'));
-    } finally {
-      setIsLoadingShortcut(false);
+    if (!mistralLimits?.remaining_requests) {
+      return <span className="text-xs text-gray-400">{t('settings:na', 'N/A')}</span>;
     }
-  };
 
-  const handleSaveInfo = async () => {
-    setIsEditing(false);
-  };
+    const remaining = parseInt(mistralLimits.remaining_requests);
+    const total = parseInt(mistralLimits.total_limit || '0');
+    const used = total - remaining;
+    const percent = total > 0 ? Math.round((used / total) * 100) : 0;
 
-  if (loading || !user) {
+    const statusColor = remaining > 20 ? 'text-green-600' : remaining > 5 ? 'text-yellow-600' : 'text-red-600';
+    
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <div className="w-10 h-10 border-4 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
+      <div className="flex flex-col items-end text-xs font-bold text-gray-600 space-y-0.5">
+        <span className={`${statusColor} flex items-center gap-1`}>
+          {remaining}/{total}
+          {remaining <= 5 && <AlertTriangle size={12} />}
+        </span>
+        <span className="text-[10px] text-gray-400">{t('settings:percentUsed', '{{percent}}% used', { percent })}</span>
+        <span className="text-[9px] text-gray-400">{mistralLimits.model}</span>
       </div>
     );
-  }
-
-  const displayName = user.name || 'User';
+  };
 
   return (
-    <div className="w-full pt-4 md:pt-0 pb-0 md:pb-6 animate-fade-in">
-      <div className="flex flex-col gap-4 md:gap-6 mb-6 md:mb-8">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900">{t('account:personalInfo')}</h1>
-          <p className="text-gray-500 text-xs md:text-sm mt-1">{t('account:manageIdentity')}</p>
+    <div className="w-full pt-8 md:pt-0 pb-0 md:pb-6">
+      <div className="flex flex-col gap-6 mb-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {t('settings:title', 'Settings')}
+            </h1>
+            <p className="text-gray-500 text-sm mt-1">{t('settings:subtitle', 'Manage your account and preferences')}</p>
+          </div>
         </div>
       </div>
 
-      <div className="space-y-5 md:space-y-6">
-        
-        {/* Personal Info Card */}
-        <div className="bg-white rounded-2xl md:rounded-3xl shadow-sm p-5 md:p-8 border border-gray-100">
-          <div className="flex items-center justify-between mb-8 pb-8 border-b border-gray-50">
-            <div className="flex items-center gap-4 md:gap-5">
-              <div className="w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br from-primary-600 to-primary-700 rounded-full flex items-center justify-center text-white text-lg md:text-2xl font-black shadow-lg overflow-hidden border-2 border-white">
-                {/* ✅ FIXED: If the image breaks or doesn't exist, instantly show the letter */}
-                {user.picture && !imgError ? (
-                  <img 
-                    src={user.picture.replace('http://', 'https://')} 
-                    alt={displayName} 
-                    className="w-full h-full object-cover" 
-                    referrerPolicy="no-referrer"
-                    onError={() => setImgError(true)}
-                  />
-                ) : (
-                  <span>{displayName.charAt(0).toUpperCase()}</span>
-                )}
-              </div>
-              <h2 className="text-lg md:text-2xl font-black text-gray-900 tracking-tight uppercase truncate max-w-[200px] md:max-w-[300px]">
-                {name || displayName}
-              </h2>
+      {/* Single Column Layout */}
+      <div className="space-y-6">
+        {/* Profile Card */}
+        <div className="bg-white rounded-3xl shadow-sm p-6 md:p-8 border border-gray-100">
+          <div className="flex items-center gap-5">
+            <div className="w-16 h-16 bg-dark-900 rounded-full flex items-center justify-center text-white text-2xl font-black shadow-lg">
+              {user?.name?.charAt(0) || 'U'}
             </div>
-
-            <button 
-              onClick={() => isEditing ? handleSaveInfo() : setIsEditing(true)}
-              className="flex items-center gap-2 bg-white border border-gray-200 px-3 md:px-4 py-2 md:py-2.5 rounded-xl text-primary-600 font-black text-xs uppercase shadow-sm hover:bg-primary-50 hover:border-primary-200 transition-all active:scale-95"
-            >
-              {isEditing ? (
-                <><Check size={16} /><span className="hidden md:inline">{t('account:done')}</span></>
-              ) : (
-                <><SquarePen size={16} /><span className="hidden md:inline">{t('account:edit')}</span></>
-              )}
-            </button>
-          </div>
-
-          {/* Form Fields */}
-          <div className="space-y-6">
-            <div className="border-b border-gray-50 pb-4">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{t('account:fullName')}</label>
-              <input 
-                value={name} 
-                readOnly={!isEditing} 
-                onChange={(e) => setName(e.target.value)}
-                className={`w-full bg-transparent text-lg md:text-xl font-black outline-none transition-colors mt-1 ${isEditing ? 'text-primary-600 border-b-2 border-primary-100 pb-1' : 'text-gray-900 border-none'}`}
-              />
-            </div>
-            
-            <div className="border-b border-gray-50 pb-4">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{t('account:emailAddress')}</label>
-              <input 
-                value={email} 
-                readOnly={!isEditing} 
-                onChange={(e) => setEmail(e.target.value)}
-                className={`w-full bg-transparent text-lg md:text-xl font-black outline-none transition-colors mt-1 ${isEditing ? 'text-primary-600 border-b-2 border-primary-100 pb-1' : 'text-gray-900 border-none'}`}
-              />
-            </div>
-            
-            <div className="pb-2">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{t('account:country')}</label>
-              {isEditing ? (
-                <div className="relative mt-2 max-w-sm">
-                  <select 
-                    value={country} 
-                    onChange={(e) => setCountry(e.target.value)}
-                    className="w-full appearance-none bg-gray-50 border border-gray-100 rounded-xl p-3 text-base font-black text-primary-600 outline-none focus:ring-4 focus:ring-primary-100 transition-all cursor-pointer"
-                  >
-                    <option value="" disabled>Select Country</option> 
-                    {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-primary-400">
-                    <SquarePen size={18} />
-                  </div>
-                </div>
-              ) : (
-                <div className="text-lg md:text-xl font-black text-gray-900 mt-1">{country}</div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* iOS/macOS Shortcuts Section */}
-        <div className="bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 rounded-2xl md:rounded-3xl border border-purple-100/50 p-5 md:p-8 shadow-sm">
-          <div className="flex items-start gap-3 md:gap-4 mb-5 md:mb-6">
-            <img src={shortcutsIcon} alt="Recolekt Shortcut" className="w-12 h-12 md:w-14 md:h-14 rounded-2xl shadow-lg" />
             <div className="flex-1">
-              <h3 className="text-lg md:text-xl font-bold text-gray-900 tracking-tight mb-1">{t('account:shortcutTitle')}</h3>
-              <p className="text-xs md:text-sm text-gray-600 font-medium">{t('account:shortcutDesc')}</p>
+              <h2 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight">{user?.name || 'User'}</h2>
+              <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">{t('settings:personalAccount', 'Personal Account')}</p>
             </div>
-          </div>
-
-          <button onClick={handleInstallShortcut} disabled={isLoadingShortcut} className="inline-flex items-center justify-center rounded-xl font-black uppercase tracking-widest transition-all duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed bg-primary-600 text-white hover:bg-primary-700 shadow-lg shadow-primary-600/20 w-full px-6 md:px-8 py-4 md:py-5 text-sm md:text-base mb-5 md:mb-6">
-            {isLoadingShortcut ? (
-              <><Loader2 className="w-5 h-5 md:w-6 md:h-6 animate-spin mr-3" />{t('common:loading')}</>
-            ) : (
-              <><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 md:w-6 md:h-6 mr-3"><path d="M12 15V3"></path><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path></svg>{t('account:installShortcut')}</>
-            )}
-          </button>
-
-          <div className="bg-white/60 backdrop-blur-sm rounded-xl p-4 border border-white/50">
-            <h4 className="font-bold text-gray-900 text-[11px] md:text-xs uppercase tracking-wider mb-3 flex items-center gap-2"><span className="w-1 h-4 bg-gradient-to-b from-[#8b5cf6] to-[#7c3aed] rounded-full"></span>{t('account:howToUse')}</h4>
-            <ol className="list-decimal list-inside space-y-1.5 text-xs md:text-sm text-gray-700 font-medium">
-              <li>{t('account:step1')}</li>
-              <li>{t('account:step2')}</li>
-              <li>{t('account:step3')}</li>
-              <li>{t('account:step4')}</li>
-              <li>{t('account:step5')}</li>
-            </ol>
-          </div>
-        </div>
-
-        {/* Payment Section */}
-        <div className="bg-white rounded-2xl md:rounded-3xl shadow-sm p-5 md:p-8 border border-gray-100">
-          <div className="flex items-center justify-between mb-6 md:mb-8">
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{t('account:paymentMethod')}</h3>
-            <span className="text-[10px] font-black text-primary-600 bg-primary-50 px-3 py-1 rounded-full uppercase tracking-widest">{t('account:viaStripe')}</span>
           </div>
           
-          <div className="p-4 md:p-6 bg-gray-50 rounded-2xl md:rounded-3xl border border-gray-100 flex items-center justify-between group hover:border-primary-200 transition-colors">
-            <div className="flex items-center gap-3 md:gap-4">
-              <div className="w-10 h-7 md:w-12 md:h-8 bg-white border border-gray-200 rounded-lg flex items-center justify-center font-black italic text-[9px] md:text-[10px] text-gray-400 shadow-sm">VISA</div>
-              <div><span className="block font-black text-gray-900 tracking-tight text-sm md:text-base">•••• 4242</span><span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{t('account:expires')} 12/26</span></div>
+          <Button 
+            variant="outline" 
+            fullWidth 
+            className="rounded-full py-3 border-gray-200 text-gray-900 font-bold text-sm bg-white hover:bg-gray-50 mt-6"
+            onClick={() => navigate('/account-settings')}
+          >
+            <User size={16} className="mr-2" /> {t('settings:editProfile', 'Edit Profile')}
+          </Button>
+        </div>
+
+        {/* Current Plan & Usage Card */}
+        <div className="bg-white rounded-3xl shadow-sm p-6 md:p-8 border border-gray-100">
+          <div className="flex items-start justify-between mb-6">
+            <h3 className="text-xl font-black text-gray-900">{t('settings:currentPlan', 'Current Plan')}</h3>
+            <span 
+              className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest text-white shadow-lg ${
+                isPro 
+                  ? 'bg-[#8b5cf6] shadow-purple-500/20' 
+                  : 'bg-[#f43f5e] shadow-rose-500/20'
+              }`}
+            >
+              {isPro ? t('settings:pro', 'PRO') : t('settings:free', 'FREE')}
+            </span>
+          </div>
+
+          {!isPro && (
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{t('settings:usageLimit', 'Usage Limit')}</span>
+              <span className="text-[#f43f5e] text-xs font-bold">
+                {t('settings:clipsLeft', 'Only {{count}} clips left', { count: clipsLimit - clipsUsed })}
+              </span>
             </div>
-            <button onClick={() => window.open('https://billing.stripe.com/p/login/test_portal', '_blank')} className="flex items-center gap-2 bg-white px-4 md:px-5 py-2 md:py-2.5 rounded-lg md:rounded-xl text-xs font-black text-gray-900 border border-gray-200 shadow-sm hover:shadow-md transition-all active:scale-95">
-              {t('account:manage')} <ExternalLink size={14} />
-            </button>
+          )}
+
+          {!isPro && (
+            <div className="relative h-3 w-full bg-gray-100 rounded-full overflow-hidden mb-6">
+              <div 
+                className="h-full bg-[#f43f5e] transition-all duration-700" 
+                style={{ width: `${(clipsUsed / clipsLimit) * 100}%` }}
+              />
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* Clips Saved */}
+            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-center">
+              <Video size={20} className="mx-auto mb-2 text-gray-900" />
+              <div className="text-xl font-black text-gray-900">{clipsUsed}</div>
+              <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{t('settings:clipsSaved', 'Clips Saved')}</div>
+            </div>
+
+            {/* Limit - Always shows pie chart icon */}
+            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-center">
+              <ChartPie size={20} className="mx-auto mb-2 text-gray-900" />
+              {isPro ? (
+                <>
+                  <div className="text-xl font-black text-gray-900 flex items-center justify-center gap-1">
+                    <Infinity size={20} className="text-[#8b5cf6]" strokeWidth={2.5} />
+                  </div>
+                  <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{t('settings:unlimited', 'Unlimited')}</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-xl font-black text-gray-900">{clipsLimit}</div>
+                  <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{t('settings:limit', 'Limit')}</div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Danger Zone: Centered */}
-        <div className="bg-red-50 rounded-2xl md:rounded-[32px] border border-red-100 p-8 flex flex-col items-center text-center">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2.5 bg-white rounded-xl text-red-500 shadow-sm"><TriangleAlert size={24} /></div>
-            <h3 className="text-lg md:text-xl font-black text-red-900 m-0 tracking-tight">{t('account:dangerZone')}</h3>
+        {/* ✅ NEW: Mistral AI Control Panel Card */}
+        <div className="bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 rounded-3xl shadow-sm p-6 md:p-8 border border-indigo-100">
+          <div className="flex items-start justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+                <BarChart3 size={20} className="text-white" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-gray-900">{t('settings:aiProcessing', 'AI Processing')}</h3>
+                <p className="text-sm text-gray-500">{t('settings:mistralLimits', 'Mistral API rate limits')}</p>
+              </div>
+            </div>
+            <MistralStatus />
           </div>
-          <p className="text-red-700/80 text-xs md:text-sm font-medium mb-8 max-w-md leading-relaxed">{t('account:deleteWarning')}</p>
-          <button className="flex items-center gap-2 px-10 py-3.5 bg-white border border-red-200 text-red-600 rounded-xl font-black text-sm hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-95">
-            <Trash2 size={18} /> {t('account:deleteAccount')}
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="p-4 bg-white/70 backdrop-blur-sm rounded-2xl border border-gray-100 text-center">
+              <Activity size={24} className="mx-auto mb-2 text-indigo-600" />
+              <div className="text-lg font-black text-gray-900">{mistralLimits?.remaining_requests || '—'}</div>
+              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{t('settings:remaining', 'Remaining')}</div>
+            </div>
+            <div className="p-4 bg-white/70 backdrop-blur-sm rounded-2xl border border-gray-100 text-center">
+              <BarChart3 size={24} className="mx-auto mb-2 text-purple-600" />
+              <div className="text-lg font-black text-gray-900">{mistralLimits?.total_limit || '—'}</div>
+              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{t('settings:totalLimit', 'Total Limit')}</div>
+            </div>
+            <div className="p-4 bg-white/70 backdrop-blur-sm rounded-2xl border border-gray-100 text-center">
+              <Activity size={24} className="mx-auto mb-2 text-pink-600" />
+              <div className="text-lg font-black text-gray-900">{mistralLimits?.reset_seconds || '—'}s</div>
+              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{t('settings:reset', 'Reset')}</div>
+            </div>
+          </div>
+
+          <div className="text-center">
+            <Button 
+              variant="outline" 
+              className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold"
+              onClick={() => window.open('https://console.mistral.ai/', '_blank')}
+            >
+              {t('settings:openMistralConsole', 'Open Mistral Console')}
+            </Button>
+          </div>
+        </div>
+
+        {/* Dark Promo Card - Only show for FREE users */}
+        {!isPro && (
+          <div className="bg-dark-900 rounded-3xl shadow-xl shadow-dark-900/20 p-6 md:p-8 text-white relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-600/20 blur-[80px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
+            
+            <div className="relative z-10">
+              <h3 className="text-2xl md:text-3xl font-black mb-6">{t('settings:unlockUnlimited', 'Unlock Unlimited Clips')}</h3>
+              
+              <div className="space-y-3 mb-8">
+                <div className="flex items-center gap-3 text-sm text-gray-300">
+                  <Check size={16} className="text-green-400 flex-shrink-0" />
+                  <span>{t('settings:featureUnlimited', 'Unlimited videos & collections')}</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm text-gray-300">
+                  <Check size={16} className="text-green-400 flex-shrink-0" />
+                  <span>{t('settings:featureAi', 'AI-powered auto-categorization')}</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm text-gray-300">
+                  <Check size={16} className="text-green-400 flex-shrink-0" />
+                  <span>{t('settings:featureSearch', 'Advanced search & filters')}</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm text-gray-300">
+                  <Check size={16} className="text-green-400 flex-shrink-0" />
+                  <span>{t('settings:featureSupport', 'Priority support')}</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm text-gray-300">
+                  <Check size={16} className="text-green-400 flex-shrink-0" />
+                  <span>{t('settings:featureExport', 'Export your collection anytime')}</span>
+                </div>
+                <div className="flex items-center gap-3 text-sm text-gray-300">
+                  <Check size={16} className="text-green-400 flex-shrink-0" />
+                  <span>{t('settings:featureEarlyAccess', 'Early access to new features')}</span>
+                </div>
+              </div>
+
+              <Button 
+                fullWidth
+                className="bg-white text-dark-900 hover:bg-[#8b5cf6] hover:text-white font-black border-transparent shadow-lg shadow-white/10 py-4 text-base transition-all"
+                onClick={() => navigate('/billing')}
+              >
+                <Zap size={18} className="text-yellow-500 fill-current mr-2" /> {t('settings:upgradePro', 'Upgrade to Pro')}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Two Columns at Bottom: Preferences (60%) + Resources (40%) */}
+        <div className="grid md:grid-cols-[1.5fr_1fr] gap-6">
+          {/* App Preferences - 60% */}
+          <section>
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-2 mb-3">{t('settings:preferences', 'Preferences')}</h3>
+            <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm p-1">
+              {/* Language Toggle */}
+              <div className="w-full flex items-center justify-between p-5 transition-colors border-b border-gray-50 rounded-xl mb-1">
+                <div className="flex items-center gap-4">
+                  <div className="p-2.5 rounded-xl bg-gray-50 text-gray-500">
+                    <Globe size={20} />
+                  </div>
+                  <span className="font-bold text-sm">{t('settings:language', 'Language')}</span>
+                </div>
+                <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+                  <button
+                    onClick={() => i18n.changeLanguage('en')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-black transition-all ${lang === 'EN' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'}`}
+                  >
+                    {t('settings:english', 'English')}
+                  </button>
+                  <button
+                    onClick={() => i18n.changeLanguage('fr')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-black transition-all ${lang === 'FR' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'}`}
+                  >
+                    {t('settings:french', 'Français')}
+                  </button>
+                </div>
+              </div>
+
+              {/* Dark Mode Toggle */}
+              <div className="w-full flex items-center justify-between p-5 transition-colors rounded-xl mb-1">
+                <div className="flex items-center gap-4">
+                  <div className="p-2.5 rounded-xl bg-gray-50 text-gray-500">
+                    {darkMode ? <Moon size={20} /> : <Sun size={20} />}
+                  </div>
+                  <span className="font-bold text-sm">{t('settings:darkMode', 'Dark Mode')}</span>
+                </div>
+                <button
+                  onClick={() => setDarkMode(!darkMode)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${darkMode ? 'bg-primary-600' : 'bg-gray-300'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${darkMode ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+
+              {/* Sign Out Button - Desktop only */}
+              <div className="hidden md:block p-5">
+                <button
+                  onClick={() => setShowLogoutConfirm(true)}
+                  className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-white border border-red-200 text-red-600 rounded-xl font-bold text-sm hover:bg-red-600 hover:text-white hover:border-red-600 transition-colors shadow-sm"
+                >
+                  <LogOut size={16} /> {t('settings:signOut', 'Sign Out')}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {/* Resources - 40% */}
+          <section>
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-2 mb-3">{t('settings:resources', 'Resources')}</h3>
+            <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm p-1">
+              <SettingItem icon={HelpCircle} label={t('settings:helpSupport', 'Help & Support')} onClick={() => navigate('/help?section=how-to')} />
+              <SettingItem icon={Info} label={t('settings:about', 'About Recolekt')} onClick={() => navigate('/help?section=about')} />
+            </div>
+          </section>
+        </div>
+
+        {/* Sign Out Button - Mobile only, outside at bottom */}
+        <div className="md:hidden">
+          <button
+            onClick={() => setShowLogoutConfirm(true)}
+            className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-white border border-red-200 text-red-600 rounded-xl font-bold text-sm hover:bg-red-600 hover:text-white hover:border-red-600 transition-colors shadow-sm mb-24"
+          >
+            <LogOut size={16} /> {t('settings:signOut', 'Sign Out')}
           </button>
         </div>
-
       </div>
 
-      {shortcutData && (
-        <InstallShortcutModal isOpen={showShortcutModal} onClose={() => setShowShortcutModal(false)} apiToken={shortcutData.api_token} shortcutUrl={shortcutData.shortcut_url} />
-      )}
+      <ConfirmModal 
+        isOpen={showLogoutConfirm} 
+        onClose={() => setShowLogoutConfirm(false)} 
+        onConfirm={handleLogout} 
+        title={t('settings:signOut', 'Sign Out')} 
+        message={t('settings:signOutConfirm', 'Are you sure you want to log out?')} 
+        confirmLabel={t('settings:signOut', 'Sign Out')} 
+      />
     </div>
   );
 };
