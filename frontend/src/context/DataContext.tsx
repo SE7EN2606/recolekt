@@ -28,7 +28,7 @@ interface DataContextType {
   folders: Folder[];
   isLoading: boolean;
   addFolder: (name: string, parentId?: string | null) => Promise<void>;
-  updateFolder: (id: string, name: string) => Promise<void>;
+  updateFolder: (id: string, name: string, parentId?: string | null) => Promise<void>;
   deleteFolder: (id: string) => Promise<void>;
   toggleFavorite: (videoId: string) => Promise<void>;
   moveVideos: (videoIds: string[], targetFolderId: string) => Promise<void>;
@@ -523,41 +523,28 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await refreshFolders();
   }, [refreshFolders]);
 
-  const updateFolder = useCallback(async (id: string, name: string) => {
-    if (!navigator.onLine) throw new Error("Offline");
-    const res = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
-      method: 'PUT', credentials: 'include',
-      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name })
-    });
+  // In DataContext.tsx — replace the updateFolder callback:
+  const updateFolder = useCallback(async (id: string, name: string, parentId?: string | null) => {
+  if (!navigator.onLine) throw new Error("Offline");
 
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || "Failed to rename folder");
-    }
-    await refreshFolders();
-  }, [refreshFolders]);
+  const body: any = { name };
+  // Only include parent_id when explicitly passed (undefined = don't touch it)
+  if (parentId !== undefined) {
+    body.parent_id = parentId; // null = promote to root, string = nest under that folder
+  }
 
-  const deleteFolder = useCallback(async (id: string) => {
-    setVideos((prev) => prev.map(v => v.folderId === id ? { ...v, folderId: 'unsorted' } : v));
-    if (!navigator.onLine) return;
+  const res = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
+    method: 'PUT', credentials: 'include',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
 
-    try {
-      const res = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
-        method: 'DELETE', credentials: 'include',
-        headers: getAuthHeaders(),
-      });
-      if (res.ok) {
-        await refreshFolders();
-        fetchVideos();
-      } else {
-        fetchVideos();
-      }
-    } catch (error) {
-      console.error("Folder deletion failed:", error);
-      fetchVideos();
-    }
-  }, [refreshFolders, fetchVideos, setVideos]);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || "Failed to update folder");
+  }
+  await refreshFolders();
+}, [refreshFolders]);
 
   const refreshVideos = useCallback(async () => {
     fetchVideos();
@@ -597,7 +584,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 };
-
 
 export const useData = () => {
   const ctx = useContext(DataContext);
