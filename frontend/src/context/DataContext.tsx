@@ -196,7 +196,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const rawFolderId = r.folder_id || 'unsorted';
           const normalizedFolderId = (rawFolderId === 'default' || rawFolderId === 'all') ? 'unsorted' : rawFolderId;
 
-          // Derive platform from source_url — never hardcode
           const sourceUrl = String(r.source_url || '');
           const platform =
             sourceUrl.includes('facebook.com') || sourceUrl.includes('fb.com')
@@ -237,8 +236,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const loadedById  = new Map(loadedVideos.map((v: any) => [v.id, v]));
           const loadedByUrl = new Map(loadedVideos.map((v: any) => [v.originalUrl, v]));
 
-          // Keep optimistic (Processing) entries only if backend hasn't returned them yet
-          // Strict matches only — no shortcode/prefix fuzzy matching
           const optimisticOnly = (prevVideos || []).filter((v: any) => {
             if (!v?.id) return false;
             if (v.category !== 'Processing') return false;
@@ -255,7 +252,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
           const result = Array.from(uniqueById.values());
 
-          // ✅ FIXED — cast v as any so TS doesn't complain about unknown properties
           let changed = prevVideos.length !== result.length;
           if (!changed) {
             const prevById = new Map<string, any>(prevVideos.map(v => [v.id, v]));
@@ -511,7 +507,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const addFolder = useCallback(async (name: string, parentId: string | null = null) => {
     if (!navigator.onLine) throw new Error("Offline");
     const res = await fetch(joinUrl(API_BASE, '/api/folders'), {
-      method: 'POST', credentials: 'include',
+      method: 'POST',
+      credentials: 'include',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, parent_id: parentId })
     });
@@ -523,28 +520,62 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await refreshFolders();
   }, [refreshFolders]);
 
-  // In DataContext.tsx — replace the updateFolder callback:
   const updateFolder = useCallback(async (id: string, name: string, parentId?: string | null) => {
-  if (!navigator.onLine) throw new Error("Offline");
+    if (!navigator.onLine) throw new Error("Offline");
 
-  const body: any = { name };
-  // Only include parent_id when explicitly passed (undefined = don't touch it)
-  if (parentId !== undefined) {
-    body.parent_id = parentId; // null = promote to root, string = nest under that folder
-  }
+    const body: any = { name };
+    // Only include parent_id when explicitly passed — undefined means "leave it unchanged"
+    if (parentId !== undefined) {
+      body.parent_id = parentId; // null = promote to root, string = nest under folder
+    }
 
-  const res = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
-    method: 'PUT', credentials: 'include',
-    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
+    const res = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
 
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error || "Failed to update folder");
-  }
-  await refreshFolders();
-}, [refreshFolders]);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || "Failed to update folder");
+    }
+    await refreshFolders();
+  }, [refreshFolders]);
+
+  // ── deleteFolder ────────────────────────────────────────────────────────────
+  // Optimistically moves all local videos out of the folder (and sub-folders),
+  // then calls DELETE /api/folders/:id which handles cascade on the backend.
+  const deleteFolder = useCallback(async (id: string) => {
+    // Optimistic: move all videos in this folder to unsorted locally
+    setVideos((prev) => prev.map((v: any) =>
+      v.folderId === id ? { ...v, folderId: 'unsorted' } : v
+    ));
+
+    if (!navigator.onLine) return;
+
+    try {
+      const res = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: getAuthHeaders(),
+      });
+
+      if (res.ok) {
+        // Backend handled cascade — refresh both folders and videos to reflect true state
+        await refreshFolders();
+        fetchVideos();
+      } else {
+        // Rollback optimistic update by refreshing
+        fetchVideos();
+        await refreshFolders();
+      }
+    } catch (error) {
+      console.error("Folder deletion failed:", error);
+      fetchVideos();
+      await refreshFolders();
+    }
+  }, [refreshFolders, fetchVideos, setVideos]);
 
   const refreshVideos = useCallback(async () => {
     fetchVideos();
@@ -579,11 +610,18 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       refreshFolders,
       getVideoById,
     }),
-    [_videos, folders, isLoading, addFolder, updateFolder, deleteFolder, toggleFavorite, moveVideos, updateVideo, deleteVideos, addVideo, refreshVideos, refreshFolders, getVideoById]
+    [
+      _videos, folders, isLoading,
+      addFolder, updateFolder, deleteFolder,
+      toggleFavorite, moveVideos, updateVideo,
+      deleteVideos, addVideo, refreshVideos,
+      refreshFolders, getVideoById,
+    ]
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 };
+
 
 export const useData = () => {
   const ctx = useContext(DataContext);
