@@ -114,7 +114,7 @@ export const Gallery: React.FC = () => {
   const navigate = useNavigate();
 
   const { user, loading: authLoading } = useAuth();
-  const { videos, folders, isLoading: dataLoading, refreshVideos, moveVideos, deleteVideos, deleteFolder, renameFolder } = useData();
+  const { videos, folders, isLoading: dataLoading, refreshVideos, moveVideos, deleteVideos, deleteFolder, updateFolder: renameFolder } = useData();
   const { t } = useTranslation(['gallery', 'common', 'sidebar']);
 
   const [selectionMode, setSelectionMode] = useState(false);
