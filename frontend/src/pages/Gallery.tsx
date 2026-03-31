@@ -87,13 +87,26 @@ const MoveFolderModal: React.FC<MoveFolderModalProps> = ({ isOpen, folderId, fol
 
   if (!isOpen) return null;
 
+  // Flatten nested folder tree into a flat list for easier processing
+  const flattenFolders = (list: any[], parentId: string | null = null): any[] => {
+    const result: any[] = [];
+    for (const f of list) {
+      result.push({ ...f, parent_id: f.parent_id ?? parentId });
+      if (f.subFolders?.length) {
+        result.push(...flattenFolders(f.subFolders, f.id));
+      }
+    }
+    return result;
+  };
+  const flatFolders = flattenFolders(folders);
+
   // Collect all descendant IDs to prevent circular moves
   const getDescendantIds = (id: string): string[] => {
     const result: string[] = [];
     const queue = [id];
     while (queue.length > 0) {
       const current = queue.shift()!;
-      const children = folders.filter((f: any) => f.parent_id === current || f.parentId === current);
+      const children = flatFolders.filter((f: any) => f.parent_id === current);
       for (const child of children) {
         result.push(child.id);
         queue.push(child.id);
@@ -104,23 +117,29 @@ const MoveFolderModal: React.FC<MoveFolderModalProps> = ({ isOpen, folderId, fol
 
   const descendantIds = getDescendantIds(folderId);
   const invalidIds = new Set([folderId, ...descendantIds]);
+  const allEligible = flatFolders.filter((f: any) => !invalidIds.has(f.id));
 
-  // Eligible targets: all folders except self and descendants
-  const rootFolders = folders.filter((f: any) => !f.parent_id && !f.parentId && !invalidIds.has(f.id));
-  const allEligible = folders.filter((f: any) => !invalidIds.has(f.id));
+  const selectedName = selectedParent === null
+    ? 'Root (Main Library)'
+    : flatFolders.find((f: any) => f.id === selectedParent)?.name || '';
 
-  const selectedName = selectedParent === null ? 'Root (Main Library)' : folders.find((f: any) => f.id === selectedParent)?.name || '';
-
-  // Check if selected target has children (warn about nesting depth)
-  const targetHasChildren = selectedParent !== null && folders.some((f: any) =>
-    (f.parent_id === selectedParent || f.parentId === selectedParent) && !invalidIds.has(f.id)
+  const targetHasChildren = selectedParent !== null && flatFolders.some((f: any) =>
+    f.parent_id === selectedParent && !invalidIds.has(f.id)
   );
 
-  const currentFolder = folders.find((f: any) => f.id === folderId);
-  const currentParentId = currentFolder?.parent_id || currentFolder?.parentId || null;
-  const hasSubFolders = folders.some((f: any) =>
-    (f.parent_id === folderId || f.parentId === folderId)
-  );
+  const currentFolder = flatFolders.find((f: any) => f.id === folderId);
+  const currentParentId = currentFolder?.parent_id || null;
+  const hasSubFolders = flatFolders.some((f: any) => f.parent_id === folderId);
+
+  // Initialise selection to current parent so "Continue" is disabled unless changed
+  const [initialised, setInitialised] = useState(false);
+  useEffect(() => {
+    if (isOpen && !initialised) {
+      setSelectedParent(currentParentId);
+      setInitialised(true);
+    }
+    if (!isOpen) setInitialised(false);
+  }, [isOpen, currentParentId, initialised]);
 
   const handleConfirm = async () => {
     setMoving(true);
@@ -156,17 +175,15 @@ const MoveFolderModal: React.FC<MoveFolderModalProps> = ({ isOpen, folderId, fol
                 {selectedParent === null && <div className="w-2 h-2 rounded-full bg-primary-500" />}
               </button>
 
-              {/* Divider */}
               {allEligible.length > 0 && (
                 <p className="text-xs text-gray-400 font-medium px-1 pt-2 pb-1">Or nest inside a collection:</p>
               )}
 
-              {/* All eligible folders, indented by depth */}
               {allEligible.map((f: any) => {
-                const parentId = f.parent_id || f.parentId || null;
-                const isSubFolder = !!parentId;
-                const parentName = isSubFolder ? folders.find((p: any) => p.id === parentId)?.name : null;
+                const isSubFolder = !!f.parent_id;
+                const parentName = isSubFolder ? flatFolders.find((p: any) => p.id === f.parent_id)?.name : null;
                 const isSelected = selectedParent === f.id;
+                const isCurrent = f.id === currentParentId;
                 return (
                   <button
                     key={f.id}
@@ -185,6 +202,9 @@ const MoveFolderModal: React.FC<MoveFolderModalProps> = ({ isOpen, folderId, fol
                         <p className="text-xs text-gray-400 mt-0.5">inside {parentName}</p>
                       )}
                     </div>
+                    {isCurrent && !isSelected && (
+                      <span className="text-xs text-gray-400 italic">current</span>
+                    )}
                     {isSelected && <div className="w-2 h-2 rounded-full bg-primary-500" />}
                   </button>
                 );
@@ -195,15 +215,13 @@ const MoveFolderModal: React.FC<MoveFolderModalProps> = ({ isOpen, folderId, fol
               )}
             </div>
 
-            {/* Warning if moving INTO a folder that already has sub-folders */}
-            {targetHasChildren && selectedParent !== null && (
+            {targetHasChildren && selectedParent !== null && selectedParent !== currentParentId && (
               <div className="mt-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
                 ⚠️ This collection already has sub-collections. Your collection will be nested alongside them.
               </div>
             )}
 
-            {/* Warning if this folder has sub-folders itself */}
-            {hasSubFolders && selectedParent !== null && (
+            {hasSubFolders && selectedParent !== null && selectedParent !== currentParentId && (
               <div className="mt-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
                 ⚠️ <strong>"{folderName}"</strong> has sub-collections. Moving it will also move all its sub-collections with it.
               </div>
@@ -294,7 +312,16 @@ export const Gallery: React.FC = () => {
   const navigate = useNavigate();
 
   const { user, loading: authLoading } = useAuth();
-  const { videos, folders, isLoading: dataLoading, refreshVideos, moveVideos, deleteVideos, deleteFolder, updateFolder } = useData();
+  const {
+    videos,
+    folders,
+    isLoading: dataLoading,
+    refreshVideos,
+    moveVideos,
+    deleteVideos,
+    deleteFolder,
+    updateFolder,
+  } = useData();
   const { t } = useTranslation(['gallery', 'common', 'sidebar']);
 
   const [selectionMode, setSelectionMode] = useState(false);
@@ -407,21 +434,32 @@ export const Gallery: React.FC = () => {
     }
   };
 
+  // Resolve current folder name directly from folders state — never call getFolderTitle() before it's defined
+  const resolveFolderName = (): string => {
+    if (!folderId) return '';
+    const flat = (list: any[]): any[] => list.flatMap(f => [f, ...(f.subFolders ? flat(f.subFolders) : [])]);
+    const found = flat(folders).find((f: any) => f.id === folderId);
+    return found?.name || folderId;
+  };
+
   const handleRenameFolder = async (newName: string) => {
     if (!folderId) return;
     await updateFolder(folderId, newName);
     await refreshVideos();
   };
 
-  // Move the FOLDER itself (change parent_id)
   const handleMoveFolder = async (newParentId: string | null) => {
     if (!folderId) return;
-    await updateFolder(folderId, getFolderTitle(), newParentId);
+    const currentName = resolveFolderName();
+    // Pass parentId as third arg — DataContext will include parent_id in the PUT body
+    await updateFolder(folderId, currentName, newParentId);
     await refreshVideos();
   };
 
   const handleDeleteFolder = async () => {
     if (!folderId) return;
+    // Backend handles moving videos + sub-folder cascade, but also optimistically
+    // move local videos so UI feels instant
     const videosInFolder = videos.filter((v: any) => v.folderId === folderId);
     if (videosInFolder.length > 0) {
       const ids = videosInFolder.map((v: any) => v.id ?? v.process_id ?? v.processId);
@@ -431,20 +469,17 @@ export const Gallery: React.FC = () => {
     navigate('/gallery', { replace: true });
   };
 
-  const getFolderTitle = () => {
+  const getFolderTitle = (): string => {
     if (isFavoritesView) return t('gallery:favorites');
     if (isAllView) return t('gallery:myVideos');
     if (isUnsortedView) return t('sidebar:unsorted', 'Unsorted');
-    const foundFolder = folders.find((f: any) => f.id === folderId);
-    if (foundFolder) return foundFolder.name;
-    for (const f of folders) {
-      const sub = f.subFolders?.find((s: any) => s.id === folderId);
-      if (sub) return sub.name;
-    }
+    const flat = (list: any[]): any[] => list.flatMap(f => [f, ...(f.subFolders ? flat(f.subFolders) : [])]);
+    const found = flat(folders).find((f: any) => f.id === folderId);
+    if (found) return found.name;
     return folderId ? folderId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : t('gallery:gallery');
   };
 
-  const getFolderSubtitle = () => {
+  const getFolderSubtitle = (): string => {
     if (isFavoritesView) return t('gallery:subtitleFavorites', 'Your most loved videos in one place');
     if (isAllView) return t('gallery:subtitleAll', 'Browse, search, and manage all your saved videos');
     if (isUnsortedView) return t('gallery:subtitleUnsorted', 'Videos waiting to be organized into collections');
@@ -472,7 +507,7 @@ export const Gallery: React.FC = () => {
         {/* ── Header row ───────────────────────────────────────────────── */}
         <div className="flex items-center justify-between gap-3">
 
-          {/* LEFT: title + subtitle + folder menu dot */}
+          {/* LEFT: title + subtitle + folder context menu */}
           <div className="min-w-0 flex-1">
             {selectionMode ? (
               <div>
@@ -545,13 +580,25 @@ export const Gallery: React.FC = () => {
                   >
                     <CircleX size={26} strokeWidth={1.5} />
                   </button>
-                  <Button variant="primary" size="sm" className="h-10 px-3 md:px-6 gap-1.5 whitespace-nowrap" disabled={selectedIds.size === 0} onClick={() => setIsMoveModalOpen(true)}>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="h-10 px-3 md:px-6 gap-1.5 whitespace-nowrap"
+                    disabled={selectedIds.size === 0}
+                    onClick={() => setIsMoveModalOpen(true)}
+                  >
                     <span className="truncate max-w-[60px] md:max-w-none">{t('gallery:move')}</span>
                     {selectedIds.size > 0 && (
-                      <span className="flex-shrink-0 bg-white/20 px-1.5 py-0.5 rounded text-[10px] font-bold min-w-[20px] text-center">{selectedIds.size}</span>
+                      <span className="flex-shrink-0 bg-white/20 px-1.5 py-0.5 rounded text-[10px] font-bold min-w-[20px] text-center">
+                        {selectedIds.size}
+                      </span>
                     )}
                   </Button>
-                  <button onClick={handleDelete} disabled={selectedIds.size === 0} className="w-10 h-10 flex items-center justify-center rounded-full bg-red-50 text-red-600 hover:bg-red-100 transition-colors disabled:opacity-50">
+                  <button
+                    onClick={handleDelete}
+                    disabled={selectedIds.size === 0}
+                    className="w-10 h-10 flex items-center justify-center rounded-full bg-red-50 text-red-600 hover:bg-red-100 transition-colors disabled:opacity-50"
+                  >
                     <Trash2 size={20} />
                   </button>
                 </>
@@ -562,7 +609,7 @@ export const Gallery: React.FC = () => {
                   title={t('gallery:manage', 'Manage')}
                 >
                   <Settings2 size={16} aria-hidden="true" />
-                  <span className="text-sm font-medium">{t('gallery:manage', 'Manage')}</span>
+                  <span className="text-sm font-medium whitespace-nowrap">{t('gallery:manage', 'Manage')}</span>
                 </button>
               )}
             </div>
@@ -573,12 +620,18 @@ export const Gallery: React.FC = () => {
         <div className="hidden md:flex items-center gap-3">
           <div className="relative flex-1">
             <input
-              type="text" placeholder={t('common:search')} value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+              type="text"
+              placeholder={t('common:search')}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none shadow-sm transition-all hover:bg-white/80"
             />
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           </div>
-          <button onClick={() => setSortOrder(p => p === 'desc' ? 'asc' : 'desc')} className="p-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-xl hover:bg-white/80 transition-colors text-gray-600 shadow-sm h-[46px] w-[46px] flex items-center justify-center">
+          <button
+            onClick={() => setSortOrder(p => p === 'desc' ? 'asc' : 'desc')}
+            className="p-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-xl hover:bg-white/80 transition-colors text-gray-600 shadow-sm h-[46px] w-[46px] flex items-center justify-center"
+          >
             {sortOrder === 'desc' ? <CalendarArrowUp size={20} /> : <CalendarArrowDown size={20} />}
           </button>
         </div>
@@ -599,7 +652,7 @@ export const Gallery: React.FC = () => {
                 e.dataTransfer.setData('sourceId', video.folderId || 'unsorted');
                 e.dataTransfer.effectAllowed = 'move';
               }}
-              className={!selectionMode && video.category !== 'Processing' ? "cursor-grab active:cursor-grabbing" : ""}
+              className={!selectionMode && video.category !== 'Processing' ? 'cursor-grab active:cursor-grabbing' : ''}
             >
               <VideoCard
                 video={video}
@@ -618,12 +671,19 @@ export const Gallery: React.FC = () => {
             <Search className="text-gray-400" size={24} />
           </div>
           <h3 className="text-gray-900 font-medium">{t('gallery:noVideosFound')}</h3>
-          <p className="text-gray-500 text-sm mt-1">{searchQuery ? t('gallery:tryDifferentSearch') : t('gallery:noVideosInFolder')}</p>
+          <p className="text-gray-500 text-sm mt-1">
+            {searchQuery ? t('gallery:tryDifferentSearch') : t('gallery:noVideosInFolder')}
+          </p>
         </div>
       )}
 
       {/* ── Modals ───────────────────────────────────────────────────────── */}
-      <MoveCollectionModal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} onMove={handleMoveSubmit} count={selectedIds.size} />
+      <MoveCollectionModal
+        isOpen={isMoveModalOpen}
+        onClose={() => setIsMoveModalOpen(false)}
+        onMove={handleMoveSubmit}
+        count={selectedIds.size}
+      />
 
       <RenameFolderModal
         isOpen={isRenameModalOpen}
@@ -632,14 +692,16 @@ export const Gallery: React.FC = () => {
         onRename={handleRenameFolder}
       />
 
-      <MoveFolderModal
-        isOpen={isMoveFolderModalOpen}
-        folderId={folderId!}
-        folderName={folderTitle}
-        folders={folders}
-        onClose={() => setIsMoveFolderModalOpen(false)}
-        onMove={handleMoveFolder}
-      />
+      {isMoveFolderModalOpen && folderId && (
+        <MoveFolderModal
+          isOpen={isMoveFolderModalOpen}
+          folderId={folderId}
+          folderName={folderTitle}
+          folders={folders}
+          onClose={() => setIsMoveFolderModalOpen(false)}
+          onMove={handleMoveFolder}
+        />
+      )}
 
       <ConfirmDeleteModal
         isOpen={isDeleteConfirmOpen}
