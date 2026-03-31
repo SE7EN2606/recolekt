@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { VideoCard } from '../components/VideoCard';
 import { Button } from '../components/Button';
-import { Search, Settings2, Trash2, CircleX, MoreVertical, Pencil } from 'lucide-react';
+import { Search, Settings2, Trash2, CircleX, MoreVertical, Pencil, FolderInput, ChevronRight } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -21,8 +21,9 @@ const PROCESSING_MESSAGES = [
   'msg_optimizing', 'msg_polishing', 'msg_finalizing'
 ];
 
-// ── Inline modals (no extra files needed) ──────────────────────────────────
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Rename Modal
+// ─────────────────────────────────────────────────────────────────────────────
 interface RenameFolderModalProps {
   isOpen: boolean;
   currentName: string;
@@ -55,9 +56,7 @@ const RenameFolderModal: React.FC<RenameFolderModalProps> = ({ isOpen, currentNa
             placeholder="Collection name"
           />
           <div className="flex gap-2 justify-end">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">
-              Cancel
-            </button>
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">Cancel</button>
             <button type="submit" disabled={saving || !name.trim()} className="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 transition-colors">
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -68,6 +67,188 @@ const RenameFolderModal: React.FC<RenameFolderModalProps> = ({ isOpen, currentNa
   );
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Move Collection Modal
+// ─────────────────────────────────────────────────────────────────────────────
+interface MoveFolderModalProps {
+  isOpen: boolean;
+  folderId: string;
+  folderName: string;
+  folders: any[];
+  onClose: () => void;
+  onMove: (newParentId: string | null) => Promise<void>;
+}
+const MoveFolderModal: React.FC<MoveFolderModalProps> = ({ isOpen, folderId, folderName, folders, onClose, onMove }) => {
+  const [selectedParent, setSelectedParent] = useState<string | null>(null);
+  const [step, setStep] = useState<'pick' | 'confirm'>('pick');
+  const [moving, setMoving] = useState(false);
+
+  useEffect(() => { if (isOpen) { setSelectedParent(null); setStep('pick'); } }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  // Collect all descendant IDs to prevent circular moves
+  const getDescendantIds = (id: string): string[] => {
+    const result: string[] = [];
+    const queue = [id];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const children = folders.filter((f: any) => f.parent_id === current || f.parentId === current);
+      for (const child of children) {
+        result.push(child.id);
+        queue.push(child.id);
+      }
+    }
+    return result;
+  };
+
+  const descendantIds = getDescendantIds(folderId);
+  const invalidIds = new Set([folderId, ...descendantIds]);
+
+  // Eligible targets: all folders except self and descendants
+  const rootFolders = folders.filter((f: any) => !f.parent_id && !f.parentId && !invalidIds.has(f.id));
+  const allEligible = folders.filter((f: any) => !invalidIds.has(f.id));
+
+  const selectedName = selectedParent === null ? 'Root (Main Library)' : folders.find((f: any) => f.id === selectedParent)?.name || '';
+
+  // Check if selected target has children (warn about nesting depth)
+  const targetHasChildren = selectedParent !== null && folders.some((f: any) =>
+    (f.parent_id === selectedParent || f.parentId === selectedParent) && !invalidIds.has(f.id)
+  );
+
+  const currentFolder = folders.find((f: any) => f.id === folderId);
+  const currentParentId = currentFolder?.parent_id || currentFolder?.parentId || null;
+  const hasSubFolders = folders.some((f: any) =>
+    (f.parent_id === folderId || f.parentId === folderId)
+  );
+
+  const handleConfirm = async () => {
+    setMoving(true);
+    try { await onMove(selectedParent); onClose(); } finally { setMoving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-fade-in">
+        {step === 'pick' ? (
+          <>
+            <h2 className="text-lg font-bold text-gray-900 mb-1">Move Collection</h2>
+            <p className="text-sm text-gray-500 mb-5">
+              Where should <span className="font-semibold text-gray-700">"{folderName}"</span> live?
+            </p>
+
+            <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto pr-1">
+              {/* Root option */}
+              <button
+                onClick={() => setSelectedParent(null)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm transition-all ${
+                  selectedParent === null
+                    ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
+                    : 'border-gray-100 bg-gray-50 text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <span className="text-base">🏠</span>
+                <div className="flex-1 text-left">
+                  <p className="font-medium">Root — Main Library</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Make this a top-level collection</p>
+                </div>
+                {selectedParent === null && <div className="w-2 h-2 rounded-full bg-primary-500" />}
+              </button>
+
+              {/* Divider */}
+              {allEligible.length > 0 && (
+                <p className="text-xs text-gray-400 font-medium px-1 pt-2 pb-1">Or nest inside a collection:</p>
+              )}
+
+              {/* All eligible folders, indented by depth */}
+              {allEligible.map((f: any) => {
+                const parentId = f.parent_id || f.parentId || null;
+                const isSubFolder = !!parentId;
+                const parentName = isSubFolder ? folders.find((p: any) => p.id === parentId)?.name : null;
+                const isSelected = selectedParent === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => setSelectedParent(f.id)}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm transition-all ${
+                      isSelected
+                        ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
+                        : 'border-gray-100 bg-gray-50 text-gray-700 hover:bg-gray-100'
+                    } ${isSubFolder ? 'ml-4' : ''}`}
+                  >
+                    {isSubFolder && <ChevronRight size={12} className="text-gray-300 flex-shrink-0 -ml-1" />}
+                    <span className="text-base">📁</span>
+                    <div className="flex-1 text-left">
+                      <p className="font-medium">{f.name}</p>
+                      {isSubFolder && parentName && (
+                        <p className="text-xs text-gray-400 mt-0.5">inside {parentName}</p>
+                      )}
+                    </div>
+                    {isSelected && <div className="w-2 h-2 rounded-full bg-primary-500" />}
+                  </button>
+                );
+              })}
+
+              {allEligible.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-4">No other collections available.</p>
+              )}
+            </div>
+
+            {/* Warning if moving INTO a folder that already has sub-folders */}
+            {targetHasChildren && selectedParent !== null && (
+              <div className="mt-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
+                ⚠️ This collection already has sub-collections. Your collection will be nested alongside them.
+              </div>
+            )}
+
+            {/* Warning if this folder has sub-folders itself */}
+            {hasSubFolders && selectedParent !== null && (
+              <div className="mt-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
+                ⚠️ <strong>"{folderName}"</strong> has sub-collections. Moving it will also move all its sub-collections with it.
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end mt-5">
+              <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">Cancel</button>
+              <button
+                onClick={() => setStep('confirm')}
+                disabled={selectedParent === currentParentId}
+                className="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-40 transition-colors"
+              >
+                Continue
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Confirm Move</h2>
+            <p className="text-sm text-gray-600 mb-2">
+              Move <span className="font-semibold text-gray-800">"{folderName}"</span> to{' '}
+              <span className="font-semibold text-primary-600">"{selectedName}"</span>?
+            </p>
+            {hasSubFolders && (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4">
+                ⚠️ All sub-collections inside <strong>"{folderName}"</strong> will move with it.
+              </p>
+            )}
+            <p className="text-xs text-gray-400 mb-5">This will update your library structure immediately.</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setStep('pick')} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">Back</button>
+              <button onClick={handleConfirm} disabled={moving} className="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 transition-colors">
+                {moving ? 'Moving…' : 'Confirm Move'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Delete Confirm Modal
+// ─────────────────────────────────────────────────────────────────────────────
 interface ConfirmDeleteModalProps {
   isOpen: boolean;
   folderName: string;
@@ -93,9 +274,7 @@ const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({ isOpen, folderN
           Your videos won't be deleted — they'll be moved back to your main library.
         </p>
         <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">
-            Cancel
-          </button>
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">Cancel</button>
           <button onClick={handleConfirm} disabled={deleting} className="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50 transition-colors">
             {deleting ? 'Deleting…' : 'Delete'}
           </button>
@@ -105,8 +284,9 @@ const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({ isOpen, folderN
   );
 };
 
-// ── Main Gallery component ─────────────────────────────────────────────────
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Gallery
+// ─────────────────────────────────────────────────────────────────────────────
 export const Gallery: React.FC = () => {
   const { folderId } = useParams<{ folderId?: string }>();
   const [searchParams] = useSearchParams();
@@ -114,7 +294,7 @@ export const Gallery: React.FC = () => {
   const navigate = useNavigate();
 
   const { user, loading: authLoading } = useAuth();
-  const { videos, folders, isLoading: dataLoading, refreshVideos, moveVideos, deleteVideos, deleteFolder, updateFolder: renameFolder } = useData();
+  const { videos, folders, isLoading: dataLoading, refreshVideos, moveVideos, deleteVideos, deleteFolder, updateFolder } = useData();
   const { t } = useTranslation(['gallery', 'common', 'sidebar']);
 
   const [selectionMode, setSelectionMode] = useState(false);
@@ -126,9 +306,10 @@ export const Gallery: React.FC = () => {
   const [msgIndex, setMsgIndex] = useState(0);
   const [scanState, setScanState] = useState<'h-active' | 'v-active'>('h-active');
 
-  // Folder menu state
+  // Folder menu
   const [showFolderMenu, setShowFolderMenu] = useState(false);
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [isMoveFolderModalOpen, setIsMoveFolderModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -153,21 +334,14 @@ export const Gallery: React.FC = () => {
   useEffect(() => {
     const hasProcessing = videos.some((v: any) => v.category === 'Processing' || v.status === 'processing');
     if (!hasProcessing) return;
-    const msgInterval = setInterval(() => {
-      setMsgIndex((prev) => (prev + 1) % PROCESSING_MESSAGES.length);
-    }, 2000);
-    const scanSequencer = setInterval(() => {
-      setScanState((prev) => (prev === 'h-active' ? 'v-active' : 'h-active'));
-    }, 4000);
+    const msgInterval = setInterval(() => setMsgIndex(p => (p + 1) % PROCESSING_MESSAGES.length), 2000);
+    const scanSequencer = setInterval(() => setScanState(p => p === 'h-active' ? 'v-active' : 'h-active'), 4000);
     return () => { clearInterval(msgInterval); clearInterval(scanSequencer); };
   }, [videos]);
 
-  // Close menu on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowFolderMenu(false);
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowFolderMenu(false);
     };
     if (showFolderMenu) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -195,13 +369,13 @@ export const Gallery: React.FC = () => {
       });
     }
     return filtered.sort((a: any, b: any) => {
-      const aProcessing = a.category === 'Processing' || a.status === 'processing';
-      const bProcessing = b.category === 'Processing' || b.status === 'processing';
-      if (aProcessing && !bProcessing) return -1;
-      if (!aProcessing && bProcessing) return 1;
-      const dateA = new Date(a.savedAt || a.created_at || 0).getTime();
-      const dateB = new Date(b.savedAt || b.created_at || 0).getTime();
-      return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+      const aP = a.category === 'Processing' || a.status === 'processing';
+      const bP = b.category === 'Processing' || b.status === 'processing';
+      if (aP && !bP) return -1;
+      if (!aP && bP) return 1;
+      const dA = new Date(a.savedAt || a.created_at || 0).getTime();
+      const dB = new Date(b.savedAt || b.created_at || 0).getTime();
+      return sortOrder === 'desc' ? dB - dA : dA - dB;
     });
   }, [videos, folderId, isFavoritesView, isAllView, isUnsortedView, searchQuery, sortOrder]);
 
@@ -235,28 +409,26 @@ export const Gallery: React.FC = () => {
 
   const handleRenameFolder = async (newName: string) => {
     if (!folderId) return;
-    try {
-      await renameFolder(folderId, newName);
-      await refreshVideos();
-    } catch (err) {
-      alert('Failed to rename collection');
-    }
+    await updateFolder(folderId, newName);
+    await refreshVideos();
+  };
+
+  // Move the FOLDER itself (change parent_id)
+  const handleMoveFolder = async (newParentId: string | null) => {
+    if (!folderId) return;
+    await updateFolder(folderId, getFolderTitle(), newParentId);
+    await refreshVideos();
   };
 
   const handleDeleteFolder = async () => {
     if (!folderId) return;
-    try {
-      // Move all videos in this folder back to unsorted before deleting
-      const videosInFolder = videos.filter((v: any) => v.folderId === folderId);
-      if (videosInFolder.length > 0) {
-        const ids = videosInFolder.map((v: any) => v.id ?? v.process_id ?? v.processId);
-        await moveVideos(ids, 'unsorted');
-      }
-      await deleteFolder(folderId);
-      navigate('/gallery', { replace: true });
-    } catch (err) {
-      alert('Failed to delete collection');
+    const videosInFolder = videos.filter((v: any) => v.folderId === folderId);
+    if (videosInFolder.length > 0) {
+      const ids = videosInFolder.map((v: any) => v.id ?? v.process_id ?? v.processId);
+      await moveVideos(ids, 'unsorted');
     }
+    await deleteFolder(folderId);
+    navigate('/gallery', { replace: true });
   };
 
   const getFolderTitle = () => {
@@ -279,32 +451,16 @@ export const Gallery: React.FC = () => {
     return t('gallery:subtitleFolder', 'Manage videos in this collection');
   };
 
-  const getThumbnail = (video: any): string => {
-    return (
-      video?.posterUrl ||
-      video?.coverUrl ||
-      video?.gcs_urls?.poster ||
-      video?.thumbnailUrl ||
-      video?.thumbnail_url ||
-      video?.gcs_urls?.preview_thumbnail ||
-      ''
-    );
-  };
-
   const showSkeleton = authLoading || (dataLoading && videos.length === 0);
-
   if (showSkeleton) return (
     <div className="w-full pt-4 md:pt-0 animate-pulse">
       <div className="h-8 bg-gray-200 rounded-lg w-48 mb-2" />
       <div className="h-4 bg-gray-100 rounded-lg w-64 mb-8" />
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="aspect-[9/16] rounded-2xl bg-gray-200/60" />
-        ))}
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="aspect-[9/16] rounded-2xl bg-gray-200/60" />)}
       </div>
     </div>
   );
-
   if (!user) return null;
 
   const folderTitle = getFolderTitle();
@@ -312,43 +468,47 @@ export const Gallery: React.FC = () => {
   return (
     <div className="w-full pt-4 md:pt-0 pb-0 md:pb-6 animate-fade-in">
       <div className="flex flex-col gap-6 mb-8">
-        <div className="flex items-start justify-between gap-4">
 
-          {/* LEFT: title + subtitle + optional folder menu */}
+        {/* ── Header row ───────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between gap-3">
+
+          {/* LEFT: title + subtitle + folder menu dot */}
           <div className="min-w-0 flex-1">
             {selectionMode ? (
-              <>
-                <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-                  {t('gallery:moveModeOn', 'Move mode on')}
-                </h1>
-                <p className="text-gray-500 text-xs md:text-sm mt-1">
-                  {t('gallery:moveModeHint', 'Select videos then tap Move')}
-                </p>
-              </>
+              <div>
+                <h1 className="text-xl md:text-2xl font-bold text-gray-900">{t('gallery:moveModeOn', 'Move mode on')}</h1>
+                <p className="text-gray-500 text-xs md:text-sm mt-0.5">{t('gallery:moveModeHint', 'Select videos then tap Move')}</p>
+              </div>
             ) : (
-              <>
-                <div className="flex items-center gap-2">
+              <div>
+                <div className="flex items-center gap-1.5">
                   <h1 className="text-xl md:text-2xl font-bold text-gray-900 truncate">{folderTitle}</h1>
 
-                  {/* Folder context menu — only on custom folders */}
                   {isCustomFolder && (
                     <div className="relative flex-shrink-0" ref={menuRef}>
                       <button
                         onClick={() => setShowFolderMenu(v => !v)}
                         className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                        title="Folder options"
+                        title="Collection options"
                       >
                         <MoreVertical size={18} />
                       </button>
 
                       {showFolderMenu && (
-                        <div className="absolute left-0 top-full mt-1 w-44 bg-white rounded-xl shadow-xl border border-gray-100 z-20 py-1 animate-fade-in">
+                        <div className="absolute left-0 top-full mt-1.5 w-48 bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-1.5 animate-fade-in">
                           <button
                             onClick={() => { setIsRenameModalOpen(true); setShowFolderMenu(false); }}
                             className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                           >
                             <Pencil size={14} />
                             <span>Edit Collection</span>
+                          </button>
+                          <button
+                            onClick={() => { setIsMoveFolderModalOpen(true); setShowFolderMenu(false); }}
+                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                          >
+                            <FolderInput size={14} />
+                            <span>Move Collection</span>
                           </button>
                           <div className="mx-3 my-1 border-t border-gray-100" />
                           <button
@@ -363,24 +523,24 @@ export const Gallery: React.FC = () => {
                     </div>
                   )}
                 </div>
-                <p className="text-gray-500 text-xs md:text-sm mt-1">{getFolderSubtitle()}</p>
-              </>
+                <p className="text-gray-500 text-xs md:text-sm mt-0.5">{getFolderSubtitle()}</p>
+              </div>
             )}
           </div>
 
-          {/* RIGHT: item count + manage/selection controls — flex-shrink-0 prevents squeeze */}
+          {/* RIGHT: video count pill + manage/selection controls */}
           <div className="flex items-center gap-2 flex-shrink-0">
             {!selectionMode && (
-              <p className="text-gray-500 text-xs font-medium whitespace-nowrap hidden sm:block">
-                {displayedVideos.length} {t('gallery:items', 'items')}
-              </p>
+              <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-bold tracking-wide">
+                {displayedVideos.length} videos
+              </span>
             )}
             <div className="flex items-center gap-1.5">
               {selectionMode ? (
                 <>
                   <button
                     onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
-                    className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors mr-1"
+                    className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors"
                     title={t('common:cancel', 'Cancel')}
                   >
                     <CircleX size={26} strokeWidth={1.5} />
@@ -409,20 +569,22 @@ export const Gallery: React.FC = () => {
           </div>
         </div>
 
+        {/* ── Search + sort ─────────────────────────────────────────────── */}
         <div className="hidden md:flex items-center gap-3">
           <div className="relative flex-1">
             <input
-              type="text" placeholder={t('common:search')} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              type="text" placeholder={t('common:search')} value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none shadow-sm transition-all hover:bg-white/80"
             />
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           </div>
-          <button onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} className="p-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-xl hover:bg-white/80 transition-colors text-gray-600 shadow-sm h-[46px] w-[46px] flex items-center justify-center">
+          <button onClick={() => setSortOrder(p => p === 'desc' ? 'asc' : 'desc')} className="p-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-xl hover:bg-white/80 transition-colors text-gray-600 shadow-sm h-[46px] w-[46px] flex items-center justify-center">
             {sortOrder === 'desc' ? <CalendarArrowUp size={20} /> : <CalendarArrowDown size={20} />}
           </button>
         </div>
       </div>
 
+      {/* ── Video grid ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-24 md:mb-12">
         {displayedVideos.map((video: any) => {
           const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
@@ -430,7 +592,7 @@ export const Gallery: React.FC = () => {
             <div
               key={videoId}
               draggable={!selectionMode && video.category !== 'Processing'}
-              onDragStart={(e) => {
+              onDragStart={e => {
                 let idsToMove = [videoId];
                 if (selectedIds.has(videoId)) idsToMove = Array.from(selectedIds);
                 e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
@@ -460,6 +622,7 @@ export const Gallery: React.FC = () => {
         </div>
       )}
 
+      {/* ── Modals ───────────────────────────────────────────────────────── */}
       <MoveCollectionModal isOpen={isMoveModalOpen} onClose={() => setIsMoveModalOpen(false)} onMove={handleMoveSubmit} count={selectedIds.size} />
 
       <RenameFolderModal
@@ -467,6 +630,15 @@ export const Gallery: React.FC = () => {
         currentName={folderTitle}
         onClose={() => setIsRenameModalOpen(false)}
         onRename={handleRenameFolder}
+      />
+
+      <MoveFolderModal
+        isOpen={isMoveFolderModalOpen}
+        folderId={folderId!}
+        folderName={folderTitle}
+        folders={folders}
+        onClose={() => setIsMoveFolderModalOpen(false)}
+        onMove={handleMoveFolder}
       />
 
       <ConfirmDeleteModal
@@ -478,27 +650,27 @@ export const Gallery: React.FC = () => {
 
       <style>{`
         @keyframes scan-h {
-          0% { transform: translate3d(0, 0%, 0); opacity: 0; }
-          5% { transform: translate3d(0, 0%, 0); opacity: 1; }
-          50% { transform: translate3d(0, 100%, 0); opacity: 1; }
-          95% { transform: translate3d(0, 0%, 0); opacity: 1; }
+          0%   { transform: translate3d(0, 0%, 0); opacity: 0; }
+          5%   { transform: translate3d(0, 0%, 0); opacity: 1; }
+          50%  { transform: translate3d(0, 100%, 0); opacity: 1; }
+          95%  { transform: translate3d(0, 0%, 0); opacity: 1; }
           100% { transform: translate3d(0, 0%, 0); opacity: 0; }
         }
         @keyframes scan-v {
-          0% { transform: translate3d(0%, 0, 0); opacity: 0; }
-          5% { transform: translate3d(0%, 0, 0); opacity: 1; }
-          50% { transform: translate3d(100%, 0, 0); opacity: 1; }
-          95% { transform: translate3d(0%, 0, 0); opacity: 1; }
+          0%   { transform: translate3d(0%, 0, 0); opacity: 0; }
+          5%   { transform: translate3d(0%, 0, 0); opacity: 1; }
+          50%  { transform: translate3d(100%, 0, 0); opacity: 1; }
+          95%  { transform: translate3d(0%, 0, 0); opacity: 1; }
           100% { transform: translate3d(0%, 0, 0); opacity: 0; }
         }
         .h-active { animation: scan-h 4s linear forwards; }
-        .v-active { animation: scan-v 4s linear forwards; }
-        .idle { opacity: 0; }
+        .v-active  { animation: scan-v 4s linear forwards; }
+        .idle      { opacity: 0; }
         @keyframes ai-text-reveal {
-          0% { opacity: 0; filter: blur(6px); transform: translate3d(-8px, 0, 0); }
-          15% { opacity: 1; filter: blur(0px); transform: translate3d(0, 0, 0); }
-          85% { opacity: 1; filter: blur(0px); transform: translate3d(0, 0, 0); }
-          100% { opacity: 0; filter: blur(6px); transform: translate3d(8px, 0, 0); }
+          0%   { opacity: 0; filter: blur(6px); transform: translate3d(-8px, 0, 0); }
+          15%  { opacity: 1; filter: blur(0px);  transform: translate3d(0, 0, 0); }
+          85%  { opacity: 1; filter: blur(0px);  transform: translate3d(0, 0, 0); }
+          100% { opacity: 0; filter: blur(6px);  transform: translate3d(8px, 0, 0); }
         }
         .ai-message { animation: ai-text-reveal 2s cubic-bezier(0.1, 0.9, 0.2, 1) forwards; }
       `}</style>
