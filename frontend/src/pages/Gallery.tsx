@@ -234,12 +234,13 @@ export const Gallery: React.FC = () => {
                   </button>
                 </>
               ) : (
-                <button 
-                  onClick={() => setSelectionMode(true)} 
-                  className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-primary-100 hover:text-primary-600 active:scale-90 active:bg-primary-200 transition-all duration-200 shadow-sm" 
-                  title={t('gallery:selectVideos', 'Select Videos')}
+                <button
+                  onClick={() => setSelectionMode(true)}
+                  className="flex items-center gap-1.5 pl-2.5 pr-3.5 h-9 rounded-full bg-gray-100 text-gray-600 hover:bg-primary-100 hover:text-primary-600 active:scale-90 active:bg-primary-200 transition-all duration-200 shadow-sm"
+                  title={t('gallery:manage', 'Manage')}
                 >
-                  <Settings2 size={18} />
+                  <Settings2 size={16} aria-hidden="true" />
+                  <span className="text-sm font-medium">{t('gallery:manage', 'Manage')}</span>
                 </button>
               )}
             </div>
@@ -261,31 +262,31 @@ export const Gallery: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-24 md:mb-12">
-  {displayedVideos.map((video: any) => {
-    const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
+        {displayedVideos.map((video: any) => {
+          const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
 
-    return (
-      <div
-        key={videoId}
-        draggable={!selectionMode && video.category !== 'Processing'}
-        onDragStart={(e) => {
-          let idsToMove = [videoId];
-          if (selectedIds.has(videoId)) idsToMove = Array.from(selectedIds);
-          e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
-          e.dataTransfer.setData('sourceId', video.folderId || 'unsorted');
-          e.dataTransfer.effectAllowed = 'move';
-        }}
-        className={!selectionMode && video.category !== 'Processing' ? "cursor-grab active:cursor-grabbing" : ""}
-      >
-        <VideoCard
-          video={video}
-          selectionMode={selectionMode}
-          selected={selectedIds.has(videoId)}
-          onToggleSelect={() => toggleSelect(videoId)}
-        />
-      </div>
-    );
-  })}
+          return (
+            <div
+              key={videoId}
+              draggable={!selectionMode && video.category !== 'Processing'}
+              onDragStart={(e) => {
+                let idsToMove = [videoId];
+                if (selectedIds.has(videoId)) idsToMove = Array.from(selectedIds);
+                e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
+                e.dataTransfer.setData('sourceId', video.folderId || 'unsorted');
+                e.dataTransfer.effectAllowed = 'move';
+              }}
+              className={!selectionMode && video.category !== 'Processing' ? "cursor-grab active:cursor-grabbing" : ""}
+            >
+              <VideoCard
+                video={video}
+                selectionMode={selectionMode}
+                selected={selectedIds.has(videoId)}
+                onToggleSelect={() => toggleSelect(videoId)}
+              />
+            </div>
+          );
+        })}
       </div>
 
       {!dataLoading && displayedVideos.length === 0 && (
