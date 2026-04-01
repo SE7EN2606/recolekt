@@ -645,3 +645,66 @@ body {
 }
 
 .animate-chevron-1 { animation: chevron-pulse 2s ease-in-out infinite; }
+/* =========================================================
+   GALLERY — PROCESSING SCAN ANIMATIONS
+   ========================================================= */
+@keyframes scan-h {
+  0%   { transform: translate3d(0, 0%, 0); opacity: 0; }
+  5%   { transform: translate3d(0, 0%, 0); opacity: 1; }
+  50%  { transform: translate3d(0, 100%, 0); opacity: 1; }
+  95%  { transform: translate3d(0, 0%, 0); opacity: 1; }
+  100% { transform: translate3d(0, 0%, 0); opacity: 0; }
+}
+@keyframes scan-v {
+  0%   { transform: translate3d(0%, 0, 0); opacity: 0; }
+  5%   { transform: translate3d(0%, 0, 0); opacity: 1; }
+  50%  { transform: translate3d(100%, 0, 0); opacity: 1; }
+  95%  { transform: translate3d(0%, 0, 0); opacity: 1; }
+  100% { transform: translate3d(0%, 0, 0); opacity: 0; }
+}
+.h-active { animation: scan-h 4s linear forwards; }
+.v-active  { animation: scan-v 4s linear forwards; }
+.idle      { opacity: 0; }
+
+@keyframes ai-text-reveal {
+  0%   { opacity: 0; filter: blur(6px); transform: translate3d(-8px, 0, 0); }
+  15%  { opacity: 1; filter: blur(0px);  transform: translate3d(0, 0, 0); }
+  85%  { opacity: 1; filter: blur(0px);  transform: translate3d(0, 0, 0); }
+  100% { opacity: 0; filter: blur(6px);  transform: translate3d(8px, 0, 0); }
+}
+.ai-message { animation: ai-text-reveal 2s cubic-bezier(0.1, 0.9, 0.2, 1) forwards; }
+
+/* =========================================================
+   GALLERY — TRASH BUTTON DANGER STATE
+   ========================================================= */
+@keyframes trash-glow-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(220, 38, 38, 0.4); }
+  50%       { box-shadow: 0 0 18px rgba(220, 38, 38, 0.75); }
+}
+.btn-trash-danger {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background-color: #fef2f2;
+  color: #dc2626;
+  transition: background-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+              color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-trash-danger:not(:disabled):hover {
+  background-color: #dc2626;
+  color: #ffffff;
+  animation: trash-glow-pulse 0.8s ease-in-out infinite;
+}
+.btn-trash-danger:not(:disabled):active {
+  transform: scale(0.95);
+  background-color: #b91c1c;
+  animation: none;
+}
+.btn-trash-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

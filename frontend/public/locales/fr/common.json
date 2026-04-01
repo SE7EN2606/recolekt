@@ -51,5 +51,7 @@
   "installStep2": "Sélectionnez \"Sur l'écran d'accueil\"",
   "installApp": "Installer l'App",
   "saveChanges": "Enregistrer les modifications",
-  "next": "Suivant"
+  "next": "Suivant",
+  "delete": "Supprimer",
+  "back": "Retour"
 }

@@ -50,5 +50,6 @@
   "installStep1": "Tap the Share button in Safari",
   "installStep2": "Select \"Add to Home Screen\"",
   "saveChanges": "Save Changes",
+  "back": "Back",
   "next": "Next"
 }
