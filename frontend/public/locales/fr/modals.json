@@ -25,7 +25,7 @@
   "deleteReelTitle": "Supprimer cette vidéo ?",
   "deleteReelMessage": "Cette action est irréversible.",
   "deleteReelConfirm": "Supprimer",
-  "selectDestination": "Sélectionnez une collection",
+  "selectDestination": "Sélectionnez une nouvelle collection",
   "chooseCollection": "Choisir une collection...",
   "moveMultipleVideos": "Déplacer {{count}} vidéos",
   "moveSingleVideo": "Déplacer 1 vidéo",

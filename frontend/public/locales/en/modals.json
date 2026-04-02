@@ -25,7 +25,7 @@
   "deleteReelTitle": "Delete this reel?",
   "deleteReelMessage": "This action cannot be undone.",
   "deleteReelConfirm": "Delete",
-  "selectDestination": "Select a collection",
+  "selectDestination": "Select a new collection",
   "chooseCollection": "Choose collection...",
   "moveMultipleVideos": "Move {{count}} videos",
   "moveSingleVideo": "Move 1 video",
