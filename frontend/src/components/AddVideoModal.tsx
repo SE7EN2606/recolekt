@@ -1,6 +1,6 @@
 import { API_BASE } from "../utils/api";
 import React, { useState } from 'react';
-import { X, BookmarkCheck } from 'lucide-react';
+import { X, BookmarkCheck, CircleX } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -18,7 +18,6 @@ const SUPPORTED_DOMAINS = [
   'instagram.com',
   'facebook.com', 'fb.watch', 'fb.com',
   'youtube.com', 'youtu.be',
-  'tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com',
 ];
 
 const isSupportedUrl = (url: string): boolean => {
@@ -67,6 +66,12 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
     }
   };
 
+  const handleClear = () => {
+    setUrl('');
+    setError('');
+    setAlreadySaved(false);
+  };
+
   const handleClose = () => {
     setAlreadySaved(false);
     setError('');
@@ -81,7 +86,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
 
     // ── Platform validation ───────────────────────────────────────────
     if (!isSupportedUrl(url.trim())) {
-      setError(t('modals:errorUnsupportedPlatform', 'Only Instagram, Facebook, YouTube and TikTok URLs are supported.'));
+      setError(t('modals:errorUnsupportedPlatform', 'Only Instagram, Facebook and YouTube URLs are supported.'));
       return;
     }
 
@@ -90,8 +95,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
     setAlreadySaved(false);
 
     try {
-      const result = await addVideo(url.trim());
-
+      await addVideo(url.trim());
       setUrl('');
       onClose();
       navigate('/gallery');
@@ -109,7 +113,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
       if (backendError.includes('not authenticated') || backendError.includes('authentication required')) {
         translatedError = t('modals:errorNotAuth');
       } else if (backendError.includes('unsupported_platform') || backendError.includes('unsupported platform')) {
-        translatedError = t('modals:errorUnsupportedPlatform', 'Only Instagram, Facebook, YouTube and TikTok URLs are supported.');
+        translatedError = t('modals:errorUnsupportedPlatform', 'Only Instagram, Facebook and YouTube URLs are supported.');
       } else if (backendError.includes('provide either file or url') || backendError.includes('invalid url')) {
         translatedError = t('modals:errorInvalidUrl');
       } else if (backendError.includes('failed to import') || backendError.includes('internal error')) {
@@ -192,11 +196,28 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
                   value={url}
                   onChange={(e) => { setUrl(e.target.value); setError(''); setAlreadySaved(false); }}
                   placeholder={t('modals:pastePlaceholder')}
-                  className="w-full h-[50px] pl-4 pr-16 bg-white/50 border border-white/40 rounded-xl focus:bg-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none text-gray-900 placeholder-gray-400 backdrop-blur-sm"
+                  className={`w-full h-[50px] pl-4 bg-white/50 border border-white/40 rounded-xl focus:bg-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none text-gray-900 placeholder-gray-400 backdrop-blur-sm ${
+                    url ? 'pr-[88px]' : 'pr-16'
+                  }`}
                   style={{ fontSize: '16px' }}
                   autoFocus
                   disabled={isLoading}
                 />
+
+                {/* Clear button — always red when URL has content */}
+                {url && (
+                  <button
+                    type="button"
+                    onClick={handleClear}
+                    disabled={isLoading}
+                    className="absolute right-[46px] top-1/2 -translate-y-1/2 flex items-center justify-center w-[26px] h-[26px] bg-gray-100 hover:bg-red-50 text-red-500 hover:text-red-600 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label="Clear"
+                  >
+                    <CircleX size={14} />
+                  </button>
+                )}
+
+                {/* Paste button */}
                 <div className="absolute right-2 top-1/2 -translate-y-1/2">
                   <button
                     type="button"
@@ -210,9 +231,9 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
                 </div>
               </div>
 
-              {/* Platform hint */}
+              {/* Platform hint — TikTok removed */}
               <p className="text-xs text-gray-400 -mt-1">
-                {t('modals:supportedPlatforms', 'Instagram · Facebook · YouTube · TikTok')}
+                {t('modals:supportedPlatforms', 'Instagram · Facebook · YouTube')}
               </p>
 
               {error && (

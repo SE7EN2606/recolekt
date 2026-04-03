@@ -1,7 +1,7 @@
 import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Wand2, AlertCircle, Loader2, ChevronRight, Sparkles } from "lucide-react";
+import { ArrowRight, Wand2, AlertCircle, Loader2, ChevronRight, Sparkles, CircleX } from "lucide-react";
 import { Button } from "../components/Button";
 import { useTranslation } from "react-i18next";
 
@@ -200,7 +200,7 @@ export const Home: React.FC = () => {
                 </div>
               )}
 
-              {/* Red Error Alert (Existing) */}
+              {/* Red Error Alert */}
               {error && (
                 <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-800 text-sm animate-fade-in text-left">
                   <AlertCircle size={20} className="flex-shrink-0 mt-0.5" />
@@ -218,18 +218,26 @@ export const Home: React.FC = () => {
                   onChange={(e) => { setUrl(e.target.value); setError(""); setInfoMsg(""); }}
                 />
                 
+                {/* ── Clear button — always visible when URL has content ── */}
                 {url && !isLoading && (
-                  <button type="button" onClick={handleClearUrl} className="absolute right-[56px] md:right-[210px] top-1/2 -translate-y-1/2 text-red-500 hover:text-red-700 transition-colors z-20 p-2">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  <button
+                    type="button"
+                    onClick={handleClearUrl}
+                    className="flex absolute right-[56px] md:right-[212px] top-1/2 -translate-y-1/2 items-center justify-center w-[26px] h-[26px] bg-gray-100 hover:bg-red-50 text-red-500 hover:text-red-600 rounded-lg transition-all z-20"
+                    aria-label="Clear"
+                  >
+                    <CircleX size={14} />
                   </button>
                 )}
 
+                {/* Mobile paste button */}
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 md:hidden z-10">
                   <button type="button" onClick={handlePaste} className="flex items-center justify-center w-[44px] h-[44px] bg-white/40 hover:bg-white/60 text-primary-900 rounded-xl transition-all border border-white/50 backdrop-blur-xl shadow-sm active:scale-95">
                      <svg className="w-[20px] h-[20px]" viewBox="0 0 32 32" fill="currentColor"><path d="M24.89,6.61H22.31V4.47A2.47,2.47,0,0,0,19.84,2H6.78A2.47,2.47,0,0,0,4.31,4.47V22.92a2.47,2.47,0,0,0,2.47,2.47H9.69V27.2a2.8,2.8,0,0,0,2.8,2.8h12.4a2.8,2.8,0,0,0,2.8-2.8V9.41A2.8,2.8,0,0,0,24.89,6.61ZM6.78,23.52a.61.61,0,0,1-.61-.6V4.47a.61.61,0,0,1,.61-.6H19.84a.61.61,0,0,1,.61.6V6.61h-8a2.8,2.8,0,0,0-2.8,2.8V23.52Zm19,3.68a.94.94,0,0,1-.94.93H12.49a.94.94,0,0,1-.94-.93V9.41a.94.94,0,0,1,.94-.93h12.4a.94.94,0,0,1,.94.93Z"></path><path d="M23.49,13.53h-9.6a.94.94,0,1,0,0,1.87h9.6a.94.94,0,1,0,0-1.87Z"></path><path d="M23.49,17.37h-9.6a.94.94,0,1,0,0,1.87h9.6a.94.94,0,1,0,0-1.87Z"></path><path d="M23.49,21.22h-9.6a.93.93,0,1,0,0,1.86h9.6a.93.93,0,1,0,0-1.86Z"></path></svg>
                    </button>
                 </div>
 
+                {/* Desktop paste + save buttons */}
                 <div className="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 items-center gap-2 z-10">
                   <button type="button" onClick={handlePaste} title={t('home:pasteTitle')} className="flex items-center justify-center w-[44px] h-[44px] bg-white/40 hover:bg-white/60 text-primary-900 rounded-xl transition-all border border-white/50 backdrop-blur-xl shadow-sm active:scale-95">
                      <svg className="w-[20px] h-[20px]" viewBox="0 0 32 32" fill="currentColor"><path d="M24.89,6.61H22.31V4.47A2.47,2.47,0,0,0,19.84,2H6.78A2.47,2.47,0,0,0,4.31,4.47V22.92a2.47,2.47,0,0,0,2.47,2.47H9.69V27.2a2.8,2.8,0,0,0,2.8,2.8h12.4a2.8,2.8,0,0,0,2.8-2.8V9.41A2.8,2.8,0,0,0,24.89,6.61ZM6.78,23.52a.61.61,0,0,1-.61-.6V4.47a.61.61,0,0,1,.61-.6H19.84a.61.61,0,0,1,.61.6V6.61h-8a2.8,2.8,0,0,0-2.8,2.8V23.52Zm19,3.68a.94.94,0,0,1-.94.93H12.49a.94.94,0,0,1-.94-.93V9.41a.94.94,0,0,1,.94-.93h12.4a.94.94,0,0,1,.94.93Z"></path><path d="M23.49,13.53h-9.6a.94.94,0,1,0,0,1.87h9.6a.94.94,0,1,0,0-1.87Z"></path><path d="M23.49,17.37h-9.6a.94.94,0,1,0,0,1.87h9.6a.94.94,0,1,0,0-1.87Z"></path><path d="M23.49,21.22h-9.6a.93.93,0,1,0,0,1.86h9.6a.93.93,0,1,0,0-1.86Z"></path></svg>

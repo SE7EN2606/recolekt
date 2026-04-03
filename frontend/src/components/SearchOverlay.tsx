@@ -150,7 +150,7 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({ isOpen, onClose })
             <div className="bg-white/85 backdrop-blur-2xl rounded-[32px] shadow-[0_16px_40px_rgba(0,0,0,0.12)] overflow-hidden border border-white/60">
 
               {/* Search input */}
-              <div className="flex items-center p-4 border-b border-gray-200/50">
+              <div className="flex items-center p-4 border-b border-gray-200/50 gap-2">
                 <Search className="text-gray-500 ml-2 shrink-0" size={22} />
                 <input
                   ref={inputRef}
@@ -158,15 +158,16 @@ export const SearchOverlay: React.FC<SearchOverlayProps> = ({ isOpen, onClose })
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   placeholder={t('common:search', 'Search videos, authors, tags, transcripts...')}
-                  className="flex-1 bg-transparent border-none focus:ring-0 text-lg font-medium px-4 text-gray-900 outline-none placeholder-gray-400"
+                  className="flex-1 min-w-0 bg-transparent border-none focus:ring-0 text-lg font-medium px-3 text-gray-900 outline-none placeholder-gray-400"
                 />
                 {/* Spinner */}
                 {searching && (
-                  <div className="w-4 h-4 border-2 border-primary-400 border-t-transparent rounded-full animate-spin mr-2 shrink-0" />
+                  <div className="w-4 h-4 border-2 border-primary-400 border-t-transparent rounded-full animate-spin shrink-0" />
                 )}
+                {/* Close overlay */}
                 <button
                   onClick={onClose}
-                  className="p-2 hover:bg-black/5 rounded-full transition-colors text-gray-500"
+                  className="p-2 hover:bg-red-50 rounded-full transition-colors text-gray-500 hover:text-red-500 shrink-0"
                 >
                   <X size={20} />
                 </button>
