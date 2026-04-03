@@ -684,15 +684,20 @@ body {
 .btn-trash-danger {
   width: 2.5rem;
   height: 2.5rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
-  background-color: #fef2f2;
-  color: #dc2626;
+  border: none;
+  background-color: #fef2f2;  /* red-50 — always red bg */
+  color: #dc2626;              /* red-600 — always red icon */
   transition: background-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
-              color 180ms cubic-bezier(0.16, 1, 0.3, 1),
-              transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+              color            180ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform        180ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow       180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .btn-trash-danger:not(:disabled):hover {
   background-color: #dc2626;
@@ -702,6 +707,7 @@ body {
 .btn-trash-danger:not(:disabled):active {
   transform: scale(0.95);
   background-color: #b91c1c;
+  color: #ffffff;
   animation: none;
 }
 .btn-trash-danger:disabled {
