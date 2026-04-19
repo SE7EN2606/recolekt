@@ -4,8 +4,12 @@ import json
 import os
 import re
 import unicodedata
+import logging
+from typing import Dict
+
 import requests
-from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(__file__)
 CACHE_PATH = os.path.join(BASE_DIR, "emoji_category_cache.json")
@@ -364,11 +368,31 @@ INGREDIENT:
 """.strip()
 
 
-def _classify_with_ai(ingredient_key: str) -> str:
-    """✅ Pure HTTP call - no Mistral SDK dependency."""
+def _looks_too_noisy_for_ai(key: str) -> bool:
+    if not key:
+        return True
+    if len(key) < 3:
+        return True
+    if len(key.split()) > 6:
+        return True
+    if re.search(r"[0-9]{3,}", key):
+        return True
+    return False
+
+
+def _classify_with_ai(ingredient_key: str) -> str | None:
+    """
+    Best-effort HTTP call.
+    Returns a valid category or None.
+    Never raises to callers.
+    """
     api_key = os.getenv("MISTRAL_API_KEY")
     if not api_key:
-        raise RuntimeError("MISTRAL_API_KEY not set")
+        logger.debug("emoji_mapper: MISTRAL_API_KEY missing, skipping AI classify")
+        return None
+
+    if _looks_too_noisy_for_ai(ingredient_key):
+        return None
 
     prompt = _build_category_prompt(ingredient_key)
 
@@ -386,22 +410,33 @@ def _classify_with_ai(ingredient_key: str) -> str:
         "temperature": 0.0,
     }
 
-    resp = requests.post(MISTRAL_API_URL, headers=headers, json=payload, timeout=15)
-    resp.raise_for_status()
+    try:
+        resp = requests.post(MISTRAL_API_URL, headers=headers, json=payload, timeout=15)
+        resp.raise_for_status()
 
-    data = json.loads(resp.json()["choices"][0]["message"]["content"])
-    cat = _normalize_category(data.get("category", ""))
+        raw = resp.json()["choices"][0]["message"]["content"]
+        if isinstance(raw, str) and raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*\n?", "", raw)
+            raw = re.sub(r"\n?```\s*$", "", raw)
 
-    if cat not in ALLOWED_CATEGORIES:
-        raise ValueError(f"Invalid category from AI: {cat}")
+        data = json.loads(raw)
+        cat = _normalize_category(data.get("category", ""))
 
-    return cat
+        if cat not in ALLOWED_CATEGORIES:
+            logger.warning("emoji_mapper: invalid category from AI for %r: %r", ingredient_key, cat)
+            return None
+
+        return cat
+
+    except Exception as exc:
+        logger.warning("emoji_mapper: AI classify failed for %r (%s)", ingredient_key, exc)
+        return None
 
 
 def infer_ingredient_emoji(ingredient_english: str) -> str:
     """
-    Deterministic emoji inference:
-    Canonicalize → HARD GUARDS → STATIC → CACHE → AI → CACHE WRITE
+    Deterministic-first emoji inference:
+    Canonicalize → hard guards → static overrides → cache → best-effort AI → fallback
     """
     key = _canonical_key(ingredient_english)
     if not key:
@@ -419,18 +454,25 @@ def infer_ingredient_emoji(ingredient_english: str) -> str:
     if "pepper" in toks or "poivre" in toks:
         return CATEGORY_TO_EMOJI["SPICE"]
 
+    # Exact static overrides
     if key in STATIC_CATEGORY_OVERRIDES:
         return CATEGORY_TO_EMOJI[STATIC_CATEGORY_OVERRIDES[key]]
 
+    # Cache
     if key in _CATEGORY_CACHE:
         cat = _normalize_category(_CATEGORY_CACHE[key])
         if cat in ALLOWED_CATEGORIES:
             return CATEGORY_TO_EMOJI[cat]
 
+    # Best-effort AI
     cat = _classify_with_ai(key)
-    _CATEGORY_CACHE[key] = cat
-    _save_cache(_CATEGORY_CACHE)
-    return CATEGORY_TO_EMOJI[cat]
+    if cat and cat in ALLOWED_CATEGORIES:
+        _CATEGORY_CACHE[key] = cat
+        _save_cache(_CATEGORY_CACHE)
+        return CATEGORY_TO_EMOJI[cat]
+
+    # Safe fallback
+    return CATEGORY_TO_EMOJI["OTHER"]
 
 
 # --- Init ---

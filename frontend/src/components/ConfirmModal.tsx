@@ -3,7 +3,6 @@ import React, { useEffect, useState } from 'react';
 import { X, AlertTriangle } from 'lucide-react';
 import { Button } from './Button';
 
-
 interface ConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -14,7 +13,6 @@ interface ConfirmModalProps {
   cancelLabel?: string;
   variant?: 'primary' | 'danger';
 }
-
 
 export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   isOpen,
@@ -46,17 +44,15 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 z-[200] flex items-center justify-center px-4 transition-all duration-300 ${
+      className={`fixed inset-0 z-200 flex items-center justify-center px-4 transition-all duration-300 ${
         isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
     >
-      {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       />
 
-      {/* Modal */}
       <div
         className={`
           relative bg-white/90 backdrop-blur-xl border border-white/40
@@ -66,7 +62,6 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
         `}
       >
         <div className="p-6">
-          {/* Icon + Close */}
           <div className="flex items-center justify-between mb-4">
             <div
               className={`w-10 h-10 rounded-full flex items-center justify-center ${
@@ -85,17 +80,14 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             </button>
           </div>
 
-          {/* Title */}
           <h3 className="text-lg font-bold text-gray-900 mb-2 uppercase tracking-tight">
             {title}
           </h3>
 
-          {/* Message */}
           <p className="text-gray-500 text-sm leading-relaxed mb-6">
             {message}
           </p>
 
-          {/* Actions */}
           <div className="flex justify-end gap-3">
             <Button variant="ghost" onClick={onClose} size="sm" className="font-bold">
               {cancelLabel}

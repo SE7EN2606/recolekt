@@ -62,24 +62,49 @@ def detect_platform(url: str) -> str:
     return "UNKNOWN"
 
 
+def _coerce_bool(value, default: bool = False) -> bool:
+    """Accept real booleans and common string forms."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+
+    s = str(value).strip().lower()
+    if s in {"true", "1", "yes", "y", "on"}:
+        return True
+    if s in {"false", "0", "no", "n", "off", ""}:
+        return False
+    return default
+
+
+def _get_request_json() -> dict:
+    """Safely read JSON body once."""
+    try:
+        if request.is_json or "application/json" in str(request.content_type):
+            data = request.get_json(force=True, silent=True)
+            if isinstance(data, dict):
+                return data
+    except Exception as e:
+        logger.warning(f"❌ JSON parse failed: {e}")
+    return {}
+
+
 def _extract_url_from_request():
-    """Ultra-robust URL extraction with full logging"""
+    """Ultra-robust URL extraction with full logging."""
     logger.info(f"🔍 Content-Type: {request.content_type}")
     logger.info(f"🔍 Query args: {dict(request.args)}")
     logger.info(f"🔍 Form keys: {list(request.form.keys())}")
     logger.info(f"🔍 Files keys: {list(request.files.keys())}")
 
-    if request.is_json or "application/json" in str(request.content_type):
-        try:
-            data = request.get_json(force=True, silent=True)
-            logger.info(f"✅ JSON data: {data}")
-            if data and isinstance(data, dict):
-                url = data.get("url") or data.get("link") or data.get("ig_url")
-                if url:
-                    logger.info(f"✅ Found URL in JSON: {url}")
-                    return str(url).strip()
-        except Exception as e:
-            logger.warning(f"❌ JSON parse failed: {e}")
+    data = _get_request_json()
+    if data:
+        logger.info(f"✅ JSON data: {data}")
+        url = data.get("url") or data.get("link") or data.get("ig_url")
+        if url:
+            logger.info(f"✅ Found URL in JSON: {url}")
+            return str(url).strip()
 
     url = request.args.get("url") or request.args.get("link")
     if url:
@@ -132,20 +157,22 @@ def summarize():
         logger.error(f"❌ Auth failed: {e}")
         return jsonify({"error": "Authentication required"}), 401
 
+    request_json = _get_request_json()
+
     save_to_gcs = True
     force_retry = False
     try:
-        if request.is_json and request.get_json():
-            save_to_gcs = str(request.get_json().get("save_to_gcs", "true")).lower() == "true"
-            force_retry = str(request.get_json().get("force_retry", "false")).lower() == "true"
+        if request_json:
+            save_to_gcs = _coerce_bool(request_json.get("save_to_gcs"), True)
+            force_retry = _coerce_bool(request_json.get("force_retry"), False)
         elif request.form:
-            save_to_gcs = request.form.get("save_to_gcs", "true").lower() == "true"
-            force_retry = request.form.get("force_retry", "false").lower() == "true"
+            save_to_gcs = _coerce_bool(request.form.get("save_to_gcs"), True)
+            force_retry = _coerce_bool(request.form.get("force_retry"), False)
         elif request.args:
-            save_to_gcs = request.args.get("save_to_gcs", "true").lower() == "true"
-            force_retry = request.args.get("force_retry", "false").lower() == "true"
-    except Exception:
-        pass
+            save_to_gcs = _coerce_bool(request.args.get("save_to_gcs"), True)
+            force_retry = _coerce_bool(request.args.get("force_retry"), False)
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to parse boolean flags, using defaults: {e}")
 
     file = request.files.get("file")
     url = _extract_url_from_request()
@@ -154,7 +181,6 @@ def summarize():
         logger.error("❌ No file or URL provided")
         return jsonify({"error": "Provide either file or URL"}), 400
 
-    # ── Platform validation ───────────────────────────────────────────
     if url and not is_supported_url(url):
         logger.warning(f"❌ Unsupported URL: {url}")
         return jsonify({
@@ -182,7 +208,7 @@ def summarize():
             else:
                 return jsonify({
                     "reel_id": existing_reel["id"],
-                    "status": existing_reel.get("status", "completed"),
+                    "status": existing_reel.get("status", "processing"),
                     "message": "This reel already exists in your collection",
                     "preview_url": existing_reel.get("preview_url"),
                 }), 200
@@ -205,7 +231,6 @@ def summarize():
             shortcode = get_unique_id(filename).rstrip("-")
             result["process_id"] = f"{shortcode}--{get_timestamp()}--{get_unique_id(url or filename)}"
             logger.info(f"📁 File upload: {result['process_id']}")
-
         else:
             platform_id = detect_platform(url)
             shortcode = _extract_shortcode(url, platform_id)
@@ -222,12 +247,21 @@ def summarize():
             logger.info(f"🆔 Process ID: {result['process_id']}")
             logger.info("⏭️ Skipping metadata fetch - will be done in background")
 
-        gcs_paths = generate_gcs_paths(shortcode, platform_id)
+        # Prefer user-scoped GCS paths if supported by generate_gcs_paths()
+        try:
+            gcs_paths = generate_gcs_paths(shortcode, platform_id, user_id=user_id)
+        except TypeError:
+            gcs_paths = generate_gcs_paths(shortcode, platform_id)
+
         result["gcs_paths"] = gcs_paths
 
         logger.info("⏭️ Skipping thumbnail generation - will be done in background")
 
-        result["gcs_urls"] = {"preview_thumbnail": None, "video": None}
+        result["gcs_urls"] = {
+            "preview_thumbnail": None,
+            "video": None,
+            "result_json": None,
+        }
         gcs_urls_json = json.dumps(result["gcs_urls"])
 
         logger.info("💾 Inserting into database...")

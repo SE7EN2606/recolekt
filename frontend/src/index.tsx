@@ -1,4 +1,3 @@
-import { API_BASE } from "./utils/api";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
@@ -9,7 +8,6 @@ import { DataProvider } from "./context/DataContext";
 // @ts-ignore
 import { registerSW } from 'virtual:pwa-register';
 
-// ✅ Added detailed logging to catch installation crashes
 registerSW({ 
   immediate: true,
   onOfflineReady() {

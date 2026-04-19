@@ -1,5 +1,6 @@
 # fetcher_api/api/__init__.py
 from flask import Flask
+from .saved_places import saved_places_bp
 
 def register_blueprints(app: Flask):
     from fetcher_api.api.routes import (
@@ -25,3 +26,4 @@ def register_blueprints(app: Flask):
     app.register_blueprint(api_bp)
     app.register_blueprint(cleanup_bp)
     app.register_blueprint(webhook_bp, url_prefix="/api")
+    app.register_blueprint(saved_places_bp)

@@ -1,5 +1,4 @@
 # fetcher_api/api/routes.py
-
 """
 Main API routes - Simple endpoints and health checks
 """
@@ -13,26 +12,33 @@ import uuid
 from datetime import datetime
 from flask import Blueprint, jsonify, request
 
+
 from fetcher_api.adapters.db import fetch_one, fetch_all, execute, get_user_tier, count_user_reels
 from fetcher_api.api.helpers.auth import get_user_id_from_request
 
+
 logger = logging.getLogger("api")
 
+
 api_bp = Blueprint("api", __name__)
+
 
 SAVE_DIR = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "saved_reels")
 )
 os.makedirs(SAVE_DIR, exist_ok=True)
 
+
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
+
 
 # Business Logic Limits
 PLAN_LIMITS = {
     "free": 10,
-    "pro": 99999,   # Effectively unlimited
+    "pro": 99999,
     "admin": 99999
 }
+
 
 @api_bp.route("/", methods=["GET"])
 def root():
@@ -77,6 +83,7 @@ def count_saves_route():
 # ---------------------------------------------------------
 # SEARCH
 # ---------------------------------------------------------
+
 
 @api_bp.route("/search", methods=["GET"])
 def search_reels():
@@ -127,7 +134,6 @@ def search_reels():
 
     rows = fetch_all(sql, tuple(params))
 
-    # Serialize — RealDictRow is dict-like but datetime fields need coercion
     def serialize(row):
         out = {}
         for k, v in dict(row).items():
@@ -143,6 +149,7 @@ def search_reels():
 # ---------------------------------------------------------
 # API TOKEN MANAGEMENT
 # ---------------------------------------------------------
+
 
 @api_bp.route("/api_token/generate", methods=["POST"])
 def generate_api_token_route():
@@ -177,7 +184,7 @@ def generate_api_token_route():
 
     return jsonify({
         "ok": True,
-        "token": token,  # Only shown once
+        "token": token,
         "prefix": token_prefix
     })
 
@@ -207,7 +214,7 @@ def get_api_token_info():
     return jsonify({
         "has_token": True,
         "prefix": row.get('token_prefix'),
-        "created_at":  row.get('created_at').isoformat()  if row.get('created_at')  else None,
+        "created_at":   row.get('created_at').isoformat()  if row.get('created_at')  else None,
         "last_used_at": row.get('last_used_at').isoformat() if row.get('last_used_at') else None
     })
 
@@ -233,6 +240,7 @@ def revoke_api_token():
 # ---------------------------------------------------------
 # IMPORT SHARE (from iOS Shortcuts)
 # ---------------------------------------------------------
+
 
 @api_bp.route("/api/import_share", methods=["POST"])
 def import_share():
@@ -279,12 +287,13 @@ def import_share():
 
     url    = data.get('url').strip()
     client = data.get('client', 'unknown')
+    force  = bool(data.get('force', False))                  # ← NEW
 
-    logger.info(f"📲 Import share from {client} for user {user_id}: {url}")
+    logger.info(f"📲 Import share from {client} for user {user_id}: {url} (force={force})")
 
-    # 1. Duplicate check
+    # 1. Duplicate check — skipped when force=True
     from fetcher_api.services.db_insert import check_duplicate_reel
-    if check_duplicate_reel(user_id, url):
+    if not force and check_duplicate_reel(user_id, url):    # ← CHANGED
         return jsonify({
             "ok": False,
             "error": "duplicate",
@@ -321,8 +330,8 @@ def import_share():
         shortcode   = extracted if extracted else "unknown"
         platform_id = "FB"
     else:
-        from fetcher_api.adapters.instagram_client import instagram_client
-        extracted   = instagram_client.extract_shortcode(url)
+        from fetcher_api.adapters.meta_client import meta_client
+        extracted   = meta_client.extract_shortcode(url)
         shortcode   = extracted if extracted else "unknown"
         platform_id = "IG"
 
@@ -358,15 +367,15 @@ def import_share():
         gcs_paths = generate_gcs_paths(shortcode, platform_id, user_id=user_id)
 
         preview_record = {
-            "process_id": process_id,
-            "status":     "processing",
-            "source_url": url,
-            "folder_id":  "unsorted",
-            "caption":    caption,
+            "process_id":  process_id,
+            "status":      "processing",
+            "source_url":  url,
+            "folder_id":   "unsorted",
+            "caption":     caption,
             "author_name": author_name,
-            "summary":    {"title": "Processing…"},
-            "gcs_urls":   {},
-            "created_at": datetime.utcnow().isoformat()
+            "summary":     {"title": "Processing…"},
+            "gcs_urls":    {},
+            "created_at":  datetime.utcnow().isoformat()
         }
 
         early_path = os.path.join(SAVE_DIR, f"{process_id}.json")
@@ -382,10 +391,11 @@ def import_share():
                 shortcode,
                 caption,
                 url,
-                True,       # save_to_gcs
+                True,
                 author_name,
                 SAVE_DIR,
-                user_id
+                user_id,
+                force,          # ← NEW — passed through to background_process
             ),
             daemon=True
         ).start()
@@ -395,16 +405,16 @@ def import_share():
         open_url = f"{FRONTEND_BASE_URL}/gallery/all?refresh=1"
 
         return jsonify({
-            "ok":      True,
-            "reel_id": process_id,
+            "ok":       True,
+            "reel_id":  process_id,
             "open_url": open_url,
-            "message": "Processing started"
+            "message":  "Processing started"
         })
 
     except Exception as e:
         logger.error(f"❌ Import share error: {e}")
         return jsonify({
-            "ok":     False,
-            "error":  "processing_error",
+            "ok":      False,
+            "error":   "processing_error",
             "message": str(e)
         }), 500

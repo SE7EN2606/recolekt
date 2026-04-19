@@ -2,6 +2,7 @@ import React from 'react';
 import { ChefHat, Clock, Flame, Users, Lightbulb } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+
 type RawIngredient =
   | string
   | {
@@ -13,16 +14,20 @@ type RawIngredient =
       emoji?: string | null;
     };
 
+
 export interface IngredientGroup {
   title?: string;
   group?: string;
   items: RawIngredient[];
 }
 
+
 export interface RecipeForCard {
-  prep_time?: string | null;
-  cook_time?: string | null;
-  servings?: string | null;
+  is_compilation?: boolean;
+  ideas?: { headline?: string; text?: string; emoji?: string }[];
+  prep_time?: string | number | null;
+  cook_time?: string | number | null;
+  servings?: string | number | null;
   ingredients_groups?: IngredientGroup[] | null;
   ingredients?: RawIngredient[] | null;
   instructions: string[];
@@ -30,17 +35,23 @@ export interface RecipeForCard {
   notes?: string[];
 }
 
+
 export interface RecipeDetailsCardProps {
   recipe: RecipeForCard;
   servingScale?: number;
   scaleQuantity?: (qty: string, scale: number) => string;
   onServingScaleChange?: (next: number) => void;
-  // 🔥 FIXED: Added the missing props so the component actually knows about the button
   useMetric?: boolean;
   onToggleMetric?: (val: boolean) => void;
 }
 
+
 /* ------------ helpers ------------ */
+
+
+const toStr = (val: string | number | null | undefined): string =>
+  val !== undefined && val !== null ? String(val) : '';
+
 
 const splitTrailingEmoji = (text: string): { body: string; emoji: string } => {
   const emojiRegex = /[\u{1F300}-\u{1FAFF}\u2600-\u27BF\uFE0F\u200D]+$/u;
@@ -50,6 +61,7 @@ const splitTrailingEmoji = (text: string): { body: string; emoji: string } => {
   }
   return { body: text.trim(), emoji: '' };
 };
+
 
 function parseIngredientString(text: string) {
   let label = text.trim();
@@ -73,7 +85,6 @@ function parseIngredientString(text: string) {
   }
 
   const item = parts.join(' ').trim();
-
   return {
     quantity: quantity || undefined,
     unit: unit || undefined,
@@ -82,13 +93,14 @@ function parseIngredientString(text: string) {
   };
 }
 
+
 function formatQuantity(q: string): string {
   const n = parseFloat(q.replace(',', '.'));
   if (!Number.isFinite(n)) return q;
   return String(Math.round(n * 100) / 100);
 }
 
-// 🔥 FIXED: Real Conversion Logic added here
+
 function convertUnits(qtyStr: string, unitStr: string, toMetric: boolean) {
   if (!qtyStr || !unitStr) return { q: qtyStr, u: unitStr };
   const qty = parseFloat(qtyStr.replace(',', '.'));
@@ -119,6 +131,7 @@ function convertUnits(qtyStr: string, unitStr: string, toMetric: boolean) {
   return { q: qtyStr, u: unitStr };
 }
 
+
 interface IngredientRowProps {
   id: string;
   raw: RawIngredient;
@@ -129,14 +142,9 @@ interface IngredientRowProps {
   useMetric: boolean;
 }
 
+
 const IngredientRow: React.FC<IngredientRowProps> = ({
-  id,
-  raw,
-  servingScale,
-  scaleQuantity,
-  checked,
-  onToggle,
-  useMetric
+  id, raw, servingScale, scaleQuantity, checked, onToggle, useMetric
 }) => {
   let base: any = {};
   let emoji = '';
@@ -149,20 +157,16 @@ const IngredientRow: React.FC<IngredientRowProps> = ({
     base = { ...raw };
     emoji = String(base.emoji || '');
     if (!base.item && !base.name) {
-       Object.assign(base, parseIngredientString(String(raw)));
+      Object.assign(base, parseIngredientString(String(raw)));
     }
   }
 
   const baseLabel = (base.item || base.name || '').trim();
-
   let mainLabel = baseLabel;
   let note = (base.note || '').trim();
   if (!note && baseLabel) {
     const m = baseLabel.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
-    if (m) {
-      mainLabel = m[1].trim();
-      note = m[2].trim();
-    }
+    if (m) { mainLabel = m[1].trim(); note = m[2].trim(); }
   }
 
   let quantity = base.quantity !== undefined && base.quantity !== null ? String(base.quantity).trim() : '';
@@ -170,12 +174,9 @@ const IngredientRow: React.FC<IngredientRowProps> = ({
 
   if (quantity && servingScale !== 1 && scaleQuantity) {
     const scaled = scaleQuantity(quantity, servingScale);
-    if (scaled && !scaled.includes('NaN') && scaled.trim() !== '') {
-      quantity = scaled.trim();
-    }
+    if (scaled && !scaled.includes('NaN') && scaled.trim() !== '') quantity = scaled.trim();
   }
 
-  // Apply Metric Conversion
   if (quantity && unit) {
     const converted = convertUnits(quantity, unit, useMetric);
     quantity = converted.q;
@@ -190,7 +191,6 @@ const IngredientRow: React.FC<IngredientRowProps> = ({
 
   return (
     <li className={rowClass} onClick={() => onToggle(id)}>
-      {/* 🔥 TIGHTER ALIGNMENT: Reduced to w-6 (24px) so text sits closer to bullets */}
       <div className="w-6 flex justify-center flex-shrink-0 mt-1.5">
         <div className="recipe-ingredient-bullet" />
       </div>
@@ -205,7 +205,41 @@ const IngredientRow: React.FC<IngredientRowProps> = ({
   );
 };
 
+
+/* ------------ compilation view (restaurant/food-tour) ------------ */
+
+
+const RecipeCompilationCard: React.FC<{ recipe: RecipeForCard }> = ({ recipe }) => {
+  const ideas = recipe.ideas ?? [];
+  if (!ideas.length) return null;
+  return (
+    <div className="mt-4 pt-4 border-t border-primary-100/50 space-y-2">
+      <div className="flex items-center gap-2 mb-2.5">
+        <span className="text-base leading-none">🍽️</span>
+        <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">
+          Dishes featured
+        </h4>
+      </div>
+      {ideas.map((idea, i) => (
+        <div key={i} className="bg-white border border-gray-100 rounded-xl p-3.5 flex items-start gap-3 shadow-sm">
+          {idea.emoji && (
+            <span className="text-xl leading-none flex-shrink-0 mt-0.5">{idea.emoji}</span>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-gray-900 text-sm leading-snug">{idea.headline}</p>
+            {idea.text && (
+              <p className="text-xs text-gray-500 leading-relaxed mt-0.5">{idea.text}</p>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+
 /* ------------ main component ------------ */
+
 
 export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   recipe,
@@ -213,12 +247,18 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   scaleQuantity,
   onServingScaleChange,
   useMetric = true,
-  onToggleMetric
+  onToggleMetric,
 }) => {
   const { t } = useTranslation(['videoDetail']);
 
-  const prep = (recipe.prep_time || '').trim() || '—';
-  const cook = (recipe.cook_time || '').trim() || '—';
+  // ── Compilation = restaurant/food-tour review: skip the full recipe card ──
+  if (recipe.is_compilation) {
+    return <RecipeCompilationCard recipe={recipe} />;
+  }
+
+  // ── toStr() fixes the crash: prep_time/cook_time can be numbers from the API ──
+  const prep = toStr(recipe.prep_time).trim() || '—';
+  const cook = toStr(recipe.cook_time).trim() || '—';
 
   const flat: RawIngredient[] = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
   const groups: IngredientGroup[] = Array.isArray(recipe.ingredients_groups) ? recipe.ingredients_groups : [];
@@ -228,10 +268,10 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
   const totalGroupItems = groups.reduce((acc, g) => acc + (g.items?.length || 0), 0);
   const canSequentialMap = totalGroupItems === flat.length && flat.length > 0;
-  let globalIndex = 0; 
+  let globalIndex = 0;
 
   const baseServings = React.useMemo(() => {
-    const raw = (recipe.servings || '').toString();
+    const raw = toStr(recipe.servings);
     const m = raw.match(/(\d+(\.\d+)?)/);
     if (!m) return 1;
     const n = parseFloat(m[1]);
@@ -247,8 +287,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const handleToggle = (id: string) => {
     setCheckedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
@@ -256,15 +295,13 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const handleServingsDelta = (delta: number) => {
     if (!onServingScaleChange) return;
     const nextServings = Math.max(1, currentServings + delta);
-    const nextScale = nextServings / baseServings;
-    onServingScaleChange(Number(nextScale.toFixed(3)));
+    onServingScaleChange(Number((nextServings / baseServings).toFixed(3)));
   };
 
   const handleStepToggle = (index: number) => {
     setCheckedSteps((prev) => {
       const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
+      if (next.has(index)) next.delete(index); else next.add(index);
       return next;
     });
   };
@@ -275,8 +312,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
   return (
     <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
-      
-      {/* 🔥 MODERN GLASS BUTTON: Centered beautifully with the title */}
+
       <div className="bg-tertiary-50/50 p-4 md:p-5 border-b border-gray-50 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <ChefHat className="recipe-header-icon" size={20} />
@@ -284,9 +320,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
             {t('videoDetail:recipeDetails')}
           </h3>
         </div>
-        
         {onToggleMetric && (
-          <button 
+          <button
             onClick={() => onToggleMetric(!useMetric)}
             className="px-3 py-1.5 bg-white/60 backdrop-blur-md border border-white/60 text-gray-700 rounded-xl text-xs font-bold shadow-sm hover:bg-white/90 hover:shadow transition-all"
           >
@@ -322,63 +357,46 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           {t('videoDetail:ingredients')}
         </h4>
         <div className="space-y-6">
-          {hasGroups &&
-            groups.map((group, groupIdx) => (
-              <div key={groupIdx} className="relative">
-                {groupIdx > 0 && <div className="absolute -top-3 left-0 right-0 border-t border-dashed border-gray-100" />}
-                <h5 className="font-bold text-gray-900 text-sm mb-3 bg-gray-50 inline-block px-2 py-1 rounded-lg">
-                  {group.title || group.group}
-                </h5>
-                <ul className="space-y-1">
-                  {(group.items ?? []).map((it, itemIdx) => {
-                    const id = `g${groupIdx}-i${itemIdx}`;
-                    let enriched = it;
-                    if (typeof it === 'string' && flat.length > 0) {
-                      if (canSequentialMap) {
-                        enriched = flat[globalIndex];
-                      } else {
-                        const found = flat.find((f: any) => {
-                          if (typeof f === 'string') return false;
-                          const n = String(f.item || f.name || '').toLowerCase();
-                          return n.includes(it.toLowerCase()) || it.toLowerCase().includes(n);
-                        });
-                        if (found) enriched = found;
-                      }
+          {hasGroups && groups.map((group, groupIdx) => (
+            <div key={groupIdx} className="relative">
+              {groupIdx > 0 && <div className="absolute -top-3 left-0 right-0 border-t border-dashed border-gray-100" />}
+              <h5 className="font-bold text-gray-900 text-sm mb-3 bg-gray-50 inline-block px-2 py-1 rounded-lg">
+                {group.title || group.group}
+              </h5>
+              <ul className="space-y-1">
+                {(group.items ?? []).map((it, itemIdx) => {
+                  const id = `g${groupIdx}-i${itemIdx}`;
+                  let enriched = it;
+                  if (typeof it === 'string' && flat.length > 0) {
+                    if (canSequentialMap) {
+                      enriched = flat[globalIndex];
+                    } else {
+                      const found = flat.find((f: any) => {
+                        if (typeof f === 'string') return false;
+                        const n = String(f.item || f.name || '').toLowerCase();
+                        return n.includes(it.toLowerCase()) || it.toLowerCase().includes(n);
+                      });
+                      if (found) enriched = found;
                     }
-                    globalIndex++;
-
-                    return (
-                      <IngredientRow
-                        key={id}
-                        id={id}
-                        raw={enriched}
-                        servingScale={currentScale}
-                        scaleQuantity={scaleQuantity}
-                        checked={checkedIds.has(id)}
-                        onToggle={handleToggle}
-                        useMetric={useMetric}
-                      />
-                    );
-                  })}
-                </ul>
-              </div>
-            ))}
-
+                  }
+                  globalIndex++;
+                  return (
+                    <IngredientRow key={id} id={id} raw={enriched} servingScale={currentScale}
+                      scaleQuantity={scaleQuantity} checked={checkedIds.has(id)}
+                      onToggle={handleToggle} useMetric={useMetric} />
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
           {hasFlat && (
             <ul className="space-y-1">
               {flat.map((it, idx) => {
                 const id = `f${idx}`;
                 return (
-                  <IngredientRow
-                    key={id}
-                    id={id}
-                    raw={it}
-                    servingScale={currentScale}
-                    scaleQuantity={scaleQuantity}
-                    checked={checkedIds.has(id)}
-                    onToggle={handleToggle}
-                    useMetric={useMetric}
-                  />
+                  <IngredientRow key={id} id={id} raw={it} servingScale={currentScale}
+                    scaleQuantity={scaleQuantity} checked={checkedIds.has(id)}
+                    onToggle={handleToggle} useMetric={useMetric} />
                 );
               })}
             </ul>
@@ -392,26 +410,21 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
             {t('videoDetail:directions')}
           </h4>
           <div className="space-y-6">
-            {instructions.map((step, i) => {
-              const isChecked = checkedSteps.has(i);
-              return (
-                <div
-                  key={i}
-                  /* 🔥 TIGHTER ALIGNMENT: Gap reduced to gap-3 */
-                  className={`flex items-start gap-3 cursor-pointer select-none transition-opacity ${isChecked ? 'opacity-60' : ''}`}
-                  onClick={() => handleStepToggle(i)}
-                >
-                  <div className="w-6 flex justify-center flex-shrink-0 pt-[0.1rem]">
-                    <div className="recipe-step-number-circle">
-                      <span className="recipe-step-number">{i + 1}</span>
-                    </div>
+            {instructions.map((step, i) => (
+              <div key={i}
+                className={`flex items-start gap-3 cursor-pointer select-none transition-opacity ${checkedSteps.has(i) ? 'opacity-60' : ''}`}
+                onClick={() => handleStepToggle(i)}
+              >
+                <div className="w-6 flex justify-center flex-shrink-0 pt-[0.1rem]">
+                  <div className="recipe-step-number-circle">
+                    <span className="recipe-step-number">{i + 1}</span>
                   </div>
-                  <p className={`text-sm font-medium text-gray-600 leading-relaxed pt-[2px] ${isChecked ? 'line-through' : ''}`}>
-                    {step}
-                  </p>
                 </div>
-              );
-            })}
+                <p className={`text-sm font-medium text-gray-600 leading-relaxed pt-[2px] ${checkedSteps.has(i) ? 'line-through' : ''}`}>
+                  {step}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -428,7 +441,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
             {tips.length > 0 && (
               <ul className="space-y-2">
                 {tips.map((tip, i) => (
-                  /* 🔥 TIGHTER ALIGNMENT: Gap reduced to gap-3 */
                   <li key={`tip-${i}`} className="flex items-start gap-3 text-sm text-gray-700">
                     <div className="w-6 flex justify-center flex-shrink-0 mt-0.5">
                       <span className="text-yellow-500 font-bold text-lg leading-none">•</span>
@@ -453,5 +465,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     </div>
   );
 };
+
 
 export default RecipeDetailsCard;

@@ -129,7 +129,7 @@ CORS(
     app,
     resources={r"/*": {
         "origins": cors_origins,
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],  # ← PATCH added
         "allow_headers": "*",
         "supports_credentials": True,
         "expose_headers": ["Content-Type", "Authorization"]

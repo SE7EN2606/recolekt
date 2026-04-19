@@ -3,14 +3,17 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { VideoCard } from '../components/VideoCard';
 import { Button } from '../components/Button';
-import { Search, Settings2, Trash2, CircleX, MoreVertical, Pencil, FolderInput, ChevronRight } from 'lucide-react';
+import { Search, Settings2, Trash2, CircleX, MoreVertical, Pencil, FolderInput } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { MoveCollectionModal } from '../components/MoveCollectionModal';
+import { MoveFolderModal } from '../components/MoveFolderModal';
+
 
 const CalendarArrowUp = ({ size = 20 }) => ( <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 18 4-4 4 4"/><path d="M16 2v4"/><path d="M18 22v-8"/><path d="M21 11.343V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2-2v14a2 2 0 0 0 2 2h9"/><path d="M3 10h18"/><path d="M8 2v4"/></svg> );
 const CalendarArrowDown = ({ size = 20 }) => ( <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 18 4 4 4-4"/><path d="M16 2v4"/><path d="M18 14v8"/><path d="M21 11.354V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2-2v14a2 2 0 0 0 2 2h7.343"/><path d="M3 10h18"/><path d="M8 2v4"/></svg> );
+
 
 const PROCESSING_MESSAGES = [
   'msg_indexing', 'msg_parsing', 'msg_visual', 'msg_auditory',
@@ -21,65 +24,44 @@ const PROCESSING_MESSAGES = [
   'msg_optimizing', 'msg_polishing', 'msg_finalizing'
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// useSearch — server-side full-text search hook
-// Falls back gracefully to null if the endpoint isn't available yet,
-// so the client-side index in displayedVideos stays as a safety net.
-// ─────────────────────────────────────────────────────────────────────────────
+
 function useSearch(query: string, folderId: string | undefined) {
   const [results, setResults]     = useState<any[] | null>(null);
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    if (!query.trim()) {
-      setResults(null);  // empty query → let local index take over
-      return;
-    }
-
+    if (!query.trim()) { setResults(null); return; }
     const controller = new AbortController();
-
-    // 300 ms debounce — fires only after the user pauses typing
     const timer = setTimeout(async () => {
       setSearching(true);
       try {
         const params = new URLSearchParams({ q: query.trim() });
         if (folderId) params.set('folder_id', folderId);
-
         const res = await fetch(`${API_BASE}/search?${params}`, {
           signal: controller.signal,
-          credentials: 'include',   // sends session cookie for Flask auth
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
         });
-
         if (!res.ok) throw new Error(`Search HTTP ${res.status}`);
         const data = await res.json();
         setResults(Array.isArray(data) ? data : []);
       } catch (err: any) {
-        if (err.name === 'AbortError') return;   // user typed again — ignore
+        if (err.name === 'AbortError') return;
         console.warn('[useSearch] falling back to client index:', err.message);
-        setResults(null);   // fall back to local search index on any error
+        setResults(null);
       } finally {
         setSearching(false);
       }
     }, 300);
-
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [query, folderId]);
 
-  // Reset when query is cleared
-  useEffect(() => {
-    if (!query.trim()) setResults(null);
-  }, [query]);
+  useEffect(() => { if (!query.trim()) setResults(null); }, [query]);
 
   return { results, searching };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Rename Modal
-// ─────────────────────────────────────────────────────────────────────────────
+
 interface RenameFolderModalProps {
   isOpen: boolean;
   currentName: string;
@@ -123,202 +105,7 @@ const RenameFolderModal: React.FC<RenameFolderModalProps> = ({ isOpen, currentNa
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Move Collection Modal
-// ─────────────────────────────────────────────────────────────────────────────
-interface MoveFolderModalProps {
-  isOpen: boolean;
-  folderId: string;
-  folderName: string;
-  folders: any[];
-  onClose: () => void;
-  onMove: (newParentId: string | null) => Promise<void>;
-}
-const MoveFolderModal: React.FC<MoveFolderModalProps> = ({ isOpen, folderId, folderName, folders, onClose, onMove }) => {
-  const [selectedParent, setSelectedParent] = useState<string | null>(null);
-  const [step, setStep] = useState<'pick' | 'confirm'>('pick');
-  const [moving, setMoving] = useState(false);
 
-  useEffect(() => { if (isOpen) { setSelectedParent(null); setStep('pick'); } }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  const flattenFolders = (list: any[], parentId: string | null = null): any[] => {
-    const result: any[] = [];
-    for (const f of list) {
-      result.push({ ...f, parent_id: f.parent_id ?? parentId });
-      if (f.subFolders?.length) {
-        result.push(...flattenFolders(f.subFolders, f.id));
-      }
-    }
-    return result;
-  };
-  const flatFolders = flattenFolders(folders);
-
-  const getDescendantIds = (id: string): string[] => {
-    const result: string[] = [];
-    const queue = [id];
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      const children = flatFolders.filter((f: any) => f.parent_id === current);
-      for (const child of children) {
-        result.push(child.id);
-        queue.push(child.id);
-      }
-    }
-    return result;
-  };
-
-  const descendantIds = getDescendantIds(folderId);
-  const invalidIds = new Set([folderId, ...descendantIds]);
-  const allEligible = flatFolders.filter((f: any) => !invalidIds.has(f.id));
-
-  const selectedName = selectedParent === null
-    ? 'Root (Main Library)'
-    : flatFolders.find((f: any) => f.id === selectedParent)?.name || '';
-
-  const targetHasChildren = selectedParent !== null && flatFolders.some((f: any) =>
-    f.parent_id === selectedParent && !invalidIds.has(f.id)
-  );
-
-  const currentFolder = flatFolders.find((f: any) => f.id === folderId);
-  const currentParentId = currentFolder?.parent_id || null;
-  const hasSubFolders = flatFolders.some((f: any) => f.parent_id === folderId);
-
-  const [initialised, setInitialised] = useState(false);
-  useEffect(() => {
-    if (isOpen && !initialised) {
-      setSelectedParent(currentParentId);
-      setInitialised(true);
-    }
-    if (!isOpen) setInitialised(false);
-  }, [isOpen, currentParentId, initialised]);
-
-  const handleConfirm = async () => {
-    setMoving(true);
-    try { await onMove(selectedParent); onClose(); } finally { setMoving(false); }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-fade-in">
-        {step === 'pick' ? (
-          <>
-            <h2 className="text-lg font-bold text-gray-900 mb-1">Move Collection</h2>
-            <p className="text-sm text-gray-500 mb-5">
-              Where should <span className="font-semibold text-gray-700">"{folderName}"</span> live?
-            </p>
-
-            <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto pr-1">
-              <button
-                onClick={() => setSelectedParent(null)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm transition-all ${
-                  selectedParent === null
-                    ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
-                    : 'border-gray-100 bg-gray-50 text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                <span className="text-base">🏠</span>
-                <div className="flex-1 text-left">
-                  <p className="font-medium">Root — Main Library</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Make this a top-level collection</p>
-                </div>
-                {selectedParent === null && <div className="w-2 h-2 rounded-full bg-primary-500" />}
-              </button>
-
-              {allEligible.length > 0 && (
-                <p className="text-xs text-gray-400 font-medium px-1 pt-2 pb-1">Or nest inside a collection:</p>
-              )}
-
-              {allEligible.map((f: any) => {
-                const isSubFolder = !!f.parent_id;
-                const parentName = isSubFolder ? flatFolders.find((p: any) => p.id === f.parent_id)?.name : null;
-                const isSelected = selectedParent === f.id;
-                const isCurrent = f.id === currentParentId;
-                return (
-                  <button
-                    key={f.id}
-                    onClick={() => setSelectedParent(f.id)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm transition-all ${
-                      isSelected
-                        ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
-                        : 'border-gray-100 bg-gray-50 text-gray-700 hover:bg-gray-100'
-                    } ${isSubFolder ? 'ml-4' : ''}`}
-                  >
-                    {isSubFolder && <ChevronRight size={12} className="text-gray-300 flex-shrink-0 -ml-1" />}
-                    <span className="text-base">📁</span>
-                    <div className="flex-1 text-left">
-                      <p className="font-medium">{f.name}</p>
-                      {isSubFolder && parentName && (
-                        <p className="text-xs text-gray-400 mt-0.5">inside {parentName}</p>
-                      )}
-                    </div>
-                    {isCurrent && !isSelected && (
-                      <span className="text-xs text-gray-400 italic">current</span>
-                    )}
-                    {isSelected && <div className="w-2 h-2 rounded-full bg-primary-500" />}
-                  </button>
-                );
-              })}
-
-              {allEligible.length === 0 && (
-                <p className="text-sm text-gray-400 text-center py-4">No other collections available.</p>
-              )}
-            </div>
-
-            {targetHasChildren && selectedParent !== null && selectedParent !== currentParentId && (
-              <div className="mt-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
-                ⚠️ This collection already has sub-collections. Your collection will be nested alongside them.
-              </div>
-            )}
-
-            {hasSubFolders && selectedParent !== null && selectedParent !== currentParentId && (
-              <div className="mt-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
-                ⚠️ <strong>"{folderName}"</strong> has sub-collections. Moving it will also move all its sub-collections with it.
-              </div>
-            )}
-
-            <div className="flex gap-2 justify-end mt-5">
-              <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">Cancel</button>
-              <button
-                onClick={() => setStep('confirm')}
-                disabled={selectedParent === currentParentId}
-                className="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-40 transition-colors"
-              >
-                Continue
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <h2 className="text-lg font-bold text-gray-900 mb-2">Confirm Move</h2>
-            <p className="text-sm text-gray-600 mb-2">
-              Move <span className="font-semibold text-gray-800">"{folderName}"</span> to{' '}
-              <span className="font-semibold text-primary-600">"{selectedName}"</span>?
-            </p>
-            {hasSubFolders && (
-              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4">
-                ⚠️ All sub-collections inside <strong>"{folderName}"</strong> will move with it.
-              </p>
-            )}
-            <p className="text-xs text-gray-400 mb-5">This will update your library structure immediately.</p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setStep('pick')} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">Back</button>
-              <button onClick={handleConfirm} disabled={moving} className="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 transition-colors">
-                {moving ? 'Moving…' : 'Confirm Move'}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Delete Confirm Modal
-// ─────────────────────────────────────────────────────────────────────────────
 interface ConfirmDeleteModalProps {
   isOpen: boolean;
   folderName: string;
@@ -354,9 +141,7 @@ const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({ isOpen, folderN
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main Gallery
-// ─────────────────────────────────────────────────────────────────────────────
+
 export const Gallery: React.FC = () => {
   const { folderId } = useParams<{ folderId?: string }>();
   const [searchParams] = useSearchParams();
@@ -365,14 +150,8 @@ export const Gallery: React.FC = () => {
 
   const { user, loading: authLoading } = useAuth();
   const {
-    videos,
-    folders,
-    isLoading: dataLoading,
-    refreshVideos,
-    moveVideos,
-    deleteVideos,
-    deleteFolder,
-    updateFolder,
+    videos, folders, isLoading: dataLoading,
+    refreshVideos, moveVideos, deleteVideos, deleteFolder, updateFolder,
   } = useData();
   const { t } = useTranslation(['gallery', 'common', 'sidebar']);
 
@@ -385,16 +164,12 @@ export const Gallery: React.FC = () => {
   const [msgIndex, setMsgIndex] = useState(0);
   const [scanState, setScanState] = useState<'h-active' | 'v-active'>('h-active');
 
-  // Folder menu
   const [showFolderMenu, setShowFolderMenu] = useState(false);
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
   const [isMoveFolderModalOpen, setIsMoveFolderModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // ── Server-side search ────────────────────────────────────────────────────
-  // Results come back ranked by relevance from Postgres FTS.
-  // Falls back to null on any error → client index takes over seamlessly.
   const { results: searchResults, searching } = useSearch(searchQuery, folderId);
 
   useEffect(() => {
@@ -437,10 +212,6 @@ export const Gallery: React.FC = () => {
   const isUnsortedView = folderId === 'unsorted';
   const isCustomFolder = !isFavoritesView && !isAllView && !isUnsortedView && !!folderId;
 
-  // ── Client-side search index (fallback) ───────────────────────────────────
-  // Built once when videos load. Recursively extracts every string from every
-  // video object so no field is ever missed regardless of nesting shape.
-  // Only used when the server search endpoint returns null (error / not yet deployed).
   const SKIP_KEYS = new Set([
     'id', 'process_id', 'processId', 'folderId', 'folder_id',
     'userId', 'user_id', 'thumbnail', 'thumbnailUrl', 'url', 'videoUrl',
@@ -460,9 +231,8 @@ export const Gallery: React.FC = () => {
       }
       return '';
     };
-
     const map = new Map<string, string>();
-    for (const v of videos) {
+    for (const v of videos as any[]) {
       const videoId = v?.id ?? v?.process_id ?? v?.processId ?? '';
       if (!videoId) continue;
       map.set(videoId, extractStrings(v).toLowerCase());
@@ -470,21 +240,14 @@ export const Gallery: React.FC = () => {
     return map;
   }, [videos]);
 
-  // ── Displayed videos ──────────────────────────────────────────────────────
-  // Priority: server results (ranked) > client index > unfiltered local list
   const displayedVideos = useMemo(() => {
-    // Server search returned results → use them directly (already ranked + filtered)
     if (searchResults !== null) return searchResults;
-
-    // Filter by current view
     let filtered = videos.filter((v: any) => {
       if (isFavoritesView) return v.isFavorite;
       if (isAllView)       return true;
       if (isUnsortedView)  return !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all';
       return v.folderId === folderId;
     });
-
-    // Client-side index fallback (when server search is unavailable)
     if (searchQuery) {
       const q = searchQuery.toLowerCase().trim();
       filtered = filtered.filter((v: any) => {
@@ -493,8 +256,6 @@ export const Gallery: React.FC = () => {
         return haystack.includes(q);
       });
     }
-
-    // Sort (only when not using server results — server already sorts by rank)
     return [...filtered].sort((a: any, b: any) => {
       const aP = a.category === 'Processing' || a.status === 'processing';
       const bP = b.category === 'Processing' || b.status === 'processing';
@@ -518,7 +279,7 @@ export const Gallery: React.FC = () => {
       setSelectedIds(new Set());
       setSelectionMode(false);
       setIsMoveModalOpen(false);
-    } catch (err) {
+    } catch {
       alert(t('gallery:moveFailed', 'Failed to move videos'));
     }
   };
@@ -529,7 +290,7 @@ export const Gallery: React.FC = () => {
       await deleteVideos(Array.from(selectedIds));
       setSelectedIds(new Set());
       setSelectionMode(false);
-    } catch (err) {
+    } catch {
       alert(t('gallery:deleteFailed', 'Failed to delete videos'));
     }
   };
@@ -549,8 +310,7 @@ export const Gallery: React.FC = () => {
 
   const handleMoveFolder = async (newParentId: string | null) => {
     if (!folderId) return;
-    const currentName = resolveFolderName();
-    await updateFolder(folderId, currentName, newParentId);
+    await updateFolder(folderId, resolveFolderName(), newParentId);
     await refreshVideos();
   };
 
@@ -588,7 +348,7 @@ export const Gallery: React.FC = () => {
       <div className="h-8 bg-gray-200 rounded-lg w-48 mb-2" />
       <div className="h-4 bg-gray-100 rounded-lg w-64 mb-8" />
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
-        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="aspect-[9/16] rounded-2xl bg-gray-200/60" />)}
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="aspect-9/16 rounded-2xl bg-gray-200/60" />)}
       </div>
     </div>
   );
@@ -600,10 +360,8 @@ export const Gallery: React.FC = () => {
     <div className="w-full pt-4 md:pt-0 pb-0 md:pb-6 animate-fade-in">
       <div className="flex flex-col gap-6 mb-8">
 
-        {/* ── Header row ───────────────────────────────────────────────── */}
         <div className="flex items-center justify-between gap-3">
 
-          {/* LEFT: title + subtitle + folder context menu */}
           <div className="min-w-0 flex-1">
             {selectionMode ? (
               <div>
@@ -614,9 +372,8 @@ export const Gallery: React.FC = () => {
               <div>
                 <div className="flex items-center gap-1.5">
                   <h1 className="text-xl md:text-2xl font-bold text-gray-900 truncate">{folderTitle}</h1>
-
                   {isCustomFolder && (
-                    <div className="relative flex-shrink-0" ref={menuRef}>
+                    <div className="relative shrink-0" ref={menuRef}>
                       <button
                         onClick={() => setShowFolderMenu(v => !v)}
                         className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
@@ -624,7 +381,6 @@ export const Gallery: React.FC = () => {
                       >
                         <MoreVertical size={18} />
                       </button>
-
                       {showFolderMenu && (
                         <div className="absolute left-0 top-full mt-1.5 w-48 bg-white rounded-xl shadow-xl border border-gray-100 z-50 py-1.5 animate-fade-in">
                           <button
@@ -659,8 +415,7 @@ export const Gallery: React.FC = () => {
             )}
           </div>
 
-          {/* RIGHT: video count pill + manage/selection controls */}
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             {!selectionMode && (
               <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-bold tracking-wide">
                 {displayedVideos.length} videos
@@ -683,9 +438,9 @@ export const Gallery: React.FC = () => {
                     disabled={selectedIds.size === 0}
                     onClick={() => setIsMoveModalOpen(true)}
                   >
-                    <span className="truncate max-w-[60px] md:max-w-none">{t('gallery:move')}</span>
+                    <span className="truncate max-w-15 md:max-w-none">{t('gallery:move')}</span>
                     {selectedIds.size > 0 && (
-                      <span className="flex-shrink-0 bg-white/20 px-1.5 py-0.5 rounded text-[10px] font-bold min-w-[20px] text-center">
+                      <span className="shrink-0 bg-white/20 px-1.5 py-0.5 rounded text-[10px] font-bold min-w-5 text-center">
                         {selectedIds.size}
                       </span>
                     )}
@@ -712,7 +467,6 @@ export const Gallery: React.FC = () => {
           </div>
         </div>
 
-        {/* ── Search + sort ─────────────────────────────────────────────── */}
         <div className="flex items-center gap-3">
           <div className="relative flex-1">
             <input
@@ -723,13 +477,9 @@ export const Gallery: React.FC = () => {
               className="w-full pl-10 pr-9 py-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none shadow-sm transition-all hover:bg-white/80"
             />
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-
-            {/* Spinner while server search is in flight */}
             {searching && !!searchQuery && (
               <div className="absolute right-9 top-1/2 -translate-y-1/2 w-3.5 h-3.5 border-2 border-primary-400 border-t-transparent rounded-full animate-spin pointer-events-none" />
             )}
-
-            {/* Clear button */}
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
@@ -742,7 +492,7 @@ export const Gallery: React.FC = () => {
           </div>
           <button
             onClick={() => setSortOrder(p => p === 'desc' ? 'asc' : 'desc')}
-            className="p-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-xl hover:bg-white/80 transition-colors text-gray-600 shadow-sm h-[46px] w-[46px] flex-shrink-0 flex items-center justify-center"
+            className="p-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-xl hover:bg-white/80 transition-colors text-gray-600 shadow-sm h-11.5 w-11.5 shrink-0 flex items-center justify-center"
             title={sortOrder === 'desc' ? 'Newest first' : 'Oldest first'}
           >
             {sortOrder === 'desc' ? <CalendarArrowUp size={20} /> : <CalendarArrowDown size={20} />}
@@ -750,7 +500,6 @@ export const Gallery: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Video grid ───────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-24 md:mb-12">
         {displayedVideos.map((video: any) => {
           const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
@@ -790,7 +539,6 @@ export const Gallery: React.FC = () => {
         </div>
       )}
 
-      {/* ── Modals ───────────────────────────────────────────────────────── */}
       <MoveCollectionModal
         isOpen={isMoveModalOpen}
         onClose={() => setIsMoveModalOpen(false)}

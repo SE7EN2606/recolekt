@@ -252,7 +252,7 @@ def smart_truncate_summary(text: str, max_chars: int = SUMMARY_MAX_CHARS) -> str
     if " " in cut:
         cut = cut.rsplit(" ", 1)[0].rstrip()
     
-    cut = cut.rstrip(" ,.;:!-–—")
+    cut = cut.rstrip(" ,.;:!-")
     
     # Add period if missing
     if cut and not cut.endswith((".", "!", "?")):

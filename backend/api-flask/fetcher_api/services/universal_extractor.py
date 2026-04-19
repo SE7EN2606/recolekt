@@ -1,563 +1,772 @@
 """
-Universal Content Extractor - BILINGUAL TWO-CALL approach
-Call 1: Extract structured data (title, recipe/guide, hashtags, location, etc.)
-Call 2: Generate summary in BOTH English AND original language + translations
+Universal Content Extractor — orchestration only.
+
+All heavy logic lives in dedicated mixins:
+    extractor_http.py     → HttpMixin      (_call_ai, retry, provider switching)
+    extractor_call1.py    → Call1Mixin     (Call 1 parsing)
+    extractor_call2.py    → Call2Mixin     (Call 2 summary + Call 3 translation)
+    extractor_assembly.py → AssemblyMixin  (final output assembly)
+    extractor_tools_detection.py → detection helpers + prompt constants
+
+Public content families:
+    "recipe" | "workout" | "location" | "products" | "software" | "finance" | "general"
+
+Internal extraction path:
+    Structured products / software / finance content still flows through the
+    legacy tools extraction path for now. "tools" is therefore internal-only
+    semantics during Phase 2 migration.
+
+Structured subtype values on the legacy tools path:
+    "software" | "lifestyle" | "gear" | "food" |
+    "ranking" | "picks" | "verdict" | "grouped" | "places"
+
+⚠️ MODEL CHAIN NOTE:
+    extractor_http.py contains the model fallback chain.
+    It MUST be set to ['mistral-small-latest'] only — do NOT include
+    'open-mistral-nemo'. Nemo is weaker and fails tier-list instructions.
 """
 
-import os
-import json
 import logging
-import requests
 import re
 from typing import Dict, List
 
+from fetcher_api.services.category_validator import validate_category
+from fetcher_api.services.extractor_assembly import AssemblyMixin
+from fetcher_api.services.extractor_call1 import Call1Mixin, _is_ranked_list_transcript
+from fetcher_api.services.extractor_call2 import Call2Mixin
 from fetcher_api.services.extractor_helpers import (
-    is_english,
-    is_unknown_lang,
-    detect_caption_language,
-    safe_list,
-    safe_str,
-    unique_keep_order,
     clean_title,
     derive_best_title_from_caption,
-    normalize_ingredients,
-    is_caption_copy,
-    TITLE_MAX_CHARS,
+    detect_caption_language,
+    is_english,
+    safe_list,
+    safe_str,
 )
-from fetcher_api.services.summary_formatter import (
-    clean_text,
-    strip_emoji,
-    format_ai_summary,
-)
-from fetcher_api.services.category_validator import validate_category  # validate_category(ai_category, content_type)
+from fetcher_api.services.extractor_http import HttpMixin
 from fetcher_api.services.extractor_prompts import (
-    SYSTEM_MESSAGE,
-    SUMMARY_HARD_MAX,
     build_bookmark_prompt,
     build_data_extraction_prompt,
-    build_summary_prompt_english,
-    build_summary_prompt_bilingual,
 )
-from fetcher_api.services.usage_tracker import record_call
-from fetcher_api.utils.ocr_utils import extract_video_frames_base64, should_extract_frames
+from fetcher_api.services.extractor_tools_detection import (
+    analyze_structure,
+    count_mention_verdict_items,
+    count_numbered_caption_items,
+    is_location_list_content,
+    is_tools_list_content,
+    looks_like_educational_numbered_explainer,
+    pre_detect_list_subtype,
+)
+from fetcher_api.services.extractor_list_prompts import (
+    FRAME_LIST_INSTRUCTION,
+    build_location_list_instruction,
+    build_tools_list_instruction,
+)
+from fetcher_api.services.summary_formatter import format_ai_summary
+from fetcher_api.utils.ocr_utils import (
+    extract_and_stitch_frames,
+    extract_video_frames_base64,
+    is_silent_video,
+    should_extract_frames,
+)
 
 logger = logging.getLogger(__name__)
 
-EXTRACTOR_VERSION = "universal-v17-taxonomy"
-MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+EXTRACTOR_VERSION = "universal-v22"
 
-# Hardcoded bookmark messages for empty reels
 BOOKMARK_MESSAGES = {
     "en": "Bookmark saved. The creator did not provide a detailed caption or transcript for this video.",
-    "fr": "Signet enregistré. Le créateur n'a pas fourni de légende ou de transcription détaillée per cette vidéo.",
+    "fr": "Signet enregistré. Le créateur n'a pas fourni de légende ou de transcription détaillée pour cette vidéo.",
     "es": "Marcador guardado. El creador no proporcionó una leyenda o transcripción detallada para este video.",
     "it": "Segnalibro salvato. Il creatore non ha fornito una didascalia o una trascrizione dettagliata per questo video.",
-    "de": "Lesezeichen gespeichert. Der Ersteller hat keine detaillierte Bildunterschrift oder ein Transkript bereitgestellt."
+    "de": "Lesezeichen gespeichert. Der Ersteller hat keine detaillierte Bildunterschrift oder Transkript bereitgestellt.",
 }
 
+_STRUCTURED_PRODUCT_FAMILIES = {"products", "software", "finance"}
+_PUBLIC_CONTENT_TYPES = {
+    "recipe",
+    "workout",
+    "location",
+    "products",
+    "software",
+    "finance",
+    "general",
+}
 
-def smart_truncate_summary(text: str, max_chars: int = SUMMARY_HARD_MAX) -> str:
-    """Truncate summary intelligently at sentence boundary."""
-    s = strip_emoji(text or "").strip()
-    if len(s) <= max_chars:
-        return s
+_LIST_NOUNS = (
+    r"alternatives?|bags?|sacs?|handbags?|purses?|looks?|outfits?|styles?|"
+    r"jackets?|coats?|shirts?|vestes?|manteaux?|serviettes?|towels?|"
+    r"brands?|marques?|labels?|companies|"
+    r"albums?|songs?|tracks?|records?|playlists?|"
+    r"picks?|places?|spots?|destinations?|resorts?|"
+    r"tools?|apps?|products?|items?|things?|choses?|"
+    r"tips?|conseils?|ideas?|id[ée]es?|ways?|fa[çc]ons?|reasons?|steps?|"
+    r"movies?|films?|shows?|books?|livres?|recipes?|recettes?|"
+    r"wines?|vins?|perfumes?|parfums?|fragrances?|sunscreens?|"
+    r"restaurants?|dishes?|plats?|exercises?|workouts?|"
+    r"options?|choices?|s[ée]lections?|recommendations?|favorites?|favoris?|favourites?|"
+    r"gear|pieces?|essentials?|must.haves?"
+)
 
-    cut = s[:max_chars]
-    last_period = max(cut.rfind('. '), cut.rfind('! '), cut.rfind('? '))
-    if cut.endswith('.') or cut.endswith('!') or cut.endswith('?'):
-        last_period = max(last_period, len(cut) - 1)
+# ── Compiled regex patterns ───────────────────────────────────────────────────
+# NOTE: use single backslash escape sequences inside r"..." strings.
+# Double-escaping (\\b, \\d) inside raw strings produces literal backslash+letter
+# and will never match. All patterns below are correctly single-escaped.
 
-    if last_period > max_chars * 0.6:
-        return s[:last_period + 1].strip()
+_CAPTION_LIST_NOUN_RE = re.compile(
+    r"\b(\d+)\s+(?:\w+\s+)?(?:" + _LIST_NOUNS + r")\b",
+    re.IGNORECASE,
+)
 
-    if " " in cut:
-        cut = cut.rsplit(" ", 1)[0].rstrip()
-    cut = cut.rstrip(" ,.;:!-–—")
-    if cut and not cut.endswith((".", "!", "?")):
-        cut += "."
-    return cut
+_TRANSCRIPT_LIST_OPENER_RE = re.compile(
+    r"(?:here'?s?|top|best|ranked?|my)\s+(\d+)\s+(?:\w+\s+)?(?:" + _LIST_NOUNS + r")\b",
+    re.IGNORECASE,
+)
+
+_SEQUENTIAL_RANK_RE = re.compile(
+    r"number\s+(?:one|two|three|1|2|3).{0,400}?number\s+(?:two|three|four|2|3|4)"
+    r"|(?:first|second|third).{0,400}?(?:second|third|fourth)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_SPOKEN_ORDINAL_RE = re.compile(
+    r"\b(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b",
+    re.IGNORECASE,
+)
+
+_NUMBERED_RANK_RE = re.compile(
+    r"\bnumber\s+(?:one|two|three|four|five|six|seven|eight|nine|ten|1|2|3|4|5|6|7|8|9|10)\b",
+    re.IGNORECASE,
+)
+
+_GARBAGE_NAME_START_RE = re.compile(
+    r"^(?:is|are|was|were|the|a|an)\s"
+    r"|^most\s"
+    r"|^(?:number\s+\w+\s+)?(?:and\s+)?(?:the\s+)?most\s",
+    re.IGNORECASE,
+)
+
+_CHEZ_BRAND_RE = re.compile(r"\bchez\s+[A-ZÉÈÀÂÎÔÙÛÄËÏ]", re.UNICODE)
+_FASHION_PRODUCT_RE = re.compile(
+    r"\b(sac|bag|bags|alternative|handbag|purse|pochette|tote|"
+    r"v[êe]tement|robe|chaussure|parfum|cr[èe]me|montre|bijou|collier)\b",
+    re.IGNORECASE,
+)
+
+_ENGLISH_PROSE_MARKERS = (
+    " the ",
+    " and ",
+    " for ",
+    " with ",
+    " save ",
+    " follow ",
+    " our ",
+    " road trip ",
+    " best time to visit ",
+    " must-see ",
+    " hike ",
+    " views ",
+    " less than ",
+    " through ",
+    " without ",
+    " one of the most ",
+    " known as ",
+    " arrive early ",
+    " rent a rowboat ",
+    " parking ",
+    " take the cable car ",
+    " short hike ",
+    " worth it ",
+    " hidden gem ",
+)
 
 
-def _normalize_servings(servings_raw: str) -> str:
-    """Convert servings to a sensible portion number."""
-    s = (servings_raw or "").strip().lower()
-    if not s:
-        return "1"
+def _looks_clearly_english(text: str) -> bool:
+    t = f" {safe_str(text).lower()} "
+    if len(t.strip()) < 120:
+        return False
 
-    yield_units = ["ml", "cl", "l", "g", "kg", "oz", "lb", "cups", "cup"]
-    for unit in yield_units:
-        if unit in s:
-            logger.info(f"📏 Servings '{servings_raw}' looks like total yield → defaulting to 1")
-            return "1"
+    hits = sum(1 for marker in _ENGLISH_PROSE_MARKERS if marker in t)
+    ascii_ratio = sum(1 for ch in t if ord(ch) < 128) / max(1, len(t))
 
-    m = re.search(r"(\d+)", s)
-    if m:
-        num = int(m.group(1))
-        if num > 20:
-            logger.info(f"📏 Servings '{servings_raw}' = {num} too high → defaulting to 1")
-            return "1"
-        return str(num)
-
-    return "1"
+    return hits >= 4 and ascii_ratio >= 0.97
 
 
-class UniversalExtractor:
-    def __init__(self):
-        api_key = os.getenv("MISTRAL_API_KEY")
-        if not api_key:
-            raise ValueError("MISTRAL_API_KEY not found in environment")
+def _resolve_effective_language(
+    upstream_lang: str,
+    caption: str,
+    transcript: str = "",
+) -> str:
+    """
+    Conservative language resolution.
 
-        logger.info("🔑 Mistral HTTP ready: %s...", api_key[:12])
-        self.api_key = api_key
-        self.model = "mistral-small-latest"
-        self.api_call_count = 0
+    Priority:
+      1. If the caption/transcript is clearly English prose, force 'en'.
+      2. Otherwise trust upstream when present.
+      3. Otherwise fall back to caption detection.
+      4. Otherwise return unknown.
+    """
+    upstream = (upstream_lang or "").strip().lower()
+    caption = caption or ""
+    transcript = transcript or ""
 
-    # ══════════════════════════════════════════════════════════════
-    # MAIN EXTRACT
-    # ══════════════════════════════════════════════════════════════
+    combined = f"{caption[:2500]} {transcript[:1200]}".strip()
+
+    if _looks_clearly_english(combined):
+        if upstream not in ("", "unknown", "en"):
+            logger.info(
+                "🌍 Language override: %s -> en (clear English prose detected)",
+                upstream,
+            )
+        return "en"
+
+    if upstream and upstream != "unknown":
+        return upstream
+
+    text = caption.strip()
+    if len(text) < 40:
+        return "unknown"
+
+    try:
+        detected = (detect_caption_language(text) or "").strip().lower()
+    except Exception:
+        logger.warning("⚠️ detect_caption_language() failed", exc_info=True)
+        return "unknown"
+
+    return detected if detected and detected != "unknown" else "unknown"
+
+
+def _caption_promised_count(caption: str) -> int:
+    """
+    Extract promised item count from caption with minimal deterministic logic.
+    """
+    text = caption or ""
+
+    match = _CAPTION_LIST_NOUN_RE.search(text)
+    if match:
+        return int(match.group(1))
+
+    mention_count = count_mention_verdict_items(text)
+    if mention_count >= 3:
+        return mention_count
+
+    return 0
+
+
+def _transcript_promised_count(transcript: str) -> int:
+    """
+    Extract promised item count from transcript opener with minimal deterministic logic.
+    """
+    if not transcript:
+        return 0
+
+    head = transcript[:600]
+
+    match = _TRANSCRIPT_LIST_OPENER_RE.search(head)
+    if match:
+        return int(match.group(1))
+
+    match = _CAPTION_LIST_NOUN_RE.search(head)
+    if match:
+        return int(match.group(1))
+
+    return 0
+
+
+def _looks_like_global_ranking(transcript: str, caption: str) -> bool:
+    """
+    Minimal strong-signal ranking detector.
+
+    Guards against false positives from:
+    - Lists of @mention picks that repeat the same emoji (e.g. ❤️‍🔥 x8)
+    - Captions where numbered items are ordered by listing, not by rank
+    """
+    text = f"{transcript or ''} {caption or ''}"
+
+    if _SEQUENTIAL_RANK_RE.search(text):
+        return True
+
+    ordinal_hits = len(_SPOKEN_ORDINAL_RE.findall(text))
+    numbered_hits = len(_NUMBERED_RANK_RE.findall(text))
+
+    # Suppress ranking when it's clearly a flat @mention picks list:
+    # silent video + repeated emoji + @handles = picks, not a ranking
+    if not transcript.strip() and count_mention_verdict_items(caption) >= 3:
+        return False
+
+    return ordinal_hits >= 3 or numbered_hits >= 3
+
+
+def _strip_garbage_recovery_items(categories: list) -> list:
+    """
+    Remove transcript_recovery items whose names are clearly raw transcript
+    fragments rather than clean names.
+    """
+    for cat in categories or []:
+        items = cat.get("items") or []
+        cleaned = []
+
+        for item in items:
+            if item.get("source") != "transcript_recovery":
+                cleaned.append(item)
+                continue
+
+            name = (item.get("name") or "").strip()
+            if not name or len(name) > 50 or _GARBAGE_NAME_START_RE.search(name):
+                logger.debug("🗑️ Dropping garbage recovery item: %r", name)
+                continue
+
+            cleaned.append(item)
+
+        cat["items"] = cleaned
+
+    return categories
+
+
+def _default_subtype_for_family(public_content_type: str) -> str:
+    """
+    Return the sensible default subtype hint for a given public family,
+    before pre_detect_list_subtype() has a chance to override.
+    """
+    if public_content_type == "software":
+        return "software"
+    if public_content_type == "finance":
+        return "grouped"
+    if public_content_type == "products":
+        return "picks"
+    return "software"
+
+
+class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
+    EXTRACTOR_VERSION = EXTRACTOR_VERSION
 
     def extract(
-        self, transcript: str, caption: str, lang: str, classification: Dict,
-        video_path: str = None, duration_seconds: int = None,
+        self,
+        transcript: str,
+        caption: str,
+        lang: str,
+        classification: Dict,
+        video_path: str = None,
+        duration_seconds: int = None,
+        is_silent: bool = False,
     ) -> Dict:
         logger.info("🔍 UniversalExtractor.extract() called!")
         self.api_call_count = 0
+        self._call_log = []
 
         transcript = transcript or ""
         caption = caption or ""
-        lang = (lang or "en").strip() or "en"
-        content_type = classification.get("label", "general")
+        lang = (lang or "unknown").strip() or "unknown"
+        classification = classification or {}
 
-        effective_lang = lang
-        if is_unknown_lang(lang) and caption:
-            detected = detect_caption_language(caption)
-            if detected != "unknown":
-                effective_lang = detected
-                logger.info("🔍 Detected caption language: %s", effective_lang)
+        public_content_type = (classification.get("label") or "general").strip().lower()
+        if public_content_type not in _PUBLIC_CONTENT_TYPES and public_content_type != "tools":
+            public_content_type = "general"
 
-        is_english_content = is_english(effective_lang) or is_unknown_lang(effective_lang)
+        # Phase 2 bridge:
+        # products / software / finance still use the internal legacy tools path.
+        extraction_content_type = (
+            "tools"
+            if public_content_type in _STRUCTURED_PRODUCT_FAMILIES or public_content_type == "tools"
+            else public_content_type
+        )
 
-        # ── LOW CONTEXT → BOOKMARK MODE ──
-        transcript_len = len(transcript.strip())
-        caption_len = len(caption.strip())
-        if (transcript_len + caption_len) < 80 and caption_len < 40:
+        signals = classification.get("signals", {}) or {}
+
+        effective_lang = _resolve_effective_language(lang, caption, transcript)
+        is_english_content = is_english(effective_lang)
+
+        logger.info(
+            "🌍 Language resolution: upstream=%s effective=%s english_path=%s",
+            lang,
+            effective_lang,
+            is_english_content,
+        )
+        logger.info(
+            "🏷️ Family routing: public=%s internal=%s",
+            public_content_type,
+            extraction_content_type,
+        )
+
+        if (len(transcript.strip()) + len(caption.strip())) < 80 and len(caption.strip()) < 40:
             return self._bookmark_mode(caption, effective_lang)
 
-        # ── EXTRACT VIDEO FRAMES for vision OCR ──
-        frame_images = []
-        if video_path and should_extract_frames(transcript, caption, content_type):
-            frame_images = extract_video_frames_base64(
-                video_path, duration_seconds=duration_seconds
-            )
-            if frame_images:
-                logger.info("🎞️ Will send %d frames to Mistral vision", len(frame_images))
+        promised_count = _caption_promised_count(caption)
+        if not promised_count:
+            promised_count = _transcript_promised_count(transcript)
+            if promised_count:
+                logger.info("🔢 Promised count from transcript opener: %d", promised_count)
 
-        # ── CALL 1: Structured data extraction (with optional frames) ──
-        logger.info("📞 CALL 1: Extracting structured data...")
-        result_data = self._call_ai(
-            build_data_extraction_prompt(transcript, caption, effective_lang, content_type),
-            images=frame_images,
+        combined_text = f"{transcript} {caption}"
+        mention_verdicts = count_mention_verdict_items(caption)
+        looks_ranked = _looks_like_global_ranking(transcript, caption)
+        looks_educational_explainer = looks_like_educational_numbered_explainer(
+            transcript,
+            caption,
         )
 
-        # Parse Call 1 results
-        parsed = self._parse_call1(result_data, caption, content_type)
+        is_location_list = is_location_list_content(transcript, caption)
 
-        # ── CALL 2: Summary + translations ──
+        if is_location_list:
+            if mention_verdicts >= 3:
+                is_location_list = False
+                logger.info(
+                    "📍 Location false-positive suppressed — %d @mention verdict entries detected",
+                    mention_verdicts,
+                )
+            elif (
+                len(_CHEZ_BRAND_RE.findall(combined_text)) >= 3
+                and bool(_FASHION_PRODUCT_RE.search(combined_text))
+            ):
+                is_location_list = False
+                logger.info(
+                    "📍 Location false-positive suppressed — repeated 'chez [Brand]' + fashion/product nouns"
+                )
+            elif looks_ranked and (
+                signals.get("tool_kw", 0) >= 1 or promised_count >= 3
+            ):
+                is_location_list = False
+                logger.info(
+                    "📍 Location false-positive suppressed — strong ranking signals with tool/product context"
+                )
+
+        is_structured_product_family = (
+            public_content_type in _STRUCTURED_PRODUCT_FAMILIES
+            or public_content_type == "tools"
+        )
+
+        is_tools = (
+            not is_location_list
+            and not looks_educational_explainer
+            and (
+                is_tools_list_content(transcript, caption)
+                or signals.get("tool_kw", 0) >= 2
+                or is_structured_product_family
+                or _is_ranked_list_transcript(transcript)
+                or looks_ranked
+                or mention_verdicts >= 3
+            )
+        )
+
+        # Default subtype hint from family before detection runs.
+        subtype_hint = _default_subtype_for_family(public_content_type)
+        pre_subtype = pre_detect_list_subtype(transcript, caption)
+
+        if is_tools:
+            if looks_ranked:
+                subtype_hint = "places" if pre_subtype == "places" else "ranking"
+                logger.info("🔧 Structured-list — subtype forced to %r", subtype_hint)
+            elif mention_verdicts >= 3:
+                subtype_hint = "verdict"
+                logger.info(
+                    "🔧 Structured-list — subtype forced to 'verdict' (%d @mention entries)",
+                    mention_verdicts,
+                )
+            else:
+                if public_content_type == "software" and pre_subtype in {"picks", "grouped", "software"}:
+                    subtype_hint = "software"
+                elif public_content_type == "products" and pre_subtype in {"picks", "grouped", "lifestyle", "gear", "food"}:
+                    subtype_hint = pre_subtype if pre_subtype in {"lifestyle", "gear", "food"} else "grouped"
+                elif public_content_type == "finance" and pre_subtype in {"picks", "grouped", "software"}:
+                    subtype_hint = "grouped"
+                else:
+                    subtype_hint = pre_subtype or _default_subtype_for_family(public_content_type)
+
+                logger.info("🔧 Structured-list — subtype: %s", subtype_hint)
+
+        elif is_location_list:
+            n = count_numbered_caption_items(caption)
+            logger.info("📍 Location-list — %d numbered items in caption", n)
+        elif looks_educational_explainer:
+            logger.info(
+                "🧠 Numbered explainer detected — keeping out of structured-list mode despite promised count=%d",
+                promised_count,
+            )
+
+        silent = is_silent or is_silent_video("", transcript)
+
+        if (
+            not is_tools
+            and not is_location_list
+            and promised_count >= 3
+            and not looks_educational_explainer
+        ):
+            is_tools = True
+
+            if looks_ranked:
+                subtype_hint = "places" if pre_subtype == "places" else "ranking"
+            elif mention_verdicts >= 3:
+                subtype_hint = "verdict"
+            else:
+                if public_content_type == "software":
+                    subtype_hint = "software"
+                elif public_content_type == "finance":
+                    subtype_hint = "grouped"
+                else:
+                    subtype_hint = pre_subtype or _default_subtype_for_family(public_content_type)
+
+            logger.info(
+                "📋 List promoted to structured extraction (%d items promised, subtype=%s, silent=%s)",
+                promised_count,
+                subtype_hint,
+                silent,
+            )
+
+        if is_location_list:
+            extraction_content_type = "location"
+        elif is_tools:
+            extraction_content_type = "tools"
+
+        logger.info("🏷️ extraction_content_type resolved to: %r", extraction_content_type)
+
+        frame_images = []
+
+        if video_path:
+            has_good_transcript = len(transcript.strip()) > 200
+
+            if is_location_list:
+                frame_images = extract_and_stitch_frames(
+                    video_path,
+                    duration_seconds=duration_seconds,
+                    n_raw_frames=12,
+                    n_composites=4,
+                    is_silent=silent,
+                    start_offset_seconds=0.0,
+                )
+                logger.info(
+                    "📍 Location list — %d composite frames (12 raw stitched 3-per-composite, from 0s)",
+                    len(frame_images),
+                )
+
+            elif is_tools and not has_good_transcript:
+                if silent and promised_count >= 3:
+                    n_raw = min(promised_count * 3, 24)
+                    n_comp = min(promised_count, 8)
+                    frame_images = extract_and_stitch_frames(
+                        video_path,
+                        duration_seconds=duration_seconds,
+                        n_raw_frames=n_raw,
+                        n_composites=n_comp,
+                        is_silent=True,
+                        start_offset_seconds=0.0,
+                    )
+                    logger.info(
+                        "🎵 Silent list — %d composite frames (%d raw, promised=%d items)",
+                        len(frame_images),
+                        n_raw,
+                        promised_count,
+                    )
+                else:
+                    frame_images = extract_video_frames_base64(
+                        video_path,
+                        duration_seconds=duration_seconds,
+                        max_frames=4,
+                        is_silent=silent,
+                    )
+                    if frame_images:
+                        logger.info("🎞️ %d frames (structured list, short transcript)", len(frame_images))
+
+            else:
+                if should_extract_frames(
+                    transcript,
+                    caption,
+                    extraction_content_type,
+                    transcription_status="music_only" if silent else "",
+                ):
+                    frame_images = extract_video_frames_base64(
+                        video_path,
+                        duration_seconds=duration_seconds,
+                        max_frames=3,
+                        is_silent=silent,
+                    )
+                    if frame_images:
+                        logger.info("🎞️ %d frames (heuristic)", len(frame_images))
+        else:
+            logger.warning("⚠️ video_path is None — frames cannot be extracted")
+
+        call1_prompt = build_data_extraction_prompt(
+            transcript=transcript,
+            caption=caption,
+            lang=effective_lang,
+            content_type=extraction_content_type,
+            caption_promised_count=promised_count,
+        )
+
+        if frame_images:
+            call1_prompt += FRAME_LIST_INSTRUCTION
+        if is_location_list:
+            call1_prompt += build_location_list_instruction(caption)
+            logger.info("📍 Location list instruction injected")
+        elif is_tools:
+            call1_prompt += build_tools_list_instruction(subtype_hint)
+
+        prompt_trace = {
+            "extractor_version": EXTRACTOR_VERSION,
+            "public_content_type": public_content_type,
+            "content_type": extraction_content_type,
+            "language": effective_lang,
+            "is_silent": silent,
+            "is_tools_content": is_tools,
+            "is_location_list": is_location_list,
+            "pre_detected_subtype": subtype_hint if is_tools else None,
+            "caption_promised_count": promised_count,
+            "mention_verdicts": mention_verdicts,
+            "looks_ranked": looks_ranked,
+            "looks_educational_explainer": looks_educational_explainer,
+            "frames_sent": len(frame_images),
+            "video_path_provided": bool(video_path),
+            "transcript_chars": len(transcript),
+            "caption_chars": len(caption),
+            "call1_prompt_chars": len(call1_prompt),
+            "transcript_preview": transcript[:300] if transcript else "",
+            "caption_preview": caption[:300] if caption else "",
+            "caption": caption,
+        }
+
+        logger.info("📞 CALL 1: Extracting structured data...")
+        result_data = self._call_ai(call1_prompt, images=frame_images, call_type="extraction")
+        prompt_trace["call1_response_keys"] = (
+            list(result_data.keys()) if isinstance(result_data, dict) else []
+        )
+
+        call1_raw_tools: List[dict] = []
+        if isinstance(result_data, dict):
+            raw_tools_block = result_data.get("tools") or {}
+            if isinstance(raw_tools_block, dict):
+                call1_raw_tools = raw_tools_block.get("categories", [])
+        if call1_raw_tools:
+            logger.info("🔧 Captured %d raw Call 1 tool categories", len(call1_raw_tools))
+
+        parsed = self._parse_call1(result_data, caption, extraction_content_type, transcript=transcript)
+
+        if is_tools and parsed.get("tools_categories"):
+            before = sum(len(c.get("items", [])) for c in parsed["tools_categories"])
+            parsed["tools_categories"] = _strip_garbage_recovery_items(
+                parsed["tools_categories"]
+            )
+            after = sum(len(c.get("items", [])) for c in parsed["tools_categories"])
+            if before != after:
+                logger.info(
+                    "🗑️ Stripped %d garbage transcript_recovery items (%d → %d)",
+                    before - after,
+                    before,
+                    after,
+                )
+
+        final_content_type = public_content_type
+
+        if parsed.get("location"):
+            final_content_type = "location"
+            logger.info("📍 public content_type confirmed → 'location' (location populated)")
+        elif parsed.get("tools_categories"):
+            if public_content_type not in _STRUCTURED_PRODUCT_FAMILIES:
+                final_content_type = "products"
+            logger.info(
+                "🧩 public content_type confirmed from structured list → %r",
+                final_content_type,
+            )
+
+        if parsed.get("tools_categories"):
+            structure_analysis = analyze_structure(
+                tools_categories=parsed.get("tools_categories") or [],
+                category=parsed.get("category", ""),
+                topic=parsed.get("topic", ""),
+                transcript=transcript,
+                pre_detected_hint=subtype_hint if is_tools else "",
+            )
+            parsed["structure_analysis"] = structure_analysis
+            parsed["list_subtype"] = structure_analysis.get("list_subtype")
+            parsed["is_ranked"] = bool(structure_analysis.get("is_ranked"))
+
+            if subtype_hint == "places" and parsed["list_subtype"] in ("ranking", None):
+                parsed["list_subtype"] = "places"
+                logger.info("🗺️ list_subtype preserved as 'places' after structure analysis")
+
+            logger.info(
+                "🧠 Parsed structure mode=%s type=%s subtype=%s is_ranked=%s conf=%.2f",
+                structure_analysis.get("mode"),
+                structure_analysis.get("structure_type"),
+                structure_analysis.get("list_subtype"),
+                structure_analysis.get("is_ranked"),
+                structure_analysis.get("confidence", 0.0),
+            )
+        else:
+            parsed["structure_analysis"] = None
+            parsed["list_subtype"] = None
+            parsed["is_ranked"] = False
+
         if is_english_content:
+            logger.info("📞 CALL 2: English summary...")
             summary_result = self._call2_english(parsed, caption)
         else:
-            summary_result = self._call2_bilingual(parsed, caption, effective_lang, result_data)
+            if parsed.get("tools_categories"):
+                logger.info(
+                    "📞 CALL 2: Non-English structured tools path → %s...",
+                    effective_lang.upper(),
+                )
+                summary_result = self._call2_bilingual_structured(parsed, caption, effective_lang)
+            else:
+                logger.info(
+                    "📞 CALL 2: Non-English summary path → %s...",
+                    effective_lang.upper(),
+                )
+                summary_result = self._call2_bilingual(parsed, caption, effective_lang, result_data)
 
-        # ── Assemble final output ──
-        return self._assemble_output(
-            parsed, summary_result, content_type, effective_lang, is_english_content
-        )
-
-    # ══════════════════════════════════════════════════════════════
-    # CALL 1 PARSING
-    # ══════════════════════════════════════════════════════════════
-
-    def _parse_call1(self, result_data: Dict, caption: str, content_type: str) -> Dict:
-        """Parse and validate Call 1 AI response into a clean dict."""
-        # Category with taxonomy validation
-        category = validate_category(
-            safe_str(result_data.get("category", "")),
-            content_type,
-        )
-        topic = safe_str(result_data.get("topic", "")).strip()
-
-        # Title
-        title_en = clean_title(safe_str(result_data.get("title", "")))
-        if not title_en or len(title_en) < 8:
-            derived = derive_best_title_from_caption(caption)
-            title_en = derived or title_en
-        if not title_en:
-            title_en = "Saved Content"
-        title_en = clean_title(title_en) or "Saved Content"
-
-        brief_description = safe_str(result_data.get("brief_description", ""))
-        highlights_raw = safe_list(result_data.get("highlights", []))
-        location_obj = result_data.get("location", None)
-
-        # Recipe fields (Updated for Multi-Recipe Compilations)
-        recipe_obj = result_data.get("recipe") or {}
-        is_compilation = bool(recipe_obj.get("is_compilation", False))
-        ideas_en = safe_list(recipe_obj.get("ideas", []))
-        
-        ingredients_en = normalize_ingredients(recipe_obj.get("ingredients", []))
-        instructions_en = safe_list(recipe_obj.get("instructions", []))
-        tips_en = safe_list(recipe_obj.get("tips", []))
-        notes_en = safe_list(recipe_obj.get("notes", []))
-
-        servings_raw = safe_str(recipe_obj.get("servings", "")).strip() or safe_str(recipe_obj.get("yield", "")).strip()
-        servings = _normalize_servings(servings_raw)
-
-        prep_time = safe_str(recipe_obj.get("prep_time", "")).strip()
-        cook_time = safe_str(recipe_obj.get("cook_time", "")).strip()
-        total_time = safe_str(recipe_obj.get("total_time", "")).strip()
-
-        # Workout fields
-        workout_obj = result_data.get("workout") or None
-
-        # Hashtags
-        hashtags_raw = safe_list(result_data.get("hashtags", []))
-        hashtags_clean = [str(t).lstrip("#").strip() for t in hashtags_raw if str(t).strip()]
-        caption_tags = set(re.findall(r"#(\w+)", caption.lower()))
-        filtered_tags = []
-        for t in hashtags_clean:
-            t_lower = t.lower()
-            if t_lower not in caption_tags and t_lower not in [f.lower() for f in filtered_tags]:
-                filtered_tags.append(t)
-        hashtags = filtered_tags[:5]
-
-        # Emojis
-        emojis = safe_list(result_data.get("emojis", []))
-        emojis = [e.strip() for e in emojis if isinstance(e, str) and e.strip()]
-        emojis = unique_keep_order(emojis)
-        if len(emojis) < 4:
-            emojis = (emojis + ["✨", "💡", "📌", "✅"])[:4]
-        emojis = emojis[:4]
-
-        return {
-            "category": category,
-            "topic": topic,
-            "title_en": title_en,
-            "brief_description": brief_description,
-            "highlights_raw": highlights_raw,
-            "location": location_obj,
-            "prompt": safe_str(result_data.get("prompt", "")).strip() or None,
-            "is_compilation": is_compilation,  # ✅ ADDED
-            "ideas_en": ideas_en,              # ✅ ADDED
-            "ingredients_en": ingredients_en,
-            "instructions_en": instructions_en,
-            "tips_en": tips_en,
-            "notes_en": notes_en,
-            "servings": servings,
-            "prep_time": prep_time,
-            "cook_time": cook_time,
-            "total_time": total_time,
-            "workout": workout_obj, # Pass through the workout object
-            "hashtags": hashtags,
-            "emojis": emojis,
-        }
-
-    # ══════════════════════════════════════════════════════════════
-    # CALL 2 VARIANTS
-    # ══════════════════════════════════════════════════════════════
-
-    def _call2_english(self, parsed: Dict, caption: str) -> Dict:
-        """Call 2 for English-only content."""
-        logger.info("📞 CALL 2: Generating English summary...")
-        result = self._call_ai(
-            build_summary_prompt_english(
-                parsed["title_en"], parsed["brief_description"], "english"
+        if (
+            not is_english_content
+            and parsed.get("tools_categories")
+            and "tools_og" not in summary_result
+        ):
+            logger.info("📞 CALL 3: Translating tools → %s...", effective_lang.upper())
+            translated_cats = self._call3_translate_structured(
+                categories=parsed["tools_categories"],
+                lang=effective_lang,
             )
+            if translated_cats:
+                summary_result["tools_og"] = {"categories": translated_cats}
+                logger.info("✅ Call 3: %d categories translated", len(translated_cats))
+
+        prompt_trace["total_api_calls"] = self.api_call_count
+
+        result = self._assemble_output(
+            parsed,
+            summary_result,
+            final_content_type,
+            effective_lang,
+            is_english_content,
+            prompt_trace=prompt_trace,
+            call1_raw_tools=call1_raw_tools,
         )
-
-        summary_en_raw = safe_str(result.get("summary", ""))
-        if is_caption_copy(summary_en_raw, caption):
-            logger.error("🚨 AI COPIED CAPTION! Using fallback.")
-            summary_en_raw = self._fallback_summary(parsed["title_en"], "general")
-
-        summary_en = smart_truncate_summary(summary_en_raw)
-
-        return {
-            "summary_en": summary_en,
-            "summary_og": summary_en,
-            "title_og": parsed["title_en"],
-            "ideas_og": parsed.get("ideas_en"), # Pass through ideas
-            "ingredients_og": parsed["ingredients_en"],
-            "instructions_og": parsed["instructions_en"],
-            "tips_og": parsed["tips_en"],
-            "notes_og": parsed["notes_en"],
-            "workout_og": parsed.get("workout"), # Default to English
-            "translated_headlines": None,
-        }
-
-    def _call2_bilingual(self, parsed: Dict, caption: str, lang: str, result_data: Dict) -> Dict:
-        """Call 2 for non-English content (summary + translations)."""
-        logger.info("📞 CALL 2: Bilingual summary + translations (EN + %s)...", lang)
-
-        result = self._call_ai(
-            build_summary_prompt_bilingual(
-                parsed["title_en"], parsed["brief_description"], "bilingual", lang,
-                highlights=parsed["highlights_raw"],
-                ingredients=parsed["ingredients_en"] or None,
-                instructions=parsed["instructions_en"] or None,
-                tips=parsed["tips_en"] or None,
-                notes=parsed["notes_en"] or None,
-                workout=parsed.get("workout"), 
-                ideas=parsed.get("ideas_en") or None, # ✅ Pass ideas for translation
-            )
-        )
-
-        summary_en_raw = safe_str(result.get("summary_en", ""))
-        summary_og_raw = safe_str(result.get("summary_original", ""))
-        title_og = clean_title(safe_str(result.get("title_original", ""))) or parsed["title_en"]
-
-        if is_caption_copy(summary_en_raw, caption):
-            logger.error("🚨 AI COPIED CAPTION in EN! Using fallback.")
-            summary_en_raw = self._fallback_summary(parsed["title_en"], "general")
-        if is_caption_copy(summary_og_raw, caption):
-            logger.error("🚨 AI COPIED CAPTION in original! Using fallback.")
-            summary_og_raw = summary_en_raw
-
-        summary_en = smart_truncate_summary(summary_en_raw)
-        summary_og = smart_truncate_summary(summary_og_raw)
-
-        # Translate recipe fields
-        ingredients_og, instructions_og, tips_og, notes_og = self._translate_recipe_fields(
-            result, parsed
-        )
-
-        # Catch translated workout and ideas if Mistral provides them
-        workout_og = result.get("translated_workout") or result.get("workout_original") or result.get("workout")
-        ideas_og = safe_list(result.get("translated_ideas", [])) or parsed.get("ideas_en")
-
-        return {
-            "summary_en": summary_en,
-            "summary_og": summary_og,
-            "title_og": title_og,
-            "ideas_og": ideas_og, # ✅ Added translated ideas
-            "ingredients_og": ingredients_og,
-            "instructions_og": instructions_og,
-            "tips_og": tips_og,
-            "notes_og": notes_og,
-            "workout_og": workout_og,
-            "translated_headlines": safe_list(result.get("headlines", [])),
-        }
-
-    def _translate_recipe_fields(self, translated: Dict, parsed: Dict) -> tuple:
-        """Extract translated recipe fields from Call 2 response."""
-        ingredients_en = parsed["ingredients_en"]
-        ingredients_og = ingredients_en
-        instructions_og = parsed["instructions_en"]
-        tips_og = parsed["tips_en"]
-        notes_og = parsed["notes_en"]
-
-        ingredient_names_og = safe_list(translated.get("ingredient_names", []))
-        ingredient_units_og = safe_list(translated.get("ingredient_units", []))
-
-        if ingredient_names_og and len(ingredient_names_og) >= len(ingredients_en):
-            ingredients_og = []
-            metric_units = ["g", "kg", "mg", "ml", "cl", "l", "oz", "lb", "lbs"]
-
-            for i, ing in enumerate(ingredients_en):
-                name_og = clean_text(safe_str(ingredient_names_og[i]))
-                unit_en = ing["unit"].lower().strip()
-
-                if unit_en in metric_units:
-                    unit_og = ing["unit"]
-                elif i < len(ingredient_units_og):
-                    unit_og = clean_text(safe_str(ingredient_units_og[i]))
-                else:
-                    unit_og = ing["unit"]
-
-                ingredients_og.append({
-                    "item": name_og,
-                    "name": name_og,
-                    "quantity": ing["quantity"],
-                    "unit": unit_og,
-                    "emoji": ing["emoji"],
-                })
-
-        instructions_og_raw = safe_list(translated.get("instructions", []))
-        if instructions_og_raw and len(instructions_og_raw) >= len(parsed["instructions_en"]):
-            instructions_og = [clean_text(safe_str(x)) for x in instructions_og_raw]
-
-        tips_og_raw = safe_list(translated.get("tips", []))
-        if tips_og_raw and len(tips_og_raw) >= len(parsed["tips_en"]):
-            tips_og = [clean_text(safe_str(x)) for x in tips_og_raw]
-
-        notes_og_raw = safe_list(translated.get("notes", []))
-        if notes_og_raw and len(notes_og_raw) >= len(parsed["notes_en"]):
-            notes_og = [clean_text(safe_str(x)) for x in notes_og_raw]
-
-        return ingredients_og, instructions_og, tips_og, notes_og
-
-    # ══════════════════════════════════════════════════════════════
-    # ASSEMBLY
-    # ══════════════════════════════════════════════════════════════
-
-    def _assemble_output(
-        self, parsed: Dict, summary_result: Dict,
-        content_type: str, effective_lang: str, is_english_content: bool
-    ) -> Dict:
-        """Assemble the final output dict from parsed Call 1 + Call 2 results."""
-
-        title_en = parsed["title_en"]
-        title_og = summary_result["title_og"]
-        summary_en = summary_result["summary_en"]
-        summary_og = summary_result["summary_og"]
-
-        # ── Build headlines ──
-        _, ai_bullets_en = format_ai_summary(
-            title_en=title_en,
-            summary_en_raw=summary_en,
-            highlights_raw=parsed["highlights_raw"],
-            content_type=content_type,
-        )
-        headlines_en = [
-            {"headline": b["headline"], "text": b["description"], "emoji": b.get("emoji", "")}
-            for b in ai_bullets_en
-        ]
-
-        headlines_og = headlines_en
-        if not is_english_content and summary_result.get("translated_headlines"):
-            _, bullets_og = format_ai_summary(
-                title_en=title_og,
-                summary_en_raw=summary_og,
-                highlights_raw=summary_result["translated_headlines"],
-                content_type=content_type,
-            )
-            headlines_og = [
-                {
-                    "headline": b["headline"],
-                    "text": b["description"],
-                    "emoji": headlines_en[i].get("emoji", "") if i < len(headlines_en) else "",
-                }
-                for i, b in enumerate(bullets_og)
-            ]
-
-        # ── Bilingual summary object ──
-        bilingual_summary = {
-            "english": {
-                "title": title_en,
-                "summary": summary_en,
-                "headlines": headlines_en,
-                "hashtags": parsed["hashtags"],
-                "emojis": parsed["emojis"],
-            },
-            "original": {
-                "title": title_og,
-                "summary": summary_og if not is_english_content else summary_en,
-                "headlines": headlines_og,
-                "hashtags": parsed["hashtags"],
-                "emojis": parsed["emojis"],
-            },
-        }
-
-        # ── Recipe object (UPDATED with is_compilation and ideas) ──
-        recipe_data = None
-        if parsed["ingredients_en"] or parsed["instructions_en"] or parsed.get("ideas_en"):
-            recipe_data = {
-                "english": {
-                    "title": title_en,
-                    "is_compilation": parsed.get("is_compilation", False),
-                    "ideas": parsed.get("ideas_en") or None,
-                    "servings": parsed["servings"] or "1",
-                    "prep_time": parsed["prep_time"] or None,
-                    "cook_time": parsed["cook_time"] or None,
-                    "total_time": parsed["total_time"] or None,
-                    "ingredients": parsed["ingredients_en"],
-                    "instructions": parsed["instructions_en"],
-                    "tips": parsed["tips_en"],
-                    "notes": parsed["notes_en"],
-                },
-                "original": {
-                    "title": title_og,
-                    "is_compilation": parsed.get("is_compilation", False),
-                    "ideas": summary_result.get("ideas_og") or None,
-                    "servings": parsed["servings"] or "1",
-                    "prep_time": parsed["prep_time"] or None,
-                    "cook_time": parsed["cook_time"] or None,
-                    "total_time": parsed["total_time"] or None,
-                    "ingredients": summary_result["ingredients_og"],
-                    "instructions": summary_result["instructions_og"],
-                    "tips": summary_result["tips_og"],
-                    "notes": summary_result["notes_og"],
-                },
-            }
-            
-        # ── Workout object (NEW BILINGUAL STRUCTURE) ──
-        workout_data = None
-        if parsed.get("workout"):
-            # Ensure it's a dict
-            eng_workout = parsed["workout"]
-            if isinstance(eng_workout, str):
-                try: eng_workout = json.loads(eng_workout)
-                except: pass
-            
-            og_workout = summary_result.get("workout_og")
-            if isinstance(og_workout, str):
-                try: og_workout = json.loads(og_workout)
-                except: pass
-                
-            workout_data = {
-                "english": eng_workout,
-                "original": og_workout or eng_workout
-            }
-
-        return {
-            "content_type": content_type,
-            "extractor_version": EXTRACTOR_VERSION,
-            "category": parsed["category"],
-            "topic": parsed["topic"],
-            "title": title_en,
-            "summary": bilingual_summary,
-            "hashtags": parsed["hashtags"],
-            "emojis": parsed["emojis"],
-            "prompt": parsed.get("prompt"),
-            "recipe": json.dumps(recipe_data, ensure_ascii=False) if recipe_data else None,
-            "location": parsed["location"],
-            "workout": json.dumps(workout_data, ensure_ascii=False) if workout_data else None,
-            "detected_language": effective_lang,
-        }
-
-    # ══════════════════════════════════════════════════════════════
-    # BOOKMARK MODE
-    # ══════════════════════════════════════════════════════════════
+        result["_content_payload"] = self._call_log
+        return result
 
     def _bookmark_mode(self, caption: str, effective_lang: str) -> Dict:
-        """Handle low-context reels with minimal AI call."""
         logger.info("⚠️ Bookmark mode activated.")
-        result_data = self._call_ai(build_bookmark_prompt(caption, effective_lang))
-
-        category = validate_category(
-            safe_str(result_data.get("category", "")), "general",
+        result_data = self._call_ai(
+            build_bookmark_prompt(caption, effective_lang),
+            call_type="extraction",
         )
+
+        category = validate_category(safe_str(result_data.get("category", "")), "general")
         topic = safe_str(result_data.get("topic", "")).strip()
         title_en = clean_title(safe_str(result_data.get("title", "Saved Reel")))
 
-        hashtags_raw = safe_list(result_data.get("hashtags", []))
-        hashtags = [str(t).lstrip("#").strip() for t in hashtags_raw if str(t).strip()][:5]
+        hashtags = [
+            str(tag).lstrip("#").strip()
+            for tag in safe_list(result_data.get("hashtags", []))
+            if str(tag).strip()
+        ][:5]
 
-        emojis = safe_list(result_data.get("emojis", []))
-        emojis = [e.strip() for e in emojis if isinstance(e, str) and e.strip()][:4]
+        emojis = [
+            emoji.strip()
+            for emoji in safe_list(result_data.get("emojis", []))
+            if isinstance(emoji, str) and emoji.strip()
+        ][:4]
 
         summary_en = BOOKMARK_MESSAGES["en"]
-        summary_og = BOOKMARK_MESSAGES.get(effective_lang[:2].lower(), BOOKMARK_MESSAGES["en"])
-
-        bilingual_summary = {
-            "english": {
-                "title": title_en, "summary": summary_en,
-                "headlines": [], "hashtags": hashtags, "emojis": emojis,
-            },
-            "original": {
-                "title": title_en, "summary": summary_og,
-                "headlines": [], "hashtags": hashtags, "emojis": emojis,
-            },
-        }
+        summary_og = BOOKMARK_MESSAGES.get(
+            effective_lang[:2].lower(),
+            BOOKMARK_MESSAGES["en"],
+        )
 
         return {
             "content_type": "general",
@@ -565,123 +774,76 @@ class UniversalExtractor:
             "category": category,
             "topic": topic,
             "title": title_en,
-            "summary": bilingual_summary,
+            "summary": {
+                "english": {
+                    "title": title_en,
+                    "summary": summary_en,
+                    "headlines": [],
+                    "hashtags": hashtags,
+                    "emojis": emojis,
+                },
+                "original": {
+                    "title": title_en,
+                    "summary": summary_og,
+                    "headlines": [],
+                    "hashtags": hashtags,
+                    "emojis": emojis,
+                },
+            },
             "hashtags": hashtags,
             "emojis": emojis,
+            "prompt": None,
+            "debug": {"mode": "bookmark", "caption_chars": len(caption)},
+            "items": None,
+            "tools_list": None,
             "recipe": None,
             "location": None,
             "workout": None,
             "detected_language": effective_lang,
+            "_content_payload": self._call_log,
         }
-
-    # ══════════════════════════════════════════════════════════════
-    # AI CALL + HELPERS
-    # ══════════════════════════════════════════════════════════════
-
-    def _call_ai(self, prompt: str, max_retries: int = 2, images: List = None) -> Dict:
-        """Pure HTTP call to Mistral API. Supports optional vision images."""
-        import time # ensures time is available
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        # Build message content — text + optional images
-        if images:
-            content_parts = []
-            for i, img_b64 in enumerate(images):
-                content_parts.append({
-                    "type": "image_url",
-                    "image_url": f"data:image/jpeg;base64,{img_b64}",
-                })
-            content_parts.append({
-                "type": "text",
-                "text": prompt,
-            })
-            user_message = {"role": "user", "content": content_parts}
-            logger.info("🖼️ Sending %d images + text to Mistral vision", len(images))
-        else:
-            user_message = {"role": "user", "content": prompt}
-
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": SYSTEM_MESSAGE},
-                user_message,
-            ],
-            "response_format": {"type": "json_object"},
-            "temperature": 0.1,
-        }
-
-        for attempt in range(max_retries + 1):
-            try:
-                logger.info("🤖 Calling Mistral HTTP (attempt %d/%d)...", attempt + 1, max_retries + 1)
-                self.api_call_count += 1
-
-                resp = requests.post(MISTRAL_API_URL, headers=headers, json=payload, timeout=30)
-                
-                # Handled Rate Limit Gracefully
-                if resp.status_code == 429:
-                    logger.warning("⚠️ Mistral Rate Limit Hit (429). Sleeping for 2 seconds...")
-                    time.sleep(2)
-                    resp.raise_for_status()
-
-                resp.raise_for_status()
-
-                raw = resp.json()["choices"][0]["message"]["content"]
-                content = json.loads(raw)
-
-                record_call(prompt_len=len(prompt), response_len=len(raw))
-                return content
-
-            except Exception as e:
-                logger.error("❌ HTTP Mistral failed (attempt %d): %s", attempt + 1, e)
-                record_call(prompt_len=len(prompt), response_len=0, error=True)
-                if attempt < max_retries:
-                    time.sleep(2) # Enforced delay
-                else:
-                    raise
-
-        raise ValueError("Mistral HTTP call failed after retries")
-
-    @staticmethod
-    def _fallback_summary(title: str, content_type: str) -> str:
-        """Generate a safe fallback summary when AI output is rejected."""
-        return (
-            f"{title} is a practical {content_type} guide that provides "
-            "clear steps and requirements for an easy-to-follow result.\n\n"
-            "Suitable for various skill levels and highly recommended."
-        )
 
     def fallback(self, caption: str, classification: Dict) -> Dict:
-        """Full fallback when AI extraction fails entirely."""
-        title = derive_best_title_from_caption(caption) or (
-            caption.split("\n")[0] if caption else "Saved Content"
-        ).strip()
+        classification = classification or {}
+
+        title = (
+            derive_best_title_from_caption(caption)
+            or (caption.split()[0] if caption else "Saved Content")
+        )
         title = clean_title(title) or "Saved Content"
 
-        content_type = classification.get("label", "general")
+        content_type = (classification.get("label") or "general").strip().lower()
+        if content_type not in _PUBLIC_CONTENT_TYPES:
+            content_type = "general"
+
         category = validate_category("", content_type)
 
         fallback_paragraph, fallback_bullets = format_ai_summary(
             title_en=title,
-            summary_en_raw=(caption[:500] if caption else ""),
+            summary_en_raw=caption[:500] if caption else "",
             highlights_raw=[],
             content_type=content_type,
         )
+
         headlines = [
             {"headline": b["headline"], "text": b["description"], "emoji": ""}
             for b in fallback_bullets
         ]
 
-        bilingual_summary = {
+        bilingual = {
             "english": {
-                "title": title, "summary": fallback_paragraph,
-                "headlines": headlines, "hashtags": [], "emojis": [],
+                "title": title,
+                "summary": fallback_paragraph,
+                "headlines": headlines,
+                "hashtags": [],
+                "emojis": [],
             },
             "original": {
-                "title": title, "summary": fallback_paragraph,
-                "headlines": headlines, "hashtags": [], "emojis": [],
+                "title": title,
+                "summary": fallback_paragraph,
+                "headlines": headlines,
+                "hashtags": [],
+                "emojis": [],
             },
         }
 
@@ -691,10 +853,15 @@ class UniversalExtractor:
             "category": category,
             "topic": "",
             "title": title,
-            "summary": bilingual_summary,
+            "summary": bilingual,
             "hashtags": [],
             "emojis": [],
+            "prompt": None,
+            "debug": {"mode": "fallback"},
+            "items": None,
+            "tools_list": None,
             "recipe": None,
             "workout": None,
             "detected_language": "unknown",
+            "_content_payload": [],
         }

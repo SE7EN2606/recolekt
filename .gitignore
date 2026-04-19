@@ -6,3 +6,29 @@ frontend/public/assets/work/
 frontend/src/assets/work/
 cors.json
 deploy.sh
+# Local junk
+.vscode/
+frontend/.vscode/
+*.code-workspace
+clean_paste.txt
+saved_places_backend.txt
+backend-architecture.svg
+recolekt_full_architecture.svg
+Recolekt_AI*
+backend/api-flask/output/
+*.zip
+saved_places_backend.txt
+# Local junk
+.vscode/
+frontend/.vscode/
+*.code-workspace
+clean_paste.txt
+saved_places_backend.txt
+backend-architecture.svg
+recolekt_full_architecture.svg
+Recolekt_AI*
+backend/api-flask/output/
+*.zip
+saved_places_backend.txt
+**/__pycache__/
+*.pyc

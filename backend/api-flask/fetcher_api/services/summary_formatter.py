@@ -3,11 +3,21 @@
 """
 Summary formatting + guardrails (UI contract):
 
-- Paragraph: 200–400 characters max.
-- Bullets: exactly 4 items, each has a short headline + one-sentence description + emoji.
+- Paragraph: 200–450 characters max.
+- Bullets: exactly N items (default 4), each has a short headline + one-sentence description + emoji.
+  Pass max_bullets to format_ai_summary() / normalize_bullets() to honour creator's explicit count.
 - No emojis in paragraph/headlines/descriptions text (only in separate emoji field).
 - No marketing fluff / author comments / CTA phrasing.
-- Focus on WHAT the video is about (not a recipe, not ingredient lists, not step dumps).
+- Focus on WHY the saved reel is useful and WHAT practical value it contains.
+- Avoid empty meta-summary language like:
+    "This video talks about..."
+    "The creator explains..."
+    "Key takeaways in an easy-to-follow format."
+
+v22:
+- Added meta-summary guardrails, not just banned openers.
+- Reworked fallback paragraph generation to sound save-worthy and user-focused.
+- Preserved max_bullets behaviour from v21.
 """
 
 import logging
@@ -36,6 +46,22 @@ BANNED_SUMMARY_OPENERS = [
     r"^questa\s+(ricetta)\s",
 ]
 BANNED_OPENER_RE = re.compile("|".join(BANNED_SUMMARY_OPENERS), re.IGNORECASE)
+
+# Meta-summary patterns — even if they do not appear at the opening,
+# these usually indicate a weak, self-referential summary that describes
+# the content format rather than the viewer value.
+META_SUMMARY_PATTERNS = [
+    r"\bthe\s+creator\s+(talks?|explains?|discusses?|shares?|shows?)\b",
+    r"\bthe\s+author\s+(talks?|explains?|discusses?|shares?|shows?)\b",
+    r"\bthis\s+(video|post|reel|content|clip)\s+(talks?|shows?|explains?|covers?|is\s+about)\b",
+    r"\bkey\s+takeaways?\b",
+    r"\beasy-to-follow\s+format\b",
+    r"\bshort,\s*easy-to-follow\s+format\b",
+    r"\bcovered\s+in\s+a\s+short\b",
+    r"\bsummary\s+of\b",
+    r"\boverview\s+of\b",
+]
+META_SUMMARY_RE = re.compile("|".join(META_SUMMARY_PATTERNS), re.IGNORECASE)
 
 
 def strip_emoji(text: str) -> str:
@@ -81,6 +107,16 @@ def _has_banned_opener(text: str) -> bool:
     if not s:
         return False
     return bool(BANNED_OPENER_RE.match(s))
+
+
+def _has_meta_summary_language(text: str) -> bool:
+    """
+    Detect weak meta-summary phrasing anywhere in the paragraph.
+    """
+    s = clean_text(text or "")
+    if not s:
+        return False
+    return bool(META_SUMMARY_RE.search(s))
 
 
 def _looks_like_recipe_dump(s: str, content_type: str = "general") -> bool:
@@ -163,7 +199,14 @@ def _ensure_one_sentence(desc: str) -> str:
     return s
 
 
-def normalize_bullets(highlights: Any) -> List[Dict[str, str]]:
+def normalize_bullets(highlights: Any, max_count: int = 4) -> List[Dict[str, str]]:
+    """
+    Normalise a raw highlights list into clean bullet dicts.
+
+    max_count controls both the padding floor and the hard cap.
+    Default is 4 (legacy behaviour). Pass a higher value (e.g. 5 or 6)
+    when the creator explicitly promises more items.
+    """
     bullets: List[Dict[str, str]] = []
 
     if isinstance(highlights, list):
@@ -203,8 +246,9 @@ def normalize_bullets(highlights: Any) -> List[Dict[str, str]]:
                     }
                 )
 
-    # Pad to exactly 4 bullets
-    while len(bullets) < 4:
+    # Pad to exactly max_count bullets. Placeholder entries will be filtered
+    # downstream by _filter_placeholder_headlines in extractor_assembly.py.
+    while len(bullets) < max_count:
         bullets.append(
             {
                 "headline": "Key detail",
@@ -213,7 +257,7 @@ def normalize_bullets(highlights: Any) -> List[Dict[str, str]]:
             }
         )
 
-    bullets = bullets[:4]
+    bullets = bullets[:max_count]
 
     # Final sanitation pass
     for b in bullets:
@@ -228,25 +272,67 @@ def normalize_bullets(highlights: Any) -> List[Dict[str, str]]:
     return bullets
 
 
+def _build_fallback_summary(base: str, content_type: str = "general") -> str:
+    """
+    Build a save-worthy fallback summary that focuses on utility rather than
+    describing the content format.
+    """
+    base = clean_text(base).strip(" \t\r\n,.;:!-–—") or "Saved content"
+
+    if content_type == "recipe":
+        return (
+            f"{base} gives a practical recipe reference with enough detail to return to later, "
+            f"including the core ingredients, overall preparation approach, and the kind of result to expect when cooking it yourself."
+        )
+
+    if content_type == "workout":
+        return (
+            f"{base} works as a reusable workout reference, making it easier to remember the exercise selection, training focus, "
+            f"and overall structure when you want to repeat the session or adapt it later."
+        )
+
+    if content_type == "tools":
+        return (
+            f"{base} is useful to save as a comparison reference, helping sort through the main options, trade-offs, "
+            f"and practical reasons one choice may fit better than another before trying or buying anything."
+        )
+
+    if content_type == "location":
+        return (
+            f"{base} is worth keeping as a travel reference, making it easier to revisit the main places, route ideas, "
+            f"or stop-by-stop highlights when planning where to go later."
+        )
+
+    return (
+        f"{base} is worth saving as a quick reference, keeping the main practical ideas, comparisons, or decision-making points "
+        f"in one place so they are easier to reuse later."
+    )
+
+
 def format_ai_summary(
     title_en: str,
     summary_en_raw: str,
     highlights_raw: Any,
     content_type: str = "general",
+    max_bullets: int = 4,
 ) -> Tuple[str, List[Dict[str, str]]]:
     """
     Produce (paragraph, bullets) in the strict UI contract.
     Each bullet includes: headline, description, emoji.
+
+    max_bullets: pass the creator's promised item count (3–6) to honour
+    their explicit count. Default is 4 for all standard content.
+    Caller: extractor_assembly._make_summary_block._fmt_headlines
     """
     raw_clean = clean_text(summary_en_raw or "")
     paragraph = clamp_paragraph_chars(raw_clean, 200, SUMMARY_PARAGRAPH_MAX)
-    bullets = normalize_bullets(highlights_raw)
+    bullets = normalize_bullets(highlights_raw, max_count=max_bullets)
 
-    # Check if paragraph needs replacement
     needs_replacement = (
         not paragraph
         or _looks_like_recipe_dump(paragraph, content_type)
         or _has_banned_opener(paragraph)
+        or _has_meta_summary_language(paragraph)
     )
 
     if needs_replacement:
@@ -255,6 +341,8 @@ def format_ai_summary(
             reason = "recipe_dump"
         elif paragraph and _has_banned_opener(paragraph):
             reason = "banned_opener"
+        elif paragraph and _has_meta_summary_language(paragraph):
+            reason = "meta_summary"
 
         logger.info(
             "Replacing AI summary paragraph due to guardrail (%s). "
@@ -264,29 +352,10 @@ def format_ai_summary(
             len(raw_clean),
         )
 
-        base = clean_text(title_en).strip(" \t\r\n,.;:!-–—")
-        if not base:
-            base = "Saved content"
-
-        # Content-type-aware fallback
-        if content_type == "recipe":
-            fallback = (
-                f"{base} — a recipe with detailed ingredients and step-by-step "
-                f"preparation instructions for easy at-home cooking."
-            )
-        elif content_type == "workout":
-            fallback = (
-                f"{base} — a workout routine with exercises and "
-                f"practical guidance for effective training."
-            )
-        else:
-            fallback = (
-                f"{base} — key takeaways and practical details "
-                f"covered in a short, easy-to-follow format."
-            )
-
+        fallback = _build_fallback_summary(title_en, content_type)
         paragraph = clamp_paragraph_chars(fallback, 200, SUMMARY_PARAGRAPH_MAX)
         if not paragraph:
+            base = clean_text(title_en).strip(" \t\r\n,.;:!-–—") or "Saved content"
             paragraph = f"{base}."
 
     return paragraph, bullets

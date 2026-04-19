@@ -1,3 +1,4 @@
+import path from "path";
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -11,15 +12,15 @@ export default defineConfig({
       registerType: 'autoUpdate',
       devOptions: { enabled: true },
       includeAssets: [
-        'favicon.ico', 
-        'apple-touch-icon.png', 
+        'favicon.ico',
+        'apple-touch-icon.png',
         'favicon-96x96.png'
       ],
       workbox: {
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg,json}'],
         navigateFallback: '/index.html',
-        navigateFallbackAllowlist: [/^\/(?!legal).*/],  // ✅ exclude /legal from SW intercept
+        navigateFallbackAllowlist: [/^\/(?!legal).*/],
       },
       manifest: {
         id: '/?v=26',
@@ -47,6 +48,11 @@ export default defineConfig({
       }
     })
   ],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   server: {
     port: 3000,
     proxy: {

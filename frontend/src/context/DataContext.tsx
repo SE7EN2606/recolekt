@@ -13,6 +13,7 @@ import { Video, Folder } from '../types';
 import { useAuth, getAuthHeaders } from './AuthContext';
 
 
+
 export type AddVideoResult = {
   clientTempId: string;
   processId: string;
@@ -21,6 +22,7 @@ export type AddVideoResult = {
   createdAt: string;
   previewUrl?: string | null;
 };
+
 
 
 interface DataContextType {
@@ -41,7 +43,9 @@ interface DataContextType {
 }
 
 
+
 const DataContext = createContext<DataContextType | undefined>(undefined);
+
 
 
 function joinUrl(base: string, path: string) {
@@ -52,9 +56,11 @@ function joinUrl(base: string, path: string) {
 }
 
 
+
 function makeCacheKey(user: any) {
   return user?.id ? `reels_cache_${user.id}` : null;
 }
+
 
 
 function stripRawForCache(videos: any[]): any[] {
@@ -65,12 +71,15 @@ function stripRawForCache(videos: any[]): any[] {
 }
 
 
+
 let globalLastFetchTime = 0;
 let isFetchingGlobal = false;
 
 
+
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
+
 
   const [_videos, _setVideos] = useState<Video[]>(() => {
     if (user?.id) {
@@ -82,6 +91,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
     return [];
   });
+
 
   const setVideos = useCallback((updater: React.SetStateAction<Video[]>) => {
     _setVideos((prev) => {
@@ -96,19 +106,24 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, [user?.id]);
 
+
   const [folders, setFolders] = useState<Folder[]>(() => {
     const saved = localStorage.getItem('custom_folders');
     return saved ? JSON.parse(saved) : [];
   });
 
+
   const [isLoading, setIsLoading] = useState(false);
+
 
   const videosRef = useRef<Video[]>([]);
   videosRef.current = _videos;
 
+
   useEffect(() => {
     localStorage.setItem('custom_folders', JSON.stringify(folders));
   }, [folders]);
+
 
   useEffect(() => {
     if (!user) {
@@ -130,6 +145,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     } catch (e) {}
   }, [user?.id, setVideos]);
+
 
   const fetchVideos = useCallback(async () => {
     if (!user) return;
@@ -225,7 +241,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             folderId: normalizedFolderId,
             content_type: r.content_type,
             recipe: r.recipe,
+            tools_list: r.tools_list,
             workout: r.workout,
+            location: r.location,
             status: r.status,
             errorMessage: r.error_message || null,
             __raw: r,
@@ -287,6 +305,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user, setVideos]);
 
+
   const refreshFolders = useCallback(async () => {
     if (!user) return;
     if (!navigator.onLine) return;
@@ -305,6 +324,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user?.id]);
 
+
   const initRef = useRef(false);
   useEffect(() => {
     if (!user?.id) {
@@ -319,6 +339,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user?.id, refreshFolders, fetchVideos]);
 
+
   useEffect(() => {
     if (!user?.id) return;
     const interval = window.setInterval(() => {
@@ -330,6 +351,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, 10000);
     return () => window.clearInterval(interval);
   }, [user?.id, fetchVideos]);
+
 
   const addVideo = useCallback(async (url: string, forceRetry: boolean = false): Promise<AddVideoResult> => {
     if (!navigator.onLine) throw new Error("You are offline.");
@@ -418,6 +440,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, [user, fetchVideos, setVideos]);
 
+
   const moveVideos = useCallback(async (videoIds: string[], targetFolderId: string) => {
     setVideos((prev) => prev.map((v: any) => videoIds.includes(v.id) ? { ...v, folderId: targetFolderId } : v));
     if (!navigator.onLine) return;
@@ -440,6 +463,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [setVideos, fetchVideos]);
 
+
   const toggleFavorite = useCallback(async (videoId: string) => {
     const video = videosRef.current.find(v => v.id === videoId);
     if (!video) return;
@@ -461,6 +485,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [setVideos, fetchVideos]);
 
+
   const updateVideo = useCallback(async (id: string, updates: any) => {
     setVideos((prev) => prev.map((v) => v.id === id ? { ...v, ...updates } : v));
     if (!navigator.onLine) return;
@@ -477,6 +502,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       fetchVideos();
     }
   }, [setVideos, fetchVideos]);
+
 
   const deleteVideos = useCallback(async (videoIds: string[]): Promise<void> => {
     if (!videoIds?.length) return;
@@ -504,6 +530,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [user, setVideos, fetchVideos]);
 
+
   const addFolder = useCallback(async (name: string, parentId: string | null = null) => {
     if (!navigator.onLine) throw new Error("Offline");
     const res = await fetch(joinUrl(API_BASE, '/api/folders'), {
@@ -520,13 +547,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await refreshFolders();
   }, [refreshFolders]);
 
+
   const updateFolder = useCallback(async (id: string, name: string, parentId?: string | null) => {
     if (!navigator.onLine) throw new Error("Offline");
 
     const body: any = { name };
-    // Only include parent_id when explicitly passed — undefined means "leave it unchanged"
     if (parentId !== undefined) {
-      body.parent_id = parentId; // null = promote to root, string = nest under folder
+      body.parent_id = parentId;
     }
 
     const res = await fetch(joinUrl(API_BASE, `/api/folders/${id}`), {
@@ -543,11 +570,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await refreshFolders();
   }, [refreshFolders]);
 
-  // ── deleteFolder ────────────────────────────────────────────────────────────
-  // Optimistically moves all local videos out of the folder (and sub-folders),
-  // then calls DELETE /api/folders/:id which handles cascade on the backend.
+
   const deleteFolder = useCallback(async (id: string) => {
-    // Optimistic: move all videos in this folder to unsorted locally
     setVideos((prev) => prev.map((v: any) =>
       v.folderId === id ? { ...v, folderId: 'unsorted' } : v
     ));
@@ -562,11 +586,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
 
       if (res.ok) {
-        // Backend handled cascade — refresh both folders and videos to reflect true state
         await refreshFolders();
         fetchVideos();
       } else {
-        // Rollback optimistic update by refreshing
         fetchVideos();
         await refreshFolders();
       }
@@ -577,9 +599,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, [refreshFolders, fetchVideos, setVideos]);
 
+
   const refreshVideos = useCallback(async () => {
     fetchVideos();
   }, [fetchVideos]);
+
 
   const getVideoById = useCallback(
     (id: string): Video | undefined => {
@@ -592,6 +616,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     },
     []
   );
+
 
   const value = useMemo<DataContextType>(
     () => ({
@@ -619,8 +644,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     ]
   );
 
+
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 };
+
 
 
 export const useData = () => {

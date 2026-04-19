@@ -1,267 +1,299 @@
 # fetcher_api/services/reel_classifier.py
-
 """
-Deterministic reel classification (language-agnostic, caption-first).
+Lightweight heuristic classifier for Instagram reel content.
 
-Detect "recipe-ness" via structural signals:
-- A block of consecutive ingredient-like lines (quantity-based).
-- A block of consecutive short dash/bullet lines (name-only ingredient list).
-- Ingredient-like line can be:
-  (A) quantity-first: "250 g lentils"
-  (B) name-first with qty+unit: "새우 20마리", "감자전분 8큰술", "물 200ml"
-  (C) name-only with dash prefix: "-scallops", "-garlic", "-butter"
-- Do NOT stop scanning the whole caption due to URLs; treat them as boundaries.
+Phase 1 public families:
+  recipe | workout | software | products | finance | general
+
+Returns a classification dict:
+  {
+    "label":   "recipe" | "workout" | "software" | "products" | "finance" | "general",
+    "score":   float,           # 0.0 – 1.0 confidence
+    "reason":  str,             # human-readable explanation
+    "signals": dict[str, int],  # keyword hit counts per category
+  }
+
+Also exports:
+  caption_looks_like_recipe(caption: str) -> bool
+  caption_looks_like_tools(caption: str)  -> bool   # compatibility helper
 """
 
+from __future__ import annotations
 import re
-import unicodedata
-from typing import Dict, List, Optional, Tuple
 
-# Lines we ignore as content (but keep scanning afterwards)
-IGNORE_LINE_RE = re.compile(r"^\s*(?:#|@)|https?://|www\.", re.IGNORECASE)
 
-# Bullet/checklist prefixes (language-agnostic-ish)
-BULLET_PREFIX_RE = re.compile(r"^\s*(?:[-•*]|🔸|🔹|✔️|✅)\s*")
+# ─────────────────────────────────────────────────────────────────────────────
+# Keyword dictionaries
+# ─────────────────────────────────────────────────────────────────────────────
 
-# ----------------------------
-# Unit patterns (NO trailing |)
-# ----------------------------
-LATIN_UNIT_TOKENS = [
-    "g", "kg", "mg", "gr",
-    "ml", "cl", "l",
-    "oz", "lb",
-    "tsp", "tbsp",
-    "cup", "cups",
-    r"c\.?\s*a\.?\s*s",
-    r"c\.?\s*a\.?\s*c",
-    "cucchiaio", "cucchiai", "cucchiaino", "cucchiaini",
-    r"cuill[eè]re(?:s)?",
+# ── Recipe signals ────────────────────────────────────────────────────────────
+RECIPE_KEYWORDS = [
+    # EN
+    "recipe", "ingredient", "tablespoon", "teaspoon", "cup of", "oven", "bake", "baking",
+    "boil", "simmer", "sauté", "saute", "fry", "marinate", "grill", "roast", "blend",
+    "preheat", "dice", "chop", "mince", "whisk", "stir", "fold in", "pour into",
+    "cook time", "prep time", "serves", "portions",
+    # FR
+    "recette", "ingrédient", "cuillère", "cuillere", "four", "cuire", "cuisson",
+    "faire revenir", "mélanger", "melanger", "mixer", "préparer", "preparer",
+    "portions", "personne", "grammes", "millilitres",
 ]
-LATIN_UNIT_PATTERN = r"(?:%s)" % "|".join(LATIN_UNIT_TOKENS)
 
-KOREAN_UNIT_TOKENS = [
-    "큰술", "작은술", "스푼", "숟가락", "티스푼", "테이블스푼",
-    "마리", "개", "장", "쪽",
-    "그램", "킬로그램", "밀리리터", "리터",
+RECIPE_UNITS = [
+    "g", "kg", "ml", "cl", "l", "oz", "lb", "tbsp", "tsp",
+    "cup", "cups", "mins", "min", "h", "°c", "°f",
 ]
-KOREAN_UNIT_PATTERN = r"(?:%s)" % "|".join(KOREAN_UNIT_TOKENS)
 
-# Unit anywhere (Latin is word-ish; Korean isn't word-delimited)
-UNIT_ANY_RE = re.compile(rf"(?:\b{LATIN_UNIT_PATTERN}\b|{KOREAN_UNIT_PATTERN})", re.IGNORECASE)
+# ── Workout signals ───────────────────────────────────────────────────────────
+WORKOUT_KEYWORDS = [
+    "workout", "kettlebell", "dumbbell", "barbell", "squat", "pushup", "push-up",
+    "pull-up", "deadlift", "reps", "sets", "emom", "amrap", "hiit", "tabata",
+    "muscle", "gym", "fitness", "fentes", "glutes", "quads", "hamstrings",
+    "entraînement", "entrainement", "musculation", "gainage", "circuit training",
+    "cardio", "burpees", "plank", "lunge", "bench press", "overhead press",
+    "warm up", "cool down", "personal trainer", "calisthenics",
+]
 
-# ----------------------------
-# Number patterns
-# ----------------------------
-NUMBER_RE = r"\d+(?:[.,]\d+)?"
+# ── Software / AI / apps signals ─────────────────────────────────────────────
+KNOWN_TOOL_NAMES = [
+    "chatgpt", "chat gpt", "claude", "mistral", "gemini", "perplexity",
+    "copilot", "grok", "llama", "ollama",
+    "capcut", "cap cut", "descript", "runway", "heygen", "synthesia",
+    "opus clip", "opusclip", "submagic", "sub magic", "veed", "loom",
+    "kling", "pika", "sora", "luma", "invideo", "vidiq", "tubebuddy",
+    "manychat", "many chat", "later", "buffer", "hootsuite", "metricool",
+    "zapier", "make.com", "n8n", "activepieces",
+    "elevenlabs", "eleven labs", "murf", "resemble",
+    "canva", "figma", "adobe express", "photoshop", "illustrator", "midjourney",
+    "stable diffusion", "dall-e", "dalle",
+    "notion", "airtable", "coda", "obsidian", "logseq",
+    "webflow", "framer", "bubble", "softr", "glide",
+    "mailchimp", "brevo", "beehiiv", "convertkit", "kit.com",
+    "kajabi", "gumroad", "systeme.io", "teachable", "thinkific",
+    "semrush", "ahrefs", "similarweb", "hotjar",
+    "viralfinder", "viral finder", "zight", "agen",
+    "typeform", "tally", "cal.com", "calendly", "lemlist",
+]
 
-# Fused quantity+unit token like "200ml", "20마리", "8큰술"
-LATIN_FUSED_UNITS_PATTERN = r"(?:ml|cl|l|g|kg|mg|oz|lb)"
-FUSED_QTY_RE = re.compile(rf"({NUMBER_RE})\s*(?:{KOREAN_UNIT_PATTERN}|{LATIN_FUSED_UNITS_PATTERN})", re.IGNORECASE)
+TOOL_CATEGORY_KEYWORDS = [
+    "outils", "outil", "tools", "tool", "apps", "app",
+    "logiciel", "logiciels", "software", "plugin", "extension",
+    "platform", "plateforme", "stack", "workflow", "automation",
+    "liste d'outils", "tool list", "ai tools", "outils ia",
+    "must have", "use this", "try this", "utilise", "utiliser",
+    "boost your", "make money", "earn money", "gagner", "créer du contenu",
+]
 
+SOFTWARE_KEYWORDS = [
+    "software", "app", "apps", "website", "websites", "saas", "platform",
+    "automation", "workflow", "plugin", "extension", "api",
+    "ai tool", "ai tools", "chrome extension", "browser extension",
+]
 
-def _normalize_caption(text: str) -> str:
-    s = text or ""
-    if "\\n" in s and "\n" not in s:
-        s = s.replace("\\n", "\n")
-    return s
+# ── Product / brand / ranking signals ────────────────────────────────────────
+PRODUCT_KEYWORDS = [
+    "brand", "brands", "product", "products", "ranking", "ranked",
+    "tier", "tier list", "review", "reviews", "comparison", "compared",
+    "best", "worst", "tested", "lab test", "independent test", "consumer report",
+    "worth it", "not worth it", "overrated", "underrated",
+    "sunscreen", "spf", "skincare", "serum", "moisturizer",
+    "perfume", "fragrance", "watch", "watches",
+    "jacket", "jackets", "pants", "shoes", "sneakers",
+    "bag", "bags", "handbag", "gear", "outdoor", "rain jacket",
+    "baby shoes", "fashion brand",
+]
 
+# ── Finance / accounting signals ─────────────────────────────────────────────
+FINANCE_KEYWORDS = [
+    "finance", "financial", "accounting", "accountant", "bookkeeping", "bookkeeper",
+    "tax", "taxes", "vat", "invoice", "invoices", "profit", "loss",
+    "margin", "cash flow", "budget", "budgeting", "payroll",
+    "investing", "investment", "etf", "etfs", "stock", "stocks",
+    "dividend", "portfolio", "balance sheet", "income statement", "p&l",
+    "expense ratio", "capital gains",
+]
 
-def _clean_lines(text: str, max_lines: int = 250) -> List[str]:
-    s = _normalize_caption(text)
-    return [ln.strip() for ln in s.splitlines() if ln.strip()][:max_lines]
+_FINANCE_STRONG_KEYWORDS = [
+    "accounting", "bookkeeping", "bookkeeper", "vat", "invoice", "invoices",
+    "balance sheet", "income statement", "p&l", "expense ratio",
+    "capital gains", "payroll",
+]
 
-
-def _is_unicode_number_token(tok: str) -> bool:
-    if not tok:
-        return False
-    if re.fullmatch(r"\d+(?:[.,]\d+)?", tok):
-        return True
-    if re.fullmatch(r"\d+\s*/\s*\d+", tok):
-        return True
-    if len(tok) == 1:
-        try:
-            unicodedata.numeric(tok)
-            return True
-        except Exception:
-            return False
-    if all(ch.isdigit() for ch in tok) and any(ch.isdigit() for ch in tok):
-        return True
-    return False
-
-
-def _extract_leading_qty(line: str) -> Optional[str]:
-    s = BULLET_PREFIX_RE.sub("", line or "").strip()
-    if not s:
-        return None
-    first = s.split()[0]
-    if _is_unicode_number_token(first):
-        return first
-    if re.fullmatch(r"\d+\s*[-–]\s*\d+", first):
-        return first
-    return None
-
-
-def _line_is_qty_like(line: str) -> Tuple[bool, bool]:
-    raw = line or ""
-    s = BULLET_PREFIX_RE.sub("", raw).strip()
-    if not s:
-        return (False, False)
-
-    lead = _extract_leading_qty(s)
-    if lead:
-        return (True, bool(UNIT_ANY_RE.search(s)))
-
-    if FUSED_QTY_RE.search(s) and len(s) <= 90:
-        return (True, True)
-
-    has_number = bool(re.search(NUMBER_RE, s))
-    has_unit = bool(UNIT_ANY_RE.search(s))
-    if has_number and has_unit and len(s) <= 120:
-        return (True, True)
-
-    return (False, False)
+_TOOL_FOR_PATTERN = re.compile(
+    r"\b\w[\w\s]{1,30}?\s+(pour|to|for|afin de|permettant de)\s+\w",
+    re.IGNORECASE,
+)
 
 
-def _count_qty_features(caption: str) -> Dict[str, int]:
-    lines = _clean_lines(caption)
+def _count_hits(text: str, keywords: list[str]) -> int:
+    return sum(1 for kw in keywords if kw in text)
 
-    strong = 0
-    weak = 0
-    max_consecutive = 0
-    cur_consecutive = 0
 
-    for ln in lines:
-        if IGNORE_LINE_RE.search(ln):
-            cur_consecutive = 0
-            continue
+def _count_tool_names(text: str) -> int:
+    return sum(1 for name in KNOWN_TOOL_NAMES if name in text)
 
-        is_qty, is_strong = _line_is_qty_like(ln)
 
-        if is_qty:
-            cur_consecutive += 1
-            max_consecutive = max(max_consecutive, cur_consecutive)
-            if is_strong:
-                strong += 1
-            else:
-                weak += 1
-        else:
-            cur_consecutive = 0
+def _count_tool_for_patterns(text: str) -> int:
+    return len(_TOOL_FOR_PATTERN.findall(text))
 
-    return {
-        "qty_strong": strong,
-        "qty_weak": weak,
-        "qty_total": strong + weak,
-        "qty_max_consecutive": max_consecutive,
+
+def classify_reel_content(transcript: str, caption: str) -> dict:
+    text = ((transcript or "") + " " + (caption or "")).lower()
+
+    recipe_hits = _count_hits(text, RECIPE_KEYWORDS)
+    workout_hits = _count_hits(text, WORKOUT_KEYWORDS)
+
+    tool_names = _count_tool_names(text)
+    tool_kw_hits = _count_hits(text, TOOL_CATEGORY_KEYWORDS)
+    tool_patterns = _count_tool_for_patterns(text)
+    software_hits = _count_hits(text, SOFTWARE_KEYWORDS)
+
+    product_hits = _count_hits(text, PRODUCT_KEYWORDS)
+    finance_hits = _count_hits(text, FINANCE_KEYWORDS)
+    finance_strong_hits = _count_hits(text, _FINANCE_STRONG_KEYWORDS)
+
+    unit_hits = _count_hits(text, RECIPE_UNITS)
+
+    signals = {
+        "recipe_keywords": recipe_hits,
+        "recipe_units": unit_hits,
+        "workout_keywords": workout_hits,
+        "tool_names_found": tool_names,
+        "tool_kw": tool_kw_hits,
+        "tool_for_patterns": tool_patterns,
+        "software_keywords": software_hits,
+        "product_keywords": product_hits,
+        "finance_keywords": finance_hits,
+        "finance_strong_keywords": finance_strong_hits,
     }
 
+    # Workout first: avoid fitness content being pulled into list/software buckets.
+    if workout_hits >= 2:
+        score = min(0.55 + workout_hits * 0.06, 0.94)
+        return {
+            "label": "workout",
+            "score": round(score, 2),
+            "reason": f"workout: {workout_hits} fitness keywords",
+            "signals": signals,
+        }
 
-def _has_ingredient_name_list(caption: str) -> bool:
-    """
-    Detect ingredient lists that use short name-only lines with a leading
-    dash, bullet, or similar marker — no quantities required.
-
-    Works for any language because it only checks line structure:
-      - Line starts with a dash/bullet/star
-      - Line is short (< 80 chars after stripping the prefix)
-      - Line doesn't start with # or @ (those are hashtags/mentions)
-      - At least 3 consecutive such lines found
-
-    Examples that match:
-      -scallops 干貝
-      -garlic 大蒜
-      -lime 青檸檬
-      -butter 奶油
-
-      • chicken
-      • rice
-      • soy sauce
-      • ginger
-    """
-    lines = _clean_lines(caption)
-
-    max_consecutive = 0
-    cur_consecutive = 0
-
-    for ln in lines:
-        stripped = ln.strip()
-
-        # Skip empty, hashtags, mentions, URLs
-        if not stripped:
-            cur_consecutive = 0
-            continue
-        if IGNORE_LINE_RE.search(stripped):
-            cur_consecutive = 0
-            continue
-
-        # Check if line starts with a dash/bullet prefix
-        # and is short enough to be an ingredient (not a sentence)
-        prefix_match = re.match(r'^[-•*–—]\s*', stripped)
-        if prefix_match:
-            content_after_prefix = stripped[prefix_match.end():].strip()
-            # Must have some content, and be short (ingredient-length, not a paragraph)
-            if content_after_prefix and len(content_after_prefix) < 80:
-                cur_consecutive += 1
-                max_consecutive = max(max_consecutive, cur_consecutive)
-                continue
-
-        # Not a dash-ingredient line — reset
-        cur_consecutive = 0
-
-    # 3+ consecutive short dash lines = likely an ingredient list
-    return max_consecutive >= 3
-
-
-def caption_looks_like_recipe(caption: str) -> bool:
-    cap = caption or ""
-    if not cap.strip():
-        return False
-
-    f = _count_qty_features(cap)
-
-    # Ingredient block shape (consecutive quantity lines)
-    if f["qty_max_consecutive"] >= 3 and f["qty_total"] >= 4:
-        return True
-
-    # Strong measurement evidence
-    if f["qty_strong"] >= 2 and f["qty_total"] >= 3:
-        return True
-
-    # Weaker lists need more lines
-    if f["qty_strong"] == 0 and f["qty_weak"] >= 7:
-        return True
-
-    # Name-only ingredient lists (no quantities, just dashes)
-    if _has_ingredient_name_list(cap):
-        return True
-
-    return False
-
-
-def classify_reel_content(transcript: str, caption: str) -> Dict:
-    transcript = transcript or ""
-    caption = caption or ""
-
-    f = _count_qty_features(caption)
-    is_recipe = caption_looks_like_recipe(caption)
-
-    if is_recipe:
+    # Recipe next: avoid cooking posts being pulled into generic product/software buckets.
+    if recipe_hits >= 3 or (recipe_hits >= 2 and unit_hits >= 1):
+        score = min(0.50 + recipe_hits * 0.07, 0.93)
         return {
             "label": "recipe",
-            "score": 900,
-            "reason": "FORCED:caption_structure",
-            "signals": {
-                **f,
-                "has_ingredient_name_list": _has_ingredient_name_list(caption),
-                "has_transcript": bool(transcript.strip()),
-            },
+            "score": round(score, 2),
+            "reason": f"recipe: {recipe_hits} cooking keywords, {unit_hits} unit matches",
+            "signals": signals,
+        }
+
+    # Finance should beat software when the subject is clearly finance/accounting/investing.
+    if finance_hits >= 3 or (finance_hits >= 2 and finance_strong_hits >= 1):
+        score = min(0.56 + finance_hits * 0.06, 0.92)
+        return {
+            "label": "finance",
+            "score": round(score, 2),
+            "reason": f"finance: {finance_hits} finance/accounting keywords",
+            "signals": signals,
+        }
+
+    # Product-ranking / brand-comparison should beat software when product signals dominate.
+    if product_hits >= 4 and product_hits >= software_hits + tool_names:
+        score = min(0.56 + product_hits * 0.05, 0.93)
+        return {
+            "label": "products",
+            "score": round(score, 2),
+            "reason": f"products: dominant product/ranking signals ({product_hits})",
+            "signals": signals,
+        }
+
+    # Software when actual tool naming + software context is strong.
+    if tool_names >= 3:
+        score = min(0.60 + (tool_names - 3) * 0.08, 0.97)
+        return {
+            "label": "software",
+            "score": round(score, 2),
+            "reason": f"software: {tool_names} known tool names detected",
+            "signals": signals,
+        }
+
+    if tool_names >= 2 and (tool_kw_hits >= 1 or software_hits >= 2):
+        return {
+            "label": "software",
+            "score": 0.72,
+            "reason": f"software: {tool_names} tool names + software/category keywords",
+            "signals": signals,
+        }
+
+    if tool_names >= 1 and tool_kw_hits >= 2 and tool_patterns >= 2:
+        return {
+            "label": "software",
+            "score": 0.62,
+            "reason": f"software: mixed signals — name={tool_names} kw={tool_kw_hits} patterns={tool_patterns}",
+            "signals": signals,
+        }
+
+    # Product fallback after software when software is not clearly dominant.
+    if product_hits >= 3:
+        score = min(0.56 + product_hits * 0.05, 0.93)
+        return {
+            "label": "products",
+            "score": round(score, 2),
+            "reason": f"products: {product_hits} product/ranking keywords",
+            "signals": signals,
         }
 
     return {
         "label": "general",
-        "score": 0,
-        "reason": "no_recipe_signals",
-        "signals": {
-            **f,
-            "has_transcript": bool(transcript.strip()),
-        },
+        "score": 0.40,
+        "reason": "no strong category signals",
+        "signals": signals,
     }
+
+
+def caption_looks_like_recipe(caption: str) -> bool:
+    if not caption:
+        return False
+    text = caption.lower()
+
+    action_verbs = [
+        "mix", "stir", "bake", "cook", "fry", "boil", "blend",
+        "mélanger", "cuire", "faire revenir", "mixer",
+    ]
+    has_action = any(v in text for v in action_verbs)
+
+    unit_pattern = re.search(
+        r"\b\d+\s*(g|kg|ml|cl|l|oz|lb|tbsp|tsp|cup|°c|°f|min|h)\b",
+        text,
+        re.IGNORECASE,
+    )
+
+    structured_lines = sum(
+        1 for line in caption.split("\n")
+        if re.match(r"^\s*[-•*]\s*.+", line.strip())
+    )
+
+    return has_action and (unit_pattern is not None or structured_lines >= 3)
+
+
+def caption_looks_like_tools(caption: str) -> bool:
+    """
+    Compatibility helper retained for older callers.
+
+    Semantically this now means:
+      caption looks like software/app/tool content
+    """
+    if not caption:
+        return False
+    text = caption.lower()
+
+    tool_names_found = _count_tool_names(text)
+    kw_hits = _count_hits(text, TOOL_CATEGORY_KEYWORDS)
+    software_hits = _count_hits(text, SOFTWARE_KEYWORDS)
+
+    return (
+        tool_names_found >= 2
+        or (tool_names_found >= 1 and kw_hits >= 2)
+        or (tool_names_found >= 1 and software_hits >= 1)
+        or software_hits >= 2
+    )

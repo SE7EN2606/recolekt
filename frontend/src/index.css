@@ -2,11 +2,13 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap");
 @import "tailwindcss";
 
+
 /* 1. Ensure the html always has a scrollbar area so it never disappears */
 html {
   overflow-y: scroll !important;
   scrollbar-gutter: stable !important;
 }
+
 
 /* 2. The Kill Switch: When a modal opens, Radix adds 'data-scroll-locked'. 
       We force the padding back to ZERO so it cannot shift the content. */
@@ -17,12 +19,14 @@ body[style*="padding-right"] {
   overflow: hidden !important;
 }
 
+
 /* 3. If you use a fixed Header, it might also be jumping. 
       Apply this to your Header class if it shifts. */
 .fixed-header {
   padding-right: 0px !important;
   right: 0px !important;
 }
+
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -63,6 +67,7 @@ body[style*="padding-right"] {
   --color-dark-800: #1e293b;
   --color-dark-900: #0f172a;
 }
+
 
 /* =========================================================
    SHADCN/RADIX CSS VARIABLES
@@ -122,6 +127,7 @@ body[style*="padding-right"] {
   }
 }
 
+
 /* =========================================================
    BASE ELEMENTS
    ========================================================= */
@@ -142,6 +148,7 @@ body[style*="padding-right"] {
   }
 }
 
+
 /* =========================================================
    GLOBAL BACKGROUND — Vibrant Mesh Gradient
    ========================================================= */
@@ -157,11 +164,12 @@ body {
   min-height: 100vh;
 }
 
+
 /* =========================================================
    GLASSMORPHISM UTILITIES
    ========================================================= */
 .glass {
-  background: rgba(255, 255, 255, 0.85); /* ⬆️ Android safe */
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.4);
@@ -169,7 +177,7 @@ body {
 }
 
 .glass-card {
-  background: rgba(255, 255, 255, 0.80); /* ⬆️ Android safe */
+  background: rgba(255, 255, 255, 0.80);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.5);
@@ -177,18 +185,19 @@ body {
 }
 
 .glass-sidebar {
-  background: rgba(255, 255, 255, 0.85); /* ⬆️ Android safe */
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-right: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 .glass-header {
-  background: rgba(255, 255, 255, 0.90); /* ⬆️ Android safe */
+  background: rgba(255, 255, 255, 0.90);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.5);
 }
+
 
 /* =========================================================
    SCROLLBAR
@@ -200,6 +209,7 @@ body {
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.2); }
+
 
 /* =========================================================
    ANIMATIONS
@@ -224,7 +234,7 @@ body {
 
 @keyframes pulse-glow {
   0%, 100% { box-shadow: 0 0 20px rgba(124, 58, 237, 0.3); }
-  50%        { box-shadow: 0 0 30px rgba(124, 58, 237, 0.5); }
+  50%       { box-shadow: 0 0 30px rgba(124, 58, 237, 0.5); }
 }
 
 @keyframes shimmer {
@@ -241,6 +251,7 @@ body {
   45%  { transform: scale(1.28); }
   100% { transform: scale(1); }
 }
+
 
 /* =========================================================
    PLACEHOLDER SKELETON
@@ -276,6 +287,7 @@ body {
   );
   background-size: 200% 100%;
 }
+
 
 /* =========================================================
    PROCESSING OVERLAY
@@ -363,12 +375,13 @@ body {
 
 .processing-card { animation: pulse-glow 2s ease-in-out infinite; }
 
+
 /* =========================================================
    FAVORITE HEART
    ========================================================= */
 .favorite-heart {
   cursor: pointer;
-  z-index: 10; 
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -378,13 +391,13 @@ body {
   width: 20px;
   height: 20px;
   stroke-width: 2;
-  stroke: #ef4444; 
+  stroke: #ef4444;
   fill: transparent;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.favorite-heart:hover svg { 
-  opacity: 0.8; 
+.favorite-heart:hover svg {
+  opacity: 0.8;
   transform: scale(1.1);
 }
 
@@ -395,9 +408,10 @@ body {
   filter: drop-shadow(0 2px 4px rgba(239, 68, 68, 0.2));
 }
 
-.heart-animate { 
-  animation: heartBeatOnce 0.35s ease-out; 
+.heart-animate {
+  animation: heartBeatOnce 0.35s ease-out;
 }
+
 
 /* =========================================================
    SELECTION RADIO (PURPLE)
@@ -455,6 +469,7 @@ body {
   transition: all 0.2s ease;
 }
 
+
 /* =========================================================
    RESPONSIVE MOBILE
    ========================================================= */
@@ -489,6 +504,7 @@ body {
   }
 }
 
+
 /* =========================================================
    HEADER SHADOW
    ========================================================= */
@@ -505,6 +521,7 @@ body {
     0 2px 4px rgba(0, 0, 0, 0.05),
     0 6px 12px rgba(0, 0, 0, 0.06);
 }
+
 
 /* =========================================================
    RECIPE CARD
@@ -562,6 +579,7 @@ body {
   color: #06b6d4;
 }
 
+
 /* =========================================================
    MANUAL UTILITY COLORS
    ========================================================= */
@@ -573,6 +591,7 @@ body {
 .hover\:bg-primary-700:hover { background-color: #6d28d9 !important; }
 .text-primary-500   { color: #8b5cf6 !important; }
 .text-primary-600   { color: #7c3aed !important; }
+
 
 /* =========================================================
    HASHTAGS CARD
@@ -602,20 +621,20 @@ body {
   transform: translateY(-1px);
 }
 
+
 /* =========================================================
    SUBTLE SPREADING CHEVRONS
    ========================================================= */
 @keyframes chevron-spread {
-  0%, 100% { 
-    transform: translateX(0px); 
-    opacity: 0.4; 
+  0%, 100% {
+    transform: translateX(0px);
+    opacity: 0.4;
   }
-  50% { 
-    opacity: 1; 
+  50% {
+    opacity: 1;
   }
 }
 
-/* Each arrow moves a different distance to create the "spread" */
 .animate-chevron-1 { animation: chevron-spread 2s ease-in-out infinite; transform: translateX(0px); }
 .animate-chevron-2 { animation: chevron-spread 2s ease-in-out infinite 0.2s; }
 .animate-chevron-3 { animation: chevron-spread 2s ease-in-out infinite 0.4s; }
@@ -623,11 +642,9 @@ body {
 .chevron-group:hover .animate-chevron-2 { transform: translateX(4px); transition: 0.3s; }
 .chevron-group:hover .animate-chevron-3 { transform: translateX(8px); transition: 0.3s; }
 
-/* The actual spreading logic via Translate */
 .chevron-spread-2 { animation-name: spread-mid; }
 .chevron-spread-3 { animation-name: spread-end; }
 
-/* Add this to your main CSS file */
 @keyframes spread-mid {
   0%, 100% { transform: translateX(0px); opacity: 0.4; }
   50% { transform: translateX(4px); opacity: 1; }
@@ -638,13 +655,14 @@ body {
   50% { transform: translateX(9px); opacity: 1; }
 }
 
-/* Base animation for the first chevron */
 @keyframes chevron-pulse {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
 }
 
 .animate-chevron-1 { animation: chevron-pulse 2s ease-in-out infinite; }
+
+
 /* =========================================================
    GALLERY — PROCESSING SCAN ANIMATIONS
    ========================================================= */
@@ -655,6 +673,7 @@ body {
   95%  { transform: translate3d(0, 0%, 0); opacity: 1; }
   100% { transform: translate3d(0, 0%, 0); opacity: 0; }
 }
+
 @keyframes scan-v {
   0%   { transform: translate3d(0%, 0, 0); opacity: 0; }
   5%   { transform: translate3d(0%, 0, 0); opacity: 1; }
@@ -662,6 +681,7 @@ body {
   95%  { transform: translate3d(0%, 0, 0); opacity: 1; }
   100% { transform: translate3d(0%, 0, 0); opacity: 0; }
 }
+
 .h-active { animation: scan-h 4s linear forwards; }
 .v-active  { animation: scan-v 4s linear forwards; }
 .idle      { opacity: 0; }
@@ -672,7 +692,9 @@ body {
   85%  { opacity: 1; filter: blur(0px);  transform: translate3d(0, 0, 0); }
   100% { opacity: 0; filter: blur(6px);  transform: translate3d(8px, 0, 0); }
 }
+
 .ai-message { animation: ai-text-reveal 2s cubic-bezier(0.1, 0.9, 0.2, 1) forwards; }
+
 
 /* =========================================================
    GALLERY — TRASH BUTTON DANGER STATE
@@ -681,6 +703,7 @@ body {
   0%, 100% { box-shadow: 0 0 8px rgba(220, 38, 38, 0.4); }
   50%       { box-shadow: 0 0 18px rgba(220, 38, 38, 0.75); }
 }
+
 .btn-trash-danger {
   width: 2.5rem;
   height: 2.5rem;
@@ -692,24 +715,27 @@ body {
   justify-content: center;
   border-radius: 9999px;
   border: none;
-  background-color: #fef2f2;  /* red-50 — always red bg */
-  color: #dc2626;              /* red-600 — always red icon */
+  background-color: #fef2f2;
+  color: #dc2626;
   transition: background-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
               color            180ms cubic-bezier(0.16, 1, 0.3, 1),
               transform        180ms cubic-bezier(0.16, 1, 0.3, 1),
               box-shadow       180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 .btn-trash-danger:not(:disabled):hover {
   background-color: #dc2626;
   color: #ffffff;
   animation: trash-glow-pulse 0.8s ease-in-out infinite;
 }
+
 .btn-trash-danger:not(:disabled):active {
   transform: scale(0.95);
   background-color: #b91c1c;
   color: #ffffff;
   animation: none;
 }
+
 .btn-trash-danger:disabled {
   opacity: 0.5;
   cursor: not-allowed;
