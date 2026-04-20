@@ -32,7 +32,7 @@ export const OptimizedImage: React.FC<OptimizedImageProps> = ({
         alt={alt}
         loading={eager ? "eager" : "lazy"}
         decoding="async"
-        fetchpriority={eager ? "high" : "auto"}
+        fetchPriority={eager ? "high" : "auto"}
         className={`${className} ${loaded ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}
         onLoad={() => setLoaded(true)}
         onError={() => setError(true)}

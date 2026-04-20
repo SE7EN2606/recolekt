@@ -2,11 +2,11 @@
 Universal Content Extractor — orchestration only.
 
 All heavy logic lives in dedicated mixins:
-    extractor_http.py     → HttpMixin      (_call_ai, retry, provider switching)
-    extractor_call1.py    → Call1Mixin     (Call 1 parsing)
-    extractor_call2.py    → Call2Mixin     (Call 2 summary + Call 3 translation)
-    extractor_assembly.py → AssemblyMixin  (final output assembly)
-    extractor_tools_detection.py → detection helpers + prompt constants
+    extractor_http.py            → HttpMixin      (_call_ai, retry, model fallback)
+    extractor_call1.py           → Call1Mixin     (Call 1 parsing)
+    extractor_call2.py           → Call2Mixin     (Call 2 summary + Call 3 translation)
+    extractor_assembly.py        → AssemblyMixin  (final output assembly)
+    extractor_tools_detection.py → detection helpers
 
 Public content families:
     "recipe" | "workout" | "location" | "products" | "software" | "finance" | "general"
@@ -51,6 +51,7 @@ from fetcher_api.services.extractor_tools_detection import (
     analyze_structure,
     count_mention_verdict_items,
     count_numbered_caption_items,
+    count_plain_mentions,
     is_location_list_content,
     is_tools_list_content,
     looks_like_educational_numbered_explainer,
@@ -97,7 +98,8 @@ _LIST_NOUNS = (
     r"jackets?|coats?|shirts?|vestes?|manteaux?|serviettes?|towels?|"
     r"brands?|marques?|labels?|companies|"
     r"albums?|songs?|tracks?|records?|playlists?|"
-    r"picks?|places?|spots?|destinations?|resorts?|"
+    r"picks?|places?|spots?|destinations?|resorts?|h[oô]tels?|hotels?|"
+    r"addresses?|adresses?|"
     r"tools?|apps?|products?|items?|things?|choses?|"
     r"tips?|conseils?|ideas?|id[ée]es?|ways?|fa[çc]ons?|reasons?|steps?|"
     r"movies?|films?|shows?|books?|livres?|recipes?|recettes?|"
@@ -106,11 +108,6 @@ _LIST_NOUNS = (
     r"options?|choices?|s[ée]lections?|recommendations?|favorites?|favoris?|favourites?|"
     r"gear|pieces?|essentials?|must.haves?"
 )
-
-# ── Compiled regex patterns ───────────────────────────────────────────────────
-# NOTE: use single backslash escape sequences inside r"..." strings.
-# Double-escaping (\\b, \\d) inside raw strings produces literal backslash+letter
-# and will never match. All patterns below are correctly single-escaped.
 
 _CAPTION_LIST_NOUN_RE = re.compile(
     r"\b(\d+)\s+(?:\w+\s+)?(?:" + _LIST_NOUNS + r")\b",
@@ -249,6 +246,10 @@ def _caption_promised_count(caption: str) -> int:
     if mention_count >= 3:
         return mention_count
 
+    plain_mentions = count_plain_mentions(text)
+    if plain_mentions >= 3:
+        return plain_mentions
+
     return 0
 
 
@@ -277,8 +278,8 @@ def _looks_like_global_ranking(transcript: str, caption: str) -> bool:
     Minimal strong-signal ranking detector.
 
     Guards against false positives from:
-    - Lists of @mention picks that repeat the same emoji (e.g. ❤️‍🔥 x8)
-    - Captions where numbered items are ordered by listing, not by rank
+    - Lists of @mention picks that repeat the same emoji
+    - Captions where items are ordered by listing, not by true ranking
     """
     text = f"{transcript or ''} {caption or ''}"
 
@@ -288,9 +289,7 @@ def _looks_like_global_ranking(transcript: str, caption: str) -> bool:
     ordinal_hits = len(_SPOKEN_ORDINAL_RE.findall(text))
     numbered_hits = len(_NUMBERED_RANK_RE.findall(text))
 
-    # Suppress ranking when it's clearly a flat @mention picks list:
-    # silent video + repeated emoji + @handles = picks, not a ranking
-    if not transcript.strip() and count_mention_verdict_items(caption) >= 3:
+    if not transcript.strip() and count_plain_mentions(caption) >= 3:
         return False
 
     return ordinal_hits >= 3 or numbered_hits >= 3
@@ -362,8 +361,6 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         if public_content_type not in _PUBLIC_CONTENT_TYPES and public_content_type != "tools":
             public_content_type = "general"
 
-        # Phase 2 bridge:
-        # products / software / finance still use the internal legacy tools path.
         extraction_content_type = (
             "tools"
             if public_content_type in _STRUCTURED_PRODUCT_FAMILIES or public_content_type == "tools"
@@ -398,6 +395,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
 
         combined_text = f"{transcript} {caption}"
         mention_verdicts = count_mention_verdict_items(caption)
+        mention_items = count_plain_mentions(caption)
         looks_ranked = _looks_like_global_ranking(transcript, caption)
         looks_educational_explainer = looks_like_educational_numbered_explainer(
             transcript,
@@ -447,7 +445,6 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             )
         )
 
-        # Default subtype hint from family before detection runs.
         subtype_hint = _default_subtype_for_family(public_content_type)
         pre_subtype = pre_detect_list_subtype(transcript, caption)
 
@@ -460,6 +457,13 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                 logger.info(
                     "🔧 Structured-list — subtype forced to 'verdict' (%d @mention entries)",
                     mention_verdicts,
+                )
+            elif mention_items >= 3:
+                subtype_hint = pre_subtype or "picks"
+                logger.info(
+                    "🔧 Structured-list — subtype from plain mentions: %s (%d mentions)",
+                    subtype_hint,
+                    mention_items,
                 )
             else:
                 if public_content_type == "software" and pre_subtype in {"picks", "grouped", "software"}:
@@ -496,6 +500,8 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                 subtype_hint = "places" if pre_subtype == "places" else "ranking"
             elif mention_verdicts >= 3:
                 subtype_hint = "verdict"
+            elif mention_items >= 3:
+                subtype_hint = pre_subtype or "picks"
             else:
                 if public_content_type == "software":
                     subtype_hint = "software"
@@ -610,6 +616,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             "pre_detected_subtype": subtype_hint if is_tools else None,
             "caption_promised_count": promised_count,
             "mention_verdicts": mention_verdicts,
+            "mention_items": mention_items,
             "looks_ranked": looks_ranked,
             "looks_educational_explainer": looks_educational_explainer,
             "frames_sent": len(frame_images),

@@ -16,7 +16,7 @@ export interface LocationData {
 
 export interface StructureAnalysis {
   mode?: 'structured' | 'bookmark' | string;
-  structure_type?: 'ranking' | 'tier' | 'verdict' | 'grouped' | 'none' | string;
+  structure_type?: 'ranking' | 'tier' | 'verdict' | 'grouped' | string;
   confidence?: number;
   reasons?: string[];
   counts?: Record<string, any>;
@@ -85,16 +85,11 @@ export const isBadgeToolsSubtype = (
   || value === 'food' || value === 'ranking' || value === 'tier'
   || value === 'verdict' || value === 'grouped' || value === 'picks';
 
-// Reads debug.content_type ("tools") when the public content_type is "products"
-export const resolveInternalContentType = (v: any): string => {
-  const debugType = String(v?.debug?.content_type || '').toLowerCase();
-  if (debugType === 'tools') return 'tools';
-  return String(v?.content_type || '').toLowerCase();
-};
+export const resolveInternalContentType = (v: any): string =>
+  String(v?.content_type || '').toLowerCase();
 
-// Whether this content type should show a ToolsListCard
 export const isToolsContentType = (contentType: string): boolean =>
-  contentType === 'tools' || contentType === 'products';
+  contentType === 'products' || contentType === 'software' || contentType === 'finance';
 
 export const PINNED_KEY = 'rekolektpinnedlocations';
 
@@ -221,9 +216,7 @@ export const buildViewModel = (
 
   const sourceUrl = safe(v.source_url || v.originalUrl);
 
-  // Prefer debug.content_type ("tools") over public content_type ("products")
-  const internalRawType = resolveInternalContentType(v);
-  const rawContentType = internalRawType || String(v.content_type || '').toLowerCase();
+  const rawContentType = resolveInternalContentType(v);
   const contentType = rawContentType === 'location'
     ? 'places'
     : resolveContentType(rawContentType);
@@ -243,9 +236,6 @@ export const buildViewModel = (
 
   const structuredType = subtypeFromStructure ?? subtypeFromLegacy;
   const toolsItemsPresent = hasToolsItems(toolsList);
-
-  // Cast to string to avoid TS union overlap errors — contentType may come back as a
-  // narrowed literal union from resolveContentType, but "tools"/"products" are valid runtime values.
   const contentTypeStr = contentType as string;
 
   const isStructuredTools =

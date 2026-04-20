@@ -1,4 +1,3 @@
-# fetcher_api/services/extractor_assembly.py
 """
 AssemblyMixin — builds the final output dict from parsed Call 1 + Call 2 results.
 
@@ -18,21 +17,22 @@ Internal compatibility:
   - Call 1 / Call 2 / parsers may still use legacy internal "tools" concepts
   - But public final payload should no longer expose content_type="tools"
 
-v23+ fixes:
-  - Uses analyze_structure() from extractor_list_detection as the source of truth
-    for structured-vs-bookmark mode.
-  - Reuses parsed["structure_analysis"] when already computed by universal_extractor.py
-    to avoid a redundant second analysis call with a truncated transcript preview.
-  - Verdict/tier/grouped/ranking structured reels do NOT emit fallback bullet headlines.
-    The frontend should use summary + tools_list directly.
+v24:
+  - Removes stale item_names= kwarg from make_summary_block() call — was causing
+    TypeError crash. Structural paragraph guardrail now lives inside
+    summary_formatter.validate_and_repair_summary_paragraph() and is called
+    directly after make_summary_block() returns, using _extract_item_names_from_cats().
+
+v23:
+  - Uses analyze_structure() from extractor_tools_detection as source of truth.
+  - Reuses parsed["structure_analysis"] when already computed.
+  - Verdict/tier/grouped/ranking structured reels suppress fallback bullet headlines.
   - Unknown / weak structures fall back to standard bookmark mode.
   - Deduplicates emojis globally.
   - Clears software-only fields like free/url on clearly non-software product lists.
   - Repairs obviously wrong detected_language for clearly French captions.
-  - Avoids misleading original=english fallback for non-English posts when no
-    real original-language summary/title exists.
+  - Avoids misleading original=english fallback for non-English posts.
   - Location only takes precedence when the extracted location payload looks credible.
-    Fake brand-as-place payloads are discarded before frontend rendering.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fetcher_api.services.extractor_list_detection import analyze_structure
+from fetcher_api.services.extractor_tools_detection import analyze_structure
 from fetcher_api.services.extractor_assembly_helpers import (
     dedupe_preserve_order,
     repair_language_if_obviously_wrong,
@@ -55,6 +55,7 @@ from fetcher_api.services.extractor_assembly_helpers import (
     count_valid_items,
 )
 from fetcher_api.services.instagram_bio_scraper import enrich_tools_with_instagram_locations
+from fetcher_api.services.summary_formatter import validate_and_repair_summary_paragraph
 
 logger = logging.getLogger(__name__)
 
@@ -122,8 +123,6 @@ def _is_credible_location_payload(location_data, tools_categories: list[dict] | 
       - tool/product names copied into location.name
       - empty city/country/address on nearly all rows
       - generic fake types like 'Town' for brands
-
-    This guard exists because frontend location rendering takes precedence.
     """
     rows = _normalize_location_rows(location_data)
     if not rows:
@@ -199,7 +198,6 @@ def _infer_public_content_type(
       1. location / recipe / workout remain explicit
       2. explicit requested public families win when plausible
       3. structured legacy 'tools' is remapped to software / finance / products
-         unless the caller already resolved a specific family
       4. fallback is general
     """
     requested = (requested_content_type or "").strip().lower()
@@ -240,6 +238,19 @@ def _infer_public_content_type(
         return requested
 
     return "general"
+
+
+def _extract_item_names_from_cats(tools_cats_en: list[dict] | None, limit: int = 8) -> list[str]:
+    """Pull flat item name list from EN categories for summary paragraph fallback context."""
+    names: list[str] = []
+    for cat in tools_cats_en or []:
+        for item in cat.get("items", []) or []:
+            name = (item.get("name") or "").strip()
+            if name:
+                names.append(name)
+            if len(names) >= limit:
+                return names
+    return names
 
 
 class AssemblyMixin:
@@ -300,6 +311,7 @@ class AssemblyMixin:
                 tools_list=tools_list,
                 source_cats=tools_cats_en or [],
                 call1_raw_tools=call1_raw_tools,
+                list_subtype=(parsed.get("list_subtype") or ""),
             )
             tier_count = sum(
                 1
@@ -328,14 +340,13 @@ class AssemblyMixin:
             parsed["location"] = None
 
         # ── Instagram bio location enrichment for venue lists ────────────
-        # Runs when: tools_list exists, no credible location yet, items look
-        # like physical venues (hotels, restaurants, lodges, etc.)
         if not has_location and tools_list and tools_cats_en:
             caption_text = (prompt_trace or {}).get("caption", "")
             if caption_text:
                 try:
                     loop = asyncio.new_event_loop()
                     try:
+                        asyncio.set_event_loop(loop)
                         ig_locations = loop.run_until_complete(
                             enrich_tools_with_instagram_locations(
                                 tools_categories=tools_cats_en,
@@ -343,6 +354,7 @@ class AssemblyMixin:
                             )
                         )
                     finally:
+                        asyncio.set_event_loop(None)
                         loop.close()
 
                     if ig_locations:
@@ -362,10 +374,11 @@ class AssemblyMixin:
             if tools_list:
                 promoted = True
                 content_type = "products"
+                tools_cats_en = (tools_list.get("en") or {}).get("categories", [])
                 logger.info(
                     "🔧 Promoted %d vision items → tools_list (%d categories)",
                     len(parsed["items"]),
-                    len(tools_list["en"]["categories"]),
+                    len(tools_cats_en),
                 )
 
         # ── Structure analysis ────────────────────────────────────────────
@@ -549,6 +562,31 @@ class AssemblyMixin:
             detected_language=lang,
         )
 
+        # ── Post-generation paragraph guardrail ───────────────────────────
+        item_names = _extract_item_names_from_cats(tools_cats_en)
+
+        for lang_key in ("english", "original"):
+            block = summary.get(lang_key)
+            if not isinstance(block, dict):
+                continue
+            raw_para = block.get("summary", "")
+            if not raw_para:
+                continue
+            repaired = validate_and_repair_summary_paragraph(
+                paragraph=raw_para,
+                title=title_en,
+                content_type=public_content_type,
+                item_names=item_names,
+            )
+            if repaired != raw_para:
+                logger.info(
+                    "📝 Paragraph guardrail fired on summary[%s] — replaced %d chars with %d chars",
+                    lang_key,
+                    len(raw_para),
+                    len(repaired),
+                )
+                block["summary"] = repaired
+
         # ── Final public content_type guard ───────────────────────────────
         if has_location:
             public_content_type = "location"
@@ -563,7 +601,9 @@ class AssemblyMixin:
         if public_content_type not in _PUBLIC_CONTENT_TYPES:
             public_content_type = "general"
 
-        final_list_subtype = (structure_analysis or {}).get("list_subtype") or None
+        final_list_subtype = None
+        if not has_location and is_list:
+            final_list_subtype = (structure_analysis or {}).get("list_subtype") or None
 
         return {
             "content_type": public_content_type,
@@ -586,6 +626,6 @@ class AssemblyMixin:
             "list_count": None if has_location or not is_list else list_count,
             "list_type": None if has_location or not is_list else list_type,
             "list_summary": None if has_location or not is_list else list_summary,
-            "list_subtype": None if has_location or not tools_list else final_list_subtype,
-            "structure_analysis": structure_analysis if tools_list else None,
+            "list_subtype": final_list_subtype,
+            "structure_analysis": structure_analysis if (tools_list and not has_location and is_list) else None,
         }

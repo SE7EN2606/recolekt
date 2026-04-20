@@ -1,24 +1,52 @@
-# fetcher_api/services/db_insert.py
-
 import json
 import logging
+from datetime import datetime, timezone
 
 import psycopg2.extras
 
-from fetcher_api.adapters.db import execute, fetch_one, get_db_connection
+from fetcher_api.adapters.db import fetch_one, get_db_connection
 
 logger = logging.getLogger("db")
 
 
 def _to_jsonb(value) -> str | None:
-    """Safely serialize any value that must go into a jsonb column."""
+    """Safely serialize any value for a jsonb column."""
     if value is None:
         return None
-    if isinstance(value, str):
-        return value if value.strip().startswith(("{", "[")) else None
-    if isinstance(value, (dict, list)):
+
+    if isinstance(value, (dict, list, bool, int, float)):
         return json.dumps(value, ensure_ascii=False)
-    return None
+
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        try:
+            json.loads(s)
+            return s
+        except Exception:
+            return json.dumps(value, ensure_ascii=False)
+
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _to_jsonb_array(value) -> str:
+    """Force a json array/object payload for jsonb columns that should not store plain strings."""
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, ensure_ascii=False)
+
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return "[]"
+        try:
+            parsed = json.loads(s)
+            if isinstance(parsed, (list, dict)):
+                return json.dumps(parsed, ensure_ascii=False)
+        except Exception:
+            pass
+
+    return "[]"
 
 
 def check_duplicate_reel(user_id, source_url):
@@ -27,23 +55,31 @@ def check_duplicate_reel(user_id, source_url):
         result = fetch_one(sql, (user_id, source_url))
         return bool(result)
     except Exception as e:
-        logger.error(f"Error checking duplicate: {e}")
+        logger.error("Error checking duplicate: %s", e)
         return False
 
 
 def _upsert_reel_locations(conn, reel_id: str, user_id: str, location) -> int:
     """
-    Write each location in the list as an individual reel_locations row.
+    Replace reel_locations rows for this reel with the current location payload.
     Runs inside the same connection as the reel upsert so it shares the commit.
     Returns the number of rows written.
     """
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM reel_locations WHERE reel_id = %s AND user_id = %s",
+            (reel_id, user_id),
+        )
+
     if not location:
+        logger.info("📍 [DB_INSERT] Cleared reel_locations for reel %s", reel_id)
         return 0
 
     locations = location if isinstance(location, list) else [location]
     locations = [loc for loc in locations if isinstance(loc, dict) and loc.get("name")]
 
     if not locations:
+        logger.info("📍 [DB_INSERT] Cleared reel_locations for reel %s", reel_id)
         return 0
 
     rows = []
@@ -51,19 +87,23 @@ def _upsert_reel_locations(conn, reel_id: str, user_id: str, location) -> int:
         name = (loc.get("name") or "").strip()
         if not name:
             continue
-        rows.append((
-            reel_id,
-            user_id,
-            idx,
-            name,
-            (loc.get("type") or loc.get("place_type") or "").strip() or None,
-            (loc.get("description") or "").strip() or None,
-            (loc.get("address") or "").strip() or None,
-            (loc.get("neighborhood") or "").strip() or None,
-            (loc.get("city") or "").strip() or None,
-        ))
+
+        rows.append(
+            (
+                reel_id,
+                user_id,
+                idx,
+                name,
+                (loc.get("type") or loc.get("place_type") or "").strip() or None,
+                (loc.get("description") or "").strip() or None,
+                (loc.get("address") or "").strip() or None,
+                (loc.get("neighborhood") or "").strip() or None,
+                (loc.get("city") or "").strip() or None,
+            )
+        )
 
     if not rows:
+        logger.info("📍 [DB_INSERT] Cleared reel_locations for reel %s", reel_id)
         return 0
 
     sql = """
@@ -94,10 +134,14 @@ def insert_reel_into_db(reel_data):
 
     try:
         user_id = reel_data.get("user_id")
-        logger.info(f"🔧 [DB_INSERT] Starting upsert for process_id: {process_id}")
+        logger.info("🔧 [DB_INSERT] Starting upsert for process_id: %s", process_id)
+
+        if not process_id:
+            logger.error("❌ [DB_INSERT] Skipping insert: process_id is missing")
+            return
 
         if not user_id:
-            logger.error(f"❌ [DB_INSERT] Skipping insert for {process_id}: user_id is None/empty")
+            logger.error("❌ [DB_INSERT] Skipping insert for %s: user_id is missing", process_id)
             return
 
         summary_struct = reel_data.get("summary")
@@ -124,13 +168,10 @@ def insert_reel_into_db(reel_data):
             )
 
         # ── summary_text ─────────────────────────────────────────────────
-        raw_text = reel_data.get("summary_text") or reel_data.get("summary")
-        if isinstance(raw_text, dict):
-            summary_text_json = json.dumps(raw_text, ensure_ascii=False)
-        elif isinstance(raw_text, str) and raw_text.strip().startswith("{"):
-            summary_text_json = raw_text
-        else:
-            summary_text_json = None
+        raw_text = reel_data.get("summary_text")
+        if raw_text is None:
+            raw_text = reel_data.get("summary")
+        summary_text_json = _to_jsonb(raw_text)
 
         final_status = reel_data.get("status", "processing")
 
@@ -148,20 +189,13 @@ def insert_reel_into_db(reel_data):
         summary_bullets = reel_data.get("summary_bullets")
         if summary_bullets is None and isinstance(summary_en, dict):
             summary_bullets = summary_en.get("headlines", [])
-        if isinstance(summary_bullets, list):
-            summary_bullets_json = json.dumps(summary_bullets, ensure_ascii=False)
-        elif isinstance(summary_bullets, str):
-            summary_bullets_json = summary_bullets
-        else:
-            summary_bullets_json = "[]"
+        summary_bullets_json = _to_jsonb_array(summary_bullets)
 
         # ── jsonb fields ─────────────────────────────────────────────────
         recipe_json = _to_jsonb(reel_data.get("recipe"))
         workout_json = _to_jsonb(reel_data.get("workout"))
         tools_list_json = _to_jsonb(reel_data.get("tools_list"))
         location_json = _to_jsonb(reel_data.get("location"))
-
-        # keep content prompt in prompt column; keep debug separately if schema supports later
         prompt_json = _to_jsonb(reel_data.get("prompt"))
 
         summary_hashtags = reel_data.get("summary_hashtags")
@@ -182,6 +216,8 @@ def insert_reel_into_db(reel_data):
         list_subtype = reel_data.get("list_subtype") or None
         list_count = reel_data.get("list_count") or None
         list_type = reel_data.get("list_type") or None
+
+        created_at = reel_data.get("created_at") or datetime.now(timezone.utc)
 
         sql = """
             INSERT INTO reels (
@@ -263,7 +299,7 @@ def insert_reel_into_db(reel_data):
             "list_subtype": list_subtype,
             "list_count": list_count,
             "list_type": list_type,
-            "created_at": reel_data.get("created_at"),
+            "created_at": created_at,
         }
 
         logger.info("🔧 [DB_INSERT] Executing SQL and committing transaction...")
@@ -271,17 +307,23 @@ def insert_reel_into_db(reel_data):
             with conn.cursor() as cur:
                 cur.execute(sql, params)
 
-            location_raw = reel_data.get("location")
-            if location_raw:
-                _upsert_reel_locations(conn, process_id, user_id, location_raw)
+            _upsert_reel_locations(
+                conn,
+                process_id,
+                user_id,
+                reel_data.get("location"),
+            )
 
             conn.commit()
 
         logger.info(
-            f"✅ [DB] Successfully saved {process_id} | status={final_status} | list_subtype={list_subtype}"
+            "✅ [DB] Successfully saved %s | status=%s | list_subtype=%s",
+            process_id,
+            final_status,
+            list_subtype,
         )
 
     except Exception as e:
-        logger.error(f"❌❌❌ [DB_INSERT] FAILED for {process_id}: {e}")
+        logger.error("❌❌❌ [DB_INSERT] FAILED for %s: %s", process_id, e)
         logger.exception("Full traceback:")
         raise

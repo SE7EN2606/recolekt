@@ -18,12 +18,20 @@ export default defineConfig({
       ],
       workbox: {
         cleanupOutdatedCaches: true,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg,json}'],
+        // Exclude large images from precache — only cache app shell
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
+        globIgnores: [
+          '**/assets/recolekt_logo_black*',
+          '**/assets/rekolekt_logo_white*',
+          '**/assets/recolekt_logo_white*',
+          '**/*.webp',
+        ],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3MB cap per file
         navigateFallback: '/index.html',
         navigateFallbackAllowlist: [/^\/(?!legal).*/],
       },
       manifest: {
-        id: '/?v=26',
+        id: '/?v=27',
         name: 'Recolekt',
         short_name: 'Recolekt',
         description: 'Your personal video organizer',
@@ -51,6 +59,23 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React core
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          // Maps (heavy)
+          'vendor-leaflet': ['leaflet', 'react-leaflet'],
+          // i18n
+          'vendor-i18n': ['i18next', 'react-i18next'],
+          // UI icons
+          'vendor-icons': ['lucide-react'],
+        },
+      },
     },
   },
   server: {

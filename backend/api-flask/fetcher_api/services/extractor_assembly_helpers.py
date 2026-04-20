@@ -1,21 +1,16 @@
 from __future__ import annotations
 
-
-import re
 import logging
+import re
 from collections import defaultdict
-
 
 from fetcher_api.services.extractor_helpers import safe_str
 from fetcher_api.services.summary_formatter import format_ai_summary
 
-
 logger = logging.getLogger(__name__)
 
 
-
 # ── Tool/item name validator ──────────────────────────────────────────────────
-
 
 
 def is_valid_tool_name(name: str) -> bool:
@@ -39,9 +34,7 @@ def is_valid_tool_name(name: str) -> bool:
     return True
 
 
-
 # ── Generic helpers ──────────────────────────────────────────────────────────
-
 
 
 def dedupe_preserve_order(values: list[str]) -> list[str]:
@@ -59,16 +52,15 @@ def dedupe_preserve_order(values: list[str]) -> list[str]:
     return out
 
 
-
 _FRENCH_MARKERS = (
     " tu ", " le ", " la ", " les ", " des ", " une ", " un ", " avec ",
-    " pour ", " donc ", " c'est ", " j'", " qu'", " d'", " au ", " aux ",
+    " pour ", " donc ", " c'est ", " c est ", " j'", " qu'", " d'", " au ", " aux ",
     " pas ", " plus ", " moins ", " très ", " vrai ", " marque ", " produit ",
     " serviette ", " maison ", " fondée ", " équivalents ", " honnête ",
     " fabriqué ", " fabriquée ", " fibres ", " commentaire ", " enregistre ",
-    " acheter ", " achètes ", " achète ", " bain ",
+    " acheter ", " achètes ", " achète ", " bain ", " famille ", " vacances ",
+    " hôtels ", " hotels ", " adresses ",
 )
-
 
 
 def looks_clearly_french(text: str) -> bool:
@@ -79,7 +71,6 @@ def looks_clearly_french(text: str) -> bool:
     hits = sum(1 for marker in _FRENCH_MARKERS if marker in t)
     accented = sum(ch in t for ch in "àâçéèêëîïôùûüÿœ")
     return hits >= 4 or (hits >= 2 and accented >= 1)
-
 
 
 def repair_language_if_obviously_wrong(lang: str, prompt_trace: dict | None) -> str:
@@ -102,14 +93,12 @@ def repair_language_if_obviously_wrong(lang: str, prompt_trace: dict | None) -> 
     return lang or "en"
 
 
-
 _SOFTWARE_CONTEXT_RE = re.compile(
     r"\b(app|apps|website|websites|tool|tools|software|plugin|plugins|api|apis|"
     r"saas|dashboard|browser|chrome|extension|workflow|automation|notion|figma|"
     r"slack|github|vercel|supabase|chatgpt|claude|canva|ai|llm|bot)\b",
     re.IGNORECASE,
 )
-
 
 _FINANCE_CONTEXT_RE = re.compile(
     r"\b(finance|financial|accounting|bookkeeping|tax|taxes|vat|invoice|invoicing|"
@@ -118,7 +107,6 @@ _FINANCE_CONTEXT_RE = re.compile(
     r"expense ratio|retirement|banking|debt|loan|mortgage)\b",
     re.IGNORECASE,
 )
-
 
 
 def is_softwareish_context(parsed: dict, categories: list[dict]) -> bool:
@@ -142,7 +130,6 @@ def is_softwareish_context(parsed: dict, categories: list[dict]) -> bool:
     return has_url or bool(_SOFTWARE_CONTEXT_RE.search(blob))
 
 
-
 def is_financeish_context(parsed: dict, categories: list[dict]) -> bool:
     blob_parts = [
         safe_str(parsed.get("category")),
@@ -159,7 +146,6 @@ def is_financeish_context(parsed: dict, categories: list[dict]) -> bool:
 
     blob = " ".join(blob_parts)
     return bool(_FINANCE_CONTEXT_RE.search(blob))
-
 
 
 def normalize_nonsoftware_tool_fields(
@@ -200,9 +186,7 @@ def normalize_nonsoftware_tool_fields(
     return tools_list
 
 
-
 # ── List detection helpers ───────────────────────────────────────────────────
-
 
 
 _COUNT_WORDS: dict[str, int] = {
@@ -211,7 +195,6 @@ _COUNT_WORDS: dict[str, int] = {
     "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
     "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
 }
-
 
 _LIST_STOP_WORDS = frozenset({
     "best", "top", "most", "ways", "tips", "things", "steps", "must",
@@ -233,16 +216,14 @@ _LIST_STOP_WORDS = frozenset({
     "overrated", "honest", "brutal", "real", "true",
 })
 
-
 _LIST_NOUN_RE = re.compile(
-    r'\b(\d+|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve'
-    r'|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s+'
-    r'(?:(?:best|top|essential|great|favorite|must[\-\s]?have|key|famous|iconic)\s+)?'
-    r'(?:\w+\s+)?'
-    r'([a-z][a-z\-]{2,}(?:s|es)?)\b',
+    r"\b(\d+|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
+    r"|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s+"
+    r"(?:(?:best|top|essential|great|favorite|must[\-\s]?have|key|famous|iconic)\s+)?"
+    r"(?:\w+\s+)?"
+    r"([a-z][a-z\-]{2,}(?:s|es)?)\b",
     re.IGNORECASE,
 )
-
 
 _LIST_TYPE_EMOJI: dict[str, str] = {
     "albums": "🎵", "songs": "🎵", "tracks": "🎵", "records": "🎵", "playlists": "🎵",
@@ -263,11 +244,9 @@ _LIST_TYPE_EMOJI: dict[str, str] = {
 }
 
 
-
 def list_item_emoji(list_type: str) -> str:
     key = (list_type or "").lower()
     return _LIST_TYPE_EMOJI.get(key, _LIST_TYPE_EMOJI.get(key.rstrip("s") + "s", "✨"))
-
 
 
 def extract_list_count_and_type(
@@ -310,9 +289,7 @@ def extract_list_count_and_type(
     return list_count, list_type
 
 
-
 # ── Placeholder headline filter ──────────────────────────────────────────────
-
 
 
 _PLACEHOLDER_HEADLINES = frozenset({
@@ -323,7 +300,6 @@ _PLACEHOLDER_HEADLINES = frozenset({
     "highlight", "key highlight", "main highlight",
     "listed item",
 })
-
 
 _PLACEHOLDER_HEADLINE_PREFIXES = (
     "key detail",
@@ -339,7 +315,6 @@ _PLACEHOLDER_HEADLINE_PREFIXES = (
     "a detail",
     "detail shown",
 )
-
 
 _PLACEHOLDER_TEXTS = (
     "a concrete detail shown in the clip",
@@ -357,7 +332,6 @@ _PLACEHOLDER_TEXTS = (
     "[insert",
     "a named item included in the creator's list",
 )
-
 
 
 def filter_placeholder_headlines(headlines: list[dict]) -> list[dict]:
@@ -382,9 +356,7 @@ def filter_placeholder_headlines(headlines: list[dict]) -> list[dict]:
     return clean
 
 
-
 # ── Engagement hook filter ───────────────────────────────────────────────────
-
 
 
 _HOOK_PATTERNS = [
@@ -413,9 +385,7 @@ _HOOK_PATTERNS = [
     r"\bsee you\b.{0,20}\bnext\b",
 ]
 
-
 _HOOK_RE = re.compile("|".join(_HOOK_PATTERNS), re.IGNORECASE)
-
 
 
 def is_engagement_hook(headline: str, description: str = "") -> bool:
@@ -423,13 +393,12 @@ def is_engagement_hook(headline: str, description: str = "") -> bool:
     return bool(_HOOK_RE.search(combined))
 
 
-
 def sanitize_highlights(
     highlights: list[dict],
     named_item_count: int | None = None,
 ) -> list[dict]:
     if not isinstance(highlights, list):
-        return highlights
+        return []
 
     clean = [
         h for h in highlights
@@ -461,9 +430,7 @@ def sanitize_highlights(
     return clean
 
 
-
 # ── Summary block ────────────────────────────────────────────────────────────
-
 
 
 def make_summary_block(
@@ -511,7 +478,11 @@ def make_summary_block(
     # for non-English content when the LLM returned whitespace-only strings.
     original_title = (title_og or "").strip() or (title_en if is_english_content else "")
     original_summary = (summary_og or "").strip() or (summary_en if is_english_content else "")
-    original_headlines = _fmt_headlines(headlines_en if is_english_content else headlines_og)
+
+    if is_english_content:
+        original_headlines = _fmt_headlines(headlines_en)
+    else:
+        original_headlines = _fmt_headlines(headlines_og or headlines_en)
 
     return {
         "english": {
@@ -531,9 +502,7 @@ def make_summary_block(
     }
 
 
-
 # ── Structured-list builders (internal compatibility field = tools_list) ────
-
 
 
 def build_tools_list(
@@ -562,7 +531,6 @@ def build_tools_list(
         "en": {"categories": tools_categories_en},
         "original": {"categories": og_cats},
     }
-
 
 
 def promote_items_to_tools_list(items: list[dict]) -> dict | None:
@@ -597,14 +565,11 @@ def promote_items_to_tools_list(items: list[dict]) -> dict | None:
     }
 
 
-
 # ── Tier helpers ─────────────────────────────────────────────────────────────
 
 
-
-_TIER_CAT_RE = re.compile(r'^([SABCDF])\s+[Tt]ier$', re.IGNORECASE)
+_TIER_CAT_RE = re.compile(r"^([SABCDF])\s+[Tt]ier$", re.IGNORECASE)
 _TIER_ORDER: dict[str, int] = {"S": 1, "A": 2, "B": 3, "C": 4, "D": 5, "F": 6}
-
 
 
 def build_tier_lookup(source_cats: list[dict]) -> dict[str, str]:
@@ -624,7 +589,6 @@ def build_tier_lookup(source_cats: list[dict]) -> dict[str, str]:
             elif inferred_tier:
                 lookup[name] = inferred_tier
     return lookup
-
 
 
 def restore_tiers(
@@ -672,15 +636,13 @@ def restore_tiers(
     return tools_list
 
 
-
 # ── Structured list helpers ──────────────────────────────────────────────────
-
 
 
 def count_valid_items(categories: list[dict]) -> int:
     return sum(
         1
-        for cat in categories
+        for cat in categories or []
         for item in cat.get("items", [])
         if is_valid_tool_name(item.get("name", ""))
     )

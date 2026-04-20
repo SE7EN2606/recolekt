@@ -144,6 +144,7 @@ class Call2Mixin:
             logger.warning(
                 "⚠️ Call 2 bilingual returned no translated headlines for lang=%s", lang
             )
+            headlines_og = list(highlights)
         else:
             headlines_og = copy_emojis_to_headlines(highlights, headlines_og)
 
@@ -151,7 +152,7 @@ class Call2Mixin:
             "summary_en": summary_en or summary_og,
             "summary_original": summary_og or summary_en,
             "title_original": title_og,
-            "headlines_en": highlights,
+            "headlines_en": list(highlights),
             "headlines_og": headlines_og,
         }
 
@@ -242,7 +243,8 @@ class Call2Mixin:
         raw_translated_cats = result_data.get("translated_categories")
         if isinstance(raw_translated_cats, list) and raw_translated_cats:
             parsed_tools_og = parse_tools_categories({"categories": raw_translated_cats})
-            tools_og = restore_item_enum_fields(parsed_tools_og, tools_categories)
+            if parsed_tools_og:
+                tools_og = restore_item_enum_fields(parsed_tools_og, tools_categories)
 
         out = {
             "summary_en": summary_en_deterministic,
@@ -291,8 +293,9 @@ class Call2Mixin:
             raw_cats = result_data.get("categories", [])
             if isinstance(raw_cats, list) and raw_cats:
                 translated = parse_tools_categories({"categories": raw_cats})
-                translated = restore_item_enum_fields(translated, categories)
-                return translated
+                if translated:
+                    translated = restore_item_enum_fields(translated, categories)
+                    return translated
         except Exception as e:
             logger.warning("⚠️ Call 3 structured translation failed: %s", e)
 

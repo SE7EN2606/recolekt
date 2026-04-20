@@ -1,4 +1,3 @@
-# fetcher_api/services/ai_service.py
 """
 AI Service — Orchestrator using Universal Extractor.
 Outputs UI-compatible fields for all content types.
@@ -218,7 +217,6 @@ class AIService:
         caption = caption or ""
         language_code = language_code or "en"
 
-        # Always work on a fresh copy so caller-provided dicts are never mutated.
         classification = dict(classify_reel_content(transcript, caption) or {})
 
         is_workout = self._looks_like_workout(transcript, caption)
@@ -285,10 +283,6 @@ class AIService:
             classification.get("signals"),
         )
 
-        # ── Extraction ────────────────────────────────────────────────────────
-        # The try block wraps ONLY the extractor call. Post-processing runs
-        # outside the except so errors there surface immediately rather than
-        # silently degrading to fallback.
         try:
             out = self.extractor.extract(
                 transcript,
@@ -310,17 +304,12 @@ class AIService:
         out["pipeline_version"] = PIPELINE_VERSION
         out["classification"] = classification
 
-        # Preserve detected_language from extractor output when fallback overwrites it.
-        # fallback() hardcodes "unknown"; if the extractor ran and returned a real
-        # language before crashing, carry it forward.
         if not out.get("detected_language") or out["detected_language"] == "unknown":
             if language_code and language_code != "unknown":
                 out["detected_language"] = language_code
 
         out = self._normalize_ui_output(out)
 
-        # _normalize_ui_output already coerces unknown types to "general".
-        # Log a warning if content_type is still somehow invalid after normalization.
         if out.get("content_type") not in _VALID_PUBLIC_CONTENT_TYPES:
             logger.warning(
                 "⚠️ content_type=%r still invalid after normalization — forcing 'general'",

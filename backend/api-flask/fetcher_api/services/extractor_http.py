@@ -1,26 +1,20 @@
 """
 HTTP transport mixin for UniversalExtractor.
 
-Handles all LLM API calls, retry logic, call logging, and provider switching.
-Supports Mistral (default) or OpenRouter free-tier models.
+Handles all LLM API calls, retry logic, call logging, and model fallback.
+Mistral only.
 
 Environment variables:
-    MISTRAL_API_KEY               — used when USE_OPENROUTER is not set
-    MISTRAL_MODEL_EXTRACTION      — primary model for Call 1 (vision + frames).
+    MISTRAL_API_KEY               — required
+    MISTRAL_MODEL_EXTRACTION      — primary model for Call 1 (vision + frames)
                                     default: mistral-small-latest
-    MISTRAL_MODEL_SUMMARY         — model for Call 2 (text summary).
+    MISTRAL_MODEL_SUMMARY         — model for Call 2 / Call 3 (text)
                                     default: mistral-small-latest
     MISTRAL_MODEL                 — legacy single-model override
 
-    USE_OPENROUTER                — set to "true" to route through OpenRouter
-    OPENROUTER_API_KEY            — required when USE_OPENROUTER=true
-    OPENROUTER_REFERER            — your app domain
-
-    Optional per-call model overrides (OpenRouter only):
-    OPENROUTER_MODEL_EXTRACTION
-    OPENROUTER_MODEL_VISION
-    OPENROUTER_MODEL_SUMMARY
-    OPENROUTER_MODEL_TRANSLATION
+Notes:
+    - Fallback chain is intentionally Mistral-only
+    - open-mistral-nemo is intentionally excluded
 """
 
 from __future__ import annotations
@@ -40,90 +34,62 @@ from fetcher_api.services.usage_tracker import record_call
 logger = logging.getLogger(__name__)
 
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 _ROTATE_PAUSE_SECONDS = 3
 _EXHAUST_PAUSE_SECONDS = 30
 _REQUEST_TIMEOUT_SECONDS = 45
 _REQUEST_TIMEOUT_LARGE = 90  # large models need more headroom
 
-# OpenRouter free-tier model routing
-_OR_MODELS = {
-    "extraction": "nvidia/nemotron-3-super-120b-a12b:free",
-    "vision": "google/gemma-4-31b-it:free",
-    "summary": "nvidia/nemotron-3-super-120b-a12b:free",
-    "translation": "google/gemma-4-31b-it:free",
-}
-
 
 class HttpMixin:
     """
     LLM HTTP transport layer.
 
-    Mistral path:
+    Mistral only:
       - default model is mistral-small-latest
       - fallback chain intentionally remains single-model unless explicitly overridden
       - open-mistral-nemo is intentionally excluded
 
-    OpenRouter path:
-      - uses per-call model routing with optional env overrides
-
     _call_ai contract:
-      - ALWAYS returns a dict (never raises, never returns None).
-      - On total exhaustion it returns {} and logs an error.
-      - Callers (_parse_call1 etc.) handle {} gracefully via .get() guards.
-      - The only exception to the no-raise rule is a non-retryable HTTPError
-        (e.g. 401 Unauthorized), which should surface immediately.
+      - Returns a dict on success
+      - Returns {} on total exhaustion
+      - May re-raise non-retryable HTTP errors (for example 401 Unauthorized)
     """
 
     def __init__(self):
-        use_openrouter = os.getenv("USE_OPENROUTER", "").lower() in ("true", "1", "yes")
+        api_key = os.getenv("MISTRAL_API_KEY")
+        if not api_key:
+            raise ValueError("MISTRAL_API_KEY not found in environment")
 
-        if use_openrouter:
-            api_key = os.getenv("OPENROUTER_API_KEY")
-            if not api_key:
-                raise ValueError("OPENROUTER_API_KEY not found in environment")
+        self._api_url = MISTRAL_API_URL
+        self._api_key = api_key
 
-            self._api_url = OPENROUTER_API_URL
-            self._api_key = api_key
-            self._use_openrouter = True
-            logger.info("🔑 OpenRouter ready (%s...)", api_key[:12])
+        # Legacy single-model override takes priority if set
+        legacy = os.getenv("MISTRAL_MODEL", "").strip()
 
-        else:
-            api_key = os.getenv("MISTRAL_API_KEY")
-            if not api_key:
-                raise ValueError("MISTRAL_API_KEY not found in environment")
+        primary_extraction = legacy or os.getenv(
+            "MISTRAL_MODEL_EXTRACTION", "mistral-small-latest"
+        ).strip()
+        primary_summary = legacy or os.getenv(
+            "MISTRAL_MODEL_SUMMARY", "mistral-small-latest"
+        ).strip()
 
-            self._api_url = MISTRAL_API_URL
-            self._api_key = api_key
-            self._use_openrouter = False
+        # Intentionally single-model by default. Do not include open-mistral-nemo.
+        self._chain_extraction: List[str] = _build_chain(
+            primary_extraction,
+            ["mistral-small-latest"],
+        )
+        self._chain_summary: List[str] = _build_chain(
+            primary_summary,
+            ["mistral-small-latest"],
+        )
 
-            # Legacy single-model override takes priority if set
-            legacy = os.getenv("MISTRAL_MODEL", "").strip()
-
-            primary_extraction = legacy or os.getenv(
-                "MISTRAL_MODEL_EXTRACTION", "mistral-small-latest"
-            ).strip()
-            primary_summary = legacy or os.getenv(
-                "MISTRAL_MODEL_SUMMARY", "mistral-small-latest"
-            ).strip()
-
-            # Intentionally single-model by default. Do not include open-mistral-nemo.
-            self._chain_extraction: List[str] = _build_chain(
-                primary_extraction,
-                ["mistral-small-latest"],
-            )
-            self._chain_summary: List[str] = _build_chain(
-                primary_summary,
-                ["mistral-small-latest"],
-            )
-
-            logger.info(
-                "🔑 Mistral HTTP ready (%s...) — extraction chain=%s  summary chain=%s",
-                api_key[:12],
-                self._chain_extraction,
-                self._chain_summary,
-            )
+        logger.info(
+            "🔑 Mistral HTTP ready (%s...) — extraction chain=%s  summary chain=%s",
+            api_key[:12],
+            self._chain_extraction,
+            self._chain_summary,
+        )
 
         self.api_call_count = 0
         self._call_log: List[Dict] = []
@@ -132,14 +98,6 @@ class HttpMixin:
 
     def _get_chain(self, call_type: str, has_images: bool = False) -> List[str]:
         """Return the ordered model fallback chain for this call type."""
-        if self._use_openrouter:
-            if has_images:
-                return [os.getenv("OPENROUTER_MODEL_VISION", _OR_MODELS["vision"])]
-            return [os.getenv(
-                f"OPENROUTER_MODEL_{call_type.upper()}",
-                _OR_MODELS.get(call_type, _OR_MODELS["extraction"]),
-            )]
-
         if call_type in ("extraction", "vision") or has_images:
             return self._chain_extraction
         return self._chain_summary
@@ -230,12 +188,9 @@ class HttpMixin:
         """
         Call the LLM API with retry logic.
 
-        Always returns a dict. Never raises. On total exhaustion, logs an error
-        and returns {} so callers can degrade gracefully without crashing.
-
-        The sole exception: non-retryable HTTP errors (e.g. 401 Unauthorized)
-        are re-raised immediately because retrying them is pointless and they
-        indicate a configuration problem that needs surfacing.
+        Returns a dict on success.
+        Returns {} on total exhaustion.
+        May re-raise non-retryable HTTP errors such as 401 Unauthorized.
         """
         chain = self._get_chain(call_type, has_images=bool(images))
 
@@ -243,9 +198,6 @@ class HttpMixin:
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
-        if self._use_openrouter:
-            headers["HTTP-Referer"] = os.getenv("OPENROUTER_REFERER", "https://rekolekt.app")
-            headers["X-Title"] = "Rekolekt"
 
         if images:
             content_parts = [
@@ -361,8 +313,6 @@ class HttpMixin:
                         time.sleep(_ROTATE_PAUSE_SECONDS)
                         continue
 
-                    # Non-retryable (401, 403, etc.) — re-raise so the caller
-                    # knows this is a configuration error, not a transient one.
                     raise
 
                 except requests.RequestException as e:
@@ -375,9 +325,6 @@ class HttpMixin:
                     continue
 
                 except Exception as e:
-                    # Unexpected errors (e.g. KeyError in response parsing).
-                    # Log with full traceback but continue the retry loop
-                    # rather than re-raising — the next model attempt may succeed.
                     logger.error(
                         "❌ [%s] %s unexpected error on attempt %d: %s",
                         call_type, model, total_attempts, e,
@@ -394,8 +341,6 @@ class HttpMixin:
                 )
                 time.sleep(_EXHAUST_PAUSE_SECONDS)
 
-        # All attempts exhausted. Return empty dict so extract() degrades gracefully
-        # instead of crashing into the analyze_content fallback path.
         logger.error(
             "🔥 _call_ai [%s] exhausted all %d attempts across models: %s — returning {}",
             call_type,

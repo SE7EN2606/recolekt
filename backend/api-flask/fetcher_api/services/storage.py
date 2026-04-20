@@ -1,13 +1,24 @@
-# fetcher_api/services/storage.py
-import os
 import io
 import json
 import logging
+import os
+import tempfile
+from typing import Any
 
-from fetcher_api.adapters.gcs_client import gcs_client
 from fetcher_api.adapters.db import fetch_one
+from fetcher_api.adapters.gcs_client import gcs_client
 
 logger = logging.getLogger("storage")
+
+
+def _row_to_dict(row: Any) -> dict:
+    if not row:
+        return {}
+    if hasattr(row, "keys"):
+        return dict(row)
+    if hasattr(row, "_asdict"):
+        return row._asdict()
+    return {}
 
 
 def _get_user_id_for_shortcode(shortcode: str):
@@ -16,12 +27,9 @@ def _get_user_id_for_shortcode(shortcode: str):
             "SELECT user_id FROM reels WHERE id LIKE %s ORDER BY created_at DESC LIMIT 1",
             (f"{shortcode}%",),
         )
-        if row:
-            if hasattr(row, "keys"):
-                return dict(row).get("user_id")
-            return row._asdict().get("user_id")
+        return _row_to_dict(row).get("user_id")
     except Exception as e:
-        logger.error(f"Error fetching user_id for shortcode {shortcode}: {e}")
+        logger.error("Error fetching user_id for shortcode %s: %s", shortcode, e)
     return None
 
 
@@ -48,16 +56,25 @@ def generate_gcs_paths(shortcode: str, platform: str = "IG", user_id: str = None
     }
 
 
-def compress_thumbnail(image_bytes: bytes, max_width: int = 1080, quality: int = 85) -> bytes:
+def _looks_like_webp(data: bytes) -> bool:
+    return bool(data and len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP")
+
+
+def compress_thumbnail(image_bytes: bytes, max_width: int = 1080, quality: int = 85) -> bytes | None:
     """
-    Resize to max 1080px wide and compress at quality=85.
-    Keeps poster quality while cutting file size ~60-70%.
+    Convert image bytes to WEBP, resize to max 1080px wide, and compress.
+    Returns WEBP bytes or None if conversion is impossible.
     """
+    if not image_bytes:
+        return None
+
     try:
         from PIL import Image
 
         img = Image.open(io.BytesIO(image_bytes))
         if img.mode in ("RGBA", "P", "CMYK"):
+            img = img.convert("RGB")
+        elif img.mode != "RGB":
             img = img.convert("RGB")
 
         if img.width > max_width:
@@ -69,16 +86,23 @@ def compress_thumbnail(image_bytes: bytes, max_width: int = 1080, quality: int =
 
         original_kb = len(image_bytes) // 1024
         compressed_kb = output.tell() // 1024
-        logger.info(f"🗜️ Thumbnail compressed: {original_kb}kB → {compressed_kb}kB")
+        logger.info("🗜️ Thumbnail converted to WEBP: %dkB → %dkB", original_kb, compressed_kb)
 
         return output.getvalue()
 
     except ImportError:
-        logger.warning("⚠️ Pillow not installed — skipping thumbnail compression")
-        return image_bytes
+        if _looks_like_webp(image_bytes):
+            logger.warning("⚠️ Pillow not installed — using existing WEBP bytes as-is")
+            return image_bytes
+        logger.error("❌ Pillow not installed — cannot convert non-WEBP thumbnail to WEBP")
+        return None
+
     except Exception as e:
-        logger.warning(f"⚠️ Thumbnail compression failed, using original: {e}")
-        return image_bytes
+        if _looks_like_webp(image_bytes):
+            logger.warning("⚠️ WEBP thumbnail passthrough after conversion failure: %s", e)
+            return image_bytes
+        logger.warning("⚠️ Thumbnail WEBP conversion failed: %s", e)
+        return None
 
 
 def _safe_upload(
@@ -110,7 +134,7 @@ def _safe_upload(
             timeout=600,
         )
     except Exception as e:
-        logger.error(f"Failed upload: {e}")
+        logger.error("Failed upload: %s", e)
         return None
 
 
@@ -134,10 +158,10 @@ def _safe_upload_bytes(
             content_type=content_type or "application/octet-stream",
             timeout=600,
         )
-        logger.info(f"✅ Uploaded bytes to gs://{bucket}/{blob_name}")
+        logger.info("✅ Uploaded bytes to gs://%s/%s", bucket, blob_name)
         return f"gs://{bucket}/{blob_name}"
     except Exception as e:
-        logger.error(f"Failed bytes upload to {blob_name}: {e}")
+        logger.error("Failed bytes upload to %s: %s", blob_name, e)
         return None
 
 
@@ -153,8 +177,12 @@ def save_result_json_to_gcs(
         if not shortcode:
             shortcode = process_id.split("--")[0] if "--" in process_id else process_id.split("_")[0]
 
-        gcs_paths = generate_gcs_paths(shortcode, media_folder, user_id=user_id)
-        local_json_path = os.path.join(temp_dir, f"{process_id}_result.json")
+        effective_user_id = user_id or (result.get("user_id") if isinstance(result, dict) else None)
+        gcs_paths = generate_gcs_paths(shortcode, media_folder, effective_user_id)
+
+        local_dir = temp_dir or tempfile.gettempdir()
+        os.makedirs(local_dir, exist_ok=True)
+        local_json_path = os.path.join(local_dir, f"{process_id}_result.json")
 
         with open(local_json_path, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2, ensure_ascii=False)
@@ -167,12 +195,12 @@ def save_result_json_to_gcs(
             cache_control="public, max-age=3600",
         )
     except Exception as e:
-        logger.error(f"Error saving result JSON: {e}")
+        logger.error("Error saving result JSON: %s", e)
         return None
 
 
 def save_video_to_gcs(video_path: str, shortcode: str, media_folder: str = "IG", user_id: str = None):
-    gcs_paths = generate_gcs_paths(shortcode, media_folder, user_id=user_id)
+    gcs_paths = generate_gcs_paths(shortcode, media_folder, user_id)
     return _safe_upload(
         video_path,
         gcs_client.analysis_bucket_name,
@@ -182,22 +210,32 @@ def save_video_to_gcs(video_path: str, shortcode: str, media_folder: str = "IG",
     )
 
 
-def save_thumbnail_to_gcs(thumbnail_path: str, shortcode: str, media_folder: str = "IG", user_id: str = None):
+def save_thumbnail_to_gcs(
+    thumbnail_path: str,
+    shortcode: str,
+    media_folder: str = "IG",
+    user_id: str = None,
+):
     """
-    Compress thumbnail and upload to the canonical preview_thumbnail path.
+    Convert thumbnail to WEBP and upload to the canonical preview_thumbnail path.
 
-    Path ends with .webp, so upload WEBP bytes with image/webp.
+    Important:
+    - Never upload JPEG bytes into a .webp object.
+    - If WEBP conversion fails and the source is not already WEBP, return None.
     """
-    gcs_paths = generate_gcs_paths(shortcode, media_folder, user_id=user_id)
+    gcs_paths = generate_gcs_paths(shortcode, media_folder, user_id)
 
     try:
         with open(thumbnail_path, "rb") as f:
             raw_bytes = f.read()
 
-        compressed = compress_thumbnail(raw_bytes)
+        webp_bytes = compress_thumbnail(raw_bytes)
+        if not webp_bytes:
+            logger.error("❌ Thumbnail conversion to WEBP failed for %s", thumbnail_path)
+            return None
 
         uploaded = _safe_upload_bytes(
-            compressed,
+            webp_bytes,
             gcs_client.analysis_bucket_name,
             gcs_paths["preview_thumbnail"],
             content_type="image/webp",
@@ -207,12 +245,6 @@ def save_thumbnail_to_gcs(thumbnail_path: str, shortcode: str, media_folder: str
             return uploaded
 
     except Exception as e:
-        logger.warning(f"⚠️ Compressed upload failed, falling back to direct upload: {e}")
+        logger.error("❌ Thumbnail upload failed for %s: %s", thumbnail_path, e)
 
-    return _safe_upload(
-        thumbnail_path,
-        gcs_client.analysis_bucket_name,
-        gcs_paths["preview_thumbnail"],
-        content_type="image/webp",
-        cache_control="public, max-age=86400",
-    )
+    return None

@@ -299,7 +299,8 @@ STRICT EXTRACTION RULES:
 1. DEDUPLICATE — each item appears in ONE category only.
 2. REAL NAMES ONLY — extract only actual product, brand, or item names.
    - NEVER extract single letters, pronouns, articles, or generic words.
-3. RANK — add a "rank" field only when the creator gives explicit numeric ordering.
+3. RANK — add a "rank" field ONLY when the creator gives explicit numeric ordering in speech, caption, or on-screen text.
+   - If there is no explicit ranking signal, set "rank": null.
    - On-screen numbers visible in frames are the CANONICAL source for rank.
    - For true tier lists, the category tier is primary and item rank may be null.
 4. SOURCE — "transcript" | "caption" | "frames"

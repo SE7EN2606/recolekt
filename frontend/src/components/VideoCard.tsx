@@ -16,8 +16,6 @@ import {
   type ToolsSubtype,
 } from '../components/ContentTypeBadge';
 
-
-// ── Types ──────────────────────────────────────────────────────────────────
 interface VideoCardProps {
   video: any;
   selected?: boolean;
@@ -25,14 +23,11 @@ interface VideoCardProps {
   selectionMode?: boolean;
 }
 
-
-// ── Helpers ────────────────────────────────────────────────────────────────
 const safeStr = (v: any): string => {
   if (typeof v === 'string') return v;
   if (v == null) return '';
   return String(v);
 };
-
 
 const parseMaybeJson = <T,>(value: unknown, fallback: T): T => {
   if (value == null) return fallback;
@@ -47,7 +42,6 @@ const parseMaybeJson = <T,>(value: unknown, fallback: T): T => {
   return fallback;
 };
 
-
 const getFolderName = (folderId: string, folders: any): string | null => {
   if (!folderId || folderId === 'all' || folderId === 'unsorted' || folderId === 'default') return null;
   if (folderId === 'favorites') return 'Favorites';
@@ -61,19 +55,27 @@ const getFolderName = (folderId: string, folders: any): string | null => {
   return null;
 };
 
-
 function resolveTitle(video: any, t: any): string {
   const DEFAULT = t('videoCard:untitledVideo', 'Saved Video');
+
   let summaryObj: any = video?.summary ?? video?.summarytext ?? video?.raw?.summary ?? {};
   if (typeof summaryObj === 'string') {
-    try { summaryObj = JSON.parse(summaryObj); } catch { summaryObj = {}; }
+    try {
+      summaryObj = JSON.parse(summaryObj);
+    } catch {
+      summaryObj = {};
+    }
   }
 
   const sumEngTitle = safeStr(summaryObj?.english?.title).trim();
 
   let recipeObj: any = video?.recipe ?? video?.raw?.recipe ?? {};
   if (typeof recipeObj === 'string') {
-    try { recipeObj = JSON.parse(recipeObj); } catch { recipeObj = {}; }
+    try {
+      recipeObj = JSON.parse(recipeObj);
+    } catch {
+      recipeObj = {};
+    }
   }
   if (recipeObj?.recipe) recipeObj = recipeObj.recipe;
 
@@ -87,13 +89,15 @@ function resolveTitle(video: any, t: any): string {
   if (passedTitle.length > 56) passedTitle = '';
 
   return (
-    sumEngTitle || recEngTitle || dbTitle || passedTitle ||
+    sumEngTitle ||
+    recEngTitle ||
+    dbTitle ||
+    passedTitle ||
     safeStr(summaryObj?.title) ||
     safeStr(video?.caption ?? '').split('\n')[0].trim() ||
     DEFAULT
   );
 }
-
 
 function getRawContentType(video: any): string {
   return safeStr(
@@ -105,13 +109,9 @@ function getRawContentType(video: any): string {
   ).toLowerCase();
 }
 
-
 function resolveVideoContentType(video: any): ContentType {
-  // Backend already normalizes "products" → "tools" in reel.py.
-  // No need to read debug.content_type — the top-level content_type is canonical.
   return resolveContentType(getRawContentType(video));
 }
-
 
 function isToolsSubtype(value: unknown): value is ToolsSubtype {
   return value === 'software'
@@ -125,7 +125,6 @@ function isToolsSubtype(value: unknown): value is ToolsSubtype {
     || value === 'picks';
 }
 
-
 function getToolsList(video: any): any {
   const raw =
     video?.toolslist ??
@@ -137,27 +136,20 @@ function getToolsList(video: any): any {
   return parseMaybeJson<any>(raw, null);
 }
 
-
 function getToolsSubtypeForBadge(video: any): ToolsSubtype {
-  // 1. Root-level list_subtype — set by the backend on every video object,
-  //    present on BOTH gallery cards and detail page. This is the canonical source.
   const rootSubtype = safeStr(
     video?.list_subtype ??
     video?.listSubtype ??
-    video?.list_type ??
     video?.raw?.list_subtype
   ).toLowerCase();
 
   if (isToolsSubtype(rootSubtype)) return rootSubtype;
 
-  // 2. Fallback: derive from tools_list content
   const toolsList = getToolsList(video);
   const derived = deriveToolsSubtype(toolsList);
   return isToolsSubtype(derived) ? derived : 'picks';
 }
 
-
-// ── Processing messages ────────────────────────────────────────────────────
 const PROCESSING_MESSAGES = [
   'msg_indexing', 'msg_parsing', 'msg_visual', 'msg_auditory',
   'msg_analysing', 'msg_decoding', 'msg_semantic', 'msg_contextual',
@@ -169,9 +161,12 @@ const PROCESSING_MESSAGES = [
 
 const RESTRICTED_CONTENT = 'RESTRICTED_CONTENT';
 
-
-// ── VideoCard ──────────────────────────────────────────────────────────────
-const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggleSelect, selectionMode }) => {
+const VideoCardComponent: React.FC<VideoCardProps> = ({
+  video,
+  selected,
+  onToggleSelect,
+  selectionMode,
+}) => {
   const navigate = useNavigate();
   const { t } = useTranslation(['videoCard', 'gallery', 'common']);
   const { toggleFavorite, addVideo, deleteVideos, folders } = useData();
@@ -196,10 +191,15 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
   const isFailedStatus = video?.category === 'Failed' || video?.status === 'error' || video?.status === 'failed';
 
   const thumbnailUrl =
-    video?.posterUrl || video?.coverUrl || video?.gcsurls?.poster ||
-    video?.thumbnailUrl || video?.thumbnailurl ||
-    video?.gcsurls?.previewthumbnail || video?.gcsUrls?.previewThumbnail ||
-    video?.previewthumbnail;
+    video?.posterUrl ||
+    video?.coverUrl ||
+    video?.gcsurls?.poster ||
+    video?.thumbnailUrl ||
+    video?.thumbnailurl ||
+    video?.gcsurls?.previewthumbnail ||
+    video?.gcsUrls?.previewThumbnail ||
+    video?.previewthumbnail ||
+    video?.gcs_urls?.preview_thumbnail;
 
   useEffect(() => {
     if (!isProcessing) return;
@@ -220,15 +220,18 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
   const hasError = isFailedStatus || isMissingThumb;
   const isDisabled = isProcessing || hasError;
 
+  const folderId = video?.folderId ?? video?.folder_id;
   const isSorted = Boolean(
-    video.folderId && video.folderId !== 'all' && video.folderId !== 'unsorted' && video.folderId !== 'default',
+    folderId && folderId !== 'all' && folderId !== 'unsorted' && folderId !== 'default',
   );
 
-  const folderName = useMemo(() => getFolderName(video?.folderId, folders), [video?.folderId, folders]);
+  const folderName = useMemo(() => getFolderName(folderId, folders), [folderId, folders]);
   const displayTitle = useMemo(() => resolveTitle(video, t), [video, t]);
   const contentType = useMemo(() => resolveVideoContentType(video), [video]);
   const toolsSubtype = useMemo(
-    () => contentType === 'tools' ? getToolsSubtypeForBadge(video) : undefined,
+    () => (contentType === 'products' || contentType === 'software' || contentType === 'finance')
+      ? getToolsSubtypeForBadge(video)
+      : undefined,
     [video, contentType],
   );
 
@@ -451,7 +454,10 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
         {selectionMode && (
           <div
-            onClick={(e) => { e.stopPropagation(); onToggleSelect?.(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect?.();
+            }}
             className="absolute top-3 left-3 z-30"
           >
             {selected
@@ -464,8 +470,15 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           <div className="absolute top-3 right-3 z-30 pointer-events-none">
             <div className="w-7 h-7 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/20 shadow-sm">
               {isSorted
-                ? <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center"><CheckCircle2 size={12} className="text-white" /></div>
-                : <div className="w-5 h-5 bg-gray-400/80 rounded-full flex items-center justify-center"><CircleSlash2 size={12} className="text-white" /></div>}
+                ? (
+                  <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                    <CheckCircle2 size={12} className="text-white" />
+                  </div>
+                ) : (
+                  <div className="w-5 h-5 bg-gray-400/80 rounded-full flex items-center justify-center">
+                    <CircleSlash2 size={12} className="text-white" />
+                  </div>
+                )}
             </div>
           </div>
         )}
@@ -512,36 +525,8 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         onClose={() => setShowRemoveConfirm(false)}
         onConfirm={confirmRemoveFavorite}
       />
-
-      <style>{`
-        @keyframes scan-h {
-          0%   { transform: translate3d(0, 0, 0);    opacity: 0 }
-          5%   { transform: translate3d(0, 0, 0);    opacity: 1 }
-          50%  { transform: translate3d(0, 100%, 0); opacity: 1 }
-          95%  { transform: translate3d(0, 0, 0);    opacity: 1 }
-          100% { transform: translate3d(0, 0, 0);    opacity: 0 }
-        }
-        @keyframes scan-v {
-          0%   { transform: translate3d(0, 0, 0);    opacity: 0 }
-          5%   { transform: translate3d(0, 0, 0);    opacity: 1 }
-          50%  { transform: translate3d(100%, 0, 0); opacity: 1 }
-          95%  { transform: translate3d(0, 0, 0);    opacity: 1 }
-          100% { transform: translate3d(0, 0, 0);    opacity: 0 }
-        }
-        .h-active { animation: scan-h 4s linear forwards; }
-        .v-active { animation: scan-v 4s linear forwards; }
-        .idle { opacity: 0; }
-        @keyframes ai-text-reveal {
-          0%   { opacity: 0; filter: blur(6px); transform: translate3d(-8px, 0, 0); }
-          15%  { opacity: 1; filter: blur(0px); transform: translate3d(0, 0, 0); }
-          85%  { opacity: 1; filter: blur(0px); transform: translate3d(0, 0, 0); }
-          100% { opacity: 0; filter: blur(6px); transform: translate3d(8px, 0, 0); }
-        }
-        .ai-message { animation: ai-text-reveal 2s cubic-bezier(0.1, 0.9, 0.2, 1) forwards; }
-      `}</style>
     </>
   );
 };
-
 
 export const VideoCard = React.memo(VideoCardComponent);

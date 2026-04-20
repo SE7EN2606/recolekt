@@ -24,6 +24,7 @@ _MERGED_TIER_CAT_RE = re.compile(
 )
 
 _MENTION_VERDICT_RE = re.compile(r"@[\w.]+\s*(?:→|->|—|–|-|:)\s*\S", re.MULTILINE)
+_PLAIN_MENTION_RE = re.compile(r"@([A-Za-z0-9._]+)")
 
 _RANKED_TRANSCRIPT_RE = re.compile(
     r"\b(?:number|ranked?|#)\s*(?:one|two|three|four|five|six|seven|eight|nine|ten|\d{1,2})\b",
@@ -71,6 +72,8 @@ _LOCATION_PATTERNS = [
     r"travel\s+(?:guide|inspo|inspiration)",
     r"best\s+(?:places?|spots?|locations?|destinations?)\s+(?:in|to|for|near)",
     r"(?:best|top)\s+\d*\s*(?:beach|island|lake)\s+resorts?\s+to\s+visit",
+    r"\b\d+\s+(?:addresses?|adresses?|h[oô]tels?|hotels?|resorts?)\b",
+    r"\b(?:best|top|meilleurs?)\s+\d*\s*(?:h[oô]tels?|hotels?|resorts?)\b",
 ]
 
 _TOOL_KEYWORDS = (
@@ -423,6 +426,15 @@ def count_mention_verdict_items(caption: str) -> int:
     return len(_MENTION_VERDICT_RE.findall(caption or ""))
 
 
+def count_plain_mentions(caption: str) -> int:
+    """
+    Count distinct @handles in caption, even when they are listed plainly
+    without arrows/verdict markers.
+    """
+    handles = [h.lower() for h in _PLAIN_MENTION_RE.findall(caption or "")]
+    return len(dict.fromkeys(handles))
+
+
 def is_tools_list_content(transcript: str, caption: str) -> bool:
     combined = f"{transcript or ''} {caption or ''}".lower()
 
@@ -437,6 +449,8 @@ def is_tools_list_content(transcript: str, caption: str) -> bool:
     if _matches_any(combined, _TOOL_PATTERNS):
         return True
     if count_mention_verdict_items(caption) >= 2 and not _looks_like_strong_ranking_text(transcript, caption):
+        return True
+    if count_plain_mentions(caption) >= 3 and not _looks_like_strong_ranking_text(transcript, caption):
         return True
     if combined.count(" pour ") >= 4:
         return True
@@ -537,6 +551,8 @@ def _all_items(categories: list[dict]) -> list[dict]:
                     "rank": item.get("rank"),
                     "tier": _safe_text(item.get("tier")).upper() or None,
                     "name": _safe_text(item.get("name")),
+                    "creator_rating": _safe_text(item.get("creator_rating")).lower() or None,
+                    "location_meta": item.get("location_meta"),
                 })
     return rows
 
@@ -644,11 +660,7 @@ def _items_have_location_meta(categories: list[dict]) -> bool:
     rows = _all_items(categories)
     if not rows:
         return False
-    hits = 0
-    for cat in categories or []:
-        for item in cat.get("items", []) or []:
-            if isinstance(item.get("location_meta"), dict):
-                hits += 1
+    hits = sum(1 for row in rows if isinstance(row.get("location_meta"), dict))
     return hits >= max(2, len(rows) // 2)
 
 
@@ -719,12 +731,6 @@ def analyze_structure(
     ranking_label_score = _ranking_label_score(labels)
     rank_info = _global_rank_sequence_info(active)
 
-    # ── PICKS GUARD ────────────────────────────────────────────────────────
-    # When upstream pre_hint is "picks" or "verdict" AND there are no spoken/
-    # textual ranking signals, do NOT let AI-assigned sequential rank integers
-    # (1..N from caption-order listing) promote this to "ranking".
-    # Covers: flat @mention hotel/restaurant/picks lists where the AI numbers
-    # items 1-8 only because they appear sequentially in the caption.
     if pre_hint in ("picks", "verdict") and rank_text_hits == 0:
         all_items_flat = _all_items(active)
         ratings = {
@@ -732,7 +738,7 @@ def analyze_structure(
             for item in all_items_flat
             if (item.get("creator_rating") or "").strip()
         }
-        is_flat_picks = len(ratings) <= 1  # all items share same rating (e.g. all "best")
+        is_flat_picks = len(ratings) <= 1
         if is_flat_picks:
             verdict_score = _verdict_label_score(labels)
             if verdict_score >= 3:

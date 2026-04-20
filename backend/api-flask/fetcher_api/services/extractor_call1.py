@@ -25,8 +25,8 @@ here with safe defaults for pipeline stability):
 
 from __future__ import annotations
 
-import re
 import logging
+import re
 from typing import Dict, List, Optional, Union
 
 from fetcher_api.services.extractor_helpers import (
@@ -57,7 +57,9 @@ logger = logging.getLogger(__name__)
 _is_ranked_list_transcript = is_ranked_list_transcript
 _parse_tools_categories = parse_tools_categories
 
-# Families that must never preserve location data.
+# Families that must never preserve LLM-generated location data.
+# NOTE: instagram_bio_scraper injects location AFTER this parser runs,
+# so this guard only blocks the LLM from hallucinating location for these families.
 _NON_LOCATION_FAMILIES = {"tools", "products", "software", "finance"}
 
 _RECOVERY_LEADER_RE = re.compile(
@@ -77,13 +79,21 @@ _GARBAGE_NAME_START_RE = re.compile(
 
 # ── Location guards ───────────────────────────────────────────────────────────
 _PLACE_TYPE_ALLOWLIST = {
+    # Physical venue types (used by instagram_bio_scraper output)
+    "hotel",
+    "resort",
+    "lodge",
+    "venue",
+    "hostel",
+    # F&B
     "restaurant",
     "brasserie",
     "café",
     "cafe",
-    "hotel",
-    "hostel",
-    "museum",
+    "bar",
+    "bakery",
+    "market",
+    # Nature / geography
     "beach",
     "lake",
     "mountain",
@@ -94,20 +104,25 @@ _PLACE_TYPE_ALLOWLIST = {
     "hiking trail",
     "viewpoint",
     "scenic viewpoint",
+    # Settlement
     "village",
     "city",
     "town",
     "destination",
-    "ski resort",
-    "resort",
-    "bar",
-    "bakery",
-    "market",
+    # Culture
     "temple",
     "church",
     "cathedral",
+    "museum",
     "neighborhood",
     "neighbourhood",
+    # Snow
+    "ski resort",
+    # Accommodation
+    "auberge",
+    "guesthouse",
+    "chalet",
+    "inn",
 }
 
 _BRANDISH_LOCATION_NAME_RE = re.compile(
@@ -153,9 +168,10 @@ def _location_entry_has_real_place_signal(entry: dict) -> bool:
     """
     Conservative place validator.
 
-    We only keep location data when at least one real place signal exists:
-      - explicit address / neighborhood / city / country / region
-      - or a plausible place type from a narrow allowlist
+    Accepts an entry when ANY of these is true:
+      - Has a real geographic field (address, city, country, region, neighborhood)
+      - Has a recognized place type from the allowlist
+      - Was injected by instagram_bio_scraper (source == "instagram_bio")
     """
     if not isinstance(entry, dict):
         return False
@@ -163,6 +179,10 @@ def _location_entry_has_real_place_signal(entry: dict) -> bool:
     name = safe_str(entry.get("name", "")).strip()
     if not name:
         return False
+
+    # IG-scraper injected entries are always trusted
+    if entry.get("source") == "instagram_bio":
+        return True
 
     address = safe_str(entry.get("address", "")).strip()
     neighborhood = safe_str(entry.get("neighborhood", "")).strip()
@@ -190,11 +210,14 @@ def _looks_like_brand_hallucinated_as_location(
     """
     Detect obvious bogus location entries for tools/product content.
 
-    Key idea:
-    once topic/category clearly say product-review / skincare / ranking,
-    ambiguous names like 'La Roche-Posay' or 'Bondi' should NOT be treated as places.
+    IG-scraper-sourced entries are never considered hallucinations —
+    they were built from real Instagram profiles and Nominatim geocoding.
     """
     if not isinstance(entry, dict):
+        return False
+
+    # Never drop entries injected by the IG scraper
+    if entry.get("source") == "instagram_bio":
         return False
 
     name = safe_str(entry.get("name", "")).strip()
@@ -204,12 +227,10 @@ def _looks_like_brand_hallucinated_as_location(
     contextual_blob = f"{topic} {category} {brief_description} {desc}".lower()
     non_location_topic = _topic_indicates_non_location(topic, category, brief_description)
 
-    # Hard stop: structured product families should never preserve location.
+    # Hard stop: structured product families should never have LLM-generated location.
     if content_type in _NON_LOCATION_FAMILIES:
         return True
 
-    # If topic/category already tell us this is product / review / ranking content,
-    # then brand-like names are not locations.
     if non_location_topic:
         if _BRANDISH_LOCATION_NAME_RE.search(name):
             return True
@@ -218,7 +239,6 @@ def _looks_like_brand_hallucinated_as_location(
         if _BRANDISH_CONTEXT_RE.search(contextual_blob):
             return True
 
-    # Generic product-context rejection.
     if _BRANDISH_LOCATION_NAME_RE.search(name):
         return True
 
@@ -242,7 +262,8 @@ def _parse_location_payload(
     Strict location parsing.
 
     Funnel:
-      1. If content is a structured product family, reject location immediately.
+      1. If content is a structured product family, reject LLM-generated location.
+         (IG scraper injects location separately, after this parser, so it is unaffected.)
       2. If topic/category clearly indicate product-review/ranking/skincare/etc,
          reject weak or brand-like location payloads.
       3. Only keep non-product location rows with real place signals.

@@ -7,20 +7,18 @@
  * - Blue #2563eb numbered circle markers
  * - Geocodes missing lat/lng via /api/geocode proxy
  * - PATCHes resolved coords to Neon DB once — next load skips Nominatim
- * - "locating…" badge only visible while actively geocoding
+ * - Clicking a card: flies map to pin + opens Leaflet Popup on the marker
+ * - Clicking list row: flies to pin and opens popup
+ * - Save/bookmark button toggles savedPlaces via DataContext (optimistic + NeonDB)
  *
- * FIXES:
- *  - refits whenever the resolved marker set changes, so the map centers on
- *    all places instead of getting stuck on an early partial result
- *  - resets fit state correctly when the locations list changes
- *  - keeps flyTo behavior when a user selects a place
+ * Subtitle priority: description (from LLM) > city/region/country > type
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Navigation, Bookmark, BookmarkCheck } from 'lucide-react';
+import { MapPin, Navigation, Bookmark, BookmarkCheck, ExternalLink } from 'lucide-react';
 import { useData } from '../context/DataContext';
 
 /* ── Local types ─────────────────────────────────────────────────────────── */
@@ -35,6 +33,7 @@ export interface LocationPlace {
   address?: string;
   neighborhood?: string;
   description?: string;
+  instagram?: string;
   emoji?: string;
   rank?: number;
   lat?: number | null;
@@ -90,7 +89,6 @@ async function geocodeViaProxy(
   country?: string,
 ): Promise<[number, number] | null> {
   const cc = country ? (COUNTRY_CODES[country.toLowerCase()] ?? '') : '';
-
   const queries: string[] = region ? [`${name}, ${region}`, name] : [name];
   const token = getToken();
 
@@ -98,13 +96,10 @@ async function geocodeViaProxy(
     try {
       const params = new URLSearchParams({ q });
       if (cc) params.set('countrycodes', cc);
-
       const res = await fetch(`${API_BASE}/api/geocode?${params}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-
       if (!res.ok) continue;
-
       const data = await res.json();
       if (typeof data?.lat === 'number' && typeof data?.lng === 'number') {
         return [data.lat, data.lng];
@@ -113,7 +108,6 @@ async function geocodeViaProxy(
       continue;
     }
   }
-
   return null;
 }
 
@@ -121,7 +115,6 @@ async function geocodeViaProxy(
 
 async function persistLocationCoords(videoId: string, places: GeocodedPlace[]): Promise<void> {
   const token = getToken();
-
   const payload = places.map((p) => ({
     name: p.name,
     type: p.type,
@@ -130,9 +123,10 @@ async function persistLocationCoords(videoId: string, places: GeocodedPlace[]): 
     country: p.country,
     address: p.address ?? null,
     neighborhood: p.neighborhood ?? null,
-    description: p.description,
-    emoji: p.emoji,
-    rank: p.rank,
+    description: p.description ?? null,
+    instagram: p.instagram ?? null,
+    emoji: p.emoji ?? null,
+    rank: p.rank ?? null,
     lat: p.coords ? p.coords[0] : null,
     lng: p.coords ? p.coords[1] : null,
   }));
@@ -151,30 +145,40 @@ async function persistLocationCoords(videoId: string, places: GeocodedPlace[]): 
 
 /* ── Leaflet numbered icon ───────────────────────────────────────────────── */
 
-function createCustomIcon(number: number): L.DivIcon {
+function createCustomIcon(number: number, active = false): L.DivIcon {
+  const bg = active ? '#1d4ed8' : '#2563eb';
+  const size = active ? 30 : 24;
+  const offset = size / 2;
   return L.divIcon({
     className: 'custom-div-icon',
-    html: `<div style="width:24px;height:24px;background-color:#2563eb;color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.3);">${number}</div>`,
-    iconSize: [24, 24] as [number, number],
-    iconAnchor: [12, 12] as [number, number],
+    html: `<div style="width:${size}px;height:${size}px;background-color:${bg};color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:${active ? 13 : 11}px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);transition:all .2s;">${number}</div>`,
+    iconSize: [size, size] as [number, number],
+    iconAnchor: [offset, offset] as [number, number],
+    popupAnchor: [0, -(offset + 4)] as [number, number],
   });
+}
+
+/* ── Location line helper ────────────────────────────────────────────────── */
+
+function buildLocationLine(p: LocationPlace): string {
+  const parts = [p.city, p.region, p.country].filter(Boolean);
+  const deduped = parts.filter((v, i) => i === 0 || v !== parts[i - 1]);
+  return deduped.join(', ');
 }
 
 /* ── MapController: flyTo on place click ────────────────────────────────── */
 
 const MapController = ({ activeLoc }: { activeLoc: GeocodedPlace | null }) => {
   const map = useMap();
-
   useEffect(() => {
     if (activeLoc?.coords) {
-      map.flyTo(activeLoc.coords, 15, { duration: 1.5 });
+      map.flyTo(activeLoc.coords, 15, { duration: 1.2 });
     }
   }, [activeLoc, map]);
-
   return null;
 };
 
-/* ── BoundsFitter: auto-center after geocoding ───────────────────────────── */
+/* ── BoundsFitter ────────────────────────────────────────────────────────── */
 
 const BoundsFitter = ({
   places,
@@ -188,10 +192,7 @@ const BoundsFitter = ({
   const map = useMap();
   const lastFitSignatureRef = useRef<string | null>(null);
 
-  const resolved = useMemo(
-    () => places.filter((p) => p.coords !== null),
-    [places],
-  );
+  const resolved = useMemo(() => places.filter((p) => p.coords !== null), [places]);
 
   const resolvedSignature = useMemo(() => {
     return `${locationsKey}::${resolved
@@ -206,7 +207,6 @@ const BoundsFitter = ({
   useEffect(() => {
     if (active) return;
     if (resolved.length === 0) return;
-
     if (lastFitSignatureRef.current === resolvedSignature) return;
     lastFitSignatureRef.current = resolvedSignature;
 
@@ -222,12 +222,92 @@ const BoundsFitter = ({
   return null;
 };
 
-/* ── Component ───────────────────────────────────────────────────────────── */
+/* ── Popup inner content (rendered inside Leaflet Popup) ─────────────────── */
+
+const PopupContent: React.FC<{
+  place: GeocodedPlace;
+  isSaved: boolean;
+  onSave: (e: React.MouseEvent) => void;
+}> = ({ place, isSaved, onSave }) => {
+  const locationLine = buildLocationLine(place);
+  const mapsUrl = place.coords
+    ? `https://www.google.com/maps/dir/?api=1&destination=${place.coords[0]},${place.coords[1]}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        `${place.name} ${place.city ?? ''}`,
+      )}`;
+
+  return (
+    <div style={{ minWidth: 210, maxWidth: 260 }}>
+      {/* Name row */}
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <span className="font-bold text-gray-900 text-sm leading-tight flex-1">{place.name}</span>
+        <button
+          onClick={onSave}
+          className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+            isSaved ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'
+          }`}
+          aria-label={isSaved ? 'Remove bookmark' : 'Save place'}
+        >
+          {isSaved ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}
+        </button>
+      </div>
+
+      {/* Type badge */}
+      {place.type && (
+        <p className="text-xs text-gray-400 mb-1">{place.type}</p>
+      )}
+
+      {/* Description (the good stuff) */}
+      {place.description && (
+        <p className="text-xs text-gray-600 leading-relaxed mb-2">{place.description}</p>
+      )}
+
+      {/* Location line */}
+      {locationLine && (
+        <p className="text-xs text-blue-500 font-medium mb-2">{locationLine}</p>
+      )}
+
+      {/* Address */}
+      {place.address && (
+        <p className="text-xs text-gray-400 mb-2 flex items-start gap-1">
+          <MapPin size={10} className="mt-0.5 shrink-0" />
+          {place.address}
+        </p>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex gap-2 mt-2">
+        <button
+          onClick={() => window.open(mapsUrl, '_blank', 'noopener,noreferrer')}
+          className="flex-1 h-8 rounded-lg bg-blue-600 text-white text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-blue-700 transition-colors"
+        >
+          <Navigation size={12} />
+          Directions
+        </button>
+
+        {place.instagram && (
+          <a
+            href={place.instagram}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-8 px-2 rounded-lg bg-gray-100 text-gray-600 text-xs font-medium flex items-center gap-1 hover:bg-gray-200 transition-colors"
+          >
+            <ExternalLink size={12} />
+            IG
+          </a>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* ── Main component ──────────────────────────────────────────────────────── */
 
 export const LocationCard: React.FC<LocationCardProps> = ({ locations, videoId }) => {
   const ctx = useData() as any;
   const savedPlaces: LocationPlace[] = ctx.savedPlaces ?? [];
-  const toggleSavedPlace: (place: LocationPlace) => void = ctx.toggleSavedPlace ?? (() => {});
+  const toggleSavedPlace: (place: LocationPlace) => void =
+    ctx.toggleSavedPlace ?? (() => {});
 
   const [places, setPlaces] = useState<GeocodedPlace[]>([]);
   const [activeLocation, setActiveLocation] = useState<GeocodedPlace | null>(null);
@@ -235,26 +315,32 @@ export const LocationCard: React.FC<LocationCardProps> = ({ locations, videoId }
   const persistedRef = useRef(false);
   const geocodingKeyRef = useRef<string | null>(null);
 
+  // Refs to programmatically open Leaflet popups
+  const markerRefs = useRef<Map<number, L.Marker>>(new Map());
+
   const locationsKey = useMemo(
-    () => locations.map((l) => `${l.name}|${l.city ?? ''}|${l.region ?? ''}|${l.country ?? ''}`).join('||'),
+    () =>
+      locations
+        .map((l) => `${l.name}|${l.city ?? ''}|${l.region ?? ''}|${l.country ?? ''}`)
+        .join('||'),
     [locations],
   );
 
   useEffect(() => {
     if (!locations?.length) return;
-
     if (geocodingKeyRef.current === locationsKey) return;
     geocodingKeyRef.current = locationsKey;
 
     persistedRef.current = false;
     setActiveLocation(null);
+    markerRefs.current.clear();
 
     const initial: GeocodedPlace[] = locations.map((loc, i) => ({
       ...loc,
       _idx: i,
       coords:
         loc.lat != null && loc.lng != null
-          ? [Number(loc.lat), Number(loc.lng)] as [number, number]
+          ? ([Number(loc.lat), Number(loc.lng)] as [number, number])
           : null,
       geocodeStatus: loc.lat != null && loc.lng != null ? 'done' : 'idle',
     }));
@@ -288,15 +374,14 @@ export const LocationCard: React.FC<LocationCardProps> = ({ locations, videoId }
           coords,
           geocodeStatus: coords ? 'done' : 'failed',
         };
-
         setPlaces([...working]);
       }
 
       if (!cancelled && videoId && !persistedRef.current) {
         const anyNew = working.some(
-          (p, i) => p.coords && (locations[i]?.lat == null || locations[i]?.lng == null),
+          (p, i) =>
+            p.coords && (locations[i]?.lat == null || locations[i]?.lng == null),
         );
-
         if (anyNew) {
           persistedRef.current = true;
           await persistLocationCoords(videoId, working);
@@ -309,6 +394,30 @@ export const LocationCard: React.FC<LocationCardProps> = ({ locations, videoId }
     };
   }, [locations, locationsKey, videoId]);
 
+  const handleToggleActive = useCallback(
+    (p: GeocodedPlace) => {
+      setActiveLocation((prev) => {
+        const next = prev?._idx === p._idx ? null : p;
+        // Open the Leaflet popup for the new active place
+        if (next) {
+          setTimeout(() => {
+            const marker = markerRefs.current.get(next._idx);
+            if (marker) marker.openPopup();
+          }, 400); // after flyTo animation starts
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handleSave = useCallback(
+    (p: GeocodedPlace) => {
+      toggleSavedPlace(p);
+    },
+    [toggleSavedPlace],
+  );
+
   const pending = places.some(
     (p) => p.geocodeStatus === 'idle' || p.geocodeStatus === 'loading',
   );
@@ -318,6 +427,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({ locations, videoId }
 
   return (
     <div className="bg-white border border-gray-100 rounded-3xl shadow-sm overflow-hidden mb-6">
+      {/* Header */}
       <div className="bg-linear-to-r from-blue-50/50 to-white p-5 border-b border-gray-50 flex items-center gap-3">
         <div className="w-8 h-8 rounded-full bg-blue-100/50 flex items-center justify-center text-blue-600">
           <MapPin size={18} aria-hidden="true" />
@@ -326,11 +436,12 @@ export const LocationCard: React.FC<LocationCardProps> = ({ locations, videoId }
           {places.length} PLACES
         </h3>
         {pending && (
-          <span className="ml-auto text-xs text-gray-400">locating…</span>
+          <span className="ml-auto text-xs text-gray-400 animate-pulse">locating…</span>
         )}
       </div>
 
-      <div className="h-100 w-full relative z-0">
+      {/* Map */}
+      <div className="h-64 w-full relative z-0">
         <MapContainer
           center={initialCenter}
           zoom={initialZoom}
@@ -341,69 +452,124 @@ export const LocationCard: React.FC<LocationCardProps> = ({ locations, videoId }
             url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
           />
 
-          <BoundsFitter places={places} active={activeLocation} locationsKey={locationsKey} />
+          <BoundsFitter
+            places={places}
+            active={activeLocation}
+            locationsKey={locationsKey}
+          />
           <MapController activeLoc={activeLocation} />
 
           {places
             .filter((p) => p.coords !== null)
-            .map((p) => (
-              <Marker
-                key={p._idx}
-                position={p.coords!}
-                icon={createCustomIcon(p.rank ?? p._idx + 1)}
-                eventHandlers={{
-                  click: () => setActiveLocation((prev) => (prev?._idx === p._idx ? null : p)),
-                }}
-              />
-            ))}
+            .map((p) => {
+              const isSaved = savedPlaces.some(
+                (s: LocationPlace) => (s.id ?? s.name) === (p.id ?? p.name),
+              );
+              return (
+                <Marker
+                  key={p._idx}
+                  position={p.coords!}
+                  icon={createCustomIcon(
+                    p.rank ?? p._idx + 1,
+                    activeLocation?._idx === p._idx,
+                  )}
+                  ref={(ref) => {
+                    if (ref) markerRefs.current.set(p._idx, ref);
+                    else markerRefs.current.delete(p._idx);
+                  }}
+                  eventHandlers={{
+                    click: () => handleToggleActive(p),
+                  }}
+                >
+                  <Popup
+                    closeButton={false}
+                    className="recolekt-popup"
+                    offset={[0, -(createCustomIcon(p.rank ?? p._idx + 1).options.iconSize as [number, number])[1] / 2 - 4]}
+                  >
+                    <PopupContent
+                      place={p}
+                      isSaved={isSaved}
+                      onSave={(e) => {
+                        e.stopPropagation();
+                        handleSave(p);
+                      }}
+                    />
+                  </Popup>
+                </Marker>
+              );
+            })}
         </MapContainer>
       </div>
 
-      <div className="p-4 space-y-3">
+      {/* Place list */}
+      <div className="p-4 space-y-2">
         {places.map((p) => {
           const locId = p.id ?? p.name;
           const isSaved = savedPlaces.some(
             (s: LocationPlace) => (s.id ?? s.name) === locId,
           );
           const isActive = activeLocation?._idx === p._idx;
+          const locationLine = buildLocationLine(p);
 
           return (
             <div
               key={p._idx}
-              className={`flex items-center gap-4 p-4 rounded-2xl border transition-all cursor-pointer ${
+              className={`flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all cursor-pointer ${
                 isActive
-                  ? 'border-blue-200 bg-blue-50/30'
-                  : 'border-gray-100 bg-white hover:border-gray-200'
+                  ? 'border-blue-200 bg-blue-50/40'
+                  : 'border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50/50'
               }`}
-              onClick={() => setActiveLocation((prev) => (prev?._idx === p._idx ? null : p))}
+              onClick={() => handleToggleActive(p)}
             >
-              <div className="shrink-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm">
+              {/* Number badge */}
+              <div
+                className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm transition-colors ${
+                  isActive ? 'bg-blue-700' : 'bg-blue-600'
+                }`}
+              >
                 {p.rank ?? p._idx + 1}
               </div>
 
+              {/* Name + subtitle block */}
               <div className="flex-1 min-w-0">
-                <h4 className="font-bold text-gray-900 truncate">{p.name}</h4>
-                {p.type && (
-                  <p className="text-xs text-gray-500 truncate">{p.type}</p>
+                <h4 className="font-bold text-gray-900 text-sm truncate leading-tight">
+                  {p.name}
+                </h4>
+
+                {/* Primary subtitle: description from LLM */}
+                {p.description ? (
+                  <p className="text-xs text-gray-500 truncate mt-0.5">{p.description}</p>
+                ) : p.type ? (
+                  <p className="text-xs text-gray-400 truncate mt-0.5 italic">{p.type}</p>
+                ) : null}
+
+                {/* Secondary: location line — city, region, country */}
+                {locationLine && (
+                  <p className="text-xs text-blue-500 font-medium truncate">
+                    {locationLine}
+                  </p>
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Actions */}
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleSavedPlace(p);
+                    handleSave(p);
                   }}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
                     isSaved
-                      ? 'bg-primary-50 text-primary-600'
+                      ? 'bg-blue-600 text-white'
                       : 'bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-gray-600'
                   }`}
                   aria-label={isSaved ? 'Remove bookmark' : 'Save place'}
                 >
-                  {isSaved
-                    ? <BookmarkCheck size={20} aria-hidden="true" />
-                    : <Bookmark size={20} aria-hidden="true" />}
+                  {isSaved ? (
+                    <BookmarkCheck size={17} aria-hidden="true" />
+                  ) : (
+                    <Bookmark size={17} aria-hidden="true" />
+                  )}
                 </button>
 
                 <button
@@ -418,10 +584,10 @@ export const LocationCard: React.FC<LocationCardProps> = ({ locations, videoId }
                       'noopener,noreferrer',
                     );
                   }}
-                  className="px-4 h-10 rounded-xl bg-blue-50 text-blue-600 font-bold text-sm flex items-center gap-2 hover:bg-blue-100 transition-colors"
+                  className="px-3 h-9 rounded-xl bg-blue-50 text-blue-600 font-semibold text-xs flex items-center gap-1.5 hover:bg-blue-100 transition-colors"
                   aria-label={`Directions to ${p.name}`}
                 >
-                  <Navigation size={16} aria-hidden="true" />
+                  <Navigation size={13} aria-hidden="true" />
                   <span className="hidden sm:inline">Directions</span>
                 </button>
               </div>

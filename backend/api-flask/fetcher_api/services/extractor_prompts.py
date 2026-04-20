@@ -237,16 +237,15 @@ def _build_highlights_instruction(content_type: str, caption_promised_count: int
 
     if 3 <= caption_promised_count <= 6:
         return (
-            f"Return EXACTLY {caption_promised_count} highlights — one per item, "
-            f"matching the {caption_promised_count} distinct items the creator covers. "
-            "Do NOT truncate to 4."
+            f"Return up to {caption_promised_count} highlights — only when each highlight adds real informational value. "
+            "Do NOT force one highlight per item if the content is primarily a structured list."
         )
 
     return (
-        "Return ONE highlight per distinct named item (person, brand, product, place, technique, etc.) "
-        "that the creator covers. Do NOT cap at 4 — if the content covers 5, 6, or more items, "
-        "return that many highlights. "
-        "MINIMUM: 3 highlights. Only return fewer than 3 if the content genuinely covers fewer than 3 distinct items."
+        "Return up to 4 highlights, and only when they add real informational value. "
+        "Do NOT force one highlight per named item. "
+        "If the content is mainly a structured list, ranking, verdict board, or grouped selection, "
+        "the structured fields are primary and highlights may be sparse."
     )
 
 

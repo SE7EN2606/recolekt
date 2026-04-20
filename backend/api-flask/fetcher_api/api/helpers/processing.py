@@ -7,7 +7,6 @@ import shutil
 import logging
 import requests
 
-
 from fetcher_api.services.transcription import (
     transcribe_video,
     get_prompt_transcript,
@@ -29,8 +28,6 @@ from fetcher_api.api.helpers.normalizers import (
     json_stringify,
 )
 from fetcher_api.utils.ocr_utils import maybe_ocr_and_merge_text
-
-
 from fetcher_api.services.video_analysis import (
     download_instagram_video,
     generate_reel_thumbnail,
@@ -38,24 +35,38 @@ from fetcher_api.services.video_analysis import (
     fetch_youtube_data,
 )
 
-
 logger = logging.getLogger("api")
-
 
 FREE_MAX_DURATION = 180
 PRO_MAX_DURATION = 360
 MAX_DURATION_SECONDS = 300
 
-
-_CONTENT_TYPE_ALIASES = {"products": "tools"}
-_VALID_CONTENT_TYPES = {"recipe", "general", "workout", "tools", "location"}
+_PUBLIC_CONTENT_TYPES = {
+    "recipe",
+    "workout",
+    "location",
+    "products",
+    "software",
+    "finance",
+    "general",
+}
 
 
 def _normalize_content_type(raw: str | None) -> str:
-    if not raw:
+    """
+    Normalize extractor/UI-facing content types to the Phase 1 public families.
+
+    Internal legacy value "tools" must never leak out of the background worker.
+    """
+    ct = (raw or "").strip().lower()
+
+    if not ct or ct in {"generic", "summary"}:
         return "general"
-    normalized = _CONTENT_TYPE_ALIASES.get(raw, raw)
-    return normalized if normalized in _VALID_CONTENT_TYPES else "general"
+
+    if ct == "tools":
+        return "products"
+
+    return ct if ct in _PUBLIC_CONTENT_TYPES else "general"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -64,8 +75,10 @@ def _normalize_content_type(raw: str | None) -> str:
 def cleanup_video_from_gcs(shortcode, platform_code="IG", user_id=None):
     try:
         from fetcher_api.adapters.gcs_client import gcs_client
+
         if not gcs_client.available:
             return False
+
         paths = generate_gcs_paths(shortcode, platform_code, user_id)
         blob = gcs_client.client.bucket(gcs_client.analysis_bucket_name).blob(paths["video"])
         if blob.exists():
@@ -79,6 +92,7 @@ def cleanup_video_from_gcs(shortcode, platform_code="IG", user_id=None):
 def _extract_title_from_ai_summary(ai_summary: dict) -> str:
     if not isinstance(ai_summary, dict):
         return ""
+
     eng = ai_summary.get("english", {})
     orig = ai_summary.get("original", {})
     return (
@@ -92,6 +106,7 @@ def _extract_title_from_ai_summary(ai_summary: dict) -> str:
 def _save_content_payload(content_payload, process_id, gcs_paths, temp_dir, gcs_client):
     if not content_payload or not gcs_client.available:
         return
+
     try:
         import tempfile as _tempfile
 
@@ -100,6 +115,7 @@ def _save_content_payload(content_payload, process_id, gcs_paths, temp_dir, gcs_
             temp_dir or _tempfile.gettempdir(),
             payload_filename,
         )
+
         with open(payload_local_path, "w", encoding="utf-8") as f:
             json.dump(
                 {"process_id": process_id, "calls": content_payload},
@@ -117,17 +133,103 @@ def _save_content_payload(content_payload, process_id, gcs_paths, temp_dir, gcs_
         logger.warning("⚠️ Could not save content payload file: %s", e)
 
 
+def _save_input_payload(
+    process_id,
+    gcs_paths,
+    temp_dir,
+    gcs_client,
+    caption,
+    transcript,
+    ocr_text,
+    merged_text,
+):
+    """Save clean input data (caption, transcript, OCR text) to GCS for debugging."""
+    if not gcs_client.available:
+        return
+
+    try:
+        import tempfile as _tempfile
+
+        payload = {
+            "process_id": process_id,
+            "caption": caption or "",
+            "transcript": transcript or "",
+            "ocr_text": ocr_text or "",
+            "merged_text": merged_text or "",
+        }
+        filename = f"{process_id}_input_payload.json"
+        local_path = os.path.join(temp_dir or _tempfile.gettempdir(), filename)
+
+        with open(local_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
+        gcs_path = gcs_paths["result_json"].replace("_result.json", "_input_payload.json")
+        blob = gcs_client.client.bucket(gcs_client.analysis_bucket_name).blob(gcs_path)
+        blob.upload_from_filename(local_path, content_type="application/json")
+
+        logger.info("📋 Input payload saved → %s", gcs_path)
+        cleanup_file(local_path)
+
+    except Exception as e:
+        logger.warning("⚠️ Could not save input payload: %s", e)
+
+
 def _run_transcription(path: str) -> TranscriptionResult:
-    return asyncio.run(transcribe_video(path))
+    try:
+        return asyncio.run(transcribe_video(path))
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(transcribe_video(path))
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
 
 
-def _transcription_result_to_dict(t: TranscriptionResult) -> dict:
+def _single_transcript_to_dict(t) -> dict | None:
+    if t is None:
+        return None
+    return {
+        "status": getattr(t, "status", None),
+        "transcript": getattr(t, "transcript", "") or "",
+        "language": getattr(t, "language", None),
+        "source": getattr(t, "source", None),
+        "chars": getattr(t, "chars", 0),
+    }
+
+
+def _transcription_result_to_dict(t: TranscriptionResult | None) -> dict:
+    if t is None:
+        return {
+            "status": "error",
+            "transcript": "",
+            "detected_language": "unknown",
+            "transcription_source": "empty",
+            "deepgram": None,
+            "voxtral": None,
+        }
+
     return {
         "status": t.status,
         "transcript": t.transcript or "",
         "detected_language": t.detected_language or "unknown",
-        "transcription_source": t.transcription_source,
+        "transcription_source": t.transcription_source or "empty",
+        "deepgram": _single_transcript_to_dict(getattr(t, "deepgram", None)),
+        "voxtral": _single_transcript_to_dict(getattr(t, "voxtral", None)),
     }
+
+
+def _is_silent_from_transcription_data(data: dict) -> bool:
+    status = (data.get("status") or "").strip().lower()
+    transcript = (data.get("transcript") or "").strip()
+    source = (data.get("transcription_source") or "").strip().lower()
+
+    return (
+        status in {"empty/music", "empty", "music_only"}
+        or source == "empty"
+        or not transcript
+    )
 
 
 def _ensure_gcs_urls(result: dict) -> None:
@@ -176,11 +278,9 @@ def background_process(
         result["gcs_paths"] = gcs_paths
         _ensure_gcs_urls(result)
 
-
         # ══════════════════════════════════════════════════════════════════════
         # YOUTUBE PATH
         # ══════════════════════════════════════════════════════════════════════
-
 
         if is_youtube:
             logger.info("🎬 YouTube path: fetching transcript + metadata (no download)")
@@ -191,16 +291,17 @@ def background_process(
                 insert_reel_into_db(result)
                 return
 
-            meta = yt.get("metadata", {})
+            meta = yt.get("metadata", {}) or {}
             caption = caption or meta.get("caption", "")
             author_name = author_name or meta.get("username", "")
             result["caption"] = caption
             result["author_name"] = author_name
 
-            transcript_text = yt.get("transcript", "")
+            transcript_text = yt.get("transcript", "") or ""
             detected_language = yt.get("detected_language", "en") or "en"
             audio_path = yt.get("audio_path")
             processing_strategy = "youtube_captions"
+            t_result = None
 
             if not transcript_text.strip() and audio_path and os.path.exists(audio_path):
                 logger.info(f"🎵 No captions — running parallel transcription on audio: {audio_path}")
@@ -222,17 +323,21 @@ def background_process(
                             os.unlink(audio_path)
                     except Exception:
                         pass
-            else:
-                t_result = None
 
-            transcription_data = {
-                "status": processing_strategy,
-                "transcript": transcript_text,
-                "detected_language": detected_language,
-                "transcription_source": (
-                    t_result.transcription_source if t_result else "youtube_captions"
-                ),
-            }
+            transcription_data = (
+                _transcription_result_to_dict(t_result)
+                if t_result
+                else {
+                    "status": processing_strategy,
+                    "transcript": transcript_text,
+                    "detected_language": detected_language,
+                    "transcription_source": "youtube_captions",
+                    "deepgram": None,
+                    "voxtral": None,
+                }
+            )
+
+            is_silent_input = _is_silent_from_transcription_data(transcription_data)
 
             # ── Thumbnail ─────────────────────────────────────────────────────
             thumbnail_path = os.path.join(temp_dir, f"{shortcode}_thumb.jpg")
@@ -274,6 +379,18 @@ def background_process(
             if caption and caption not in merged_text:
                 merged_text = f"{merged_text}\n\n{caption}".strip()
 
+            if save_to_gcs and gcs_client.available:
+                _save_input_payload(
+                    result["process_id"],
+                    gcs_paths,
+                    temp_dir,
+                    gcs_client,
+                    caption,
+                    transcript_text,
+                    "",
+                    merged_text,
+                )
+
             ai_res = ensure_dict(
                 analyze_instagram_video(
                     merged_text,
@@ -281,6 +398,7 @@ def background_process(
                     detected_language,
                     video_path=None,
                     duration_seconds=0,
+                    is_silent=is_silent_input,
                 )
             )
 
@@ -352,11 +470,9 @@ def background_process(
             logger.info(f"✅ YouTube processing complete: {result['process_id']}")
             return
 
-
         # ══════════════════════════════════════════════════════════════════════
         # NON-YOUTUBE PATH (IG / FB / TT / file upload)
         # ══════════════════════════════════════════════════════════════════════
-
 
         dl_result = {}
         if not os.path.exists(video_path):
@@ -393,6 +509,8 @@ def background_process(
                 "transcript": "",
                 "detected_language": "unknown",
                 "transcription_source": "none",
+                "deepgram": None,
+                "voxtral": None,
             }
         else:
             t_result = _run_transcription(video_path)
@@ -411,6 +529,8 @@ def background_process(
             transcription_data["detected_language"] = (
                 "en" if transcription_data["transcript"].strip() else "unknown"
             )
+
+        is_silent_input = _is_silent_from_transcription_data(transcription_data)
 
         # ── Thumbnail ─────────────────────────────────────────────────────────
         thumbnail_path = os.path.join(os.path.dirname(video_path), f"{shortcode}_thumb.jpg")
@@ -457,13 +577,27 @@ def background_process(
             prompt_transcript = ""
 
         merged_text = prompt_transcript
+        ocr_text = ""
+
         if not is_too_long:
             try:
-                merged_text, _ = maybe_ocr_and_merge_text(
+                merged_text, ocr_text = maybe_ocr_and_merge_text(
                     prompt_transcript, caption, None, None, "document"
                 )
             except Exception:
                 pass
+
+        if save_to_gcs and gcs_client.available:
+            _save_input_payload(
+                result["process_id"],
+                gcs_paths,
+                temp_dir,
+                gcs_client,
+                caption,
+                transcription_data.get("transcript", ""),
+                ocr_text,
+                merged_text,
+            )
 
         ai_res = ensure_dict(
             analyze_instagram_video(
@@ -472,6 +606,7 @@ def background_process(
                 transcription_data["detected_language"],
                 video_path=video_path,
                 duration_seconds=duration_seconds,
+                is_silent=is_silent_input,
             )
         )
 
@@ -500,7 +635,7 @@ def background_process(
             "author_name": author_name,
             "summary": ai_summary,
             "summary_title": summary_title,
-            "content_type": _normalize_content_type(ai_res.get("content_type")),  # ← fixed
+            "content_type": _normalize_content_type(ai_res.get("content_type")),
             "summary_category": ai_res.get("category", ""),
             "summary_topic": ai_res.get("topic", ""),
             "recipe": json_stringify(ai_res.get("recipe")),
@@ -515,13 +650,21 @@ def background_process(
             "list_type": ai_res.get("list_type"),
             "transcription": transcription_data,
             "processing_strategy": "bookmark" if is_too_long else "full",
-            "detected_language": ai_res.get("detected_language", "unknown"),
+            "detected_language": ai_res.get(
+                "detected_language",
+                transcription_data.get("detected_language", "unknown"),
+            ),
         })
 
         # ── GCS upload + DB ───────────────────────────────────────────────────
         if save_to_gcs and gcs_client.available:
             if not is_too_long:
-                video_url = save_video_to_gcs(video_path, shortcode, platform_code, user_id=user_id)
+                video_url = save_video_to_gcs(
+                    video_path,
+                    shortcode,
+                    platform_code,
+                    user_id=user_id,
+                )
             else:
                 video_url = None
                 logger.info("⏩ Bookmark mode: Skipping MP4 upload.")

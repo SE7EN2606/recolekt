@@ -6,10 +6,8 @@ import os
 import json
 import logging
 
-
 from flask import Blueprint, request, jsonify
 import psycopg2.extras
-
 
 from fetcher_api.adapters.db import execute, fetch_all, fetch_one, get_db_connection
 from fetcher_api.api.helpers.auth import get_user_id_from_request
@@ -21,25 +19,33 @@ from fetcher_api.api.helpers.formatters import (
 from fetcher_api.api.helpers.recipe_formatters import normalize_recipe
 from fetcher_api.services.storage import generate_gcs_paths
 
-
 logger = logging.getLogger("reels")
-
 
 reel_bp = Blueprint("reels", __name__)
 
-
-# Canonical content types the frontend understands.
-# "products" is the AI's public label for what is internally "tools" — normalize it here
-# so the frontend always receives a consistent value.
-_VALID_CONTENT_TYPES = {"recipe", "general", "workout", "tools", "location"}
-_CONTENT_TYPE_ALIASES = {"products": "tools"}
+# Canonical public content types the frontend/API should receive.
+# Internal legacy value "tools" is normalized to public "products".
+_PUBLIC_CONTENT_TYPES = {
+    "recipe",
+    "workout",
+    "location",
+    "products",
+    "software",
+    "finance",
+    "general",
+}
 
 
 def _normalize_content_type(raw: str | None) -> str:
-    if not raw:
+    ct = (raw or "").strip().lower()
+
+    if not ct or ct in {"generic", "summary"}:
         return "general"
-    normalized = _CONTENT_TYPE_ALIASES.get(raw, raw)
-    return normalized if normalized in _VALID_CONTENT_TYPES else "general"
+
+    if ct == "tools":
+        return "products"
+
+    return ct if ct in _PUBLIC_CONTENT_TYPES else "general"
 
 
 def add_no_cache_headers(response):
@@ -263,7 +269,7 @@ def _normalize_row_for_api(row_dict: dict, include_prompt: bool = False) -> dict
     row_dict["is_favorite"] = bool(row_dict.get("is_favorite"))
     row_dict["is_list"] = bool(row_dict.get("is_list", False))
 
-    # Normalize content_type: "products" → "tools", unknown → "general"
+    # Normalize legacy/internal content_type: "tools" → "products", unknown → "general"
     row_dict["content_type"] = _normalize_content_type(row_dict.get("content_type"))
 
     if row_dict.get("created_at"):
