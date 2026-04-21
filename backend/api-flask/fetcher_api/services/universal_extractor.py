@@ -49,6 +49,7 @@ from fetcher_api.services.extractor_prompts import (
 )
 from fetcher_api.services.extractor_tools_detection import (
     analyze_structure,
+    classify_structured_family,
     count_mention_verdict_items,
     count_numbered_caption_items,
     count_plain_mentions,
@@ -72,7 +73,7 @@ from fetcher_api.utils.ocr_utils import (
 
 logger = logging.getLogger(__name__)
 
-EXTRACTOR_VERSION = "universal-v22"
+EXTRACTOR_VERSION = "universal-v23"
 
 BOOKMARK_MESSAGES = {
     "en": "Bookmark saved. The creator did not provide a detailed caption or transcript for this video.",
@@ -283,14 +284,16 @@ def _looks_like_global_ranking(transcript: str, caption: str) -> bool:
     """
     text = f"{transcript or ''} {caption or ''}"
 
+    if not transcript.strip() and (
+        count_mention_verdict_items(caption) >= 3 or count_plain_mentions(caption) >= 3
+    ):
+        return False
+
     if _SEQUENTIAL_RANK_RE.search(text):
         return True
 
     ordinal_hits = len(_SPOKEN_ORDINAL_RE.findall(text))
     numbered_hits = len(_NUMBERED_RANK_RE.findall(text))
-
-    if not transcript.strip() and count_plain_mentions(caption) >= 3:
-        return False
 
     return ordinal_hits >= 3 or numbered_hits >= 3
 
@@ -326,13 +329,59 @@ def _default_subtype_for_family(public_content_type: str) -> str:
     Return the sensible default subtype hint for a given public family,
     before pre_detect_list_subtype() has a chance to override.
     """
+    if public_content_type == "location":
+        return "places"
     if public_content_type == "software":
         return "software"
     if public_content_type == "finance":
         return "grouped"
     if public_content_type == "products":
         return "picks"
-    return "software"
+    return "picks"
+
+
+def _route_public_family(
+    requested_content_type: str,
+    transcript: str,
+    caption: str,
+    is_location_list: bool,
+    is_tools: bool,
+) -> str:
+    """
+    Resolve the public family earlier in the pipeline, before prompt selection.
+
+    Public routing should be domain-first, but structured non-location families
+    still share the internal legacy tools extractor during Phase 2.
+    """
+    requested = (requested_content_type or "").strip().lower()
+
+    if requested in {"recipe", "workout", "location"}:
+        return requested
+
+    if is_location_list:
+        return "location"
+
+    if is_tools:
+        if requested in _STRUCTURED_PRODUCT_FAMILIES:
+            return requested
+
+        inferred = classify_structured_family(
+            transcript=transcript,
+            caption=caption,
+            category=requested if requested in _PUBLIC_CONTENT_TYPES else "",
+            topic="",
+        )
+
+        if inferred == "places":
+            return "location"
+        if inferred in _STRUCTURED_PRODUCT_FAMILIES:
+            return inferred
+        return "products"
+
+    if requested in _PUBLIC_CONTENT_TYPES:
+        return requested
+
+    return "general"
 
 
 class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
@@ -357,15 +406,9 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         lang = (lang or "unknown").strip() or "unknown"
         classification = classification or {}
 
-        public_content_type = (classification.get("label") or "general").strip().lower()
-        if public_content_type not in _PUBLIC_CONTENT_TYPES and public_content_type != "tools":
-            public_content_type = "general"
-
-        extraction_content_type = (
-            "tools"
-            if public_content_type in _STRUCTURED_PRODUCT_FAMILIES or public_content_type == "tools"
-            else public_content_type
-        )
+        requested_public_content_type = (classification.get("label") or "general").strip().lower()
+        if requested_public_content_type not in _PUBLIC_CONTENT_TYPES and requested_public_content_type != "tools":
+            requested_public_content_type = "general"
 
         signals = classification.get("signals", {}) or {}
 
@@ -377,11 +420,6 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             lang,
             effective_lang,
             is_english_content,
-        )
-        logger.info(
-            "🏷️ Family routing: public=%s internal=%s",
-            public_content_type,
-            extraction_content_type,
         )
 
         if (len(transcript.strip()) + len(caption.strip())) < 80 and len(caption.strip()) < 40:
@@ -427,9 +465,9 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                     "📍 Location false-positive suppressed — strong ranking signals with tool/product context"
                 )
 
-        is_structured_product_family = (
-            public_content_type in _STRUCTURED_PRODUCT_FAMILIES
-            or public_content_type == "tools"
+        requested_structured_product_family = (
+            requested_public_content_type in _STRUCTURED_PRODUCT_FAMILIES
+            or requested_public_content_type == "tools"
         )
 
         is_tools = (
@@ -438,11 +476,50 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             and (
                 is_tools_list_content(transcript, caption)
                 or signals.get("tool_kw", 0) >= 2
-                or is_structured_product_family
+                or requested_structured_product_family
                 or _is_ranked_list_transcript(transcript)
                 or looks_ranked
                 or mention_verdicts >= 3
             )
+        )
+
+        silent = is_silent or is_silent_video("", transcript)
+
+        if (
+            not is_tools
+            and not is_location_list
+            and promised_count >= 3
+            and not looks_educational_explainer
+        ):
+            is_tools = True
+            logger.info(
+                "📋 List promoted to structured extraction (%d items promised, silent=%s)",
+                promised_count,
+                silent,
+            )
+
+        public_content_type = _route_public_family(
+            requested_content_type=requested_public_content_type,
+            transcript=transcript,
+            caption=caption,
+            is_location_list=is_location_list,
+            is_tools=is_tools,
+        )
+
+        if requested_public_content_type in {"recipe", "workout"}:
+            extraction_content_type = requested_public_content_type
+        elif requested_public_content_type == "location" or is_location_list:
+            extraction_content_type = "location"
+        elif is_tools:
+            extraction_content_type = "tools"
+        else:
+            extraction_content_type = "general"
+
+        logger.info(
+            "🏷️ Family routing: requested=%s public=%s internal=%s",
+            requested_public_content_type,
+            public_content_type,
+            extraction_content_type,
         )
 
         subtype_hint = _default_subtype_for_family(public_content_type)
@@ -472,6 +549,8 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                     subtype_hint = pre_subtype if pre_subtype in {"lifestyle", "gear", "food"} else "grouped"
                 elif public_content_type == "finance" and pre_subtype in {"picks", "grouped", "software"}:
                     subtype_hint = "grouped"
+                elif public_content_type == "location" and pre_subtype == "places":
+                    subtype_hint = "places"
                 else:
                     subtype_hint = pre_subtype or _default_subtype_for_family(public_content_type)
 
@@ -485,42 +564,6 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                 "🧠 Numbered explainer detected — keeping out of structured-list mode despite promised count=%d",
                 promised_count,
             )
-
-        silent = is_silent or is_silent_video("", transcript)
-
-        if (
-            not is_tools
-            and not is_location_list
-            and promised_count >= 3
-            and not looks_educational_explainer
-        ):
-            is_tools = True
-
-            if looks_ranked:
-                subtype_hint = "places" if pre_subtype == "places" else "ranking"
-            elif mention_verdicts >= 3:
-                subtype_hint = "verdict"
-            elif mention_items >= 3:
-                subtype_hint = pre_subtype or "picks"
-            else:
-                if public_content_type == "software":
-                    subtype_hint = "software"
-                elif public_content_type == "finance":
-                    subtype_hint = "grouped"
-                else:
-                    subtype_hint = pre_subtype or _default_subtype_for_family(public_content_type)
-
-            logger.info(
-                "📋 List promoted to structured extraction (%d items promised, subtype=%s, silent=%s)",
-                promised_count,
-                subtype_hint,
-                silent,
-            )
-
-        if is_location_list:
-            extraction_content_type = "location"
-        elif is_tools:
-            extraction_content_type = "tools"
 
         logger.info("🏷️ extraction_content_type resolved to: %r", extraction_content_type)
 
@@ -607,6 +650,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
 
         prompt_trace = {
             "extractor_version": EXTRACTOR_VERSION,
+            "requested_public_content_type": requested_public_content_type,
             "public_content_type": public_content_type,
             "content_type": extraction_content_type,
             "language": effective_lang,
@@ -665,8 +709,19 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             final_content_type = "location"
             logger.info("📍 public content_type confirmed → 'location' (location populated)")
         elif parsed.get("tools_categories"):
-            if public_content_type not in _STRUCTURED_PRODUCT_FAMILIES:
+            inferred_family = classify_structured_family(
+                transcript=transcript,
+                caption=caption,
+                category=parsed.get("category", ""),
+                topic=parsed.get("topic", ""),
+            )
+            if inferred_family == "places":
+                final_content_type = "location"
+            elif inferred_family in _STRUCTURED_PRODUCT_FAMILIES:
+                final_content_type = inferred_family
+            elif public_content_type not in _STRUCTURED_PRODUCT_FAMILIES:
                 final_content_type = "products"
+
             logger.info(
                 "🧩 public content_type confirmed from structured list → %r",
                 final_content_type,

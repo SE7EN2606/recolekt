@@ -18,6 +18,7 @@ from fetcher_api.api.helpers.formatters import (
 )
 from fetcher_api.api.helpers.recipe_formatters import normalize_recipe
 from fetcher_api.services.storage import generate_gcs_paths
+from fetcher_api.utils.geocode import geocode_one
 
 logger = logging.getLogger("reels")
 
@@ -46,6 +47,10 @@ def _normalize_content_type(raw: str | None) -> str:
         return "products"
 
     return ct if ct in _PUBLIC_CONTENT_TYPES else "general"
+
+
+def _safe_strip(value) -> str:
+    return (value or "").strip() if isinstance(value, str) or value is None else str(value).strip()
 
 
 def add_no_cache_headers(response):
@@ -146,9 +151,9 @@ def _merge_geocoded_coords(location_raw, geocoded_rows: list[dict]) -> list[dict
             continue
 
         merged = dict(loc)
-        if not merged.get("lat") and geo.get("lat") is not None:
+        if merged.get("lat") is None and geo.get("lat") is not None:
             merged["lat"] = geo["lat"]
-        if not merged.get("lng") and geo.get("lng") is not None:
+        if merged.get("lng") is None and geo.get("lng") is not None:
             merged["lng"] = geo["lng"]
         if not merged.get("google_place_id") and geo.get("google_place_id"):
             merged["google_place_id"] = geo["google_place_id"]
@@ -604,6 +609,7 @@ def patch_reel_location(process_id):
         if not isinstance(location, list):
             return jsonify({"error": "location must be an array"}), 400
 
+        # Check how many rows already have coords in reel_locations
         already_geocoded = fetch_one(
             """
             SELECT COUNT(*) AS cnt
@@ -613,18 +619,80 @@ def patch_reel_location(process_id):
             (process_id, user_id),
         )
         geocoded_count = (already_geocoded["cnt"] if already_geocoded else 0) or 0
+        all_already_done = geocoded_count > 0 and geocoded_count >= len(location)
+
+        if all_already_done:
+            # reel_locations is complete — but make sure JSONB is also up to date
+            geocoded_rows = _fetch_geocoded_rows(process_id, user_id)
+            if geocoded_rows:
+                enriched = _merge_geocoded_coords(location, geocoded_rows)
+                with get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE reels
+                            SET location = %s::jsonb, updated_at = NOW()
+                            WHERE id = %s AND user_id = %s
+                            """,
+                            (json.dumps(enriched), process_id, user_id),
+                        )
+                    conn.commit()
+                logger.info(
+                    "📍 PATCH /reel/%s/location — already geocoded, refreshed JSONB with %d coords",
+                    process_id, len(geocoded_rows),
+                )
+                return jsonify({"status": "already_geocoded", "count": geocoded_count, "location": enriched}), 200
+            return jsonify({"status": "already_geocoded", "count": geocoded_count}), 200
+
+        # Geocode any entries that are missing coords
+        enriched = []
+        for loc in location:
+            if not isinstance(loc, dict):
+                enriched.append(loc)
+                continue
+
+            if loc.get("lat") is not None and loc.get("lng") is not None:
+                enriched.append(loc)
+                continue
+
+            name = _safe_strip(loc.get("name"))
+            address = _safe_strip(loc.get("address"))
+            neighborhood = _safe_strip(loc.get("neighborhood"))
+            city = _safe_strip(loc.get("region") or loc.get("city"))
+            country = _safe_strip(loc.get("country"))
+
+            # Clear non-geocodable macro values
+            blocked_macro_values = {
+                "europe", "europa",
+                "alps", "dolomites", "mediterranean", "scandinavia",
+            }
+
+            if country.lower() in blocked_macro_values:
+                country = ""
+
+            if city.lower() in blocked_macro_values:
+                city = ""
+
+            if neighborhood.lower() in blocked_macro_values:
+                neighborhood = ""
+
+            coords = geocode_one(
+                name=name,
+                city=city,
+                country=country,
+                address=address,
+                neighborhood=neighborhood,
+            )
+
+            merged = dict(loc)
+            if coords:
+                merged["lat"], merged["lng"] = coords
+            enriched.append(merged)
 
         incoming_with_coords = sum(
-            1 for loc in location
+            1 for loc in enriched
             if isinstance(loc, dict) and loc.get("lat") is not None
         )
-
-        if geocoded_count > 0 and geocoded_count >= len(location):
-            logger.info(
-                "📍 PATCH /reel/%s/location — skipped, %d/%d rows already geocoded in reel_locations",
-                process_id, geocoded_count, len(location),
-            )
-            return jsonify({"status": "already_geocoded", "count": geocoded_count}), 200
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -634,21 +702,20 @@ def patch_reel_location(process_id):
                     SET location = %s::jsonb, updated_at = NOW()
                     WHERE id = %s AND user_id = %s
                     """,
-                    (json.dumps(location), process_id, user_id),
+                    (json.dumps(enriched), process_id, user_id),
                 )
-
-            saved = _upsert_reel_locations_conn(conn, process_id, user_id, location)
+            saved = _upsert_reel_locations_conn(conn, process_id, user_id, enriched)
             conn.commit()
 
         logger.info(
-            "✅ PATCH /reel/%s/location — %d places in jsonb, %d rows in reel_locations (coords: %d/%d)",
-            process_id, len(location), saved, incoming_with_coords, len(location),
+            "✅ PATCH /reel/%s/location — %d places, %d/%d geocoded, %d reel_location rows saved",
+            process_id, len(enriched), incoming_with_coords, len(enriched), saved,
         )
-        return jsonify({"status": "ok", "saved": saved}), 200
+        return jsonify({"status": "ok", "saved": saved, "location": enriched}), 200
 
     except Exception as e:
         logger.error(f"❌ Error patching location for {process_id}: {e}", exc_info=True)
-        return jsonify({"error": "Internal error"}), 500
+        return jsonify({"error": str(e)}), 500
 
 
 # ──────────────────────────────────────────────────────────────────────────────

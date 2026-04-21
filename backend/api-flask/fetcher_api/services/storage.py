@@ -173,6 +173,16 @@ def save_result_json_to_gcs(
     media_folder: str = "IG",
     user_id: str = None,
 ):
+    """
+    Save the canonical result JSON to GCS.
+
+    IMPORTANT:
+    - This object is mutable over the reel lifecycle.
+    - Do NOT cache it aggressively.
+    - If later pipeline steps mutate the stored payload (for example geocoded
+      lat/lng added during PATCH /location), this function must be called again
+      with the refreshed final payload.
+    """
     try:
         if not shortcode:
             shortcode = process_id.split("--")[0] if "--" in process_id else process_id.split("_")[0]
@@ -191,8 +201,8 @@ def save_result_json_to_gcs(
             local_json_path,
             gcs_client.analysis_bucket_name,
             gcs_paths["result_json"],
-            content_type="application/json",
-            cache_control="public, max-age=3600",
+            content_type="application/json; charset=utf-8",
+            cache_control="no-store, no-cache, max-age=0, must-revalidate",
         )
     except Exception as e:
         logger.error("Error saving result JSON: %s", e)

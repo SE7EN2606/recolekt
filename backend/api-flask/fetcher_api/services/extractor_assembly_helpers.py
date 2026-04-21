@@ -568,27 +568,133 @@ def promote_items_to_tools_list(items: list[dict]) -> dict | None:
 # ── Tier helpers ─────────────────────────────────────────────────────────────
 
 
-_TIER_CAT_RE = re.compile(r"^([SABCDF])\s+[Tt]ier$", re.IGNORECASE)
+_TIER_CAT_RE = re.compile(r"^\s*([SABCDF])\s+[Tt]ier\s*$", re.IGNORECASE)
+_SIMPLE_TIER_RE = re.compile(r"^\s*([SABCDF])\s*$", re.IGNORECASE)
+_MERGED_TIER_CAT_RE = re.compile(r"^\s*([SABCDF])\s*&\s*([SABCDF])\s+[Tt]ier\s*$", re.IGNORECASE)
 _TIER_ORDER: dict[str, int] = {"S": 1, "A": 2, "B": 3, "C": 4, "D": 5, "F": 6}
+
+
+def _normalize_tier_value(value: str | None) -> str | None:
+    v = safe_str(value).strip().upper()
+    return v if v in _TIER_ORDER else None
+
+
+def _extract_tiers_from_category_label(label: str) -> list[str]:
+    raw = safe_str(label).strip()
+    if not raw:
+        return []
+
+    m = _TIER_CAT_RE.match(raw)
+    if m:
+        return [m.group(1).upper()]
+
+    m = _SIMPLE_TIER_RE.match(raw)
+    if m:
+        return [m.group(1).upper()]
+
+    m = _MERGED_TIER_CAT_RE.match(raw)
+    if m:
+        left = m.group(1).upper()
+        right = m.group(2).upper()
+        return [left, right] if left != right else [left]
+
+    return []
+
+
+def _canonical_tier_category_name(tier: str) -> str:
+    return f"{tier} Tier"
+
+
+def _dedupe_items_by_name(items: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    out: list[dict] = []
+    for item in items or []:
+        key = safe_str(item.get("name")).strip().casefold()
+        if not key:
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
 
 
 def build_tier_lookup(source_cats: list[dict]) -> dict[str, str]:
     lookup: dict[str, str] = {}
     for cat in (source_cats or []):
-        cat_name = (cat.get("name") or "").strip()
-        m = _TIER_CAT_RE.match(cat_name)
-        inferred_tier = m.group(1).upper() if m else None
+        inferred_tiers = _extract_tiers_from_category_label(cat.get("name") or "")
 
         for item in cat.get("items", []):
-            name = (item.get("name") or "").lower().strip()
+            name = safe_str(item.get("name")).lower().strip()
             if not name:
                 continue
-            explicit_tier = item.get("tier")
-            if explicit_tier and isinstance(explicit_tier, str) and explicit_tier.strip():
-                lookup[name] = explicit_tier.strip().upper()
-            elif inferred_tier:
-                lookup[name] = inferred_tier
+
+            explicit_tier = _normalize_tier_value(item.get("tier"))
+            if explicit_tier:
+                lookup[name] = explicit_tier
+                continue
+
+            # Only infer from category label when the category maps cleanly to one tier.
+            if len(inferred_tiers) == 1:
+                lookup[name] = inferred_tiers[0]
+
     return lookup
+
+
+def _rebuild_tier_categories(categories: list[dict]) -> tuple[list[dict], int]:
+    """
+    Deterministically split merged tier buckets like 'S & A Tier' into true tier
+    categories using item-level tier values. Non-tier items are preserved after
+    the rebuilt tier buckets.
+    """
+    tier_buckets: dict[str, list[dict]] = {tier: [] for tier in _TIER_ORDER}
+    passthrough_categories: list[dict] = []
+    moved_items = 0
+
+    for cat in categories or []:
+        original_cat_name = safe_str(cat.get("name"))
+        original_title_og = safe_str(cat.get("title_og")) or original_cat_name
+        original_emoji = cat.get("emoji", "")
+        label_tiers = _extract_tiers_from_category_label(original_cat_name)
+
+        non_tier_items: list[dict] = []
+
+        for item in cat.get("items", []) or []:
+            item_tier = _normalize_tier_value(item.get("tier"))
+
+            # Only infer from category label when it is unambiguous.
+            if not item_tier and len(label_tiers) == 1:
+                item_tier = label_tiers[0]
+                item["tier"] = item_tier
+
+            if item_tier:
+                tier_buckets[item_tier].append(item)
+                moved_items += 1
+            else:
+                non_tier_items.append(item)
+
+        if non_tier_items:
+            passthrough_categories.append({
+                "name": original_cat_name,
+                "title_og": original_title_og,
+                "emoji": original_emoji,
+                "items": non_tier_items,
+            })
+
+    rebuilt: list[dict] = []
+    for tier, _ in sorted(_TIER_ORDER.items(), key=lambda kv: kv[1]):
+        items = _dedupe_items_by_name(tier_buckets[tier])
+        if not items:
+            continue
+        rebuilt.append({
+            "name": _canonical_tier_category_name(tier),
+            "title_og": _canonical_tier_category_name(tier),
+            "emoji": "",
+            "items": items,
+        })
+
+    rebuilt.extend(passthrough_categories)
+    return rebuilt, moved_items
 
 
 def restore_tiers(
@@ -599,6 +705,9 @@ def restore_tiers(
 ) -> dict:
     """
     Restore tier values lost during Call 2 translation.
+
+    For actual tier-list content, also rebuild merged categories like
+    'S & A Tier' into canonical tier buckets using item-level tier values.
 
     list_subtype should be passed so rank is only cleared for actual tier-list
     content. For ranked lists, rank values must be preserved.
@@ -618,9 +727,9 @@ def restore_tiers(
 
     def _apply(categories: list[dict]) -> int:
         restored = 0
-        for cat in categories:
-            for item in cat.get("items", []):
-                name = (item.get("name") or "").lower().strip()
+        for cat in categories or []:
+            for item in cat.get("items", []) or []:
+                name = safe_str(item.get("name")).lower().strip()
                 if name in tier_lookup:
                     item["tier"] = tier_lookup[name]
                     # Only clear rank for true tier-list content.
@@ -631,8 +740,25 @@ def restore_tiers(
 
     en_cats = (tools_list.get("en") or {}).get("categories", [])
     og_cats = (tools_list.get("original") or {}).get("categories", [])
-    n = _apply(en_cats) + _apply(og_cats)
-    logger.info("restore_tiers: restored %d tier values", n)
+
+    restored_count = _apply(en_cats) + _apply(og_cats)
+
+    rebuilt_en = 0
+    rebuilt_og = 0
+    if is_tier_list:
+        new_en_cats, rebuilt_en = _rebuild_tier_categories(en_cats)
+        new_og_cats, rebuilt_og = _rebuild_tier_categories(og_cats)
+        (tools_list.setdefault("en", {}))["categories"] = new_en_cats
+        (tools_list.setdefault("original", {}))["categories"] = new_og_cats
+
+    if is_tier_list:
+        logger.info(
+            "restore_tiers: restored %d tier values; rebuilt tier buckets en=%d og=%d",
+            restored_count, rebuilt_en, rebuilt_og,
+        )
+    else:
+        logger.info("restore_tiers: restored %d tier values", restored_count)
+
     return tools_list
 
 

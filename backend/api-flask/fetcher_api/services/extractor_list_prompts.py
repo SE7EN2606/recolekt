@@ -7,7 +7,7 @@ the heuristic routing module.
 
 from __future__ import annotations
 
-from fetcher_api.services.extractor_list_detection import count_numbered_caption_items
+from fetcher_api.services.extractor_tools_detection import count_numbered_caption_items
 
 
 # ---------------------------------------------------------------------------
@@ -107,8 +107,8 @@ _ITEM_SCHEMA_PLACES = """{
   "description": "One line: why the creator ranks it here or its key characteristic",
   "location_meta": {
     "type": "Ski Resort | Beach | City | Restaurant | Hotel | null",
-    "region": "Region or nearest city",
-    "country": "Country name in English"
+    "region": "Region or nearest city ONLY if explicitly stated, otherwise null",
+    "country": "Country name in English ONLY if explicitly stated, otherwise null"
   },
   "source": "transcript",
   "creator_rating": "best | good | null"
@@ -196,65 +196,46 @@ _SUBTYPE_PROMPT_CONFIG = {
 
 def build_location_list_instruction(caption: str = "") -> str:
     """
-    Build the location extraction instruction block.
+    Build a reinforcement block for strict location extraction.
 
-    Automatically counts numbered items in the caption via
-    count_numbered_caption_items() so callers do not need to pass n separately.
+    Important: this should NOT introduce a second conflicting location schema.
+    The primary schema already lives in extractor_prompts.py.
+    This helper only reinforces count discipline and null-safe geography rules.
     """
     n = count_numbered_caption_items(caption) if caption else 0
 
     if n > 0:
         count_line = (
-            f"\nCRITICAL: The caption contains exactly {n} numbered places "
-            f"(1. through {n}.). You MUST extract all {n} of them — do NOT stop early. "
-            "Count every numbered item in the caption before writing your JSON.\n"
-        )
-        numbered_rule = (
-            f'3. NEVER STOP EARLY — if the caption lists {n} places, '
-            f'return exactly {n} entries. Missing even one is an extraction error.\n'
-            f'   EXTRACT ALL NUMBERED ITEMS — find every item marked "1.", "2.", '
-            f'... "{n}." in the caption.'
+            f'\nCOUNT DISCIPLINE:\n'
+            f'- The caption contains exactly {n} numbered place entries.\n'
+            f'- You MUST return exactly {n} location objects.\n'
+            f'- Missing any numbered item is an extraction error.\n'
         )
     else:
-        count_line = ""
-        numbered_rule = (
-            "3. NEVER STOP EARLY — extract every place the creator mentions. "
-            "Missing even one is an extraction error."
+        count_line = (
+            "\nCOUNT DISCIPLINE:\n"
+            "- Extract every place the creator mentions.\n"
+            "- Do not stop early.\n"
         )
 
     return f"""
 
-IMPORTANT — THIS IS A TRAVEL / LOCATION ITINERARY:
-The creator is sharing a list of places, stops, or destinations to visit.
+IMPORTANT — THIS IS LOCATION / TRAVEL CONTENT:
+The caption is the authoritative source for the full place list. Frames may only show part of it.
 {count_line}
-STRICT EXTRACTION RULES:
-1. READ THE CAPTION FIRST — the caption is the authoritative source for place names.
-   Video frames may show only 2–3 locations but the caption lists ALL of them.
-2. REAL NAMES ONLY — use the exact place name from the caption (do not paraphrase).
-{numbered_rule}
-4. FIELDS per location entry:
-   - "name": exact place name
-   - "type": e.g. "Lake", "Hiking Trail", "Scenic Viewpoint", "Mountain", "Village"
-   - "city": nearest city or region (e.g. "Dolomites", "Venice", "Cortina")
-   - "country": country name in English
-   - "description": one sentence from the caption describing this place
-   - "lat": null
-   - "lng": null
-
-Return the array under the key:
-
-"location": [
-  {{
-    "name": "Exact Place Name",
-    "type": "Lake | Hiking Trail | Scenic Viewpoint | ...",
-    "city": "Region or nearest city",
-    "country": "Italy",
-    "description": "One sentence from the caption.",
-    "lat": null,
-    "lng": null
-  }},
-  ...
-]
+REINFORCEMENT RULES:
+1. Use the exact place names from the caption when available.
+2. Keep the location schema exactly as already requested in the main prompt.
+   Do NOT invent a second shape or alternate field contract.
+3. Geography must be evidence-based only:
+   - city: null if unknown
+   - country: null if unknown
+   - address: null if unknown
+   - neighborhood: null if unknown
+4. Never use macro regions or continents as country values.
+   BAD: "Europe", "Alps", "Dolomites", "Mediterranean", "Scandinavia"
+5. lat and lng must always be null at extraction time.
+6. If a place is only known by name or @mention, still include it, but keep unknown geography as null.
 """
 
 
@@ -272,8 +253,10 @@ def build_tools_list_instruction(subtype_hint: str = "software") -> str:
         places_note = """
 PLACE RANKING RULES:
 - Each item MUST include a "location_meta" object with "type", "region", and "country".
-- Use the transcript's spoken descriptions to fill "type" and "region".
-- "country" should be derived from context (e.g. "Italy" for Italian ski resorts).
+- "region" and "country" must be evidence-based only.
+  If not explicitly stated, set them to null.
+- Never use continents or macro-regions as country values.
+  BAD: "Europe", "Alps", "Dolomites", "Mediterranean", "Scandinavia"
 - The creator's spoken rank (first, second, #1, etc.) is the canonical rank — do NOT reorder.
 - ASR may garble place names: cross-reference caption hashtags and known geography to correct spelling.
   Examples: "Curmajur" → "Courmayeur", "Cervino" → "Cervinia", "La Twill" → "La Thuile",
@@ -297,7 +280,7 @@ LIST TYPE HINT: "{subtype_hint}" — use this to guide your extraction.
 {places_note}
 STRICT EXTRACTION RULES:
 1. DEDUPLICATE — each item appears in ONE category only.
-2. REAL NAMES ONLY — extract only actual product, brand, or item names.
+2. REAL NAMES ONLY — extract only actual product, brand, item, or place names.
    - NEVER extract single letters, pronouns, articles, or generic words.
 3. RANK — add a "rank" field ONLY when the creator gives explicit numeric ordering in speech, caption, or on-screen text.
    - If there is no explicit ranking signal, set "rank": null.

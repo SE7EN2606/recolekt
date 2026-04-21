@@ -113,9 +113,12 @@ async function geocodeViaProxy(
 
 /* ── Persist coords to Neon (fire-and-forget) ────────────────────────────── */
 
-async function persistLocationCoords(videoId: string, places: GeocodedPlace[]): Promise<void> {
+async function persistLocationCoords(
+  videoId: string,
+  locations: LocationPlace[],
+): Promise<LocationPlace[] | null> {
   const token = getToken();
-  const payload = places.map((p) => ({
+  const payload = locations.map((p) => ({
     name: p.name,
     type: p.type,
     city: p.city,
@@ -127,12 +130,12 @@ async function persistLocationCoords(videoId: string, places: GeocodedPlace[]): 
     instagram: p.instagram ?? null,
     emoji: p.emoji ?? null,
     rank: p.rank ?? null,
-    lat: p.coords ? p.coords[0] : null,
-    lng: p.coords ? p.coords[1] : null,
+    lat: p.lat ?? null,
+    lng: p.lng ?? null,
   }));
 
   try {
-    await fetch(`${API_BASE}/api/reel/${videoId}/location`, {
+    const res = await fetch(`${API_BASE}/api/reel/${videoId}/location`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -140,7 +143,13 @@ async function persistLocationCoords(videoId: string, places: GeocodedPlace[]): 
       },
       body: JSON.stringify({ location: payload }),
     });
-  } catch {}
+    if (!res.ok) return null;
+    const data = await res.json();
+    // Backend returns enriched location array with resolved coords
+    return Array.isArray(data.location) ? data.location : null;
+  } catch {
+    return null;
+  }
 }
 
 /* ── Leaflet numbered icon ───────────────────────────────────────────────── */
@@ -348,45 +357,35 @@ export const LocationCard: React.FC<LocationCardProps> = ({ locations, videoId }
     setPlaces(initial);
 
     if (!initial.some((p) => p.geocodeStatus === 'idle')) return;
+    if (!videoId) return;
 
     let cancelled = false;
-    const working = [...initial];
+
+    // Mark all idle as loading immediately so the UI shows progress
+    const loading = initial.map((p) =>
+      p.geocodeStatus === 'idle' ? { ...p, geocodeStatus: 'loading' as const } : p,
+    );
+    setPlaces(loading);
 
     (async () => {
-      for (let i = 0; i < working.length; i++) {
-        if (cancelled) break;
-        if (working[i].geocodeStatus !== 'idle') continue;
+      // Single backend call — server geocodes all missing coords and returns enriched array
+      const enriched = await persistLocationCoords(videoId, locations);
+      if (cancelled || !enriched) return;
 
-        working[i] = { ...working[i], geocodeStatus: 'loading' };
-        setPlaces([...working]);
-
-        const loc = locations[i];
-        const coords = await geocodeViaProxy(
-          loc.name,
-          loc.region ?? loc.city,
-          loc.country,
-        );
-
-        if (cancelled) break;
-
-        working[i] = {
-          ...working[i],
+      const resolved = initial.map((p, i) => {
+        const loc = enriched[i];
+        if (!loc) return { ...p, geocodeStatus: 'failed' as const };
+        const coords: [number, number] | null =
+          typeof loc.lat === 'number' && typeof loc.lng === 'number'
+            ? [loc.lat, loc.lng]
+            : null;
+        return {
+          ...p,
           coords,
-          geocodeStatus: coords ? 'done' : 'failed',
+          geocodeStatus: (coords ? 'done' : 'failed') as 'done' | 'failed',
         };
-        setPlaces([...working]);
-      }
-
-      if (!cancelled && videoId && !persistedRef.current) {
-        const anyNew = working.some(
-          (p, i) =>
-            p.coords && (locations[i]?.lat == null || locations[i]?.lng == null),
-        );
-        if (anyNew) {
-          persistedRef.current = true;
-          await persistLocationCoords(videoId, working);
-        }
-      }
+      });
+      setPlaces(resolved);
     })();
 
     return () => {

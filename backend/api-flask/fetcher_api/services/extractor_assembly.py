@@ -17,6 +17,13 @@ Internal compatibility:
   - Call 1 / Call 2 / parsers may still use legacy internal "tools" concepts
   - But public final payload should no longer expose content_type="tools"
 
+v25:
+  - Uses classify_structured_family() for public family routing of structured lists.
+  - Treats place rankings/lists as public content_type="location" even when they are
+    rendered as structured lists rather than map payloads.
+  - Keeps location-first override only for credible extracted location payloads.
+  - Preserves deterministic tier restoration / merged-tier repair from helpers.
+
 v24:
   - Removes stale item_names= kwarg from make_summary_block() call — was causing
     TypeError crash. Structural paragraph guardrail now lives inside
@@ -40,7 +47,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fetcher_api.services.extractor_tools_detection import analyze_structure
+from fetcher_api.services.extractor_tools_detection import (
+    analyze_structure,
+    classify_structured_family,
+)
 from fetcher_api.services.extractor_assembly_helpers import (
     dedupe_preserve_order,
     repair_language_if_obviously_wrong,
@@ -190,6 +200,8 @@ def _infer_public_content_type(
     tools_list: dict | None,
     structure_analysis: dict | None,
     has_location: bool,
+    transcript_preview: str = "",
+    caption: str = "",
 ) -> str:
     """
     Map internal/legacy semantics into Phase 1 public content families.
@@ -197,7 +209,7 @@ def _infer_public_content_type(
     Priority:
       1. location / recipe / workout remain explicit
       2. explicit requested public families win when plausible
-      3. structured legacy 'tools' is remapped to software / finance / products
+      3. structured legacy 'tools' is remapped via public family classifier
       4. fallback is general
     """
     requested = (requested_content_type or "").strip().lower()
@@ -205,6 +217,7 @@ def _infer_public_content_type(
     topic = (parsed.get("topic") or "").strip()
     title = (parsed.get("title") or "").strip()
     brief_description = (parsed.get("brief_description") or "").strip()
+    structure_type = ((structure_analysis or {}).get("structure_type") or "").strip().lower()
     list_subtype = ((structure_analysis or {}).get("list_subtype") or "").strip().lower()
 
     if has_location:
@@ -222,12 +235,23 @@ def _infer_public_content_type(
     if requested == "location":
         return "location"
 
-    if tools_list:
-        if requested in {"software", "finance", "products"}:
-            return requested
+    # Structured place rankings/lists should still be public "location" family
+    # even when they do not carry a separate location map payload.
+    if structure_type == "places" or list_subtype == "places":
+        return "location"
 
-        if list_subtype == "software":
-            return "software"
+    if tools_list:
+        family = classify_structured_family(
+            transcript=transcript_preview,
+            caption=caption,
+            category=category,
+            topic=topic,
+        )
+
+        if family == "places":
+            return "location"
+        if family in {"software", "finance"}:
+            return family
 
         if _looks_like_finance_text(category, topic, title, brief_description):
             return "finance"
@@ -538,6 +562,9 @@ class AssemblyMixin:
             elif named_item_count is not None and named_item_count >= 4:
                 max_headlines = min(named_item_count, 6)
 
+        transcript_preview = (prompt_trace or {}).get("transcript_preview", "")
+        caption_text = (prompt_trace or {}).get("caption", "")
+
         # ── Determine public content type before summary block ───────────
         public_content_type = _infer_public_content_type(
             requested_content_type=content_type,
@@ -545,6 +572,8 @@ class AssemblyMixin:
             tools_list=tools_list,
             structure_analysis=structure_analysis,
             has_location=has_location,
+            transcript_preview=transcript_preview,
+            caption=caption_text,
         )
 
         # ── Build summary block ───────────────────────────────────────────
