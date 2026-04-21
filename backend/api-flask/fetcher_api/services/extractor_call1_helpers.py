@@ -1,4 +1,3 @@
-# fetcher_api/services/extractor_call1_helpers.py
 """
 Standalone helpers for Call 1 parsing — extracted from extractor_call1.py
 for maintainability.
@@ -17,13 +16,13 @@ Contains:
 
 from __future__ import annotations
 
-import re
 import json
-import pathlib
 import logging
+import pathlib
+import re
 from typing import Optional
 
-from fetcher_api.services.extractor_helpers import safe_str, safe_list
+from fetcher_api.services.extractor_helpers import safe_list, safe_str
 
 logger = logging.getLogger(__name__)
 
@@ -333,7 +332,6 @@ def canonicalize_tool_name(name: str) -> str:
         "henrylloyd": "Henri Lloyd",
         "hamali": "Hamali",
         "thrudark": "ThruDark",
-        "thrudark": "ThruDark",
         "malay": "Millet",
         "millet": "Millet",
     }
@@ -386,8 +384,8 @@ def looks_like_person_name(name: str, description: str = "") -> bool:
     if first_w in TECH_SUFFIXES or last_w in TECH_SUFFIXES:
         return False
     both_proper = (
-        re.match(r"^[A-Z\xc0-\xd6\xd8-\xde][a-z\xe0-\xf6\xf8-\xff]+$", words[0]) and
-        re.match(r"^[A-Z\xc0-\xd6\xd8-\xde][a-z\xe0-\xf6\xf8-\xff]+$", words[1])
+        re.match(r"^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+$", words[0]) and
+        re.match(r"^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+$", words[1])
     )
     if not both_proper:
         return False
@@ -747,6 +745,7 @@ def add_missing_transcript_items(
             "tier": None,
             "name": canonical,
             "description": "",
+            "score": None,
             "why_it_matters": "",
             "free": None,
             "url": None,
@@ -875,15 +874,12 @@ def parse_tools_categories(
             tier_str = parse_tier(item.get("tier"))
             rank_int = None if tier_str else parse_rank(item.get("rank"))
 
-            if tier_str is None and rank_int is None:
-                rank_int = len(clean_items) + 1
-
             clean_items.append({
                 "rank": rank_int,
                 "tier": tier_str,
                 "name": name,
                 "description": desc,
-                "score": safe_str(item.get("score") or "").strip() or None,   # ← ADD THIS
+                "score": item.get("score"),
                 "why_it_matters": safe_str(item.get("why_it_matters", "")).strip(),
                 "free": parse_optional_bool(item.get("free"), default=None),
                 "url": safe_str(item.get("url") or "").strip() or None,
@@ -949,9 +945,6 @@ def promote_items_to_tools(
             if rank_int is not None:
                 logger.info("promote_items: '%s' inferred rank %d from transcript", name, rank_int)
 
-        if tier_str is None and rank_int is None:
-            rank_int = idx + 1
-
         desc = safe_str(item.get("description", "")).strip()
         desc = strip_fabricated_specs(desc)
 
@@ -960,7 +953,7 @@ def promote_items_to_tools(
             "tier": tier_str,
             "name": name,
             "description": desc,
-            "score": safe_str(item.get("score") or "").strip() or None,   # ← ADD THIS
+            "score": item.get("score"),
             "why_it_matters": safe_str(item.get("why_it_matters", "")).strip(),
             "free": parse_optional_bool(item.get("free"), default=None),
             "url": safe_str(item.get("url") or "").strip() or None,
@@ -971,7 +964,7 @@ def promote_items_to_tools(
     if len(clean) < 2:
         return None
 
-    clean.sort(key=lambda x: (x["rank"] or 999))
+    clean.sort(key=lambda x: ((x["rank"] is None), x["rank"] or 999, x["name"].lower()))
 
     logger.info("promote_items_to_tools: promoted %d items -> category '%s'", len(clean), category_name)
     return [{"name": category_name, "emoji": category_emoji, "items": clean}]

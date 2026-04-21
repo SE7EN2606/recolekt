@@ -4,10 +4,11 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Star, Infinity, Search, Bot, FolderOpen, Check, HelpCircle, ChevronDown, ShieldCheck } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
 
 export const Pricing: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useData();
+  const { user } = useAuth();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('yearly');
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 

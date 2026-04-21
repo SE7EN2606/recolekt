@@ -1,5 +1,3 @@
-# fetcher_api/services/extractor_helpers.py
-
 """
 Helper functions for universal content extraction
 Text processing, language detection, cleaning, normalization
@@ -31,12 +29,15 @@ def detect_caption_language(caption: str) -> str:
     Returns ISO language code (e.g., "fr", "es", "de") or "unknown".
     """
     text = (caption or "").lower().strip()
+    text = text.replace("’", "'").replace("`", "'")
     if not text or len(text) < 20:
         return "unknown"
 
     french_markers = [
-        "ingrédients", "recette", "très", "c'est", "pour", "avec", "une", "des",
-        "vous", "je", "abonne", "épisode", "étape", "français", "à", "été"
+        "ingrédients", "ingredients", "recette", "très", "c'est", "c est",
+        "pour", "avec", "une", "des", "les", "dans", "plus", "pas",
+        "vous", "je", "moi", "abonne", "épisode", "episode", "étape", "etape",
+        "français", "francais", "vacances", "famille", "à", "été"
     ]
     french_score = sum(1 for m in french_markers if m in text)
     if french_score >= 3 or any(c in text for c in ["é", "è", "ê", "à", "ç", "œ"]):
@@ -207,26 +208,26 @@ def is_caption_copy(summary: str, caption: str) -> bool:
     """
     if not summary or not caption:
         return False
-    
+
     summary_clean = normalize_text_for_comparison(summary)
     caption_clean = normalize_text_for_comparison(caption)
-    
+
     if summary_clean in caption_clean:
         return True
-    
+
     summary_words = summary_clean.split()
     caption_words = caption_clean.split()
-    
+
     if len(summary_words) < 10:
         return False
-    
+
     matches = 0
     for word in summary_words:
         if word in caption_words and len(word) > 3:
             matches += 1
-    
+
     overlap = matches / len(summary_words) if summary_words else 0
-    
+
     return overlap > 0.6
 
 
@@ -238,24 +239,24 @@ def smart_truncate_summary(text: str, max_chars: int = SUMMARY_MAX_CHARS) -> str
     s = (text or "").strip()
     if len(s) <= max_chars:
         return s
-    
+
     # Try to find last complete sentence within limit
     cut = s[:max_chars]
-    
+
     # Find last sentence-ending punctuation
     last_period = max(cut.rfind('.'), cut.rfind('!'), cut.rfind('?'))
-    
+
     if last_period > max_chars * 0.7:  # If we found a sentence end in last 30% of allowed length
         return s[:last_period + 1].strip()
-    
+
     # Otherwise, cut at word boundary
     if " " in cut:
         cut = cut.rsplit(" ", 1)[0].rstrip()
-    
+
     cut = cut.rstrip(" ,.;:!-")
-    
+
     # Add period if missing
     if cut and not cut.endswith((".", "!", "?")):
         cut += "."
-    
+
     return cut

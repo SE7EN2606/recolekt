@@ -12,9 +12,9 @@ Covers:
 
 from __future__ import annotations
 
-import re
 import json
 import logging
+import re
 
 from fetcher_api.services.extractor_helpers import safe_str, safe_list
 
@@ -462,7 +462,6 @@ def build_tier_summary(parsed: dict) -> str:
         ),
     )
 
-    # Pull best and worst items for a specific line2
     top_items = []
     bottom_items = []
     for cat in categories:
@@ -504,7 +503,6 @@ def build_verdict_summary(parsed: dict) -> str:
     topic = safe_str(parsed.get("topic") or "").strip().lower()
     fn = family_noun(parsed, categories)
     cat_map = collect_category_names(categories)
-
     buy_brand = _fuzzy_cat_lookup(cat_map, "buy the brand", "brand")
     buy_product = _fuzzy_cat_lookup(cat_map, "buy the product", "product")
     buy_both = _fuzzy_cat_lookup(cat_map, "buy both", "both")
@@ -592,15 +590,19 @@ def get_structure_type(parsed: dict) -> str:
     stype = safe_str(structure.get("structure_type") or "").strip().lower()
     if stype:
         return stype
+
     subtype = safe_str(parsed.get("list_subtype") or "").strip().lower()
     is_ranked = bool(parsed.get("is_ranked"))
+
     if subtype == "verdict":
         return "verdict"
     if subtype == "ranking" or is_ranked:
         return "ranking"
     if subtype == "tier":
         return "tier"
-    if subtype in {"grouped", "picks", "software", "lifestyle", "gear", "food", "finance", "places"}:
+    if subtype == "places":
+        return "places"
+    if subtype in {"grouped", "picks", "software", "lifestyle", "gear", "food", "finance"}:
         return "grouped"
     return "unknown"
 
@@ -615,6 +617,7 @@ def build_structured_output(parsed: dict, tools_categories: list[dict]) -> dict:
         summary_en = build_tier_summary(parsed)
     else:
         summary_en = build_grouped_summary(parsed)
+
     return {
         "summary_en": summary_en,
         "summary_original": summary_en,

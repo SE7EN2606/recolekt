@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { LocationData } from '../components/LocationCard';
+import type { LocationPlace as LocationData } from '../context/DataContext';
 
 export interface SavedPlace {
   id: string;               // `${videoId}_${name}` — stable, unique

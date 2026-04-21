@@ -51,6 +51,7 @@ class Call2Mixin:
         highlights = parsed.get("highlights", [])
         tools_categories = parsed.get("tools_categories") or []
         has_location = has_location_payload(parsed)
+        parsed_title = safe_str(parsed.get("title", "")).strip()
 
         if tools_categories and is_structured_mode(parsed) and not has_location:
             structure_type = get_structure_type(parsed)
@@ -63,7 +64,7 @@ class Call2Mixin:
 
         prompt = (
             f"Write a summary for this content.\n\n"
-            f"TITLE: {parsed['title']}\n"
+            f"TITLE: {parsed_title}\n"
             f"BRIEF: {parsed.get('brief_description', '')}\n"
             f"CATEGORY: {parsed.get('category', 'general')}\n\n"
             f"REQUIREMENTS FOR SUMMARY:\n"
@@ -78,13 +79,13 @@ class Call2Mixin:
             f'{{ "summary_en": "para1\\n\\npara2" }}'
         )
 
-        result_data = self._call_ai(prompt)
+        result_data = self._call_ai(prompt, call_type="summary")
         summary_en = safe_str(result_data.get("summary_en", "")).strip()
 
         return {
             "summary_en": summary_en,
             "summary_original": summary_en,
-            "title_original": parsed["title"],
+            "title_original": parsed_title,
             "headlines_en": list(highlights),
             "headlines_og": list(highlights),
         }
@@ -98,15 +99,17 @@ class Call2Mixin:
     ) -> dict:
         highlights = parsed.get("highlights", [])
         headline_json = build_headlines_json(highlights)
+        parsed_title = safe_str(parsed.get("title", "")).strip()
 
         prompt = (
             f"The ORIGINAL language of this content is {lang}.\n"
             f"Write the ORIGINAL-language version first, then an English version.\n\n"
-            f"TITLE (current working title in English): {parsed['title']}\n"
+            f"WORKING TITLE: {parsed_title}\n"
+            f"TITLE NOTE: The working title may already be in the original language. Do NOT assume it is English.\n"
             f"BRIEF DESCRIPTION: {parsed.get('brief_description', '')}\n"
             f"CATEGORY: {parsed.get('category', 'general')}\n\n"
             f"CONTENT TO TRANSLATE / REWRITE:\n\n"
-            f'"headlines_en": {headline_json}\n\n'
+            f'"headlines_input": {headline_json}\n\n'
             f"Return translated original-language headlines in this exact JSON shape:\n"
             f'  "headlines": [{{"headline": "translated headline", "description": "translated description"}}]\n\n'
             f"REQUIREMENTS:\n"
@@ -131,11 +134,11 @@ class Call2Mixin:
             f"}}"
         )
 
-        result_data = self._call_ai(prompt)
+        result_data = self._call_ai(prompt, call_type="summary")
 
         summary_og = safe_str(result_data.get("summary_original", "")).strip()
         summary_en = safe_str(result_data.get("summary_en", "")).strip()
-        title_og = safe_str(result_data.get("title_original", "")).strip() or parsed["title"]
+        title_og = safe_str(result_data.get("title_original", "")).strip() or parsed_title
 
         raw_headlines = safe_list(result_data.get("headlines", []))
         headlines_og = safe_headlines(raw_headlines)
@@ -144,6 +147,7 @@ class Call2Mixin:
             logger.warning(
                 "⚠️ Call 2 bilingual returned no translated headlines for lang=%s", lang
             )
+            headlines_og = list(highlights)
         else:
             headlines_og = copy_emojis_to_headlines(highlights, headlines_og)
 
@@ -151,7 +155,7 @@ class Call2Mixin:
             "summary_en": summary_en or summary_og,
             "summary_original": summary_og or summary_en,
             "title_original": title_og,
-            "headlines_en": highlights,
+            "headlines_en": list(highlights),
             "headlines_og": headlines_og,
         }
 
@@ -189,6 +193,7 @@ class Call2Mixin:
         tools_json = build_tools_json(tools_categories)
         structure_type = get_structure_type(parsed)
         public_family = infer_public_family(parsed, tools_categories)
+        parsed_title = safe_str(parsed.get("title", "")).strip()
 
         prompt = (
             f"The ORIGINAL language of this content is {lang}.\n"
@@ -205,8 +210,9 @@ class Call2Mixin:
             f"  - NEVER start with 'This content', 'This video', 'Cette vidéo', 'Ce contenu'\n\n"
             f"ENGLISH SUMMARY TO TRANSLATE:\n"
             f"{summary_en_deterministic}\n\n"
-            f"ENGLISH TITLE TO TRANSLATE:\n"
-            f"{parsed.get('title', '')}\n\n"
+            f"WORKING TITLE TO TRANSLATE:\n"
+            f"{parsed_title}\n"
+            f"TITLE NOTE: The working title may already be in the original language. Do NOT assume it is English.\n\n"
             f"TASK 2 — Translate the structured list into {lang}:\n"
             f"  - Keep all item names unchanged\n"
             f"  - Keep url/free/rank/source/tier/creator_rating unchanged\n"
@@ -222,7 +228,7 @@ class Call2Mixin:
         )
 
         try:
-            result_data = self._call_ai(prompt)
+            result_data = self._call_ai(prompt, call_type="summary")
         except Exception as e:
             logger.warning(
                 "⚠️ Call 2 bilingual structured failed: %s — using deterministic fallback", e
@@ -230,7 +236,7 @@ class Call2Mixin:
             result_data = {}
 
         summary_og = safe_str(result_data.get("summary_original", "")).strip()
-        title_og = safe_str(result_data.get("title_original", "")).strip() or parsed.get("title", "")
+        title_og = safe_str(result_data.get("title_original", "")).strip() or parsed_title
 
         if not summary_og:
             logger.info(
@@ -242,7 +248,8 @@ class Call2Mixin:
         raw_translated_cats = result_data.get("translated_categories")
         if isinstance(raw_translated_cats, list) and raw_translated_cats:
             parsed_tools_og = parse_tools_categories({"categories": raw_translated_cats})
-            tools_og = restore_item_enum_fields(parsed_tools_og, tools_categories)
+            if parsed_tools_og:
+                tools_og = restore_item_enum_fields(parsed_tools_og, tools_categories)
 
         out = {
             "summary_en": summary_en_deterministic,
@@ -287,12 +294,13 @@ class Call2Mixin:
         )
 
         try:
-            result_data = self._call_ai(prompt)
+            result_data = self._call_ai(prompt, call_type="summary")
             raw_cats = result_data.get("categories", [])
             if isinstance(raw_cats, list) and raw_cats:
                 translated = parse_tools_categories({"categories": raw_cats})
-                translated = restore_item_enum_fields(translated, categories)
-                return translated
+                if translated:
+                    translated = restore_item_enum_fields(translated, categories)
+                    return translated
         except Exception as e:
             logger.warning("⚠️ Call 3 structured translation failed: %s", e)
 

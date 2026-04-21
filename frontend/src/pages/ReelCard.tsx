@@ -2,19 +2,20 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Heart, Loader2, CheckCircle2, AlertCircle, RefreshCw, Trash2,
-  CircleSlash2, Folder as FolderIcon, ChefHat, Dumbbell,
-  Wrench, Sparkles, Backpack, UtensilsCrossed, Trophy, MapPin,
-  Layers3, BadgeAlert, ListOrdered,
+  CircleSlash2, Folder as FolderIcon,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useData } from '../context/DataContext';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { PlatformIconAuthor } from '../components/CustomIcons';
+import {
+  ContentTypeBadge,
+  resolveContentType,
+  deriveToolsSubtype,
+  type ContentType,
+  type ToolsSubtype,
+} from '../components/ContentTypeBadge';
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
 interface VideoCardProps {
   video: any;
   selected?: boolean;
@@ -22,26 +23,23 @@ interface VideoCardProps {
   selectionMode?: boolean;
 }
 
-type ContentType = 'recipe' | 'tools' | 'workout' | 'places' | 'general';
-type ToolsSubtype =
-  | 'software'
-  | 'lifestyle'
-  | 'gear'
-  | 'food'
-  | 'ranking'
-  | 'tier'
-  | 'verdict'
-  | 'grouped'
-  | 'picks';
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 const safeStr = (v: any): string => {
   if (typeof v === 'string') return v;
   if (v == null) return '';
   return String(v);
+};
+
+const parseMaybeJson = <T,>(value: unknown, fallback: T): T => {
+  if (value == null) return fallback;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  if (typeof value === 'object') return value as T;
+  return fallback;
 };
 
 const getFolderName = (folderId: string, folders: any[]): string | null => {
@@ -59,15 +57,24 @@ const getFolderName = (folderId: string, folders: any[]): string | null => {
 
 function resolveTitle(video: any, t: any): string {
   const DEFAULT = t('videoCard:untitledVideo', 'Saved Video');
-  let summaryObj = video?.summary ?? video?.summary_text ?? video?.raw?.summary ?? {};
+
+  let summaryObj: any = video?.summary ?? video?.summary_text ?? video?.raw?.summary ?? {};
   if (typeof summaryObj === 'string') {
-    try { summaryObj = JSON.parse(summaryObj); } catch { summaryObj = {}; }
+    try {
+      summaryObj = JSON.parse(summaryObj);
+    } catch {
+      summaryObj = {};
+    }
   }
   const sumEngTitle = safeStr(summaryObj?.english?.title).trim();
 
-  let recipeObj = video?.recipe ?? video?.raw?.recipe ?? {};
+  let recipeObj: any = video?.recipe ?? video?.raw?.recipe ?? {};
   if (typeof recipeObj === 'string') {
-    try { recipeObj = JSON.parse(recipeObj); } catch { recipeObj = {}; }
+    try {
+      recipeObj = JSON.parse(recipeObj);
+    } catch {
+      recipeObj = {};
+    }
   }
   if (recipeObj?.recipe) recipeObj = recipeObj.recipe;
   const recEngTitle = safeStr(recipeObj?.english?.title).trim();
@@ -75,194 +82,72 @@ function resolveTitle(video: any, t: any): string {
   const dbTitle = safeStr(video?.summary_title ?? video?.summaryTitle).trim();
   let passedTitle = safeStr(video?.title).trim();
   const captionCutoff = safeStr(video?.caption ?? '').split('\n')[0].substring(0, 56).trim();
-  if (passedTitle === captionCutoff || passedTitle.length === 56) passedTitle = '';
+
+  if (passedTitle === captionCutoff) passedTitle = '';
+  if (passedTitle.length > 56) passedTitle = '';
 
   return (
-    sumEngTitle || recEngTitle || dbTitle || passedTitle ||
-    summaryObj?.title ||
+    sumEngTitle ||
+    recEngTitle ||
+    dbTitle ||
+    passedTitle ||
+    safeStr(summaryObj?.title) ||
     safeStr(video?.caption ?? '').split('\n')[0].trim() ||
     DEFAULT
   );
 }
 
-function resolveContentType(video: any): ContentType {
-  const ct = safeStr(video?.content_type).toLowerCase();
-  if (ct === 'recipe')  return 'recipe';
-  if (ct === 'tools')   return 'tools';
-  if (ct === 'workout') return 'workout';
-  if (ct === 'places' || ct === 'location') return 'places';
-  return 'general';
+function getRawContentType(video: any): string {
+  return safeStr(
+    video?.contenttype ??
+    video?.content_type ??
+    video?.contentType ??
+    video?.raw?.content_type ??
+    video?.raw?.contenttype
+  ).toLowerCase();
 }
 
-function getParsedToolsList(video: any): any | null {
-  let tl = video?.tools_list ?? video?.raw?.tools_list ?? null;
-  if (typeof tl === 'string') {
-    try { tl = JSON.parse(tl); } catch { return null; }
-  }
-  return tl || null;
+function resolveVideoContentType(video: any): ContentType {
+  return resolveContentType(getRawContentType(video));
 }
 
-const VALID_SUBTYPES = new Set<ToolsSubtype>([
-  'software', 'lifestyle', 'gear', 'food', 'ranking', 'tier', 'verdict', 'grouped', 'picks',
-]);
-
-function isToolsSubtype(v: string): v is ToolsSubtype {
-  return VALID_SUBTYPES.has(v as ToolsSubtype);
+function isToolsSubtype(value: unknown): value is ToolsSubtype {
+  return value === 'software'
+    || value === 'lifestyle'
+    || value === 'gear'
+    || value === 'food'
+    || value === 'ranking'
+    || value === 'tier'
+    || value === 'verdict'
+    || value === 'grouped'
+    || value === 'picks';
 }
 
-const LIFESTYLE_SIGNALS = new Set([
-  'fragrance','perfume','scent','cologne','parfum','eau de','skincare','beauty',
-  'makeup','cosmetic','serum','moisturizer','foundation','lipstick','mascara',
-  'cream','lotion','fashion','shirt','jacket','coat','suit','jeans',
-  'sneaker','shoe','watch','jewel','jewelry','handbag','purse','luxury',
-  'marque','vetement','vêtement','montre','sac',
-]);
+function getToolsList(video: any): any {
+  const raw =
+    video?.toolslist ??
+    video?.tools_list ??
+    video?.toolsList ??
+    video?.raw?.toolslist ??
+    video?.raw?.tools_list;
 
-const GEAR_SIGNALS = new Set([
-  'ski','snowboard','surf','skate','bike','cycling','hiking','climbing','running',
-  'golf','tennis','yoga','crossfit','camera','lens','drone','microphone',
-  'headphone','speaker','keyboard','mouse','monitor','laptop','smartphone','tablet',
-  'gear','equipment','kit','setup','rig','matériel','supplement','protein',
-  'vitamin','creatine',
-]);
+  return parseMaybeJson<any>(raw, null);
+}
 
-const FOOD_SIGNALS = new Set([
-  'wine','whisky','whiskey','bourbon','beer','cocktail','coffee','tea',
-  'restaurant','food','dish','cuisine','chef','vin','bière','café','boisson',
-]);
-
-const SOFTWARE_SIGNALS = new Set([
-  'app','website','tool','platform','software','extension','plugin','api','saas',
-  'dashboard','chrome','browser','ai','gpt','llm','bot','automation','workflow',
-  'integration','notion','figma','slack','github','vercel','supabase',
-  'outils','logiciel','application','site web','site',
-]);
-
-function deriveToolsSubtype(video: any): ToolsSubtype {
-  // 1. Root-level list_subtype — canonical, present on every video object
+function getToolsSubtypeForBadge(video: any): ToolsSubtype {
   const rootSubtype = safeStr(
     video?.list_subtype ??
     video?.listSubtype ??
-    video?.list_type
+    video?.raw?.list_subtype
   ).toLowerCase();
+
   if (isToolsSubtype(rootSubtype)) return rootSubtype;
 
-  // 2. Stored subtype inside tools_list object
-  const tl = getParsedToolsList(video);
-  if (tl) {
-    const stored = safeStr(tl?.list_subtype ?? tl?.listSubtype).toLowerCase();
-    if (isToolsSubtype(stored)) return stored;
-  }
-
-  // 3. Derive from tools_list content heuristics
-  if (!tl) return 'picks';
-
-  const cats: any[] = tl?.en?.categories ?? tl?.categories ?? [];
-  if (!Array.isArray(cats) || cats.length === 0) return 'picks';
-
-  let hasUrl = false;
-  let isRanked = false;
-  let hasTier = false;
-  const allText: string[] = [];
-
-  for (const cat of cats) {
-    allText.push(safeStr(cat?.name).toLowerCase());
-    if (Array.isArray(cat?.items)) {
-      for (const item of cat.items) {
-        if (item?.url) hasUrl = true;
-        if (typeof item?.rank === 'number' && item.rank <= 10) isRanked = true;
-        if (typeof item?.tier === 'string' && item.tier.trim()) hasTier = true;
-        allText.push(safeStr(item?.name).toLowerCase());
-        allText.push(safeStr(item?.description).toLowerCase());
-      }
-    }
-  }
-
-  const combined = allText.join(' ');
-
-  if (hasTier) return 'tier';
-  if ([...LIFESTYLE_SIGNALS].some(s => combined.includes(s))) return 'lifestyle';
-  if ([...FOOD_SIGNALS].some(s => combined.includes(s)))      return 'food';
-  if ([...GEAR_SIGNALS].some(s => combined.includes(s)))      return 'gear';
-  if (hasUrl)                                                  return 'software';
-  if ([...SOFTWARE_SIGNALS].some(s => combined.includes(s)))  return 'software';
-  if (isRanked)                                                return 'ranking';
-
-  return 'picks';
+  const toolsList = getToolsList(video);
+  const derived = deriveToolsSubtype(toolsList);
+  return isToolsSubtype(derived) ? derived : 'picks';
 }
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tools subtype badge metadata
-// ─────────────────────────────────────────────────────────────────────────────
-const TOOLS_SUBTYPE_META: Record<ToolsSubtype, { icon: React.ReactElement; label: string }> = {
-  software:  { icon: <Wrench          size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Software'  },
-  lifestyle: { icon: <Sparkles        size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Lifestyle' },
-  gear:      { icon: <Backpack        size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Gear'      },
-  food:      { icon: <UtensilsCrossed size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Food'      },
-  ranking:   { icon: <Trophy          size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Ranking'   },
-  tier:      { icon: <Layers3         size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Tier List' },
-  verdict:   { icon: <BadgeAlert      size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Verdict'   },
-  grouped:   { icon: <ListOrdered     size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Grouped'   },
-  picks:     { icon: <Heart           size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Picks'     },
-};
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Content-type badge
-// ─────────────────────────────────────────────────────────────────────────────
-interface ContentTypeBadgeProps {
-  type: ContentType;
-  toolsSubtype?: ToolsSubtype;
-}
-
-const ContentTypeBadge: React.FC<ContentTypeBadgeProps> = ({ type, toolsSubtype }) => {
-  if (type === 'general') return null;
-
-  if (type === 'recipe') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-orange-50 text-orange-600 border-orange-200">
-        <ChefHat size={11} strokeWidth={2.5} aria-hidden="true" />
-        Recipe
-      </span>
-    );
-  }
-
-  if (type === 'workout') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-emerald-50 text-emerald-700 border-emerald-200">
-        <Dumbbell size={11} strokeWidth={2.5} aria-hidden="true" />
-        Workout
-      </span>
-    );
-  }
-
-  if (type === 'places') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-sky-50 text-sky-700 border-sky-200">
-        <MapPin size={11} strokeWidth={2.5} aria-hidden="true" />
-        Places
-      </span>
-    );
-  }
-
-  if (type === 'tools') {
-    const { icon, label } = TOOLS_SUBTYPE_META[toolsSubtype ?? 'picks'];
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-primary-50 text-primary-700 border-primary-200">
-        {icon}
-        {label}
-      </span>
-    );
-  }
-
-  return null;
-};
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Processing messages
-// ─────────────────────────────────────────────────────────────────────────────
 const PROCESSING_MESSAGES = [
   'msg_indexing', 'msg_parsing', 'msg_visual', 'msg_auditory',
   'msg_analysing', 'msg_decoding', 'msg_semantic', 'msg_contextual',
@@ -272,25 +157,22 @@ const PROCESSING_MESSAGES = [
   'msg_optimizing', 'msg_polishing', 'msg_finalizing',
 ];
 
+const RESTRICTED_CONTENT = 'RESTRICTED_CONTENT';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// VideoCard
-// ─────────────────────────────────────────────────────────────────────────────
 const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggleSelect, selectionMode }) => {
-  console.log('REEL list_subtype:', video?.list_subtype, '| listSubtype:', video?.listSubtype, '| list_type:', video?.list_type, '| content_type:', video?.content_type, '| tools_list keys:', Object.keys(video?.tools_list ?? {}));
-  const navigate   = useNavigate();
-  const { t }      = useTranslation(['videoCard', 'gallery', 'common']);
+  const navigate = useNavigate();
+  const { t } = useTranslation(['videoCard', 'gallery', 'common']);
   const { toggleFavorite, addVideo, deleteVideos, folders } = useData();
 
   const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
 
-  const [isFavorite,        setIsFavorite]       = useState(Boolean(video?.isFavorite ?? video?.is_favorite ?? false));
-  const [isRetrying,        setIsRetrying]       = useState(false);
-  const [isDeleting,        setIsDeleting]       = useState(false);
+  const [isFavorite, setIsFavorite] = useState(Boolean(video?.isFavorite ?? video?.is_favorite ?? false));
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
-  const [animateHeart,      setAnimateHeart]     = useState(false);
-  const [msgIndex,          setMsgIndex]         = useState(0);
-  const [scanState,         setScanState]        = useState<'h-active' | 'v-active'>('h-active');
+  const [animateHeart, setAnimateHeart] = useState(false);
+  const [msgIndex, setMsgIndex] = useState(0);
+  const [scanState, setScanState] = useState<'h-active' | 'v-active'>('h-active');
 
   const imgRef = useRef<HTMLImageElement>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -299,7 +181,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     setIsFavorite(Boolean(video?.isFavorite ?? video?.is_favorite ?? false));
   }, [video?.isFavorite, video?.is_favorite, videoId]);
 
-  const isProcessing   = video?.category === 'Processing' || video?.status === 'processing';
+  const isProcessing = video?.category === 'Processing' || video?.status === 'processing';
   const isFailedStatus = video?.category === 'Failed' || video?.status === 'error' || video?.status === 'failed';
 
   const thumbnailUrl = (
@@ -316,8 +198,9 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
   useEffect(() => {
     if (!isProcessing) return;
-    const msgInterval  = setInterval(() => setMsgIndex(p => (p + 1) % PROCESSING_MESSAGES.length), 2000);
-    const scanInterval = setInterval(() => setScanState(p => p === 'h-active' ? 'v-active' : 'h-active'), 4000);
+    const msgInterval = setInterval(() => setMsgIndex(p => (p + 1) % PROCESSING_MESSAGES.length), 2000);
+    const scanInterval = setInterval(() => setScanState(p => (p === 'h-active' ? 'v-active' : 'h-active')), 4000);
+
     return () => {
       clearInterval(msgInterval);
       clearInterval(scanInterval);
@@ -328,34 +211,73 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     if (imgRef.current?.complete) setImageLoaded(true);
   }, [thumbnailUrl]);
 
-  const isDone         = video?.status === 'done' || video?.status === 'completed';
+  const isDone = video?.status === 'done' || video?.status === 'completed';
   const isMissingThumb = isDone && !thumbnailUrl;
-  const hasError       = isFailedStatus || isMissingThumb;
-  const isDisabled     = isProcessing || hasError;
+  const hasError = isFailedStatus || isMissingThumb;
+  const isDisabled = isProcessing || hasError;
 
+  const folderId = video?.folderId ?? video?.folder_id ?? '';
   const isSorted = Boolean(
-    video.folderId &&
-    video.folderId !== 'all' &&
-    video.folderId !== 'unsorted' &&
-    video.folderId !== 'default',
+    folderId &&
+    folderId !== 'all' &&
+    folderId !== 'unsorted' &&
+    folderId !== 'default',
   );
 
   const folderName = useMemo(
-    () => getFolderName(video?.folderId || '', folders || []),
-    [video?.folderId, folders],
+    () => getFolderName(folderId, folders || []),
+    [folderId, folders],
   );
 
   const displayTitle = useMemo(() => resolveTitle(video, t), [video, t]);
-  const contentType  = useMemo(() => resolveContentType(video), [video?.content_type]);
+  const contentType = useMemo(() => resolveVideoContentType(video), [video]);
+
   const toolsSubtype = useMemo(
-    () => contentType === 'tools' ? deriveToolsSubtype(video) : undefined,
+    () => (
+      contentType === 'products' ||
+      contentType === 'software' ||
+      contentType === 'finance'
+    )
+      ? getToolsSubtypeForBadge(video)
+      : undefined,
     [video, contentType],
   );
 
   const showTypeBadge = !isProcessing && !hasError && contentType !== 'general';
 
-  const author    = String(video?.author ?? video?.author_name ?? video?.authorName ?? t('videoCard:unknownAuthor'));
-  const duration  = video?.duration;
+  const hasLocation = useMemo(() => {
+    const loc = video?.location;
+    if (!loc) return false;
+
+    if (typeof loc === 'string') {
+      try {
+        const parsed = JSON.parse(loc);
+        if (Array.isArray(parsed)) return parsed.length > 0;
+        if (parsed && typeof parsed === 'object') {
+          return !!(parsed.places?.length || parsed.items?.length || parsed.name);
+        }
+      } catch {
+        return false;
+      }
+    }
+
+    if (Array.isArray(loc)) return loc.length > 0;
+
+    if (typeof loc === 'object') {
+      return !!(
+        (loc as any).name ||
+        ((loc as any).places?.length > 0) ||
+        ((loc as any).items?.length > 0)
+      );
+    }
+
+    return false;
+  }, [video?.location]);
+
+  const showPlacesBadge = !isProcessing && !hasError && hasLocation && contentType !== 'places';
+
+  const author = String(video?.author ?? video?.author_name ?? video?.authorName ?? t('videoCard:unknownAuthor'));
+  const duration = video?.duration;
   const sourceUrl = String(video?.originalUrl ?? video?.source_url ?? video?.sourceUrl ?? video?.raw?.sourceurl ?? '');
 
   const platform = useMemo(() => {
@@ -370,13 +292,16 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     e.preventDefault();
     e.stopPropagation();
     if (isDisabled || !navigator.onLine) return;
+
     if (isFavorite) {
       setShowRemoveConfirm(true);
       return;
     }
+
     setAnimateHeart(true);
     setIsFavorite(true);
     setTimeout(() => setAnimateHeart(false), 400);
+
     try {
       await toggleFavorite(videoId);
     } catch {
@@ -387,6 +312,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
   const confirmRemoveFavorite = async () => {
     setIsFavorite(false);
     setShowRemoveConfirm(false);
+
     try {
       await toggleFavorite(videoId);
     } catch {
@@ -400,6 +326,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
       e.stopPropagation();
       return;
     }
+
     if (selectionMode) {
       e.preventDefault();
       e.stopPropagation();
@@ -413,6 +340,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     e.preventDefault();
     e.stopPropagation();
     if (!sourceUrl || isRetrying || !navigator.onLine) return;
+
     setIsRetrying(true);
     try {
       await addVideo(sourceUrl, true);
@@ -426,6 +354,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     e.preventDefault();
     e.stopPropagation();
     if (!videoId || isDeleting || !navigator.onLine) return;
+
     setIsDeleting(true);
     try {
       await deleteVideos([videoId]);
@@ -436,9 +365,13 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
   const rawError = video?.errorMessage || video?.error_message || video?.error_code || video?.raw?.errormessage;
   let errorText = t('videoCard:defaultError', 'Media download failed.');
-  if (rawError === 'RESTRICTED_CONTENT') errorText = t('videoCard:restrictedContent', 'Instagram blocked this video (Sensitive or Private).');
-  else if (isMissingThumb) errorText = t('videoCard:missingThumbnailText', 'Media download failed.');
-  else if (rawError) errorText = rawError;
+  if (rawError === RESTRICTED_CONTENT) {
+    errorText = t('videoCard:restrictedContent', 'Instagram blocked this video (Sensitive or Private).');
+  } else if (isMissingThumb) {
+    errorText = t('videoCard:missingThumbnailText', 'Media download failed.');
+  } else if (rawError) {
+    errorText = rawError;
+  }
 
   return (
     <>
@@ -485,7 +418,11 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         {isProcessing && (
           <div className="absolute inset-0 z-40 bg-slate-900 overflow-hidden shadow-[0_0_20px_rgba(124,58,237,0.25)] border border-primary-500/40">
             {thumbnailUrl ? (
-              <img src={thumbnailUrl} alt="Processing" className="absolute inset-0 w-full h-full object-cover opacity-70 blur-sm scale-110 z-0" />
+              <img
+                src={thumbnailUrl}
+                alt="Processing"
+                className="absolute inset-0 w-full h-full object-cover opacity-70 blur-sm scale-110 z-0"
+              />
             ) : (
               <div className="absolute inset-0 bg-slate-900 z-0" />
             )}
@@ -552,13 +489,15 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
 
         {selectionMode && (
           <div
-            onClick={e => { e.stopPropagation(); onToggleSelect?.(); }}
+            onClick={e => {
+              e.stopPropagation();
+              onToggleSelect?.();
+            }}
             className="absolute top-3 left-3 z-30"
           >
             {selected
               ? <CheckCircle2 size={24} className="text-primary-600 fill-white" />
-              : <div className="w-6 h-6 rounded-full border-2 border-white/80 bg-black/20" />
-            }
+              : <div className="w-6 h-6 rounded-full border-2 border-white/80 bg-black/20" />}
           </div>
         )}
 
@@ -596,11 +535,16 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         )}
       </div>
 
-      {/* ── Text area (below card) ───────────────────────────────────── */}
       <div className="pt-3 px-0.5">
-        {showTypeBadge && (
-          <div className="mb-1.5">
-            <ContentTypeBadge type={contentType} toolsSubtype={toolsSubtype} />
+        {(showTypeBadge || showPlacesBadge) && (
+          <div className="flex flex-wrap items-center gap-1 mb-1.5">
+            {showTypeBadge && (
+              <ContentTypeBadge
+                type={contentType}
+                toolsSubtype={toolsSubtype}
+              />
+            )}
+            {showPlacesBadge && <ContentTypeBadge type="places" />}
           </div>
         )}
 
@@ -613,7 +557,10 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
             href={sourceUrl}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={e => { e.stopPropagation(); if (isDisabled) e.preventDefault(); }}
+            onClick={e => {
+              e.stopPropagation();
+              if (isDisabled) e.preventDefault();
+            }}
             className="inline-flex items-center gap-1.5 group/author w-max mt-1"
           >
             <PlatformIconAuthor platform={platform} />

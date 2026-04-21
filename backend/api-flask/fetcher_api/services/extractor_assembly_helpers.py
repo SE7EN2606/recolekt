@@ -1,21 +1,16 @@
 from __future__ import annotations
 
-
-import re
 import logging
+import re
 from collections import defaultdict
-
 
 from fetcher_api.services.extractor_helpers import safe_str
 from fetcher_api.services.summary_formatter import format_ai_summary
 
-
 logger = logging.getLogger(__name__)
 
 
-
 # ── Tool/item name validator ──────────────────────────────────────────────────
-
 
 
 def is_valid_tool_name(name: str) -> bool:
@@ -39,9 +34,7 @@ def is_valid_tool_name(name: str) -> bool:
     return True
 
 
-
 # ── Generic helpers ──────────────────────────────────────────────────────────
-
 
 
 def dedupe_preserve_order(values: list[str]) -> list[str]:
@@ -59,16 +52,15 @@ def dedupe_preserve_order(values: list[str]) -> list[str]:
     return out
 
 
-
 _FRENCH_MARKERS = (
     " tu ", " le ", " la ", " les ", " des ", " une ", " un ", " avec ",
-    " pour ", " donc ", " c'est ", " j'", " qu'", " d'", " au ", " aux ",
+    " pour ", " donc ", " c'est ", " c est ", " j'", " qu'", " d'", " au ", " aux ",
     " pas ", " plus ", " moins ", " très ", " vrai ", " marque ", " produit ",
     " serviette ", " maison ", " fondée ", " équivalents ", " honnête ",
     " fabriqué ", " fabriquée ", " fibres ", " commentaire ", " enregistre ",
-    " acheter ", " achètes ", " achète ", " bain ",
+    " acheter ", " achètes ", " achète ", " bain ", " famille ", " vacances ",
+    " hôtels ", " hotels ", " adresses ",
 )
-
 
 
 def looks_clearly_french(text: str) -> bool:
@@ -79,7 +71,6 @@ def looks_clearly_french(text: str) -> bool:
     hits = sum(1 for marker in _FRENCH_MARKERS if marker in t)
     accented = sum(ch in t for ch in "àâçéèêëîïôùûüÿœ")
     return hits >= 4 or (hits >= 2 and accented >= 1)
-
 
 
 def repair_language_if_obviously_wrong(lang: str, prompt_trace: dict | None) -> str:
@@ -102,14 +93,12 @@ def repair_language_if_obviously_wrong(lang: str, prompt_trace: dict | None) -> 
     return lang or "en"
 
 
-
 _SOFTWARE_CONTEXT_RE = re.compile(
     r"\b(app|apps|website|websites|tool|tools|software|plugin|plugins|api|apis|"
     r"saas|dashboard|browser|chrome|extension|workflow|automation|notion|figma|"
     r"slack|github|vercel|supabase|chatgpt|claude|canva|ai|llm|bot)\b",
     re.IGNORECASE,
 )
-
 
 _FINANCE_CONTEXT_RE = re.compile(
     r"\b(finance|financial|accounting|bookkeeping|tax|taxes|vat|invoice|invoicing|"
@@ -118,7 +107,6 @@ _FINANCE_CONTEXT_RE = re.compile(
     r"expense ratio|retirement|banking|debt|loan|mortgage)\b",
     re.IGNORECASE,
 )
-
 
 
 def is_softwareish_context(parsed: dict, categories: list[dict]) -> bool:
@@ -142,7 +130,6 @@ def is_softwareish_context(parsed: dict, categories: list[dict]) -> bool:
     return has_url or bool(_SOFTWARE_CONTEXT_RE.search(blob))
 
 
-
 def is_financeish_context(parsed: dict, categories: list[dict]) -> bool:
     blob_parts = [
         safe_str(parsed.get("category")),
@@ -159,7 +146,6 @@ def is_financeish_context(parsed: dict, categories: list[dict]) -> bool:
 
     blob = " ".join(blob_parts)
     return bool(_FINANCE_CONTEXT_RE.search(blob))
-
 
 
 def normalize_nonsoftware_tool_fields(
@@ -200,9 +186,7 @@ def normalize_nonsoftware_tool_fields(
     return tools_list
 
 
-
 # ── List detection helpers ───────────────────────────────────────────────────
-
 
 
 _COUNT_WORDS: dict[str, int] = {
@@ -211,7 +195,6 @@ _COUNT_WORDS: dict[str, int] = {
     "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
     "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
 }
-
 
 _LIST_STOP_WORDS = frozenset({
     "best", "top", "most", "ways", "tips", "things", "steps", "must",
@@ -233,16 +216,14 @@ _LIST_STOP_WORDS = frozenset({
     "overrated", "honest", "brutal", "real", "true",
 })
 
-
 _LIST_NOUN_RE = re.compile(
-    r'\b(\d+|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve'
-    r'|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s+'
-    r'(?:(?:best|top|essential|great|favorite|must[\-\s]?have|key|famous|iconic)\s+)?'
-    r'(?:\w+\s+)?'
-    r'([a-z][a-z\-]{2,}(?:s|es)?)\b',
+    r"\b(\d+|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
+    r"|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s+"
+    r"(?:(?:best|top|essential|great|favorite|must[\-\s]?have|key|famous|iconic)\s+)?"
+    r"(?:\w+\s+)?"
+    r"([a-z][a-z\-]{2,}(?:s|es)?)\b",
     re.IGNORECASE,
 )
-
 
 _LIST_TYPE_EMOJI: dict[str, str] = {
     "albums": "🎵", "songs": "🎵", "tracks": "🎵", "records": "🎵", "playlists": "🎵",
@@ -263,11 +244,9 @@ _LIST_TYPE_EMOJI: dict[str, str] = {
 }
 
 
-
 def list_item_emoji(list_type: str) -> str:
     key = (list_type or "").lower()
     return _LIST_TYPE_EMOJI.get(key, _LIST_TYPE_EMOJI.get(key.rstrip("s") + "s", "✨"))
-
 
 
 def extract_list_count_and_type(
@@ -310,9 +289,7 @@ def extract_list_count_and_type(
     return list_count, list_type
 
 
-
 # ── Placeholder headline filter ──────────────────────────────────────────────
-
 
 
 _PLACEHOLDER_HEADLINES = frozenset({
@@ -323,7 +300,6 @@ _PLACEHOLDER_HEADLINES = frozenset({
     "highlight", "key highlight", "main highlight",
     "listed item",
 })
-
 
 _PLACEHOLDER_HEADLINE_PREFIXES = (
     "key detail",
@@ -339,7 +315,6 @@ _PLACEHOLDER_HEADLINE_PREFIXES = (
     "a detail",
     "detail shown",
 )
-
 
 _PLACEHOLDER_TEXTS = (
     "a concrete detail shown in the clip",
@@ -357,7 +332,6 @@ _PLACEHOLDER_TEXTS = (
     "[insert",
     "a named item included in the creator's list",
 )
-
 
 
 def filter_placeholder_headlines(headlines: list[dict]) -> list[dict]:
@@ -382,9 +356,7 @@ def filter_placeholder_headlines(headlines: list[dict]) -> list[dict]:
     return clean
 
 
-
 # ── Engagement hook filter ───────────────────────────────────────────────────
-
 
 
 _HOOK_PATTERNS = [
@@ -413,9 +385,7 @@ _HOOK_PATTERNS = [
     r"\bsee you\b.{0,20}\bnext\b",
 ]
 
-
 _HOOK_RE = re.compile("|".join(_HOOK_PATTERNS), re.IGNORECASE)
-
 
 
 def is_engagement_hook(headline: str, description: str = "") -> bool:
@@ -423,13 +393,12 @@ def is_engagement_hook(headline: str, description: str = "") -> bool:
     return bool(_HOOK_RE.search(combined))
 
 
-
 def sanitize_highlights(
     highlights: list[dict],
     named_item_count: int | None = None,
 ) -> list[dict]:
     if not isinstance(highlights, list):
-        return highlights
+        return []
 
     clean = [
         h for h in highlights
@@ -461,9 +430,7 @@ def sanitize_highlights(
     return clean
 
 
-
 # ── Summary block ────────────────────────────────────────────────────────────
-
 
 
 def make_summary_block(
@@ -511,7 +478,11 @@ def make_summary_block(
     # for non-English content when the LLM returned whitespace-only strings.
     original_title = (title_og or "").strip() or (title_en if is_english_content else "")
     original_summary = (summary_og or "").strip() or (summary_en if is_english_content else "")
-    original_headlines = _fmt_headlines(headlines_en if is_english_content else headlines_og)
+
+    if is_english_content:
+        original_headlines = _fmt_headlines(headlines_en)
+    else:
+        original_headlines = _fmt_headlines(headlines_og or headlines_en)
 
     return {
         "english": {
@@ -531,9 +502,7 @@ def make_summary_block(
     }
 
 
-
 # ── Structured-list builders (internal compatibility field = tools_list) ────
-
 
 
 def build_tools_list(
@@ -562,7 +531,6 @@ def build_tools_list(
         "en": {"categories": tools_categories_en},
         "original": {"categories": og_cats},
     }
-
 
 
 def promote_items_to_tools_list(items: list[dict]) -> dict | None:
@@ -597,34 +565,136 @@ def promote_items_to_tools_list(items: list[dict]) -> dict | None:
     }
 
 
-
 # ── Tier helpers ─────────────────────────────────────────────────────────────
 
 
-
-_TIER_CAT_RE = re.compile(r'^([SABCDF])\s+[Tt]ier$', re.IGNORECASE)
+_TIER_CAT_RE = re.compile(r"^\s*([SABCDF])\s+[Tt]ier\s*$", re.IGNORECASE)
+_SIMPLE_TIER_RE = re.compile(r"^\s*([SABCDF])\s*$", re.IGNORECASE)
+_MERGED_TIER_CAT_RE = re.compile(r"^\s*([SABCDF])\s*&\s*([SABCDF])\s+[Tt]ier\s*$", re.IGNORECASE)
 _TIER_ORDER: dict[str, int] = {"S": 1, "A": 2, "B": 3, "C": 4, "D": 5, "F": 6}
 
+
+def _normalize_tier_value(value: str | None) -> str | None:
+    v = safe_str(value).strip().upper()
+    return v if v in _TIER_ORDER else None
+
+
+def _extract_tiers_from_category_label(label: str) -> list[str]:
+    raw = safe_str(label).strip()
+    if not raw:
+        return []
+
+    m = _TIER_CAT_RE.match(raw)
+    if m:
+        return [m.group(1).upper()]
+
+    m = _SIMPLE_TIER_RE.match(raw)
+    if m:
+        return [m.group(1).upper()]
+
+    m = _MERGED_TIER_CAT_RE.match(raw)
+    if m:
+        left = m.group(1).upper()
+        right = m.group(2).upper()
+        return [left, right] if left != right else [left]
+
+    return []
+
+
+def _canonical_tier_category_name(tier: str) -> str:
+    return f"{tier} Tier"
+
+
+def _dedupe_items_by_name(items: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    out: list[dict] = []
+    for item in items or []:
+        key = safe_str(item.get("name")).strip().casefold()
+        if not key:
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
 
 
 def build_tier_lookup(source_cats: list[dict]) -> dict[str, str]:
     lookup: dict[str, str] = {}
     for cat in (source_cats or []):
-        cat_name = (cat.get("name") or "").strip()
-        m = _TIER_CAT_RE.match(cat_name)
-        inferred_tier = m.group(1).upper() if m else None
+        inferred_tiers = _extract_tiers_from_category_label(cat.get("name") or "")
 
         for item in cat.get("items", []):
-            name = (item.get("name") or "").lower().strip()
+            name = safe_str(item.get("name")).lower().strip()
             if not name:
                 continue
-            explicit_tier = item.get("tier")
-            if explicit_tier and isinstance(explicit_tier, str) and explicit_tier.strip():
-                lookup[name] = explicit_tier.strip().upper()
-            elif inferred_tier:
-                lookup[name] = inferred_tier
+
+            explicit_tier = _normalize_tier_value(item.get("tier"))
+            if explicit_tier:
+                lookup[name] = explicit_tier
+                continue
+
+            # Only infer from category label when the category maps cleanly to one tier.
+            if len(inferred_tiers) == 1:
+                lookup[name] = inferred_tiers[0]
+
     return lookup
 
+
+def _rebuild_tier_categories(categories: list[dict]) -> tuple[list[dict], int]:
+    """
+    Deterministically split merged tier buckets like 'S & A Tier' into true tier
+    categories using item-level tier values. Non-tier items are preserved after
+    the rebuilt tier buckets.
+    """
+    tier_buckets: dict[str, list[dict]] = {tier: [] for tier in _TIER_ORDER}
+    passthrough_categories: list[dict] = []
+    moved_items = 0
+
+    for cat in categories or []:
+        original_cat_name = safe_str(cat.get("name"))
+        original_title_og = safe_str(cat.get("title_og")) or original_cat_name
+        original_emoji = cat.get("emoji", "")
+        label_tiers = _extract_tiers_from_category_label(original_cat_name)
+
+        non_tier_items: list[dict] = []
+
+        for item in cat.get("items", []) or []:
+            item_tier = _normalize_tier_value(item.get("tier"))
+
+            # Only infer from category label when it is unambiguous.
+            if not item_tier and len(label_tiers) == 1:
+                item_tier = label_tiers[0]
+                item["tier"] = item_tier
+
+            if item_tier:
+                tier_buckets[item_tier].append(item)
+                moved_items += 1
+            else:
+                non_tier_items.append(item)
+
+        if non_tier_items:
+            passthrough_categories.append({
+                "name": original_cat_name,
+                "title_og": original_title_og,
+                "emoji": original_emoji,
+                "items": non_tier_items,
+            })
+
+    rebuilt: list[dict] = []
+    for tier, _ in sorted(_TIER_ORDER.items(), key=lambda kv: kv[1]):
+        items = _dedupe_items_by_name(tier_buckets[tier])
+        if not items:
+            continue
+        rebuilt.append({
+            "name": _canonical_tier_category_name(tier),
+            "title_og": _canonical_tier_category_name(tier),
+            "emoji": "",
+            "items": items,
+        })
+
+    rebuilt.extend(passthrough_categories)
+    return rebuilt, moved_items
 
 
 def restore_tiers(
@@ -635,6 +705,9 @@ def restore_tiers(
 ) -> dict:
     """
     Restore tier values lost during Call 2 translation.
+
+    For actual tier-list content, also rebuild merged categories like
+    'S & A Tier' into canonical tier buckets using item-level tier values.
 
     list_subtype should be passed so rank is only cleared for actual tier-list
     content. For ranked lists, rank values must be preserved.
@@ -654,9 +727,9 @@ def restore_tiers(
 
     def _apply(categories: list[dict]) -> int:
         restored = 0
-        for cat in categories:
-            for item in cat.get("items", []):
-                name = (item.get("name") or "").lower().strip()
+        for cat in categories or []:
+            for item in cat.get("items", []) or []:
+                name = safe_str(item.get("name")).lower().strip()
                 if name in tier_lookup:
                     item["tier"] = tier_lookup[name]
                     # Only clear rank for true tier-list content.
@@ -667,20 +740,35 @@ def restore_tiers(
 
     en_cats = (tools_list.get("en") or {}).get("categories", [])
     og_cats = (tools_list.get("original") or {}).get("categories", [])
-    n = _apply(en_cats) + _apply(og_cats)
-    logger.info("restore_tiers: restored %d tier values", n)
-    return tools_list
 
+    restored_count = _apply(en_cats) + _apply(og_cats)
+
+    rebuilt_en = 0
+    rebuilt_og = 0
+    if is_tier_list:
+        new_en_cats, rebuilt_en = _rebuild_tier_categories(en_cats)
+        new_og_cats, rebuilt_og = _rebuild_tier_categories(og_cats)
+        (tools_list.setdefault("en", {}))["categories"] = new_en_cats
+        (tools_list.setdefault("original", {}))["categories"] = new_og_cats
+
+    if is_tier_list:
+        logger.info(
+            "restore_tiers: restored %d tier values; rebuilt tier buckets en=%d og=%d",
+            restored_count, rebuilt_en, rebuilt_og,
+        )
+    else:
+        logger.info("restore_tiers: restored %d tier values", restored_count)
+
+    return tools_list
 
 
 # ── Structured list helpers ──────────────────────────────────────────────────
 
 
-
 def count_valid_items(categories: list[dict]) -> int:
     return sum(
         1
-        for cat in categories
+        for cat in categories or []
         for item in cat.get("items", [])
         if is_valid_tool_name(item.get("name", ""))
     )

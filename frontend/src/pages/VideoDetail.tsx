@@ -30,7 +30,6 @@ import {
   parseSummaryObject,
 } from './VideoDetailViewModel';
 
-
 const MoveCollectionModalExt = MoveCollectionModal as React.ComponentType<{
   isOpen: boolean; onClose: () => void; videoIds: string[]; onMove: (folderId: string) => void;
 }>;
@@ -38,7 +37,6 @@ const MoveCollectionModalExt = MoveCollectionModal as React.ComponentType<{
 const ReportModalExt = ReportModal as React.ComponentType<{
   isOpen: boolean; onClose: () => void; videoId?: string;
 }>;
-
 
 export const VideoDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -129,7 +127,6 @@ export const VideoDetail: React.FC = () => {
   };
 
   const handleToggleFavorite = () => toggleFavorite(video.id);
-
   const handleArchive = () => { moveVideos(video.id, 'archive'); setIsActionSheetOpen(false); };
 
   const handleDelete = async () => {
@@ -212,8 +209,12 @@ export const VideoDetail: React.FC = () => {
     : [];
   const hasLocations = normalizedLocations.length > 0;
 
-  // Show ToolsListCard whenever there are categories with items — no content type gate needed.
+  // When location content is present, hide the ToolsListCard entirely.
+  // The map IS the list for location content — no need for a ranked card above it.
+  const isLocationContent = viewModel.contentType === 'location' || hasLocations;
+
   const showToolsListCard =
+    !isLocationContent &&
     hasToolsList &&
     (viewModel.isStructuredTools || !!viewModel.structuredType || !hasBullets);
 
@@ -300,10 +301,12 @@ export const VideoDetail: React.FC = () => {
                     {viewModel.duration}
                   </div>
                 )}
+                {/* When location content: show only the Places badge via ContentTypeBadge,
+                    skip the separate hasLocations badge to avoid duplicates */}
                 {showTypeBadge && (
                   <ContentTypeBadge type={viewModel.contentType as any} toolsSubtype={toolsSubtype} />
                 )}
-                {hasLocations && (
+                {hasLocations && !isLocationContent && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-teal-50/90 text-teal-700 border-teal-200/80 backdrop-blur-sm">
                     <MapPin size={10} strokeWidth={2.5} aria-hidden="true" />
                     Places

@@ -5,6 +5,7 @@ import { User, Globe, Crown, Video, LogOut, HelpCircle, Info, Moon, Sun, Check, 
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../context/LanguageContext'; // If you use a custom context for language
 
@@ -19,7 +20,7 @@ interface MistralLimits {
 
 export const AccountSettings: React.FC = () => {
   const navigate = useNavigate();
-  const { logout, user } = useData();
+  const { user, signOut } = useAuth();
   const { t, i18n } = useTranslation(['settings', 'common']);
   const [darkMode, setDarkMode] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -28,7 +29,7 @@ export const AccountSettings: React.FC = () => {
 
   const lang = i18n.language.toUpperCase().startsWith('FR') ? 'FR' : 'EN';
   
-  const isPro = user?.isPro || false;
+  const isPro = false;
   const clipsUsed = 4;
   const clipsLimit = 5;
 
@@ -50,8 +51,8 @@ export const AccountSettings: React.FC = () => {
     window.scrollTo(0, 0);
   }, []);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await signOut();
     navigate('/');
   };
 

@@ -22,8 +22,13 @@ _MERGED_TIER_CAT_RE = re.compile(
     r"^\s*([SABCDF])\s*&\s*([SABCDF])\s*tier\s*$",
     re.IGNORECASE,
 )
+_MERGED_TIER_TEXT_RE = re.compile(
+    r"\b([SABCDF])\s*&\s*([SABCDF])\s*tier\b",
+    re.IGNORECASE,
+)
 
 _MENTION_VERDICT_RE = re.compile(r"@[\w.]+\s*(?:→|->|—|–|-|:)\s*\S", re.MULTILINE)
+_PLAIN_MENTION_RE = re.compile(r"@([A-Za-z0-9._]+)")
 
 _RANKED_TRANSCRIPT_RE = re.compile(
     r"\b(?:number|ranked?|#)\s*(?:one|two|three|four|five|six|seven|eight|nine|ten|\d{1,2})\b",
@@ -51,10 +56,11 @@ _LOCATION_WHOLE_WORDS = frozenset({
     "places to visit", "must-see", "must see", "must visit",
     "stops", "viewpoint", "scenic", "waterfall",
     "national park", "hiking trail", "trek", "trekking",
-    "hostel", "airbnb",
+    "hostel", "airbnb", "hotel", "hotels", "resort", "resorts",
+    "restaurant", "restaurants", "café", "cafes",
     "city guide", "day trip", "bucket list",
     "itinéraire", "randonnée", "lac", "montagne", "château", "cathédrale",
-    "musée", "quartier", "belvédère",
+    "musée", "quartier", "belvédère", "hôtel", "hôtels",
     "percorso", "sentiero", "lago", "monte", "castello",
     "wanderung", "ausflug", "sehenswürdigkeit",
 })
@@ -71,6 +77,8 @@ _LOCATION_PATTERNS = [
     r"travel\s+(?:guide|inspo|inspiration)",
     r"best\s+(?:places?|spots?|locations?|destinations?)\s+(?:in|to|for|near)",
     r"(?:best|top)\s+\d*\s*(?:beach|island|lake)\s+resorts?\s+to\s+visit",
+    r"\b\d+\s+(?:addresses?|adresses?|h[oô]tels?|hotels?|resorts?|restaurants?)\b",
+    r"\b(?:best|top|meilleurs?)\s+\d*\s*(?:h[oô]tels?|hotels?|resorts?|restaurants?)\b",
 ]
 
 _TOOL_KEYWORDS = (
@@ -316,6 +324,7 @@ def _looks_like_strong_tier_text(transcript: str, caption: str) -> bool:
     return (
         len(_TIER_TRANSCRIPT_RE.findall(text)) >= 2
         or len(_FRENCH_TIER_TRANSCRIPT_RE.findall(text)) >= 2
+        or _MERGED_TIER_TEXT_RE.search(text) is not None
         or _count_contains(text, {
             "s-tier", "a-tier", "b-tier", "c-tier", "d-tier", "f-tier",
             "s tier", "a tier", "b tier", "c tier", "d tier", "f tier",
@@ -324,13 +333,52 @@ def _looks_like_strong_tier_text(transcript: str, caption: str) -> bool:
     )
 
 
+def _looks_like_flat_mention_picks(transcript: str, caption: str) -> bool:
+    """
+    Detect silent caption-only flat @mention lists that should NOT be treated as
+    strong rankings. This is the guard for hotel-picks / brand-picks posts where
+    items are merely listed, not ranked.
+    """
+    transcript_text = _safe_text(transcript)
+    if transcript_text:
+        return False
+
+    mention_count = count_plain_mentions(caption)
+    if mention_count < 3:
+        return False
+
+    if count_mention_verdict_items(caption) >= 2:
+        return False
+
+    if _looks_like_strong_tier_text(transcript, caption):
+        return False
+
+    caption_text = _safe_text(caption).lower()
+    has_explicit_rank_axis = (
+        _MAINSTREAM_TO_NICHE_RE.search(caption_text) is not None
+        or _WORST_BEST_AXIS_RE.search(caption_text) is not None
+        or re.search(r"(?:top|classement|ranking|numéro)\s*\d+", caption_text) is not None
+        or _count_contains(caption_text, _RANKING_SIGNALS) >= 1
+        or _looks_like_product_test_context(caption_text)
+    )
+    if has_explicit_rank_axis:
+        return False
+
+    return True
+
+
 def _looks_like_strong_ranking_text(transcript: str, caption: str) -> bool:
     text = f"{transcript or ''} {caption or ''}"
+    lower = text.lower()
+
+    if _looks_like_flat_mention_picks(transcript, caption):
+        return False
+
     return (
         _MAINSTREAM_TO_NICHE_RE.search(text) is not None
         or _WORST_BEST_AXIS_RE.search(text) is not None
         or is_ranked_list_transcript(transcript)
-        or _count_contains(text.lower(), _RANKING_SIGNALS) >= 1
+        or _count_contains(lower, _RANKING_SIGNALS) >= 1
         or _looks_like_product_test_context(text)
     )
 
@@ -357,14 +405,19 @@ def _category_signal_subtype(text: str) -> str:
 # Public classification helpers
 # ---------------------------------------------------------------------------
 
-def classify_structured_family(transcript: str, caption: str) -> str:
+def classify_structured_family(
+    transcript: str,
+    caption: str,
+    category: str = "",
+    topic: str = "",
+) -> str:
     """
     Infer the public content family from combined text.
     Returns: "places" | "finance" | "software" | "products"
     """
-    combined = f"{transcript or ''} {caption or ''}".lower()
+    combined = f"{transcript or ''} {caption or ''} {category or ''} {topic or ''}".lower()
 
-    if is_place_ranking(transcript, caption):
+    if is_location_list_content(transcript, caption) or is_place_ranking(transcript, caption):
         return "places"
     if _contains_any(combined, _FINANCE_SIGNALS):
         return "finance"
@@ -382,6 +435,8 @@ def is_place_ranking(transcript: str, caption: str) -> bool:
         return False
     if _contains_any(combined, _LIFESTYLE_SIGNALS):
         return False
+    if _contains_any(combined, _SOFTWARE_SIGNALS) or _contains_any(combined, _FINANCE_SIGNALS):
+        return False
 
     hits = sum(1 for kw in _PLACE_RANKING_KEYWORDS if kw in combined)
     rank_signal = (
@@ -398,6 +453,8 @@ def is_location_list_content(transcript: str, caption: str) -> bool:
     if _looks_like_product_test_context(combined):
         return False
     if _count_contains(combined, _SUNSCREEN_PRODUCT_TEST_SIGNALS) >= 2:
+        return False
+    if _contains_any(combined, _SOFTWARE_SIGNALS) or _contains_any(combined, _FINANCE_SIGNALS):
         return False
 
     return _contains_any(combined, _LOCATION_WHOLE_WORDS) or _matches_any(combined, _LOCATION_PATTERNS, re.MULTILINE)
@@ -423,13 +480,19 @@ def count_mention_verdict_items(caption: str) -> int:
     return len(_MENTION_VERDICT_RE.findall(caption or ""))
 
 
-def is_tools_list_content(transcript: str, caption: str) -> bool:
+def count_plain_mentions(caption: str) -> int:
+    """
+    Count distinct @handles in caption, even when they are listed plainly
+    without arrows/verdict markers.
+    """
+    handles = [h.lower() for h in _PLAIN_MENTION_RE.findall(caption or "")]
+    return len(dict.fromkeys(handles))
+
+
+def is_structured_non_location_list_content(transcript: str, caption: str) -> bool:
     combined = f"{transcript or ''} {caption or ''}".lower()
 
-    if is_place_ranking(transcript, caption):
-        return True
-
-    if is_location_list_content(transcript, caption) and not _looks_like_strong_ranking_text(transcript, caption):
+    if is_location_list_content(transcript, caption) or is_place_ranking(transcript, caption):
         return False
 
     if _count_contains(combined, _TOOL_KEYWORDS) >= 2:
@@ -438,10 +501,20 @@ def is_tools_list_content(transcript: str, caption: str) -> bool:
         return True
     if count_mention_verdict_items(caption) >= 2 and not _looks_like_strong_ranking_text(transcript, caption):
         return True
+    if count_plain_mentions(caption) >= 3 and not _looks_like_strong_ranking_text(transcript, caption):
+        return True
     if combined.count(" pour ") >= 4:
         return True
 
     return False
+
+
+def is_tools_list_content(transcript: str, caption: str) -> bool:
+    """
+    Legacy alias kept for compatibility.
+    In Phase 2 this means a structured non-location list, not literal "tools" only.
+    """
+    return is_structured_non_location_list_content(transcript, caption)
 
 
 def is_ranked_list_transcript(transcript: str) -> bool:
@@ -455,6 +528,7 @@ def is_ranked_list_transcript(transcript: str) -> bool:
         or len(_TIER_TRANSCRIPT_RE.findall(text)) >= 2
         or len(_TESTED_TRANSCRIPT_RE.findall(text)) >= 2
         or len(_FRENCH_TIER_TRANSCRIPT_RE.findall(text)) >= 2
+        or _MERGED_TIER_TEXT_RE.search(text) is not None
     )
 
 
@@ -477,7 +551,7 @@ def looks_like_educational_numbered_explainer(transcript: str, caption: str) -> 
         or re.search(r"\b\d+\s+(?:tips|rules|steps|mistakes|reasons|ways)\b", text)
     )
 
-    return has_explainer_shape and (
+    return bool(has_explainer_shape) and bool(
         _contains_any(text, explainer_signals) or _contains_any(text, finance_explainer_signals)
     )
 
@@ -486,6 +560,8 @@ def pre_detect_list_subtype(transcript: str, caption: str) -> str:
     combined = f"{caption or ''} {(transcript or '')[:1200]}".lower()
 
     if is_place_ranking(transcript, caption):
+        return "places"
+    if is_location_list_content(transcript, caption):
         return "places"
     if _looks_like_strong_tier_text(transcript, caption):
         return "tier"
@@ -497,6 +573,8 @@ def pre_detect_list_subtype(transcript: str, caption: str) -> str:
         return "verdict"
     if _count_contains(combined, _VERDICT_SIGNALS) >= 2:
         return "verdict"
+    if _looks_like_flat_mention_picks(transcript, caption):
+        return "picks"
 
     subtype = _category_signal_subtype(combined)
     if subtype != "picks":
@@ -537,6 +615,8 @@ def _all_items(categories: list[dict]) -> list[dict]:
                     "rank": item.get("rank"),
                     "tier": _safe_text(item.get("tier")).upper() or None,
                     "name": _safe_text(item.get("name")),
+                    "creator_rating": _safe_text(item.get("creator_rating")).lower() or None,
+                    "location_meta": item.get("location_meta"),
                 })
     return rows
 
@@ -644,11 +724,7 @@ def _items_have_location_meta(categories: list[dict]) -> bool:
     rows = _all_items(categories)
     if not rows:
         return False
-    hits = 0
-    for cat in categories or []:
-        for item in cat.get("items", []) or []:
-            if isinstance(item.get("location_meta"), dict):
-                hits += 1
+    hits = sum(1 for row in rows if isinstance(row.get("location_meta"), dict))
     return hits >= max(2, len(rows) // 2)
 
 
@@ -688,13 +764,13 @@ def analyze_structure(
         return {
             "mode": "structured",
             "structure_type": "places",
-            "render_hint": "ranked_list",
+            "render_hint": "ranked_list" if has_ranks else "grouped_list",
             "list_subtype": "places",
             "is_ranked": has_ranks,
             "confidence": 0.95 if _items_have_location_meta(active) else 0.88,
             "global_ordered": has_ranks,
             "group_ordered": has_ranks,
-            "reason": "Pre-detected as place ranking or items carry location_meta",
+            "reason": "Pre-detected as places or items carry location_meta",
         }
 
     if _has_tier_items(active):
@@ -719,12 +795,6 @@ def analyze_structure(
     ranking_label_score = _ranking_label_score(labels)
     rank_info = _global_rank_sequence_info(active)
 
-    # ── PICKS GUARD ────────────────────────────────────────────────────────
-    # When upstream pre_hint is "picks" or "verdict" AND there are no spoken/
-    # textual ranking signals, do NOT let AI-assigned sequential rank integers
-    # (1..N from caption-order listing) promote this to "ranking".
-    # Covers: flat @mention hotel/restaurant/picks lists where the AI numbers
-    # items 1-8 only because they appear sequentially in the caption.
     if pre_hint in ("picks", "verdict") and rank_text_hits == 0:
         all_items_flat = _all_items(active)
         ratings = {
@@ -732,7 +802,7 @@ def analyze_structure(
             for item in all_items_flat
             if (item.get("creator_rating") or "").strip()
         }
-        is_flat_picks = len(ratings) <= 1  # all items share same rating (e.g. all "best")
+        is_flat_picks = len(ratings) <= 1
         if is_flat_picks:
             verdict_score = _verdict_label_score(labels)
             if verdict_score >= 3:
@@ -848,6 +918,8 @@ def detect_list_subtype(
                 return "software"
             all_text += f" {item.get('name', '')} {item.get('description', '')}".lower()
 
+    if is_location_list_content(transcript, all_text) or pre_detected_hint == "places":
+        return "places"
     if _looks_like_strong_tier_text(transcript, all_text):
         return "tier"
     if _looks_like_product_test_context(all_text):

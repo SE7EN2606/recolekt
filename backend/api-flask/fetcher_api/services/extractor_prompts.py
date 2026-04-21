@@ -2,23 +2,19 @@
 All Mistral AI prompts for the Universal Extractor.
 Separated from business logic for maintainability.
 
-
 Phase 1 semantics:
 - Public families: recipe, workout, location, products, software, finance, general
 - Legacy compatibility: structured non-recipe/non-workout/non-location extraction
   still returns the internal "tools" object so existing parsers continue to work.
-
 
 Note: build_data_extraction_prompt() receives extraction_content_type (internal),
 not public_content_type. So "tools" may still arrive here from universal_extractor.py
 for the Phase 2 bridge. _build_type_specific_block() handles this intentionally.
 """
 
-
 import json
 import re
 from typing import List, Optional
-
 
 from fetcher_api.services.extractor_helpers import TITLE_MAX_CHARS
 
@@ -237,16 +233,15 @@ def _build_highlights_instruction(content_type: str, caption_promised_count: int
 
     if 3 <= caption_promised_count <= 6:
         return (
-            f"Return EXACTLY {caption_promised_count} highlights — one per item, "
-            f"matching the {caption_promised_count} distinct items the creator covers. "
-            "Do NOT truncate to 4."
+            f"Return up to {caption_promised_count} highlights — only when each highlight adds real informational value. "
+            "Do NOT force one highlight per item if the content is primarily a structured list."
         )
 
     return (
-        "Return ONE highlight per distinct named item (person, brand, product, place, technique, etc.) "
-        "that the creator covers. Do NOT cap at 4 — if the content covers 5, 6, or more items, "
-        "return that many highlights. "
-        "MINIMUM: 3 highlights. Only return fewer than 3 if the content genuinely covers fewer than 3 distinct items."
+        "Return up to 4 highlights, and only when they add real informational value. "
+        "Do NOT force one highlight per named item. "
+        "If the content is mainly a structured list, ranking, verdict board, or grouped selection, "
+        "the structured fields are primary and highlights may be sparse."
     )
 
 
@@ -608,7 +603,7 @@ def _build_structured_products_block() -> str:
              "rank": 1,
              "name": "Corrected brand or product name",
              "description": "One sentence: key result, value judgment, test result, or why it is placed here",
-             "free": null,       // always null for product content — products are not free/paid software
+             "free": null,
              "url": null,
              "source": "transcript",
              "tier": null,
@@ -725,25 +720,57 @@ CRITICAL:
 """
 
 
-def _build_type_specific_block(content_type: str) -> str:
-    """
-    Build the specific extraction instructions based on content type.
+def _build_location_block() -> str:
+    return """
+9. **recipe** object: null
+10. **workout** object: null
 
-    Receives extraction_content_type (internal), not public_content_type.
-    During Phase 2, "tools" may still arrive here from universal_extractor.py
-    for the bridge path — handled by the products block for backward compatibility.
-    """
-    if content_type == "software":
-        return _build_structured_software_block()
 
-    if content_type in {"products", "tools"}:
-        return _build_structured_products_block()
+11. **location** object: This is LOCATION / TRAVEL / VENUE content.
+   Return a SINGLE object for one place, or an ARRAY for multiple places.
 
-    if content_type == "finance":
-        return _build_structured_finance_block()
 
-    if content_type == "recipe":
-        return """
+   For EACH place extract this exact shape:
+   {
+     "name": "Exact place / venue / destination name",
+     "type": "Hotel | Resort | Restaurant | Café | Lake | Trail | Viewpoint | City | Village | Museum | etc.",
+     "city": "City or nearest region ONLY if explicitly stated in caption, transcript, or visible text; otherwise null",
+     "country": "Country name in English ONLY if explicitly stated; otherwise null",
+     "address": "Exact street address if explicitly written; otherwise null",
+     "neighborhood": "District / arrondissement / neighborhood if explicitly written; otherwise null",
+     "description": "One factual sentence based on the source content",
+     "lat": null,
+     "lng": null
+   }
+
+
+   STRICT RULES:
+   1. REAL NAMES ONLY — use the exact place names from caption, transcript, or visible on-screen text.
+   2. READ THE CAPTION FIRST — the caption is authoritative when it lists multiple places.
+   3. NEVER STOP EARLY — extract every place the creator mentions.
+   4. NEVER GEOCODE — lat and lng must always be null at extraction time.
+   5. NEVER GUESS GEOGRAPHY:
+      - if city is unknown, set "city": null
+      - if country is unknown, set "country": null
+      - if address is unknown, set "address": null
+      - if neighborhood is unknown, set "neighborhood": null
+   6. NEVER use continents, macro-regions, or vague scopes as country values.
+      BAD country values: "Europe", "Alps", "Dolomites", "Mediterranean", "Scandinavia"
+   7. If a hotel/restaurant/place is only identified by name or @mention, still extract the place,
+      but leave unknown geography fields as null.
+   8. The description must be grounded in the source. Do not invent amenities, rankings, or location facts.
+   9. If the caption contains exact 📍 address lines, copy them into "address" exactly.
+
+
+CRITICAL:
+- This is travel/place content.
+- Do NOT create a tools object for this family.
+- Do NOT turn weak guesses into city/country values.
+"""
+
+
+def _build_recipe_block() -> str:
+    return """
 9. **recipe** object: Extract the recipe details.
    - **is_compilation**: Boolean. Set to true ONLY if the video shows 3 or more DIFFERENT recipes/dishes (e.g., "7 waffle recipes", "3 healthy breakfasts").
    - **ideas**: If 'is_compilation' is true, extract an ARRAY of objects for each dish/idea shown:
@@ -767,8 +794,9 @@ def _build_type_specific_block(content_type: str) -> str:
 11. **location** object: null
 """
 
-    if content_type == "workout":
-        return """
+
+def _build_workout_block() -> str:
+    return """
 9. **workout** object: Extract the exercise routine details.
    - **duration**: Estimated time to complete (e.g., "30 Min").
    - **format**: The style of workout (e.g., "EMOM", "AMRAP", "Circuit").
@@ -786,6 +814,8 @@ def _build_type_specific_block(content_type: str) -> str:
 11. **location** object: null
 """
 
+
+def _build_general_block() -> str:
     return """
 9. **recipe** object: CREATE if the content is a RECIPE.
    - **is_compilation**: Boolean. Set to true ONLY if the video shows 3 or more DIFFERENT recipes/dishes.
@@ -803,14 +833,55 @@ def _build_type_specific_block(content_type: str) -> str:
 10. **workout** object: CREATE if the content is a WORKOUT or fitness routine. Use the structure: duration, format, level, equipment (array), groups (array of objects with 'title' and 'items' [info, name]), and tips (array).
 
 
-11. **location** object: ONLY CREATE if the video is about visiting a specific place or places.
-   If the video features MULTIPLE places, return an ARRAY of location objects.
+11. **location** object: ONLY CREATE if the content is CLEARLY about visiting, evaluating, or listing specific real-world places.
+   Return a SINGLE object for one place, or an ARRAY for multiple places.
+
+
    For EACH place extract:
-   - **name**: Name of the place (e.g. "Le Grand Colbert")
-   - **address**: Street address extracted from 📍 lines in the caption (e.g. "2, rue Vivienne"). Set to null if not found.
-   - **neighborhood**: District or arrondissement from the caption (e.g. "Paris 2", "Paris 16"). Set to null if not found.
-   - **city**: City (e.g. "Paris", "Neuilly-sur-Seine")
-   - **type**: Type of place (e.g. "Brasserie", "Restaurant", "Hotel", "Café")
-   CRITICAL: The 📍 lines in the caption contain EXACT addresses — always extract them into "address".
-   CRITICAL: Never geocode or guess coordinates — only extract text that is explicitly written in the caption.
+   - **name**: Exact place name
+   - **type**: Type of place (e.g. "Hotel", "Restaurant", "Lake", "Trail", "Museum")
+   - **city**: City or nearest region ONLY if explicitly stated; otherwise null
+   - **country**: Country name in English ONLY if explicitly stated; otherwise null
+   - **address**: Exact street address ONLY if explicitly written; otherwise null
+   - **neighborhood**: District / arrondissement / neighborhood ONLY if explicitly written; otherwise null
+   - **description**: One factual sentence grounded in the source content
+   - **lat**: null
+   - **lng**: null
+
+
+   CRITICAL:
+   - Never geocode or guess coordinates.
+   - Never guess city/country from vibes, language, or brand names.
+   - Never use continents or macro-regions as country values.
+     BAD: "Europe", "Alps", "Dolomites", "Mediterranean", "Scandinavia"
+   - If geography is unknown, use null.
 """
+
+
+def _build_type_specific_block(content_type: str) -> str:
+    """
+    Build the specific extraction instructions based on content type.
+
+    Receives extraction_content_type (internal), not public_content_type.
+    During Phase 2, "tools" may still arrive here from universal_extractor.py
+    for the bridge path — handled by the products block for backward compatibility.
+    """
+    if content_type == "software":
+        return _build_structured_software_block()
+
+    if content_type in {"products", "tools"}:
+        return _build_structured_products_block()
+
+    if content_type == "finance":
+        return _build_structured_finance_block()
+
+    if content_type == "location":
+        return _build_location_block()
+
+    if content_type == "recipe":
+        return _build_recipe_block()
+
+    if content_type == "workout":
+        return _build_workout_block()
+
+    return _build_general_block()

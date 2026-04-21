@@ -1,28 +1,12 @@
-import { API_BASE } from "../utils/api";
 // src/types.ts
-
-import React from 'react';
-
-// =========================
-// Ingredient / Recipe types
-// =========================
+import React from "react";
 
 export interface IngredientItem {
-  // Main name for display (what the UI shows as the ingredient text)
   item: string;
-  // Optional alternate name used by backend
   name?: string;
-
-  // Quantity as received from backend (string or number, optional)
   quantity?: string | number | null;
-
-  // Unit (cup, g, tsp, etc.)
   unit?: string | null;
-
-  // Optional emoji
   emoji?: string | null;
-
-  // Optional note (e.g. "room temp", "not pie filling")
   note?: string | null;
 }
 
@@ -31,40 +15,24 @@ export interface IngredientGroup {
   items: IngredientItem[];
 }
 
-/**
- * Single-language recipe, matches what backend returns for
- * recipe.english and recipe.original in your logs.
- */
 export interface SingleLanguageRecipe {
   title?: string;
   servings?: string | null;
   prep_time?: string | null;
   cook_time?: string | null;
   total_time?: string | null;
-
-  // Structured ingredients list (what RecipeComponents expects)
   ingredients?: IngredientItem[];
-
-  // Optional grouped ingredients (e.g. "Base" vs "Frosting")
   ingredients_groups?: IngredientGroup[];
-
   instructions: string[];
   tips?: string[];
   notes?: string[];
 }
 
-/**
- * Bilingual recipe wrapper: backend sends { english, original, language_code }.
- */
 export interface BilingualRecipe {
   english?: SingleLanguageRecipe;
   original?: SingleLanguageRecipe;
   language_code?: string;
 }
-
-// =========================
-// Summary / Video types
-// =========================
 
 export interface SummaryBullet {
   headline: string;
@@ -72,57 +40,123 @@ export interface SummaryBullet {
   emoji?: string;
 }
 
-/**
- * Flexible summary payload – supports both legacy string summary
- * and structured english/original blocks from backend.
- */
+export interface SummaryLanguageBlock {
+  title?: string;
+  summary?: string;
+  headlines?: SummaryBullet[];
+  hashtags?: string[];
+  emojis?: string[];
+}
+
 export interface SummaryObject {
-  // Legacy / simple fields
   title?: string | { english: string; original: string };
   category?: string;
   topic?: string;
   summary?: string;
   bullets?: SummaryBullet[];
+  headlines?: SummaryBullet[];
   hashtags?: string[];
   emojis?: string[];
-
-  // New backend shape used in viewModel.summary_text / summary
-  english?: {
-    title?: string;
-    summary?: string;
-    headlines?: SummaryBullet[];
-    hashtags?: string[];
-    emojis?: string[];
-  };
-
-  original?: {
-    title?: string;
-    summary?: string;
-    headlines?: SummaryBullet[];
-    hashtags?: string[];
-    emojis?: string[];
-  };
+  english?: SummaryLanguageBlock;
+  original?: SummaryLanguageBlock;
 }
 
-export type Platform = 'instagram' | 'youtube' | 'tiktok' | 'facebook';
+export type Platform = "instagram" | "youtube" | "tiktok" | "facebook";
+
+export type ContentType =
+  | "recipe"
+  | "workout"
+  | "location"
+  | "products"
+  | "software"
+  | "finance"
+  | "general";
 
 export interface WorkoutExercise {
-  info?: string; // e.g., "40s / 20s", "12 reps", "Minute 1"
-  name: string;  // e.g., "Goblet Squat", "Deadlift"
+  info?: string;
+  name: string;
 }
 
 export interface WorkoutGroup {
-  title: string; // e.g., "Warm-up", "Circuit A", "Finisher"
+  title: string;
   items: WorkoutExercise[];
 }
 
 export interface Workout {
-  duration: string;   // e.g., "30 Min", "45 Min"
-  format: string;     // e.g., "EMOM", "AMRAP", "HIIT", "Strength"
-  level: string;      // e.g., "Beginner", "Intermediate", "All Levels"
-  equipment: string[]; // e.g., ["Kettlebell", "Mat"]
+  duration: string;
+  format: string;
+  level: string;
+  equipment: string[];
   groups: WorkoutGroup[];
-  tips?: string[];     // e.g., ["Keep back straight", "Adjust weight as needed"]
+  tips?: string[];
+}
+
+export interface ToolsListCategoryItem {
+  name?: string;
+  description?: string;
+  url?: string;
+  rank?: number;
+  tier?: string;
+  [key: string]: unknown;
+}
+
+export interface ToolsListCategory {
+  name?: string;
+  items?: ToolsListCategoryItem[];
+  [key: string]: unknown;
+}
+
+export interface ToolsListLanguageBlock {
+  categories?: ToolsListCategory[];
+  [key: string]: unknown;
+}
+
+export interface ToolsList {
+  list_subtype?: string | null;
+  is_ranked?: boolean | null;
+  categories?: ToolsListCategory[];
+  en?: ToolsListLanguageBlock;
+  english?: ToolsListLanguageBlock;
+  original?: ToolsListLanguageBlock;
+  [key: string]: unknown;
+}
+
+export interface LocationPlace {
+  id?: string;
+  name?: string;
+  type?: string;
+  city?: string;
+  region?: string;
+  country?: string;
+  address?: string;
+  neighborhood?: string;
+  description?: string;
+  instagram?: string;
+  emoji?: string;
+  rank?: number;
+  lat?: number | null;
+  lng?: number | null;
+  _vid?: string;
+  _idx?: number;
+  [key: string]: unknown;
+}
+
+export interface GcsUrls {
+  video?: string | null;
+  thumbnail?: string | null;
+  preview_thumbnail?: string | null;
+  caption_json?: string | null;
+  transcription?: string | null;
+  result_json?: string | null;
+  [key: string]: unknown;
+}
+
+export interface TranscriptionData {
+  transcript?: string;
+  detected_language?: string;
+  transcription_source?: string;
+  status?: string;
+  [key: string]: unknown;
 }
 
 export interface Video {
@@ -130,55 +164,36 @@ export interface Video {
   title: string;
   author: string;
   platform: Platform;
-
   thumbnailUrl: string;
   duration: string;
   savedAt: string;
-
   category: string;
   subCategory?: string;
   topic?: string;
-
   tags: string[];
-
-  // Summary may be plain string (legacy) or structured object
   summary: SummaryObject | string;
-
-  // Bullets may be structured or simple strings
   bullets?: SummaryBullet[] | string[];
-
-  // Transcript from backend (or undefined if missing)
   transcript?: string;
-
-  // Where the reel comes from
+  transcription?: TranscriptionData | null;
   originalUrl: string;
   sourceUrl?: string;
-
   views?: string;
-
-  // Persistence
   isFavorite: boolean;
   folderId: string;
   favoritedAt?: string;
-
-  // Content typing from backend
-  content_type?: string;
-
-  // NEW: strongly-typed bilingual recipe instead of `any`
+  content_type?: ContentType | string;
   recipe?: BilingualRecipe | null;
-
   workout?: Workout | null;
-
-  // Backend status + raw payload
+  tools_list?: ToolsList | null;
+  location?: LocationPlace[] | Record<string, unknown> | null;
+  gcs_urls?: GcsUrls;
   status?: string;
+  errorMessage?: string | null;
   __raw?: any;
 }
 
-// =========================
-// Folder / Navigation types
-// =========================
-
 export interface Folder {
+  isSystem?: boolean;
   id: string;
   name: string;
   itemCount?: number;

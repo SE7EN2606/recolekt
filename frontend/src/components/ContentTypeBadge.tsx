@@ -1,11 +1,28 @@
+// src/components/ContentTypeBadge.tsx
 import React from 'react';
 import {
-  ChefHat, Dumbbell, MapPin, Wrench, Sparkles,
-  Backpack, UtensilsCrossed, Trophy, Heart, Layers3,
-  BadgeAlert, ListOrdered,
+  ChefHat,
+  Dumbbell,
+  MapPin,
+  Wrench,
+  Sparkles,
+  Backpack,
+  UtensilsCrossed,
+  Trophy,
+  Heart,
+  Layers3,
+  Landmark,
 } from 'lucide-react';
 
-export type ContentType = 'recipe' | 'tools' | 'workout' | 'places' | 'general';
+export type ContentType =
+  | 'recipe'
+  | 'products'
+  | 'software'
+  | 'finance'
+  | 'workout'
+  | 'places'
+  | 'general';
+
 export type ToolsSubtype =
   | 'software'
   | 'lifestyle'
@@ -53,10 +70,14 @@ const SOFTWARE_SIGNALS = new Set([
 
 export function resolveContentType(rawContentType: string): ContentType {
   const ct = rawContentType.toLowerCase();
+
   if (ct === 'recipe') return 'recipe';
-  if (ct === 'tools') return 'tools';
   if (ct === 'workout') return 'workout';
   if (ct === 'places' || ct === 'location') return 'places';
+  if (ct === 'software') return 'software';
+  if (ct === 'finance') return 'finance';
+  if (ct === 'products' || ct === 'tools') return 'products';
+
   return 'general';
 }
 
@@ -115,16 +136,16 @@ export function deriveToolsSubtype(toolsList: any): ToolsSubtype {
   return 'picks';
 }
 
-const TOOLS_SUBTYPE_META: Record<ToolsSubtype, { icon: React.ReactElement; label: string }> = {
+const STRUCTURED_META: Record<ToolsSubtype, { icon: React.ReactElement; label: string }> = {
   software: { icon: <Wrench size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Software' },
   lifestyle: { icon: <Sparkles size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Lifestyle' },
   gear: { icon: <Backpack size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Gear' },
   food: { icon: <UtensilsCrossed size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Food' },
   ranking: { icon: <Trophy size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Ranking' },
-  tier:    { icon: <Layers3 size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'List' },
-  verdict: { icon: <Layers3 size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'List' },
+  tier: { icon: <Layers3 size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Tier' },
+  verdict: { icon: <Layers3 size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Verdict' },
   grouped: { icon: <Layers3 size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'List' },
-  picks:   { icon: <Heart size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Picks' },
+  picks: { icon: <Heart size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Picks' },
 };
 
 interface ContentTypeBadgeProps {
@@ -162,10 +183,28 @@ export const ContentTypeBadge: React.FC<ContentTypeBadgeProps> = ({ type, toolsS
     );
   }
 
-  if (type === 'tools') {
-    const { icon, label } = TOOLS_SUBTYPE_META[toolsSubtype ?? 'picks'];
+  if (type === 'software') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-primary-50 text-primary-700 border-primary-200">
+        <Wrench size={11} strokeWidth={2.5} aria-hidden="true" />
+        Software
+      </span>
+    );
+  }
+
+  if (type === 'finance') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-amber-50 text-amber-700 border-amber-200">
+        <Landmark size={11} strokeWidth={2.5} aria-hidden="true" />
+        Finance
+      </span>
+    );
+  }
+
+  if (type === 'products') {
+    const { icon, label } = STRUCTURED_META[toolsSubtype ?? 'picks'];
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-violet-50 text-violet-700 border-violet-200">
         {icon}
         {label}
       </span>
