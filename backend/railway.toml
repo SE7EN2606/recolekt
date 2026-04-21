@@ -3,4 +3,4 @@ builder = "DOCKERFILE"
 buildCommand = "docker build --no-cache -t recolekt-backend ."
 
 [deploy]
-startCommand = "gunicorn --bind 0.0.0.0:8080 --workers 2 --threads 4 --timeout 120 --chdir /app/api-flask app:app"
+startCommand = "gunicorn --bind 0.0.0.0:8080 --workers 1 --threads 8 --timeout 120 --chdir /app/api-flask app:app"
