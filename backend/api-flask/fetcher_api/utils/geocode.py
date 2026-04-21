@@ -3,100 +3,72 @@
 Geocoding proxy — proxies Nominatim server-side to avoid browser CORS
 blocks and client-side rate limiting.
 
-The threading.Lock ensures strictly sequential requests to Nominatim
-regardless of how many concurrent frontend requests arrive simultaneously
-(React StrictMode fires effects twice in development).
+Two-tier strategy:
+  Tier 1 — Nominatim (OpenStreetMap): free, no key, good for well-known places
+  Tier 2 — Google Places Text Search: paid (~$0.017/call), fires only when
+            Nominatim returns None. Handles branded/boutique venues not in OSM.
 
-Simple in-memory cache prevents repeated Nominatim hits for the same place
-within a server session.
+The threading.Lock ensures strictly sequential Nominatim requests.
+Simple in-memory cache prevents repeated hits for the same place.
 
-Strategy:
-  Attempt 1 — full "Name, City, Country"
-  Attempt 2 — name only, when full query fails and extra location context may be noisy
-  Attempt 3 — city only, for branded venue names that Nominatim cannot resolve
-
-Important correctness guard:
-  For highly ambiguous generic venue names with NO city/country context
-  (for example "Hotel Stern"), prefer returning None rather than pinning
-  the first global match from Nominatim.
+geocode_one(name, city, country) — direct callable for server-side use (reel.py)
+/geocode HTTP route — proxy for any remaining client-side needs
 """
 import logging
-import re
+import os
 import time
 import threading
-
 import httpx
 from flask import Blueprint, request, jsonify
+
 
 geocode_bp = Blueprint("geocode", __name__)
 logger = logging.getLogger(__name__)
 
-_nominatim_lock = threading.Lock()
+
+_nominatim_lock             = threading.Lock()
 _last_nominatim_call: float = 0.0
-_NOMINATIM_MIN_INTERVAL = 1.2
-_MAX_RETRIES = 2
+_NOMINATIM_MIN_INTERVAL     = 1.2
+_MAX_RETRIES                = 2
+
 
 _geocode_cache: dict[str, dict | None] = {}
 
-_COUNTRY_MAP = {
-    "france": "fr",
-    "germany": "de",
-    "austria": "at",
-    "switzerland": "ch",
-    "italy": "it",
-    "spain": "es",
-    "portugal": "pt",
-    "netherlands": "nl",
-    "belgium": "be",
-    "united kingdom": "gb",
-    "uk": "gb",
-    "usa": "us",
-    "united states": "us",
-    "canada": "ca",
-    "australia": "au",
+
+# Continent/macro-region names the AI hallucinates as countries.
+# These are useless for Nominatim and must be stripped before querying.
+_FAKE_COUNTRIES = {
+    "europe", "europa", "alps", "alpine", "dolomites", "mediterranean",
+    "scandinavia", "middle east", "southeast asia", "asia", "africa",
+    "north america", "south america", "latin america", "oceania",
+    "caribbean", "balkans", "nordics", "benelux", "central europe",
+    "eastern europe", "western europe", "northern europe", "southern europe",
 }
 
-_GENERIC_VENUE_PREFIXES = (
-    "hotel ",
-    "restaurant ",
-    "cafe ",
-    "café ",
-    "hostel ",
-    "motel ",
-    "auberge ",
-    "gasthof ",
-    "ristorante ",
-    "trattoria ",
-)
+_COUNTRY_CODE_MAP = {
+    "france": "fr", "germany": "de", "austria": "at", "switzerland": "ch",
+    "italy": "it", "spain": "es", "portugal": "pt", "netherlands": "nl",
+    "belgium": "be", "united kingdom": "gb", "uk": "gb", "usa": "us",
+    "united states": "us", "canada": "ca", "australia": "au",
+    "sweden": "se", "norway": "no", "denmark": "dk", "finland": "fi",
+    "poland": "pl", "czech republic": "cz", "hungary": "hu",
+    "croatia": "hr", "slovenia": "si", "slovakia": "sk",
+    "greece": "gr", "turkey": "tr", "japan": "jp", "thailand": "th",
+    "indonesia": "id", "mexico": "mx", "brazil": "br", "argentina": "ar",
+    "new zealand": "nz", "south africa": "za", "morocco": "ma",
+}
 
 
-def _safe_strip(value) -> str:
-    return (value or "").strip() if isinstance(value, str) or value is None else str(value).strip()
+def _sanitize_country(country: str) -> str:
+    """Strip continent names and macro-regions the AI hallucinates as countries."""
+    c = (country or "").strip().lower()
+    if c in _FAKE_COUNTRIES:
+        return ""
+    return country.strip()
 
 
 def _cache_key(q: str, countrycodes: str) -> str:
     return f"{q.lower().strip()}|{countrycodes.lower().strip()}"
-
-
-def _is_ambiguous_generic_name_only_query(name: str) -> bool:
-    """
-    Reject clearly ambiguous venue-name-only queries like:
-      - Hotel Stern
-      - Restaurant Central
-      - Cafe Roma
-
-    These often resolve to an arbitrary global first match in Nominatim.
-    Better to return None than save a wrong pin.
-    """
-    n = " ".join(_safe_strip(name).lower().split())
-    if not n or "," in n:
-        return False
-
-    if not any(n.startswith(prefix) for prefix in _GENERIC_VENUE_PREFIXES):
-        return False
-
-    tokens = re.findall(r"[a-zA-ZÀ-ÿ0-9]+", n)
-    return len(tokens) <= 3
 
 
 def _nominatim_query(
@@ -104,11 +76,6 @@ def _nominatim_query(
     countrycodes: str,
     headers: dict,
 ) -> dict | None:
-    """
-    Execute one Nominatim query with 429-retry logic.
-    Must be called inside _nominatim_lock.
-    Returns {"lat": float, "lng": float} or None (empty result or error).
-    """
     global _last_nominatim_call
 
     params: dict = {"q": q, "format": "json", "limit": 1}
@@ -147,13 +114,11 @@ def _nominatim_query(
                     "lat": float(data[0]["lat"]),
                     "lng": float(data[0]["lon"]),
                 }
-
             return None
 
         except httpx.HTTPStatusError as exc:
             logger.warning("geocode proxy HTTP error for %r: %s", q, exc)
             return None
-
         except Exception as exc:
             logger.warning("geocode proxy error for %r: %s", q, exc)
             return None
@@ -162,97 +127,76 @@ def _nominatim_query(
     return None
 
 
-def geocode_one(
-    name: str,
-    city: str = "",
-    country: str = "",
-    address: str = "",
-    neighborhood: str = "",
-) -> tuple[float, float] | None:
+def _google_places_query(name: str, city: str, country: str) -> dict | None:
     """
-    Server-side geocode a single place.
-
-    Query strategy:
-      1. strongest exact queries first (name + address + city/country)
-      2. address-based fallbacks
-      3. name + geography
-      4. guarded name-only
-      5. city-only
-
-    Safety rule:
-    - ambiguous generic name-only queries like "Hotel Stern" are skipped
-      unless supported by address/city/country context.
+    Google Places Text Search — fires only when Nominatim returns None.
+    Costs ~$0.017 per call. Only called for boutique/branded venues not in OSM.
     """
-    name = _safe_strip(name)
-    city = _safe_strip(city)
-    country = _safe_strip(country)
-    address = _safe_strip(address)
-    neighborhood = _safe_strip(neighborhood)
-
-    countrycodes = _COUNTRY_MAP.get(country.lower(), "") if country else ""
-
-    queries: list[str] = []
-
-    # Strongest: exact venue + address
-    if name and address and city and country:
-        queries.append(f"{name}, {address}, {city}, {country}")
-    if name and address and city:
-        queries.append(f"{name}, {address}, {city}")
-    if name and address and country:
-        queries.append(f"{name}, {address}, {country}")
-    if name and address:
-        queries.append(f"{name}, {address}")
-
-    # Address-first fallbacks
-    if address and city and country:
-        queries.append(f"{address}, {city}, {country}")
-    if address and city:
-        queries.append(f"{address}, {city}")
-    if address and country:
-        queries.append(f"{address}, {country}")
-    if address:
-        queries.append(address)
-
-    # Neighborhood-assisted fallbacks
-    if name and neighborhood and city and country:
-        queries.append(f"{name}, {neighborhood}, {city}, {country}")
-    if name and neighborhood and city:
-        queries.append(f"{name}, {neighborhood}, {city}")
-    if name and neighborhood and country:
-        queries.append(f"{name}, {neighborhood}, {country}")
-    if name and neighborhood:
-        queries.append(f"{name}, {neighborhood}")
-
-    # Standard name + geography
-    if name and city and country:
-        queries.append(f"{name}, {city}, {country}")
-    if name and city:
-        queries.append(f"{name}, {city}")
-    if name and country:
-        queries.append(f"{name}, {country}")
-
-    # Name-only only if not dangerously ambiguous
-    if name and not _is_ambiguous_generic_name_only_query(name):
-        queries.append(name)
-    elif name and not (address or city or country or neighborhood):
-        logger.warning(
-            "geocode_one: ⏭️ skipped ambiguous generic name-only query %r",
-            name,
-        )
-
-    # Weakest fallback
-    if city and country:
-        queries.append(f"{city}, {country}")
-    if city:
-        queries.append(city)
-
-    queries = _dedupe_keep_order(queries)
-    if not queries:
+    api_key = os.getenv("GOOGLE_PLACES_API_KEY")
+    if not api_key:
+        logger.debug("Google Places API key not set — skipping Places fallback")
         return None
 
-    primary_key = _cache_key(queries[0], countrycodes)
-    if primary_key in _geocode_cache:
-        cached = _geocode_cache[primary_key]
+    parts = [p for p in [name, city, country] if p and p.strip()]
+    query = ", ".join(parts)
+
+    try:
+        resp = httpx.get(
+            "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
+            params={
+                "input": query,
+                "inputtype": "textquery",
+                "fields": "geometry,formatted_address,name",
+                "key": api_key,
+            },
+            timeout=8,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        candidates = data.get("candidates") or []
+        if candidates:
+            loc = candidates[0]["geometry"]["location"]
+            result = {"lat": float(loc["lat"]), "lng": float(loc["lng"])}
+            logger.info(
+                "Google Places: ✅ '%s' → %.4f, %.4f (formatted: %s)",
+                query, result["lat"], result["lng"],
+                candidates[0].get("formatted_address", ""),
+            )
+            return result
+
+        logger.warning("Google Places: ❌ no candidates for '%s'", query)
+        return None
+
+    except Exception as exc:
+        logger.warning("Google Places error for '%s': %s", query, exc)
+        return None
+
+
+def geocode_one(name: str, city: str = "", country: str = "") -> tuple[float, float] | None:
+    """
+    Server-side geocode a single place.
+    Tier 1: Nominatim (free, OSM)
+    Tier 2: Google Places (paid fallback, only when Nominatim fails)
+
+    Returns (lat, lng) tuple or None if both tiers fail.
+    """
+    # Strip continent/macro-region hallucinations before doing anything
+    country = _sanitize_country(country)
+    city_clean = city.strip().lower()
+    if city_clean in _FAKE_COUNTRIES:
+        city = ""
+
+    parts = [p for p in [name, city, country] if p and p.strip()]
+    q = ", ".join(parts)
+    if not q:
+        return None
+
+    countrycodes = _COUNTRY_CODE_MAP.get(country.lower().strip(), "")
+
+    key = _cache_key(q, countrycodes)
+    if key in _geocode_cache:
+        cached = _geocode_cache[key]
         if cached:
             return (cached["lat"], cached["lng"])
         return None
@@ -263,43 +207,43 @@ def geocode_one(
     }
 
     result: dict | None = None
-    tried_queries: list[str] = []
 
     with _nominatim_lock:
-        for q in queries:
-            tried_queries.append(q)
-            logger.info("geocode_one: trying %r", q)
-            result = _nominatim_query(q, countrycodes, headers)
-            if result:
-                break
+        # Attempt 1 — full "Name, City, Country"
+        result = _nominatim_query(q, countrycodes, headers)
+
+        # Attempt 2 — name only (strips noisy city/country that confuses Nominatim)
+        if result is None and len(parts) > 1:
+            logger.info("geocode_one: name-only retry for '%s'", name)
+            result = _nominatim_query(name, countrycodes, headers)
+
+        # Attempt 3 — city only (last Nominatim resort for heavily branded names)
+        if result is None and city:
+            logger.info("geocode_one: city-only fallback for '%s'", city)
+            result = _nominatim_query(city, countrycodes, headers)
+
+    # Tier 2 — Google Places (only when all Nominatim attempts fail)
+    if result is None:
+        logger.info("geocode_one: Nominatim exhausted — trying Google Places for '%s'", name)
+        result = _google_places_query(name, city, country)
 
     if result:
-        for attempted in dict.fromkeys(tried_queries):
-            _geocode_cache[_cache_key(attempted, countrycodes)] = result
-
-        logger.info(
-            "geocode_one: ✅ %r → %.4f, %.4f",
-            tried_queries[0],
-            result["lat"],
-            result["lng"],
-        )
+        _geocode_cache[key] = result
+        logger.info("geocode_one: ✅ '%s' → %.4f, %.4f", q, result["lat"], result["lng"])
         return (result["lat"], result["lng"])
 
-    _geocode_cache[primary_key] = None
-    logger.warning("geocode_one: ❌ all attempts failed for %r", queries[0])
+    _geocode_cache[key] = None
+    logger.warning("geocode_one: ❌ all tiers failed for '%s'", q)
     return None
+
 
 @geocode_bp.route("/geocode", methods=["GET"])
 def geocode_proxy():
-    q = request.args.get("q", "").strip()
+    q            = request.args.get("q", "").strip()
     countrycodes = request.args.get("countrycodes", "").strip()
 
     if not q:
         return jsonify({"error": "q is required"}), 400
-
-    if _is_ambiguous_generic_name_only_query(q):
-        logger.warning("geocode proxy: ⏭️ skipped ambiguous generic name-only query %r", q)
-        return jsonify({"lat": None, "lng": None}), 200
 
     key = _cache_key(q, countrycodes)
     if key in _geocode_cache:
@@ -310,18 +254,15 @@ def geocode_proxy():
         return jsonify({"lat": None, "lng": None})
 
     headers = {
-        "User-Agent": "Recolekt/1.0 (contact@recolekt.com)",
+        "User-Agent":      "Recolekt/1.0 (contact@recolekt.com)",
         "Accept-Language": "en",
     }
 
     result: dict | None = None
-    tried_queries: list[str] = [q]
 
     with _nominatim_lock:
-        # Attempt 1 — full query as provided by the caller
         result = _nominatim_query(q, countrycodes, headers)
 
-        # Attempt 2 — city-rescue
         if result is None and "," in q:
             city_part = q.split(",", 1)[1].strip()
             if city_part and city_part.lower() != q.lower():
@@ -329,7 +270,6 @@ def geocode_proxy():
                     "geocode proxy: city-rescue — '%s' not found, retrying with '%s'",
                     q, city_part,
                 )
-                tried_queries.append(city_part)
                 result = _nominatim_query(city_part, countrycodes, headers)
                 if result:
                     logger.info(
@@ -338,8 +278,7 @@ def geocode_proxy():
                     )
 
     if result:
-        for attempted in dict.fromkeys(tried_queries):
-            _geocode_cache[_cache_key(attempted, countrycodes)] = result
+        _geocode_cache[key] = result
         logger.info("geocode proxy: ✅ %r → %.4f, %.4f", q, result["lat"], result["lng"])
         return jsonify(result)
 
