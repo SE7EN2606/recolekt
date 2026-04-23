@@ -201,21 +201,22 @@ def instagram_webhook():
 
 @auth_bp.route("/instagram/login", methods=["GET"])
 def instagram_login():
-    # If Meta refuses http://localhost, change this to your Staging URL 
-    # just for the review process/testing.
     base_url = APP_URL 
     redirect_uri = f"{base_url}/api/auth/instagram/callback"
     
+    # THIS LINE WAS MISSING IN YOUR ERROR LOG:
+    client_id = os.getenv("INSTAGRAM_APP_ID") or "1908143659883149" 
+    
     scopes = [
-    "instagram_basic",
-    "instagram_manage_messages",
-    "public_profile",
-    "pages_show_list",
-    "pages_read_engagement"
+        "instagram_basic",
+        "instagram_manage_messages",
+        "public_profile",
+        "pages_show_list",
+        "pages_read_engagement"
     ]
     
     params = {
-        "client_id": client_id,
+        "client_id": client_id, # Now it knows what client_id is
         "redirect_uri": redirect_uri,
         "scope": ",".join(scopes),
         "response_type": "code",
@@ -225,6 +226,7 @@ def instagram_login():
     auth_url = f"https://www.facebook.com/v25.0/dialog/oauth?{urllib.parse.urlencode(params)}"
     logger.info(f"🔗 Redirecting Admin to Meta OAuth with App ID: {client_id}")
     return redirect(auth_url)
+
 
 @auth_bp.route("/instagram/callback", methods=["GET"])
 def instagram_callback():
