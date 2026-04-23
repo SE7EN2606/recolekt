@@ -16,7 +16,6 @@ from fetcher_api.utils.timestamps import get_unique_id
 
 logger = logging.getLogger("auth")
 
-# No url_prefix here — it comes from register_blueprints() in __init__.py
 auth_bp = Blueprint("auth", __name__)
 
 resend.api_key = os.getenv("RESEND_API_KEY")
@@ -160,7 +159,7 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
 
 
 # ─────────────────────────────────────────────
-# INSTAGRAM / META OAUTH (For App Review)
+# INSTAGRAM / META
 # ─────────────────────────────────────────────
 
 @auth_bp.route("/webhook/instagram", methods=["GET", "POST"])
@@ -169,7 +168,7 @@ def instagram_webhook():
         mode = request.args.get("hub.mode")
         token = request.args.get("hub.verify_token")
         challenge = request.args.get("hub.challenge")
-        if mode == "subscribe" and token == "recolekt-titanium-secret-2026":
+        if mode == "subscribe" and token == os.getenv("WEBHOOK_VERIFY_TOKEN", "recolekt-titanium-secret-2026"):
             return challenge, 200
         return "Forbidden", 403
 
@@ -181,9 +180,9 @@ def instagram_webhook():
 
 @auth_bp.route("/instagram/login", methods=["GET"])
 def instagram_login():
-    client_id = os.getenv("INSTAGRAM_APP_ID") or "1908143659883149"
+    client_id = os.getenv("INSTAGRAM_APP_ID", "1908143659883149")
     redirect_uri = url_for("auth.instagram_callback", _external=True)
-    
+
     scopes = [
         "instagram_basic",
         "instagram_manage_messages",
@@ -192,7 +191,7 @@ def instagram_login():
         "pages_read_engagement",
         "business_management"
     ]
-    
+
     params = {
         "client_id": client_id,
         "redirect_uri": redirect_uri,
@@ -200,9 +199,9 @@ def instagram_login():
         "response_type": "code",
         "state": "admin_link"
     }
-    
+
     auth_url = f"https://www.facebook.com/v25.0/dialog/oauth?{urllib.parse.urlencode(params)}"
-    logger.info(f"🔗 Admin Redirecting to Meta: {redirect_uri}")
+    logger.info(f"🔗 Redirecting to Meta: {redirect_uri}")
     return redirect(auth_url)
 
 
@@ -212,53 +211,108 @@ def instagram_callback():
     if not code:
         return redirect(f"{_get_frontend_base()}/auth?error=meta_denied")
 
-    logger.info("✅ Meta Code Received. Starting Token Exchange...")
+    logger.info("✅ Meta Code Received. Exchanging for Token...")
 
-    client_id = os.getenv("INSTAGRAM_APP_ID") or "1908143659883149"
+    client_id = os.getenv("INSTAGRAM_APP_ID", "1908143659883149")
     client_secret = os.getenv("INSTAGRAM_APP_SECRET")
     redirect_uri = url_for("auth.instagram_callback", _external=True)
-    
-    # YOUR VERIFIED IDs
-    PAGE_ID = "852014951320759"
-    IG_ID = "17841477914830252"
+
+    PAGE_ID = os.getenv("INSTAGRAM_PAGE_ID", "852014951320759")
+    IG_ID = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "17841477914830252")
 
     try:
-        # 1. Exchange Code for Access Token
-        token_url = "https://graph.facebook.com/v25.0/oauth/access_token"
-        token_resp = requests.get(token_url, params={
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "redirect_uri": redirect_uri,
-            "code": code
-        }).json()
-        
+        token_resp = requests.get(
+            "https://graph.facebook.com/v25.0/oauth/access_token",
+            params={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "code": code
+            }
+        ).json()
+
         access_token = token_resp.get("access_token")
-        if access_token:
-            logger.info("✅ Token obtained. Triggering Dashboard Test Calls...")
-
-            # 2. TRIGGER MESSAGING CHECKMARK
-            msg_resp = requests.get(f"https://graph.facebook.com/v25.0/{PAGE_ID}/conversations", 
-                         params={"platform": "instagram", "access_token": access_token}).json()
-            logger.info(f"🎯 Msg Test Call: {msg_resp}")
-
-            # 3. TRIGGER BASIC/CONTENT CHECKMARK
-            basic_resp = requests.get(f"https://graph.facebook.com/v25.0/{IG_ID}", 
-                         params={"fields": "id,username", "access_token": access_token}).json()
-            logger.info(f"🎯 Basic Test Call: {basic_resp}")
-            
-            # 4. TRIGGER COMMENTS CHECKMARK
-            media_resp = requests.get(f"https://graph.facebook.com/v25.0/{IG_ID}/media", 
-                         params={"access_token": access_token}).json()
-            logger.info(f"🎯 Media/Comments Test Call: {media_resp}")
-
-            logger.info("🏁 All Dashboard triggers executed.")
-        else:
+        if not access_token:
             logger.error(f"❌ Token Exchange failed: {token_resp}")
+            return redirect(f"{_get_frontend_base()}/gallery?setup=instagram_failed")
+
+        # Get Page Access Token
+        page_token_resp = requests.get(
+            f"https://graph.facebook.com/v25.0/{PAGE_ID}",
+            params={"fields": "access_token", "access_token": access_token}
+        ).json()
+        page_token = page_token_resp.get("access_token", access_token)
+
+        # Trigger API test calls for Meta dashboard
+        conv_resp = requests.get(
+            f"https://graph.facebook.com/v25.0/{PAGE_ID}/conversations",
+            params={"platform": "instagram", "access_token": page_token}
+        ).json()
+        logger.info(f"🎯 Conversations: {conv_resp}")
+
+        basic_resp = requests.get(
+            f"https://graph.facebook.com/v25.0/{IG_ID}",
+            params={"fields": "id,username", "access_token": page_token}
+        ).json()
+        logger.info(f"🎯 Basic: {basic_resp}")
+
+        media_resp = requests.get(
+            f"https://graph.facebook.com/v25.0/{IG_ID}/media",
+            params={"access_token": page_token}
+        ).json()
+        logger.info(f"🎯 Media: {media_resp}")
+
+        logger.info("🎯 Dashboard Test Calls Performed.")
 
     except Exception as e:
         logger.error(f"❌ Meta callback crash: {e}", exc_info=True)
 
     return redirect(f"{_get_frontend_base()}/gallery?setup=instagram_success")
+
+
+@auth_bp.route("/instagram/send-test-dm", methods=["POST", "OPTIONS"])
+def instagram_send_test_dm():
+    """
+    Test endpoint for Meta App Review screencast.
+    Sends a DM from the Recolekt Page to a recipient IG user.
+    """
+    if request.method == "OPTIONS":
+        return "", 200
+
+    PAGE_ID = os.getenv("INSTAGRAM_PAGE_ID", "852014951320759")
+
+    # Get a fresh page token from env or use the one obtained in callback
+    page_token = os.getenv("INSTAGRAM_PAGE_ACCESS_TOKEN")
+    if not page_token:
+        return jsonify({"success": False, "error": "INSTAGRAM_PAGE_ACCESS_TOKEN not set in env"}), 500
+
+    data = request.get_json() or {}
+    recipient_id = data.get("recipient_id", os.getenv("INSTAGRAM_ACCOUNT_ID", "77762021161"))
+    message_text = data.get("message", "✅ Test message from Recolekt — DM flow is working!")
+
+    logger.info(f"📤 Sending test DM to {recipient_id} via page {PAGE_ID}")
+
+    try:
+        resp = requests.post(
+            f"https://graph.facebook.com/v25.0/{PAGE_ID}/messages",
+            json={
+                "recipient": {"id": recipient_id},
+                "message": {"text": message_text},
+                "messaging_type": "RESPONSE"
+            },
+            params={"access_token": page_token}
+        )
+        result = resp.json()
+        logger.info(f"📤 Test DM result: {result}")
+
+        if "error" in result:
+            return jsonify({"success": False, "error": result["error"]}), 400
+
+        return jsonify({"success": True, "result": result}), 200
+
+    except Exception as e:
+        logger.error(f"❌ send-test-dm crash: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 # ─────────────────────────────────────────────
@@ -275,8 +329,9 @@ def google_login():
     try:
         session["oauth_next_url"] = next_url
         session["oauth_frontend_base"] = frontend_base
-    except Exception: pass
-    
+    except Exception:
+        pass
+
     return oauth.google.authorize_redirect(redirect_uri, state=next_url)
 
 
@@ -286,7 +341,7 @@ def google_callback():
     try:
         frontend_base = session.pop("oauth_frontend_base", frontend_base)
         frontend_next = request.args.get("state") or session.pop("oauth_next_url", f"{frontend_base}/gallery")
-    except:
+    except Exception:
         frontend_next = f"{frontend_base}/gallery"
 
     try:
@@ -295,21 +350,30 @@ def google_callback():
         user_info = token.get("userinfo") or {}
         email = user_info.get("email", "").strip().lower()
 
-        if not email: return redirect(f"{frontend_base}/auth?error=no_email")
+        if not email:
+            return redirect(f"{frontend_base}/auth?error=no_email")
 
         user = fetch_one("SELECT user_id FROM users WHERE email = %s;", (email,))
         if user:
             user_id = user["user_id"] if isinstance(user, dict) else user[0]
-            execute("UPDATE users SET google_id = %s, picture = %s WHERE user_id = %s;",
-                    (user_info.get("sub"), user_info.get("picture"), user_id), commit=True)
+            execute(
+                "UPDATE users SET google_id = %s, picture = %s WHERE user_id = %s;",
+                (user_info.get("sub"), user_info.get("picture"), user_id),
+                commit=True
+            )
         else:
             user_id = get_unique_id(email)
-            execute("INSERT INTO users (user_id, email, name, google_id, picture, verified, created_at) "
-                    "VALUES (%s, %s, %s, %s, %s, TRUE, NOW());",
-                    (user_id, email, user_info.get("name"), user_info.get("sub"), user_info.get("picture")), commit=True)
+            execute(
+                "INSERT INTO users (user_id, email, name, google_id, picture, verified, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, TRUE, NOW());",
+                (user_id, email, user_info.get("name"), user_info.get("sub"), user_info.get("picture")),
+                commit=True
+            )
 
         jwt_token = create_jwt_token(user_id, email)
-        return redirect(f"{frontend_next}{'&' if '?' in frontend_next else '?'}token={jwt_token}")
+        sep = "&" if "?" in frontend_next else "?"
+        return redirect(f"{frontend_next}{sep}token={jwt_token}")
+
     except Exception as e:
         logger.error(f"❌ Google callback failed: {e}")
         return redirect(f"{frontend_base}/auth?error=google_failed")
@@ -321,15 +385,20 @@ def google_callback():
 
 @auth_bp.route("/login", methods=["POST", "OPTIONS"])
 def login():
-    if request.method == "OPTIONS": return "", 200
+    if request.method == "OPTIONS":
+        return "", 200
     data = request.get_json() or {}
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
 
     user = fetch_one("SELECT user_id, email, name, password_hash, language FROM users WHERE email = %s;", (email,))
-    if not user: return jsonify({"error": "No account found"}), 404
+    if not user:
+        return jsonify({"error": "No account found"}), 404
 
-    user_dict = dict(user) if isinstance(user, dict) else {'user_id': user[0], 'password_hash': user[3]}
+    user_dict = dict(user) if isinstance(user, dict) else {
+        'user_id': user[0], 'email': user[1], 'name': user[2],
+        'password_hash': user[3], 'language': user[4]
+    }
     if not check_password_hash(user_dict["password_hash"], password):
         return jsonify({"error": "Wrong password"}), 401
 
@@ -341,226 +410,129 @@ def login():
 
 @auth_bp.route("/register", methods=["POST", "OPTIONS"])
 def register():
-    if request.method == 'OPTIONS': return '', 200
+    if request.method == "OPTIONS":
+        return "", 200
     data = request.get_json() or {}
-    email = data.get('email', '').strip().lower()
-    password = data.get('password', '')
-    
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+
     user_id = get_unique_id(email)
     password_hash = generate_password_hash(password)
 
     try:
-        execute("INSERT INTO users (user_id, email, name, password_hash, verified, created_at) VALUES (%s, %s, %s, %s, FALSE, NOW());",
-                (user_id, email, data.get('name', 'User'), password_hash), commit=True)
-        
-        code = ''.join(random.choices('0123456789', k=6))
-        execute("INSERT INTO verification_codes (user_id, code, expires_at) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET code=EXCLUDED.code;",
-                (user_id, code, datetime.now(timezone.utc) + timedelta(minutes=10)), commit=True)
-        
+        execute(
+            "INSERT INTO users (user_id, email, name, password_hash, verified, created_at) "
+            "VALUES (%s, %s, %s, %s, FALSE, NOW());",
+            (user_id, email, data.get("name", "User"), password_hash),
+            commit=True
+        )
+
+        code = "".join(random.choices("0123456789", k=6))
+        execute(
+            "INSERT INTO verification_codes (user_id, code, expires_at) VALUES (%s, %s, %s) "
+            "ON CONFLICT (user_id) DO UPDATE SET code=EXCLUDED.code;",
+            (user_id, code, datetime.now(timezone.utc) + timedelta(minutes=10)),
+            commit=True
+        )
+
         subject, html, text = _email_verification_html(code)
         send_email(email, subject, html, text)
-        
-        return jsonify({'token': create_jwt_token(user_id, email), 'user': {'id': user_id}}), 201
+
+        return jsonify({"token": create_jwt_token(user_id, email), "user": {"id": user_id}}), 201
+
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
 @auth_bp.route("/me", methods=["GET", "OPTIONS"])
 def get_current_user():
-    if request.method == 'OPTIONS': return '', 200
-    try:
-        user_id = get_user_id_from_request()
-        user = fetch_one("SELECT user_id, email, name, picture, language FROM users WHERE user_id = %s", (user_id,))
-        if not user: return jsonify({'authenticated': False}), 401
-        return jsonify({'authenticated': True, 'user': dict(user)}), 200
-    except: return jsonify({'authenticated': False}), 401
-
-
-@auth_bp.route("/logout", methods=["POST", "OPTIONS"])
-def logout():
-    session.clear()
-    return jsonify({"ok": True})
-
-
-@auth_bp.route("/check", methods=["GET", "OPTIONS"])
-def check_auth():
-    try:
-        return jsonify({'authenticated': get_user_id_from_request() is not None}), 200
-    except:
-        return jsonify({'authenticated': False}), 401
-
-
-@auth_bp.route("/language", methods=["PUT", "OPTIONS"])
-def update_language():
-    user_id = get_user_id_from_request()
-    lang = (request.get_json() or {}).get('language', 'en')
-    execute("UPDATE users SET language = %s WHERE user_id = %s", (lang, user_id), commit=True)
-    return jsonify({'success': True}), 200
-
-
-@auth_bp.route('/forgot-password', methods=['POST', 'OPTIONS'])
-def forgot_password():
-    email = (request.get_json() or {}).get('email', '').strip().lower()
-    user = fetch_one("SELECT user_id FROM users WHERE email = %s", (email,))
-    if not user: return jsonify({"error": "Not found"}), 404
-    
-    code = ''.join(random.choices('0123456789', k=6))
-    execute("INSERT INTO reset_codes (user_id, code, expires_at) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET code=EXCLUDED.code;",
-            (user['user_id'] if isinstance(user, dict) else user[0], code, datetime.now(timezone.utc) + timedelta(minutes=15)), commit=True)
-    
-    subject, html, text = _email_reset_html(code)
-    send_email(email, subject, html, text)
-    return jsonify({"message": "Sent"}), 200
-
-
-@auth_bp.route('/reset-password', methods=['POST', 'OPTIONS'])
-def reset_password():
-    data = request.get_json() or {}
-    email = data.get('email', '').strip().lower()
-    code = data.get('code', '').strip()
-    
-    user = fetch_one("SELECT user_id FROM users WHERE email = %s", (email,))
-    if not user: return jsonify({"error": "User not found"}), 400
-    user_id = user[0] if isinstance(user, list or tuple) else user['user_id']
-
-    code_row = fetch_one("SELECT user_id FROM reset_codes WHERE user_id = %s AND code = %s AND expires_at > NOW()", (user_id, code))
-    if not code_row: return jsonify({"error": "Invalid code"}), 400
-
-    execute("UPDATE users SET password_hash = %s WHERE user_id = %s", (generate_password_hash(data.get('password')), user_id), commit=True)
-    execute("DELETE FROM reset_codes WHERE user_id = %s", (user_id,), commit=True)
-    return jsonify({"message": "Success"}), 200
-
-
-@auth_bp.route('/verify-email', methods=['POST', 'OPTIONS'])
-def verify_email():
-    data = request.get_json() or {}
-    email = data.get('email', '').lower()
-    code = data.get('code', '').strip()
-    
-    user = fetch_one("SELECT user_id FROM users WHERE email = %s", (email,))
-    if not user: return jsonify({"error": "Not found"}), 400
-    user_id = user[0] if isinstance(user, list or tuple) else user['user_id']
-
-    code_row = fetch_one("SELECT user_id FROM verification_codes WHERE user_id = %s AND code = %s AND expires_at > NOW()", (user_id, code))
-    if not code_row: return jsonify({"error": "Invalid code"}), 400
-
-    execute("UPDATE users SET verified = TRUE WHERE user_id = %s", (user_id,), commit=True)
-    execute("DELETE FROM verification_codes WHERE user_id = %s", (user_id,), commit=True)
-    return jsonify({"message": "Verified"}), 200
-
-@auth_bp.route('/resend-verification', methods=['POST', 'OPTIONS'])
-def resend_verification():
-    if request.method == 'OPTIONS': return '', 200
-
-    data = request.get_json() or {}
-    email = (data.get('email') or '').strip().lower()
-    if not email:
-        return jsonify({'error': 'Email required'}), 400
-
-    user = fetch_one("SELECT user_id, verified, language FROM users WHERE email = %s", (email,))
-    if not user:
-        return jsonify({'error': 'No account found with this email.'}), 404
-
-    user_dict = dict(user) if isinstance(user, dict) else {
-        'user_id': user[0], 'verified': user[1], 'language': user[2]
-    }
-
-    if user_dict.get('verified'):
-        return jsonify({'error': 'This account is already verified.'}), 400
-
-    lang = user_dict.get('language') or 'en'
-    code = ''.join(random.choices('0123456789', k=6))
-    expires = datetime.now(timezone.utc) + timedelta(minutes=10)
-
-    execute(
-        "INSERT INTO verification_codes (user_id, code, expires_at) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at;",
-        (user_dict['user_id'], code, expires), commit=True)
-
-    subject, html, text = _email_verification_html(code, lang)
-    sent = send_email(to=email, subject=subject, html=html, text=text)
-    if not sent:
-        logger.warning("🛠️ DEV — Resend code for %s: %s", email, code)
-
-    return jsonify({'message': 'Verification code resent.'}), 200
-
-
-@auth_bp.route("/me", methods=["GET", "OPTIONS"])
-def get_current_user():
-    if request.method == 'OPTIONS': return '', 200
+    if request.method == "OPTIONS":
+        return "", 200
     try:
         user_id = get_user_id_from_request()
         user = fetch_one(
-            "SELECT user_id, email, name, picture, language FROM users WHERE user_id = %s", (user_id,))
-        if not user: return jsonify({'authenticated': False}), 401
+            "SELECT user_id, email, name, picture, language FROM users WHERE user_id = %s", (user_id,)
+        )
+        if not user:
+            return jsonify({"authenticated": False}), 401
 
         user_dict = dict(user) if isinstance(user, dict) else {
-            'user_id': user[0], 'email': user[1], 'name': user[2],
-            'picture': user[3], 'language': user[4]
+            "user_id": user[0], "email": user[1], "name": user[2],
+            "picture": user[3], "language": user[4]
         }
         return jsonify({
-            'authenticated': True,
-            'user': {
-                'id': user_dict['user_id'], 'email': user_dict['email'],
-                'name': user_dict['name'], 'picture': user_dict['picture'],
-                'language': user_dict.get('language') or 'en'
+            "authenticated": True,
+            "user": {
+                "id": user_dict["user_id"],
+                "email": user_dict["email"],
+                "name": user_dict["name"],
+                "picture": user_dict["picture"],
+                "language": user_dict.get("language") or "en"
             }
         }), 200
     except Exception:
-        return jsonify({'authenticated': False}), 401
+        return jsonify({"authenticated": False}), 401
 
 
 @auth_bp.route("/logout", methods=["POST", "OPTIONS"])
 def logout():
-    if request.method == 'OPTIONS': return '', 200
+    if request.method == "OPTIONS":
+        return "", 200
     session.clear()
     return jsonify({"ok": True})
 
 
 @auth_bp.route("/check", methods=["GET", "OPTIONS"])
 def check_auth():
-    if request.method == 'OPTIONS': return '', 200
+    if request.method == "OPTIONS":
+        return "", 200
     try:
         user_id = get_user_id_from_request()
-        return jsonify({'authenticated': user_id is not None}), 200 if user_id else 401
+        return jsonify({"authenticated": user_id is not None}), 200 if user_id else 401
     except Exception:
-        return jsonify({'authenticated': False}), 401
+        return jsonify({"authenticated": False}), 401
 
 
 @auth_bp.route("/language", methods=["PUT", "OPTIONS"])
 def update_language():
-    if request.method == 'OPTIONS': return '', 200
+    if request.method == "OPTIONS":
+        return "", 200
     try:
         user_id = get_user_id_from_request()
-        if not user_id: return jsonify({'error': 'Unauthorized'}), 401
-        data = request.get_json() or {}
-        lang = data.get('language', 'en')
+        if not user_id:
+            return jsonify({"error": "Unauthorized"}), 401
+        lang = (request.get_json() or {}).get("language", "en")
         execute("UPDATE users SET language = %s WHERE user_id = %s", (lang, user_id), commit=True)
-        return jsonify({'success': True, 'language': lang}), 200
+        return jsonify({"success": True, "language": lang}), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-@auth_bp.route('/forgot-password', methods=['POST', 'OPTIONS'])
+@auth_bp.route("/forgot-password", methods=["POST", "OPTIONS"])
 def forgot_password():
-    if request.method == 'OPTIONS': return '', 200
+    if request.method == "OPTIONS":
+        return "", 200
     data = request.get_json() or {}
-    email = (data.get('email') or '').strip().lower()
-    requested_lang = data.get('lang', 'en')
+    email = (data.get("email") or "").strip().lower()
+    requested_lang = data.get("lang", "en")
 
     user = fetch_one("SELECT user_id, language FROM users WHERE email = %s", (email,))
     if not user:
         return jsonify({"error": "No account found with this email."}), 404
 
-    user_dict = dict(user) if isinstance(user, dict) else {'user_id': user[0], 'language': user[1]}
-    user_id = user_dict['user_id']
-    lang = user_dict.get('language') or requested_lang
+    user_dict = dict(user) if isinstance(user, dict) else {"user_id": user[0], "language": user[1]}
+    user_id = user_dict["user_id"]
+    lang = user_dict.get("language") or requested_lang
 
-    code = ''.join(random.choices('0123456789', k=6))
+    code = "".join(random.choices("0123456789", k=6))
     expires = datetime.now(timezone.utc) + timedelta(minutes=15)
 
     execute(
-        "INSERT INTO reset_codes (user_id, code, expires_at) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at;",
-        (user_id, code, expires), commit=True)
+        "INSERT INTO reset_codes (user_id, code, expires_at) VALUES (%s, %s, %s) "
+        "ON CONFLICT (user_id) DO UPDATE SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at;",
+        (user_id, code, expires),
+        commit=True
+    )
 
     subject, html, text = _email_reset_html(code, lang)
     sent = send_email(to=email, subject=subject, html=html, text=text)
@@ -570,22 +542,26 @@ def forgot_password():
     return jsonify({"message": "Reset code sent."}), 200
 
 
-@auth_bp.route('/reset-password', methods=['POST', 'OPTIONS'])
+@auth_bp.route("/reset-password", methods=["POST", "OPTIONS"])
 def reset_password():
-    if request.method == 'OPTIONS': return '', 200
+    if request.method == "OPTIONS":
+        return "", 200
     data = request.get_json() or {}
-    email = data.get('email', '').strip().lower()
-    code = data.get('code', '').strip()
-    new_pw = data.get('password', '')
+    email = data.get("email", "").strip().lower()
+    code = data.get("code", "").strip()
+    new_pw = data.get("password", "")
 
     user = fetch_one("SELECT user_id FROM users WHERE email = %s", (email,))
-    if not user: return jsonify({"error": "User not found"}), 400
-    user_id = user['user_id'] if isinstance(user, dict) else user[0]
+    if not user:
+        return jsonify({"error": "User not found"}), 400
+    user_id = user["user_id"] if isinstance(user, dict) else user[0]
 
     code_row = fetch_one(
         "SELECT user_id FROM reset_codes WHERE user_id = %s AND code = %s AND expires_at > NOW()",
-        (user_id, code))
-    if not code_row: return jsonify({"error": "Invalid or expired code."}), 400
+        (user_id, code)
+    )
+    if not code_row:
+        return jsonify({"error": "Invalid or expired code."}), 400
 
     execute("UPDATE users SET password_hash = %s WHERE user_id = %s",
             (generate_password_hash(new_pw), user_id), commit=True)
@@ -593,22 +569,66 @@ def reset_password():
     return jsonify({"message": "Password reset successfully!"}), 200
 
 
-@auth_bp.route('/verify-email', methods=['POST', 'OPTIONS'])
+@auth_bp.route("/verify-email", methods=["POST", "OPTIONS"])
 def verify_email():
-    if request.method == 'OPTIONS': return '', 200
+    if request.method == "OPTIONS":
+        return "", 200
     data = request.get_json() or {}
-    email = data.get('email', '').strip().lower()
-    code = data.get('code', '').strip()
+    email = data.get("email", "").strip().lower()
+    code = data.get("code", "").strip()
 
     user = fetch_one("SELECT user_id FROM users WHERE email = %s", (email,))
-    if not user: return jsonify({"error": "Account not found."}), 400
-    user_id = user['user_id'] if isinstance(user, dict) else user[0]
+    if not user:
+        return jsonify({"error": "Account not found."}), 400
+    user_id = user["user_id"] if isinstance(user, dict) else user[0]
 
     code_row = fetch_one(
         "SELECT user_id FROM verification_codes WHERE user_id = %s AND code = %s AND expires_at > NOW()",
-        (user_id, code))
-    if not code_row: return jsonify({"error": "Invalid or expired code."}), 400
+        (user_id, code)
+    )
+    if not code_row:
+        return jsonify({"error": "Invalid or expired code."}), 400
 
     execute("UPDATE users SET verified = TRUE WHERE user_id = %s", (user_id,), commit=True)
     execute("DELETE FROM verification_codes WHERE user_id = %s", (user_id,), commit=True)
     return jsonify({"message": "Email verified successfully!"}), 200
+
+
+@auth_bp.route("/resend-verification", methods=["POST", "OPTIONS"])
+def resend_verification():
+    if request.method == "OPTIONS":
+        return "", 200
+
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"error": "Email required"}), 400
+
+    user = fetch_one("SELECT user_id, verified, language FROM users WHERE email = %s", (email,))
+    if not user:
+        return jsonify({"error": "No account found with this email."}), 404
+
+    user_dict = dict(user) if isinstance(user, dict) else {
+        "user_id": user[0], "verified": user[1], "language": user[2]
+    }
+
+    if user_dict.get("verified"):
+        return jsonify({"error": "This account is already verified."}), 400
+
+    lang = user_dict.get("language") or "en"
+    code = "".join(random.choices("0123456789", k=6))
+    expires = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+    execute(
+        "INSERT INTO verification_codes (user_id, code, expires_at) VALUES (%s, %s, %s) "
+        "ON CONFLICT (user_id) DO UPDATE SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at;",
+        (user_dict["user_id"], code, expires),
+        commit=True
+    )
+
+    subject, html, text = _email_verification_html(code, lang)
+    sent = send_email(to=email, subject=subject, html=html, text=text)
+    if not sent:
+        logger.warning("🛠️ DEV — Resend code for %s: %s", email, code)
+
+    return jsonify({"message": "Verification code resent."}), 200
