@@ -525,6 +525,56 @@ def google_callback():
         return redirect(f"{frontend_base}/auth?error=google_failed")
 
 
+@auth_bp.route("/google/verify", methods=["POST", "OPTIONS"])
+def google_verify():
+    if request.method == "OPTIONS":
+        return "", 200
+
+    data = request.get_json() or {}
+    access_token = data.get("access_token", "")
+
+    if not access_token:
+        return jsonify({"error": "No token provided"}), 400
+
+    try:
+        resp = requests.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        user_info = resp.json()
+        email = user_info.get("email", "").strip().lower()
+
+        if not email:
+            return jsonify({"error": "Could not get email from Google"}), 400
+
+        user = fetch_one("SELECT user_id FROM users WHERE email = %s;", (email,))
+        if user:
+            user_id = user["user_id"] if isinstance(user, dict) else user[0]
+            execute(
+                "UPDATE users SET google_id = %s, picture = %s WHERE user_id = %s;",
+                (user_info.get("id"), user_info.get("picture"), user_id),
+                commit=True
+            )
+        else:
+            user_id = get_unique_id(email)
+            execute(
+                "INSERT INTO users (user_id, email, name, google_id, picture, verified, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, TRUE, NOW());",
+                (user_id, email, user_info.get("name"), user_info.get("id"), user_info.get("picture")),
+                commit=True
+            )
+
+        logger.info(f"✅ Google verify success for {email}")
+        return jsonify({
+            "token": create_jwt_token(user_id, email),
+            "user": {"id": user_id, "email": email, "name": user_info.get("name"), "picture": user_info.get("picture")}
+        }), 200
+
+    except Exception as e:
+        logger.error(f"❌ Google verify failed: {e}")
+        return jsonify({"error": "Verification failed"}), 500
+
+
 # ─────────────────────────────────────────────
 # EMAIL / PASSWORD & CORE AUTH
 # ─────────────────────────────────────────────
