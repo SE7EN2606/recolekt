@@ -210,6 +210,23 @@ def instagram_webhook():
 
         try:
             for entry in data.get("entry", []):
+
+                # ── Instagram Business API: entry.changes[] ──
+                for change in entry.get("changes", []):
+                    if change.get("field") != "messages":
+                        continue
+                    value = change.get("value", {})
+                    sender_id = value.get("sender", {}).get("id")
+                    message = value.get("message", {})
+                    text = (message.get("text") or "").strip()
+
+                    if not sender_id:
+                        continue
+
+                    logger.info(f"📨 Message from {sender_id}: '{text}'")
+                    _handle_incoming_message(sender_id, text, message)
+
+                # ── Messenger API fallback: entry.messaging[] ──
                 for messaging in entry.get("messaging", []):
                     sender_id = messaging.get("sender", {}).get("id")
                     message = messaging.get("message", {})
@@ -219,62 +236,65 @@ def instagram_webhook():
                         continue
 
                     logger.info(f"📨 Message from {sender_id}: '{text}'")
-
-                    # ── CASE 1: 6-digit PIN → link account ──
-                    if text.isdigit() and len(text) == 6:
-                        pin_row = fetch_one(
-                            "SELECT user_id FROM link_pins WHERE pin = %s AND expires_at > NOW()",
-                            (text,)
-                        )
-                        if pin_row:
-                            linked_user_id = pin_row["user_id"] if isinstance(pin_row, dict) else pin_row[0]
-                            execute(
-                                "UPDATE users SET instagram_sender_id = %s WHERE user_id = %s",
-                                (sender_id, linked_user_id),
-                                commit=True
-                            )
-                            execute("DELETE FROM link_pins WHERE pin = %s", (text,), commit=True)
-                            logger.info(f"✅ Linked Instagram {sender_id} to user {linked_user_id}")
-                            _send_ig_reply(sender_id, "✅ Your Instagram is now linked to Recolekt! Send me any reel URL to save it to your library.")
-                        else:
-                            logger.warning(f"⚠️ Invalid or expired PIN from {sender_id}: {text}")
-                            _send_ig_reply(sender_id, "❌ Invalid or expired code. Please generate a new one in the Recolekt app.")
-                        continue
-
-                    # ── CASE 2: Known sender → save reel to inbox ──
-                    user_row = fetch_one(
-                        "SELECT user_id FROM users WHERE instagram_sender_id = %s",
-                        (sender_id,)
-                    )
-                    if user_row:
-                        linked_user_id = user_row["user_id"] if isinstance(user_row, dict) else user_row[0]
-
-                        url = None
-                        if "instagram.com/reel" in text or "instagram.com/p/" in text:
-                            url = text
-                        elif message.get("attachments"):
-                            for att in message["attachments"]:
-                                payload = att.get("payload", {})
-                                url = payload.get("url") or payload.get("src")
-                                if url:
-                                    break
-
-                        execute(
-                            "INSERT INTO inbox_items (user_id, platform, sender_ig_id, raw_url, message_text, status) "
-                            "VALUES (%s, 'instagram', %s, %s, %s, 'PENDING')",
-                            (linked_user_id, sender_id, url, text),
-                            commit=True
-                        )
-                        logger.info(f"📥 Saved inbox item for user {linked_user_id}: {url or text}")
-                        _send_ig_reply(sender_id, "✅ Got it! Saving this reel to your Recolekt library...")
-                    else:
-                        logger.info(f"👤 Unknown sender {sender_id} — not linked")
-                        _send_ig_reply(sender_id, "👋 To save reels, first link your Instagram in the Recolekt app at recolekt.app")
+                    _handle_incoming_message(sender_id, text, message)
 
         except Exception as e:
             logger.error(f"❌ Webhook processing error: {e}", exc_info=True)
 
         return "EVENT_RECEIVED", 200
+
+
+def _handle_incoming_message(sender_id: str, text: str, message: dict):
+    # ── CASE 1: 6-digit PIN → link account ──
+    if text.isdigit() and len(text) == 6:
+        pin_row = fetch_one(
+            "SELECT user_id FROM link_pins WHERE pin = %s AND expires_at > NOW()",
+            (text,)
+        )
+        if pin_row:
+            linked_user_id = pin_row["user_id"] if isinstance(pin_row, dict) else pin_row[0]
+            execute(
+                "UPDATE users SET instagram_sender_id = %s WHERE user_id = %s",
+                (sender_id, linked_user_id),
+                commit=True
+            )
+            execute("DELETE FROM link_pins WHERE pin = %s", (text,), commit=True)
+            logger.info(f"✅ Linked Instagram {sender_id} to user {linked_user_id}")
+            _send_ig_reply(sender_id, "✅ Your Instagram is now linked to Recolekt! Send me any reel URL to save it to your library.")
+        else:
+            logger.warning(f"⚠️ Invalid or expired PIN from {sender_id}: {text}")
+            _send_ig_reply(sender_id, "❌ Invalid or expired code. Please generate a new one in the Recolekt app.")
+        return
+
+    # ── CASE 2: Known sender → save reel to inbox ──
+    user_row = fetch_one(
+        "SELECT user_id FROM users WHERE instagram_sender_id = %s",
+        (sender_id,)
+    )
+    if user_row:
+        linked_user_id = user_row["user_id"] if isinstance(user_row, dict) else user_row[0]
+
+        url = None
+        if "instagram.com/reel" in text or "instagram.com/p/" in text:
+            url = text
+        elif message.get("attachments"):
+            for att in message["attachments"]:
+                payload = att.get("payload", {})
+                url = payload.get("url") or payload.get("src")
+                if url:
+                    break
+
+        execute(
+            "INSERT INTO inbox_items (user_id, platform, sender_ig_id, raw_url, message_text, status) "
+            "VALUES (%s, 'instagram', %s, %s, %s, 'PENDING')",
+            (linked_user_id, sender_id, url, text),
+            commit=True
+        )
+        logger.info(f"📥 Saved inbox item for user {linked_user_id}: {url or text}")
+        _send_ig_reply(sender_id, "✅ Got it! Saving this reel to your Recolekt library...")
+    else:
+        logger.info(f"👤 Unknown sender {sender_id} — not linked")
+        _send_ig_reply(sender_id, "👋 To save reels, first link your Instagram in the Recolekt app at recolekt.app")
 
 
 # ─────────────────────────────────────────────
