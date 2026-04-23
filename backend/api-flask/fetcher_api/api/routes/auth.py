@@ -159,7 +159,39 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
 
 
 # ─────────────────────────────────────────────
-# INSTAGRAM / META
+# INSTAGRAM HELPERS
+# ─────────────────────────────────────────────
+
+def _send_ig_reply(recipient_id: str, text: str) -> bool:
+    ig_token = os.getenv("INSTAGRAM_PAGE_ACCESS_TOKEN")
+    ig_id = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "34572224849088745")
+
+    if not ig_token:
+        logger.warning("⚠️ INSTAGRAM_PAGE_ACCESS_TOKEN not set — cannot send reply")
+        return False
+
+    try:
+        resp = requests.post(
+            f"https://graph.instagram.com/v25.0/{ig_id}/messages",
+            json={
+                "recipient": {"id": recipient_id},
+                "message": {"text": text}
+            },
+            params={"access_token": ig_token}
+        )
+        result = resp.json()
+        if "error" in result:
+            logger.error(f"❌ IG reply failed: {result['error']}")
+            return False
+        logger.info(f"📤 IG reply sent to {recipient_id}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ _send_ig_reply crash: {e}")
+        return False
+
+
+# ─────────────────────────────────────────────
+# INSTAGRAM WEBHOOK
 # ─────────────────────────────────────────────
 
 @auth_bp.route("/webhook/instagram", methods=["GET", "POST"])
@@ -173,10 +205,133 @@ def instagram_webhook():
         return "Forbidden", 403
 
     if request.method == "POST":
-        data = request.get_json()
-        logger.info(f"📩 Webhook Received: {data}")
+        data = request.get_json(silent=True) or {}
+        logger.info(f"📩 Webhook received: {data}")
+
+        try:
+            for entry in data.get("entry", []):
+                for messaging in entry.get("messaging", []):
+                    sender_id = messaging.get("sender", {}).get("id")
+                    message = messaging.get("message", {})
+                    text = (message.get("text") or "").strip()
+
+                    if not sender_id:
+                        continue
+
+                    logger.info(f"📨 Message from {sender_id}: '{text}'")
+
+                    # ── CASE 1: 6-digit PIN → link account ──
+                    if text.isdigit() and len(text) == 6:
+                        pin_row = fetch_one(
+                            "SELECT user_id FROM link_pins WHERE pin = %s AND expires_at > NOW()",
+                            (text,)
+                        )
+                        if pin_row:
+                            linked_user_id = pin_row["user_id"] if isinstance(pin_row, dict) else pin_row[0]
+                            execute(
+                                "UPDATE users SET instagram_sender_id = %s WHERE user_id = %s",
+                                (sender_id, linked_user_id),
+                                commit=True
+                            )
+                            execute("DELETE FROM link_pins WHERE pin = %s", (text,), commit=True)
+                            logger.info(f"✅ Linked Instagram {sender_id} to user {linked_user_id}")
+                            _send_ig_reply(sender_id, "✅ Your Instagram is now linked to Recolekt! Send me any reel URL to save it to your library.")
+                        else:
+                            logger.warning(f"⚠️ Invalid or expired PIN from {sender_id}: {text}")
+                            _send_ig_reply(sender_id, "❌ Invalid or expired code. Please generate a new one in the Recolekt app.")
+                        continue
+
+                    # ── CASE 2: Known sender → save reel to inbox ──
+                    user_row = fetch_one(
+                        "SELECT user_id FROM users WHERE instagram_sender_id = %s",
+                        (sender_id,)
+                    )
+                    if user_row:
+                        linked_user_id = user_row["user_id"] if isinstance(user_row, dict) else user_row[0]
+
+                        url = None
+                        if "instagram.com/reel" in text or "instagram.com/p/" in text:
+                            url = text
+                        elif message.get("attachments"):
+                            for att in message["attachments"]:
+                                payload = att.get("payload", {})
+                                url = payload.get("url") or payload.get("src")
+                                if url:
+                                    break
+
+                        execute(
+                            "INSERT INTO inbox_items (user_id, platform, sender_ig_id, raw_url, message_text, status) "
+                            "VALUES (%s, 'instagram', %s, %s, %s, 'PENDING')",
+                            (linked_user_id, sender_id, url, text),
+                            commit=True
+                        )
+                        logger.info(f"📥 Saved inbox item for user {linked_user_id}: {url or text}")
+                        _send_ig_reply(sender_id, "✅ Got it! Saving this reel to your Recolekt library...")
+                    else:
+                        logger.info(f"👤 Unknown sender {sender_id} — not linked")
+                        _send_ig_reply(sender_id, "👋 To save reels, first link your Instagram in the Recolekt app at recolekt.app")
+
+        except Exception as e:
+            logger.error(f"❌ Webhook processing error: {e}", exc_info=True)
+
         return "EVENT_RECEIVED", 200
 
+
+# ─────────────────────────────────────────────
+# INSTAGRAM PIN LINKING
+# ─────────────────────────────────────────────
+
+@auth_bp.route("/instagram/generate-pin", methods=["POST", "OPTIONS"])
+def instagram_generate_pin():
+    if request.method == "OPTIONS":
+        return "", 200
+    try:
+        user_id = get_user_id_from_request()
+    except Exception:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    user = fetch_one("SELECT instagram_sender_id FROM users WHERE user_id = %s", (user_id,))
+    if user and (user.get("instagram_sender_id") if isinstance(user, dict) else user[0]):
+        return jsonify({"error": "Instagram already linked"}), 400
+
+    for _ in range(10):
+        pin = "".join(random.choices("0123456789", k=6))
+        existing = fetch_one("SELECT pin FROM link_pins WHERE pin = %s", (pin,))
+        if not existing:
+            break
+
+    expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+    execute(
+        "INSERT INTO link_pins (pin, user_id, platform, expires_at) VALUES (%s, %s, 'instagram', %s) "
+        "ON CONFLICT (pin) DO UPDATE SET user_id = EXCLUDED.user_id, expires_at = EXCLUDED.expires_at",
+        (pin, user_id, expires),
+        commit=True
+    )
+
+    logger.info(f"🔑 PIN generated for user {user_id}: {pin}")
+    return jsonify({"pin": pin, "expires_in": 900}), 200
+
+
+@auth_bp.route("/instagram/link-status", methods=["GET", "OPTIONS"])
+def instagram_link_status():
+    if request.method == "OPTIONS":
+        return "", 200
+    try:
+        user_id = get_user_id_from_request()
+    except Exception:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    user = fetch_one("SELECT instagram_sender_id FROM users WHERE user_id = %s", (user_id,))
+    if not user:
+        return jsonify({"linked": False}), 200
+
+    sender_id = user.get("instagram_sender_id") if isinstance(user, dict) else user[0]
+    return jsonify({"linked": bool(sender_id), "sender_id": sender_id}), 200
+
+
+# ─────────────────────────────────────────────
+# INSTAGRAM OAUTH (admin / app review)
+# ─────────────────────────────────────────────
 
 @auth_bp.route("/instagram/login", methods=["GET"])
 def instagram_login():
@@ -216,7 +371,6 @@ def instagram_callback():
     client_id = os.getenv("INSTAGRAM_APP_ID", "1908143659883149")
     client_secret = os.getenv("INSTAGRAM_APP_SECRET")
     redirect_uri = url_for("auth.instagram_callback", _external=True)
-
     PAGE_ID = os.getenv("INSTAGRAM_PAGE_ID", "852014951320759")
     IG_ID = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "17841477914830252")
 
@@ -236,14 +390,12 @@ def instagram_callback():
             logger.error(f"❌ Token Exchange failed: {token_resp}")
             return redirect(f"{_get_frontend_base()}/gallery?setup=instagram_failed")
 
-        # Get Page Access Token
         page_token_resp = requests.get(
             f"https://graph.facebook.com/v25.0/{PAGE_ID}",
             params={"fields": "access_token", "access_token": access_token}
         ).json()
         page_token = page_token_resp.get("access_token", access_token)
 
-        # Trigger API test calls for Meta dashboard
         conv_resp = requests.get(
             f"https://graph.facebook.com/v25.0/{PAGE_ID}/conversations",
             params={"platform": "instagram", "access_token": page_token}
@@ -272,20 +424,14 @@ def instagram_callback():
 
 @auth_bp.route("/instagram/send-test-dm", methods=["POST", "OPTIONS"])
 def instagram_send_test_dm():
-    """
-    Test endpoint for Meta App Review screencast.
-    Sends a DM from the Recolekt Page to a recipient IG user.
-    """
     if request.method == "OPTIONS":
         return "", 200
 
-    PAGE_ID = os.getenv("INSTAGRAM_PAGE_ID", "852014951320759")
-
-    # Get a fresh page token from env or use the one obtained in callback
     page_token = os.getenv("INSTAGRAM_PAGE_ACCESS_TOKEN")
     if not page_token:
-        return jsonify({"success": False, "error": "INSTAGRAM_PAGE_ACCESS_TOKEN not set in env"}), 500
+        return jsonify({"success": False, "error": "INSTAGRAM_PAGE_ACCESS_TOKEN not set"}), 500
 
+    PAGE_ID = os.getenv("INSTAGRAM_PAGE_ID", "852014951320759")
     data = request.get_json() or {}
     recipient_id = data.get("recipient_id", os.getenv("INSTAGRAM_ACCOUNT_ID", "77762021161"))
     message_text = data.get("message", "✅ Test message from Recolekt — DM flow is working!")
@@ -396,8 +542,8 @@ def login():
         return jsonify({"error": "No account found"}), 404
 
     user_dict = dict(user) if isinstance(user, dict) else {
-        'user_id': user[0], 'email': user[1], 'name': user[2],
-        'password_hash': user[3], 'language': user[4]
+        "user_id": user[0], "email": user[1], "name": user[2],
+        "password_hash": user[3], "language": user[4]
     }
     if not check_password_hash(user_dict["password_hash"], password):
         return jsonify({"error": "Wrong password"}), 401
