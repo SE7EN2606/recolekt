@@ -178,11 +178,33 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
 # INSTAGRAM / META OAUTH (For App Review)
 # ─────────────────────────────────────────────
 
+@auth_bp.route("/webhook/instagram", methods=["GET", "POST"])
+def instagram_webhook():
+    if request.method == "GET":
+        # Verification handshake from Meta
+        mode = request.args.get("hub.mode")
+        token = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+        
+        # This MUST match the token you set in the Meta Dashboard
+        if mode == "subscribe" and token == "recolekt-titanium-secret-2026":
+            logger.info("✅ Webhook verified successfully!")
+            return challenge, 200
+        return "Verification failed", 403
+
+    if request.method == "POST":
+        data = request.get_json()
+        logger.info(f"📩 Incoming Webhook: {data}")
+        # Here is where you process the Reel URL from the message
+        return "EVENT_RECEIVED", 200
+
+
 @auth_bp.route("/instagram/login", methods=["GET"])
 def instagram_login():
-    # Hardcoded fallback to your ID to ensure the review doesn't fail on a None variable
-    client_id = os.getenv("INSTAGRAM_APP_ID") or "1908143659883149" 
-    redirect_uri = f"{APP_URL}/api/auth/instagram/callback"
+    # If Meta refuses http://localhost, change this to your Staging URL 
+    # just for the review process/testing.
+    base_url = APP_URL 
+    redirect_uri = f"{base_url}/api/auth/instagram/callback"
     
     scopes = [
     "instagram_basic",
@@ -278,8 +300,8 @@ def google_callback():
     allowed_origins = [
         "https://recolekt.app", "https://www.recolekt.app",
         "https://staging.recolekt.app", "https://recolekt-staging.up.railway.app",
-        "http://localhost:3000", "http://localhost:5173",
-        "http://127.0.0.1:3000", "http://127.0.0.1:5173",
+        "http://localhost:3000", "http://localhost:5001",
+        "http://127.0.0.1:3000", "http://127.0.0.1:5001",
     ]
     allowed_origins.append(frontend_base)
 

@@ -56,7 +56,8 @@ export const Auth: React.FC = () => {
   const browserInfo = detectBrowserInfo();
 
   useEffect(() => {
-    if (user) navigate('/gallery', { replace: true });
+    // Comment this out temporarily so you can stay on the Auth page while logged in
+    // if (user) navigate('/gallery', { replace: true });
   }, [user, navigate]);
 
   useEffect(() => {
