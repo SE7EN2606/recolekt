@@ -55,9 +55,14 @@ export const Auth: React.FC = () => {
   const lastAuthMethod = localStorage.getItem(LAST_AUTH_KEY);
   const browserInfo = detectBrowserInfo();
 
+  // THE FIX: Check for ?admin=true to stop the redirect loop
   useEffect(() => {
-    // Comment this out temporarily so you can stay on the Auth page while logged in
-    // if (user) navigate('/gallery', { replace: true });
+    const params = new URLSearchParams(window.location.search);
+    const isAdminMode = params.get('admin') === 'true';
+
+    if (user && !isAdminMode) {
+      navigate('/gallery', { replace: true });
+    }
   }, [user, navigate]);
 
   useEffect(() => {
@@ -124,7 +129,6 @@ export const Auth: React.FC = () => {
   const handleInstagramSetup = () => {
     setInstagramLoading(true);
     setErrorMsg('');
-    // Trigger the backend route that starts the Meta OAuth flow
     window.location.assign(joinUrl(API_BASE, '/api/auth/instagram/login'));
   };
 
@@ -434,7 +438,6 @@ export const Auth: React.FC = () => {
                     <span>{googleLoading ? t('common:processing') : t('auth:googleContinue')}</span>
                   </button>
 
-                  {/* NEW: Authorize Instagram (Admin) Button */}
                   <button
                     type="button"
                     onClick={handleInstagramSetup}
