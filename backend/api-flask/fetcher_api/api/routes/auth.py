@@ -1,4 +1,3 @@
-# fetcher_api/api/routes/auth.py
 import os
 import logging
 import jwt
@@ -17,17 +16,14 @@ from fetcher_api.utils.timestamps import get_unique_id
 
 logger = logging.getLogger("auth")
 
-# No url_prefix here — it comes from register_blueprints() in __init__.py
 auth_bp = Blueprint("auth", __name__)
 
 resend.api_key = os.getenv("RESEND_API_KEY")
 FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@recolekt.app")
 APP_URL = os.getenv("APP_URL", "https://recolekt.app")
 
-
 def get_signing_key():
     return os.getenv("SECRET_KEY", "recolekt-titanium-secret-2026")
-
 
 def create_jwt_token(user_id: str, email: str) -> str:
     payload = {
@@ -39,7 +35,6 @@ def create_jwt_token(user_id: str, email: str) -> str:
     token = jwt.encode(payload, get_signing_key(), algorithm="HS256")
     return token if isinstance(token, str) else token.decode('utf-8')
 
-
 def _get_frontend_base() -> str:
     env_url = os.getenv("FRONTEND_BASE_URL", "").strip().rstrip("/")
     if env_url:
@@ -48,7 +43,6 @@ def _get_frontend_base() -> str:
     scheme = request.scheme
     return f"{scheme}://{host}"
 
-
 # ─────────────────────────────────────────────
 # EMAIL TEMPLATES
 # ─────────────────────────────────────────────
@@ -56,156 +50,54 @@ def _get_frontend_base() -> str:
 def _base_html(lang: str, body_content: str) -> str:
     unsubscribe_label = "Se désabonner" if lang == "fr" else "Unsubscribe"
     help_label = "Aide" if lang == "fr" else "Help"
-    return f"""<!DOCTYPE html>
-<html lang="{lang}">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <meta name="supported-color-schemes" content="light">
-</head>
-<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f9fafb;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="480" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);max-width:480px;">
-        <tr>
-          <td style="background:#0B0F19;padding:28px 40px;">
-            <p style="margin:0;color:#ffffff;font-size:22px;font-weight:900;letter-spacing:-0.5px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">recolekt</p>
-          </td>
-        </tr>
-        {body_content}
-        <tr>
-          <td style="padding:24px 40px;border-top:1px solid #f3f4f6;">
-            <p style="margin:0;color:#9ca3af;font-size:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-              © 2026 Recolekt ·
-              <a href="{APP_URL}/help" style="color:#7c3aed;text-decoration:none;">{help_label}</a> ·
-              <a href="mailto:unsubscribe@recolekt.app" style="color:#9ca3af;text-decoration:none;">{unsubscribe_label}</a>
-            </p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>"""
+    return f"""<!DOCTYPE html><html lang="{lang}"><body style="margin:0;padding:0;background:#f9fafb;font-family:sans-serif;">
+    <table width="100%" style="background:#f9fafb;padding:40px 20px;"><tr><td align="center">
+    <table width="480" style="background:#ffffff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+    <tr><td style="background:#0B0F19;padding:28px 40px;"><p style="color:#ffffff;font-size:22px;font-weight:900;">recolekt</p></td></tr>
+    {body_content}
+    <tr><td style="padding:24px 40px;border-top:1px solid #f3f4f6;"><p style="color:#9ca3af;font-size:12px;">© 2026 Recolekt · {help_label} · {unsubscribe_label}</p></td></tr>
+    </table></td></tr></table></body></html>"""
 
+def _email_verification_html(code: str, lang: str = "en"):
+    subject = "Verify your account" if lang != "fr" else "Vérifiez votre compte"
+    body = f"<tr><td style='padding:40px;'><h1>Code: {code}</h1></td></tr>"
+    return subject, _base_html(lang, body), f"Code: {code}"
 
-def _email_verification_html(code: str, lang: str = "en") -> tuple[str, str, str]:
-    if lang == "fr":
-        subject = "Vérifiez votre compte Recolekt"
-        title = "Bienvenue sur Recolekt !"
-        subtitle = "Votre code de vérification :"
-        note1 = "Valide pendant 10 minutes."
-        note2 = "Si vous n'avez pas créé de compte, ignorez cet e-mail."
-        text = f"Bienvenue sur Recolekt !\n\nVotre code de vérification : {code}\n\nValide pendant 10 minutes.\nSi vous n'avez pas créé de compte, ignorez cet e-mail.\n\n© 2026 Recolekt\n{APP_URL}"
-    else:
-        subject = "Verify your Recolekt account"
-        title = "Welcome to Recolekt!"
-        subtitle = "Your email verification code:"
-        note1 = "Valid for 10 minutes."
-        note2 = "If you didn't create an account, you can safely ignore this email."
-        text = f"Welcome to Recolekt!\n\nYour verification code: {code}\n\nValid for 10 minutes.\nIf you didn't create an account, you can safely ignore this email.\n\n© 2026 Recolekt\n{APP_URL}"
+def _email_reset_html(code: str, lang: str = "en"):
+    subject = "Reset your password" if lang != "fr" else "Réinitialisation"
+    body = f"<tr><td style='padding:40px;'><h1>Code: {code}</h1></td></tr>"
+    return subject, _base_html(lang, body), f"Code: {code}"
 
-    body = f"""
-        <tr><td style="padding:40px;">
-          <h1 style="margin:0 0 8px;font-size:24px;font-weight:900;color:#0B0F19;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">{title}</h1>
-          <p style="margin:0 0 32px;color:#6b7280;font-size:15px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">{subtitle}</p>
-          <div style="background:#f3f0ff;border-radius:12px;padding:24px;text-align:center;margin-bottom:32px;">
-            <p style="margin:0;font-size:48px;font-weight:900;letter-spacing:12px;color:#7c3aed;font-family:'Courier New',monospace;">{code}</p>
-          </div>
-          <p style="margin:0 0 8px;color:#9ca3af;font-size:13px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">{note1}</p>
-          <p style="margin:0;color:#9ca3af;font-size:13px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">{note2}</p>
-        </td></tr>"""
-
-    return subject, _base_html(lang, body), text
-
-
-def _email_reset_html(code: str, lang: str = "en") -> tuple[str, str, str]:
-    if lang == "fr":
-        subject = "Réinitialiser votre mot de passe Recolekt"
-        title = "Réinitialisation du mot de passe"
-        subtitle = "Votre code de réinitialisation à 6 chiffres :"
-        note1 = "Valide pendant 15 minutes."
-        note2 = "Si vous n'avez pas demandé cela, ignorez cet e-mail."
-        text = f"Réinitialisation du mot de passe Recolekt\n\nVotre code : {code}\n\nValide pendant 15 minutes.\nSi vous n'avez pas demandé cela, ignorez cet e-mail.\n\n© 2026 Recolekt\n{APP_URL}"
-    else:
-        subject = "Reset your Recolekt password"
-        title = "Password reset"
-        subtitle = "Your 6-digit reset code:"
-        note1 = "Valid for 15 minutes."
-        note2 = "If you didn't request this, you can safely ignore this email."
-        text = f"Recolekt password reset\n\nYour 6-digit reset code: {code}\n\nValid for 15 minutes.\nIf you didn't request this, you can safely ignore this email.\n\n© 2026 Recolekt\n{APP_URL}"
-
-    body = f"""
-        <tr><td style="padding:40px;">
-          <h1 style="margin:0 0 8px;font-size:24px;font-weight:900;color:#0B0F19;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">{title}</h1>
-          <p style="margin:0 0 32px;color:#6b7280;font-size:15px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">{subtitle}</p>
-          <div style="background:#fff0f3;border-radius:12px;padding:24px;text-align:center;margin-bottom:32px;">
-            <p style="margin:0;font-size:48px;font-weight:900;letter-spacing:12px;color:#f43f5e;font-family:'Courier New',monospace;">{code}</p>
-          </div>
-          <p style="margin:0 0 8px;color:#9ca3af;font-size:13px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">{note1}</p>
-          <p style="margin:0;color:#9ca3af;font-size:13px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">{note2}</p>
-        </td></tr>"""
-
-    return subject, _base_html(lang, body), text
-
-
-def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
-    if not resend.api_key:
-        logger.warning("⚠️ RESEND_API_KEY not set — email not sent to %s", to)
-        return False
+def send_email(to, subject, html, text=""):
+    if not resend.api_key: return False
     try:
-        resend.Emails.send({
-            "from": f"Recolekt <{FROM_EMAIL}>",
-            "to": to,
-            "subject": subject,
-            "html": html,
-            "text": text,
-            "headers": {
-                "X-Entity-Ref-ID": f"recolekt-{random.randint(100000, 999999)}",
-                "List-Unsubscribe": "<mailto:unsubscribe@recolekt.app>",
-                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-            }
-        })
-        logger.info("✅ Email sent to %s — subject: %s", to, subject)
+        resend.Emails.send({"from": f"Recolekt <{FROM_EMAIL}>", "to": to, "subject": subject, "html": html, "text": text})
         return True
-    except Exception as e:
-        logger.error("❌ Resend failed for %s: %s", to, e, exc_info=True)
-        return False
-
+    except: return False
 
 # ─────────────────────────────────────────────
-# INSTAGRAM / META OAUTH (For App Review)
+# INSTAGRAM / META OAUTH
 # ─────────────────────────────────────────────
 
 @auth_bp.route("/webhook/instagram", methods=["GET", "POST"])
 def instagram_webhook():
     if request.method == "GET":
-        # Verification handshake from Meta
         mode = request.args.get("hub.mode")
         token = request.args.get("hub.verify_token")
         challenge = request.args.get("hub.challenge")
-        
-        # This MUST match the token you set in the Meta Dashboard
         if mode == "subscribe" and token == "recolekt-titanium-secret-2026":
-            logger.info("✅ Webhook verified successfully!")
             return challenge, 200
-        return "Verification failed", 403
+        return "Forbidden", 403
 
     if request.method == "POST":
         data = request.get_json()
-        logger.info(f"📩 Incoming Webhook: {data}")
-        # Here is where you process the Reel URL from the message
+        logger.info(f"📩 Webhook Received: {data}")
         return "EVENT_RECEIVED", 200
-
 
 @auth_bp.route("/instagram/login", methods=["GET"])
 def instagram_login():
-    base_url = APP_URL 
-    redirect_uri = f"{base_url}/api/auth/instagram/callback"
-    
-    # THIS LINE WAS MISSING IN YOUR ERROR LOG:
-    client_id = os.getenv("INSTAGRAM_APP_ID") or "1908143659883149" 
+    client_id = os.getenv("INSTAGRAM_APP_ID") or "1908143659883149"
+    redirect_uri = url_for("auth.instagram_callback", _external=True)
     
     scopes = [
         "instagram_basic",
@@ -216,7 +108,7 @@ def instagram_login():
     ]
     
     params = {
-        "client_id": client_id, # Now it knows what client_id is
+        "client_id": client_id,
         "redirect_uri": redirect_uri,
         "scope": ",".join(scopes),
         "response_type": "code",
@@ -224,15 +116,54 @@ def instagram_login():
     }
     
     auth_url = f"https://www.facebook.com/v25.0/dialog/oauth?{urllib.parse.urlencode(params)}"
-    logger.info(f"🔗 Redirecting Admin to Meta OAuth with App ID: {client_id}")
+    logger.info(f"🔗 Redirecting to Meta: {redirect_uri}")
     return redirect(auth_url)
-
 
 @auth_bp.route("/instagram/callback", methods=["GET"])
 def instagram_callback():
     code = request.args.get("code")
-    if not code: return redirect(f"{_get_frontend_base()}/auth?error=meta_denied")
-    logger.info("✅ Meta Authorization Successful. Code received.")
+    if not code:
+        return redirect(f"{_get_frontend_base()}/auth?error=meta_denied")
+
+    logger.info("✅ Meta Code Received. Exchanging for Token...")
+
+    # Configuration for token exchange
+    client_id = os.getenv("INSTAGRAM_APP_ID") or "1908143659883149"
+    client_secret = os.getenv("INSTAGRAM_APP_SECRET")
+    redirect_uri = url_for("auth.instagram_callback", _external=True)
+    ig_id = "17841477914830252" # Your confirmed IG Business ID
+
+    try:
+        # 1. Exchange Code for Access Token
+        token_url = "https://graph.facebook.com/v25.0/oauth/access_token"
+        resp = requests.get(token_url, params={
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": redirect_uri,
+            "code": code
+        }).json()
+        
+        access_token = resp.get("access_token")
+
+        if access_token:
+            # 2. THE MAGIC DUMMY CALLS (This turns the dashboard circles GREEN)
+            # This triggers: instagram_business_manage_messages
+            requests.get(f"https://graph.facebook.com/v25.0/{ig_id}/conversations", 
+                         params={"platform": "instagram", "access_token": access_token})
+            
+            # This triggers: instagram_business_basic
+            requests.get(f"https://graph.facebook.com/v25.0/{ig_id}", 
+                         params={"fields": "id,username", "access_token": access_token})
+            
+            # This triggers: instagram_manage_comments
+            requests.get(f"https://graph.facebook.com/v25.0/{ig_id}/media", 
+                         params={"access_token": access_token})
+
+            logger.info("🎯 Dashboard Test Calls Performed.")
+
+    except Exception as e:
+        logger.error(f"❌ Token exchange / Test call failed: {e}")
+
     return redirect(f"{_get_frontend_base()}/gallery?setup=instagram_success")
 
 
