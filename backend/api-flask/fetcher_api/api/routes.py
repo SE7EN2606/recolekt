@@ -1,4 +1,3 @@
-# fetcher_api/api/routes.py
 """
 Main API routes - Simple endpoints and health checks
 """
@@ -10,6 +9,8 @@ import tempfile
 import threading
 import uuid
 from datetime import datetime
+from decimal import Decimal
+
 from flask import Blueprint, jsonify, request
 
 from fetcher_api.adapters.db import fetch_one, fetch_all, execute, get_user_tier, count_user_reels
@@ -26,7 +27,6 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
 
-# Business Logic Limits
 PLAN_LIMITS = {
     "free": 10,
     "pro": 99999,
@@ -47,10 +47,6 @@ def _detect_platform_code(url: str) -> str:
 
 
 def _extract_shortcode_for_url(url: str, platform_id: str) -> str:
-    """
-    Best-effort stable ID extraction per platform.
-    Falls back to empty string so caller can generate a synthetic shortcode.
-    """
     try:
         if platform_id in {"IG", "FB"}:
             from fetcher_api.adapters.meta_client import meta_client
@@ -74,15 +70,128 @@ def _extract_shortcode_for_url(url: str, platform_id: str) -> str:
     return ""
 
 
+def _json_loads_maybe(value, default=None):
+    if value is None:
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return default if default is not None else value
+    return default if default is not None else value
+
+
+def _json_safe(value):
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
+
+
+def _normalize_content_type(raw: str | None) -> str:
+    ct = (raw or "").strip().lower()
+    if not ct or ct in {"generic", "summary"}:
+        return "general"
+    if ct == "tools":
+        return "products"
+    if ct == "places":
+        return "location"
+    if ct in {"recipe", "workout", "location", "products", "software", "finance", "general"}:
+        return ct
+    return "general"
+
+
+def _build_gallery_summary(row_dict: dict) -> dict:
+    summary = _json_loads_maybe(row_dict.get("summary_text"), default={})
+
+    if isinstance(summary, dict):
+        if "english" in summary or "original" in summary:
+            return summary
+
+        title = row_dict.get("summary_title") or row_dict.get("caption") or "Untitled"
+        summary_text = summary.get("summary") if isinstance(summary.get("summary"), str) else ""
+        return {
+            "title": title,
+            "english": {
+                "title": title,
+                "summary": summary_text,
+                "headlines": summary.get("headlines", []) if isinstance(summary.get("headlines"), list) else [],
+                "hashtags": summary.get("hashtags", []) if isinstance(summary.get("hashtags"), list) else [],
+                "emojis": summary.get("emojis", []) if isinstance(summary.get("emojis"), list) else [],
+            },
+        }
+
+    if isinstance(summary, str) and summary.strip():
+        title = row_dict.get("summary_title") or row_dict.get("caption") or "Untitled"
+        return {
+            "title": title,
+            "english": {
+                "title": title,
+                "summary": summary,
+                "headlines": [],
+                "hashtags": [],
+                "emojis": [],
+            },
+        }
+
+    title = row_dict.get("summary_title") or row_dict.get("caption") or "Untitled"
+    return {
+        "title": title,
+        "english": {
+            "title": title,
+            "summary": "",
+            "headlines": [],
+            "hashtags": [],
+            "emojis": [],
+        },
+    }
+
+
+def _serialize_reel_row(row) -> dict:
+    row_dict = dict(row) if hasattr(row, "keys") else row._asdict()
+
+    payload = {
+        "id": row_dict.get("id"),
+        "process_id": row_dict.get("id"),
+        "user_id": row_dict.get("user_id"),
+        "source_url": row_dict.get("source_url"),
+        "folder_id": row_dict.get("folder_id") or "unsorted",
+        "is_favorite": bool(row_dict.get("is_favorite")),
+        "status": row_dict.get("status"),
+        "content_type": _normalize_content_type(row_dict.get("content_type")),
+        "created_at": row_dict.get("created_at"),
+        "caption": row_dict.get("caption") or "",
+        "author_name": row_dict.get("author_name") or "Unknown",
+        "duration": row_dict.get("duration"),
+        "transcription": _json_loads_maybe(row_dict.get("transcription"), default=row_dict.get("transcription")),
+        "recipe": _json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe")),
+        "workout": _json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout")),
+        "tools_list": _json_loads_maybe(row_dict.get("tools_list"), default=row_dict.get("tools_list")),
+        "location": _json_loads_maybe(row_dict.get("location"), default=row_dict.get("location")),
+        "gcs_urls": _json_loads_maybe(row_dict.get("gcs_urls"), default={}) or {},
+        "summary_title": row_dict.get("summary_title"),
+        "error_message": row_dict.get("error_message"),
+    }
+
+    payload["summary"] = _build_gallery_summary(row_dict)
+
+    return _json_safe(payload)
+
+
 @api_bp.route("/", methods=["GET"])
 def root():
-    """API health check"""
     return jsonify({"ok": True, "message": "Rekolekt API active"})
 
 
 @api_bp.route("/health", methods=["GET"])
 def health():
-    """Detailed health check"""
     return jsonify({
         "status": "healthy",
         "service": "recolekt-api",
@@ -92,7 +201,6 @@ def health():
 
 @api_bp.route("/plan", methods=["GET"])
 def get_plan_route():
-    """Get user's subscription plan from the users table"""
     try:
         user_id = get_user_id_from_request()
     except ValueError:
@@ -104,7 +212,6 @@ def get_plan_route():
 
 @api_bp.route("/saves/count", methods=["GET"])
 def count_saves_route():
-    """Get count of user's saved reels"""
     try:
         user_id = get_user_id_from_request()
     except ValueError:
@@ -114,21 +221,62 @@ def count_saves_route():
     return jsonify({"count": count})
 
 
-# ---------------------------------------------------------
-# SEARCH
-# ---------------------------------------------------------
+@api_bp.route("/saved_reels", methods=["GET", "OPTIONS"])
+def saved_reels():
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        user_id = get_user_id_from_request()
+    except ValueError:
+        return jsonify({"error": "Authentication required"}), 401
+
+    page = max(int(request.args.get("page", 1) or 1), 1)
+    per_page = min(max(int(request.args.get("per_page", 100) or 100), 1), 200)
+    offset = (page - 1) * per_page
+
+    rows = fetch_all(
+        """
+        SELECT
+            id,
+            user_id,
+            source_url,
+            folder_id,
+            is_favorite,
+            status,
+            content_type,
+            created_at,
+            caption,
+            author_name,
+            duration,
+            transcription,
+            recipe,
+            workout,
+            tools_list,
+            location,
+            gcs_urls,
+            summary_title,
+            summary_text,
+            error_message
+        FROM reels
+        WHERE user_id = %s
+        ORDER BY created_at DESC
+        LIMIT %s OFFSET %s
+        """,
+        (user_id, per_page, offset),
+    )
+
+    reels = [_serialize_reel_row(r) for r in rows]
+    return jsonify({
+        "reels": reels,
+        "page": page,
+        "per_page": per_page,
+        "count": len(reels),
+    })
 
 
 @api_bp.route("/search", methods=["GET"])
 def search_reels():
-    """
-    Full-text search across the user's reels using PostgreSQL tsvector.
-    Supports prefix matching so partial words like "spag" match "spaghetti".
-
-    Query params:
-      q         — search string (required)
-      folder_id — optional filter: a folder UUID, 'favorites', or 'unsorted'
-    """
     try:
         user_id = get_user_id_from_request()
     except ValueError:
@@ -140,7 +288,6 @@ def search_reels():
     if not raw_q:
         return jsonify([])
 
-    # Build a safe prefix tsquery: "spag bol" → "spag:* & bol:*"
     tokens = re.findall(r"\w+", raw_q.lower())
     if not tokens:
         return jsonify([])
@@ -148,10 +295,10 @@ def search_reels():
 
     sql = """
         SELECT r.*, ts_rank_cd(r.search_vector, query) AS rank
-        FROM   reels r,
-               to_tsquery('english', %s) AS query
-        WHERE  r.user_id = %s
-          AND  r.search_vector @@ query
+        FROM reels r,
+             to_tsquery('english', %s) AS query
+        WHERE r.user_id = %s
+          AND r.search_vector @@ query
     """
     params = [tsquery, user_id]
 
@@ -167,27 +314,11 @@ def search_reels():
     sql += " ORDER BY rank DESC LIMIT 100"
 
     rows = fetch_all(sql, tuple(params))
-
-    def serialize(row):
-        out = {}
-        for k, v in dict(row).items():
-            if hasattr(v, "isoformat"):
-                out[k] = v.isoformat()
-            else:
-                out[k] = v
-        return out
-
-    return jsonify([serialize(r) for r in rows])
-
-
-# ---------------------------------------------------------
-# API TOKEN MANAGEMENT
-# ---------------------------------------------------------
+    return jsonify([_json_safe(dict(r)) for r in rows])
 
 
 @api_bp.route("/api_token/generate", methods=["POST"])
 def generate_api_token_route():
-    """Generate a new API token for the logged-in user"""
     try:
         user_id = get_user_id_from_request()
     except ValueError:
@@ -199,13 +330,11 @@ def generate_api_token_route():
     token_hash = hash_token(token)
     token_prefix = get_token_prefix(token)
 
-    # Deactivate old tokens
     execute(
         "UPDATE user_api_tokens SET is_active = FALSE WHERE user_id = %s;",
         (user_id,),
     )
 
-    # Insert new token
     execute(
         """
         INSERT INTO user_api_tokens (user_id, token_hash, token_prefix)
@@ -225,7 +354,6 @@ def generate_api_token_route():
 
 @api_bp.route("/api_token/info", methods=["GET"])
 def get_api_token_info():
-    """Get info about user's current token (not the token itself)"""
     try:
         user_id = get_user_id_from_request()
     except ValueError:
@@ -255,7 +383,6 @@ def get_api_token_info():
 
 @api_bp.route("/api_token/revoke", methods=["POST"])
 def revoke_api_token():
-    """Revoke user's API token"""
     try:
         user_id = get_user_id_from_request()
     except ValueError:
@@ -271,17 +398,8 @@ def revoke_api_token():
     return jsonify({"ok": True})
 
 
-# ---------------------------------------------------------
-# IMPORT SHARE (from iOS Shortcuts)
-# ---------------------------------------------------------
-
-
 @api_bp.route("/api/import_share", methods=["POST"])
 def import_share():
-    """
-    Accept URL from iOS Shortcut (or other client) with Bearer token auth.
-    Triggers background processing and returns a link to open.
-    """
     auth_header = request.headers.get("Authorization", "")
 
     if not auth_header.startswith("Bearer "):
@@ -293,6 +411,7 @@ def import_share():
         return jsonify({"error": "Empty token"}), 401
 
     from fetcher_api.utils.tokens import hash_token
+
     token_hash = hash_token(token)
 
     row = fetch_one(
@@ -325,7 +444,6 @@ def import_share():
 
     logger.info("📲 Import share from %s for user %s: %s (force=%s)", client, user_id, url, force)
 
-    # 1. Duplicate check — skipped when force=True
     from fetcher_api.services.db_insert import check_duplicate_reel
     if not force and check_duplicate_reel(user_id, url):
         return jsonify({
@@ -334,7 +452,6 @@ def import_share():
             "message": "This video has already been saved.",
         }), 409
 
-    # 2. Plan limit check
     tier = get_user_tier(user_id)
     current_count = count_user_reels(user_id)
     limit = PLAN_LIMITS.get(tier, 10)
@@ -348,9 +465,6 @@ def import_share():
             "upgrade": True,
         }), 403
 
-    # ---------------------------------------------------------
-    # Platform Detection and Routing
-    # ---------------------------------------------------------
     from fetcher_api.utils.timestamps import get_timestamp, get_unique_id
     from fetcher_api.services.storage import generate_gcs_paths
     from fetcher_api.api.helpers.processing import background_process

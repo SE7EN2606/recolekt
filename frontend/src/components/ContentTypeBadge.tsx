@@ -20,7 +20,7 @@ export type ContentType =
   | 'software'
   | 'finance'
   | 'workout'
-  | 'places'
+  | 'location'
   | 'general';
 
 export type ToolsSubtype =
@@ -69,11 +69,11 @@ const SOFTWARE_SIGNALS = new Set([
 ]);
 
 export function resolveContentType(rawContentType: string): ContentType {
-  const ct = rawContentType.toLowerCase();
+  const ct = safeStr(rawContentType).toLowerCase();
 
   if (ct === 'recipe') return 'recipe';
   if (ct === 'workout') return 'workout';
-  if (ct === 'places' || ct === 'location') return 'places';
+  if (ct === 'location' || ct === 'places') return 'location';
   if (ct === 'software') return 'software';
   if (ct === 'finance') return 'finance';
   if (ct === 'products' || ct === 'tools') return 'products';
@@ -88,10 +88,19 @@ export function deriveToolsSubtype(toolsList: any): ToolsSubtype {
     toolsList?.list_subtype ?? toolsList?.listSubtype,
   ).toLowerCase() as ToolsSubtype;
 
-  if ([
-    'software', 'lifestyle', 'gear', 'food',
-    'ranking', 'tier', 'verdict', 'grouped', 'picks',
-  ].includes(stored)) {
+  if (
+    [
+      'software',
+      'lifestyle',
+      'gear',
+      'food',
+      'ranking',
+      'tier',
+      'verdict',
+      'grouped',
+      'picks',
+    ].includes(stored)
+  ) {
     return stored;
   }
 
@@ -174,7 +183,7 @@ export const ContentTypeBadge: React.FC<ContentTypeBadgeProps> = ({ type, toolsS
     );
   }
 
-  if (type === 'places') {
+  if (type === 'location') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-sky-50 text-sky-700 border-sky-200">
         <MapPin size={11} strokeWidth={2.5} aria-hidden="true" />
@@ -213,3 +222,5 @@ export const ContentTypeBadge: React.FC<ContentTypeBadgeProps> = ({ type, toolsS
 
   return null;
 };
+
+export default ContentTypeBadge;

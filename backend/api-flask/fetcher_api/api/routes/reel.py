@@ -1,10 +1,10 @@
-# fetcher_api/api/routes/reel.py
 """
 Reel management routes - list, update, delete, search
 """
 import os
 import json
 import logging
+from decimal import Decimal
 
 from flask import Blueprint, request, jsonify
 import psycopg2.extras
@@ -18,14 +18,12 @@ from fetcher_api.api.helpers.formatters import (
 )
 from fetcher_api.api.helpers.recipe_formatters import normalize_recipe
 from fetcher_api.services.storage import generate_gcs_paths
-from fetcher_api.utils.geocode import geocode_one
+from fetcher_api.utils.geocode import geocode_one, reverse_geocode_one
 
 logger = logging.getLogger("reels")
 
 reel_bp = Blueprint("reels", __name__)
 
-# Canonical public content types the frontend/API should receive.
-# Internal legacy value "tools" is normalized to public "products".
 _PUBLIC_CONTENT_TYPES = {
     "recipe",
     "workout",
@@ -34,6 +32,15 @@ _PUBLIC_CONTENT_TYPES = {
     "software",
     "finance",
     "general",
+}
+
+_BLOCKED_MACRO_VALUES = {
+    "europe", "europa",
+    "alps", "alpine", "dolomites", "mediterranean",
+    "scandinavia", "middle east", "southeast asia", "asia", "africa",
+    "north america", "south america", "latin america", "oceania",
+    "caribbean", "balkans", "nordics", "benelux", "central europe",
+    "eastern europe", "western europe", "northern europe", "southern europe",
 }
 
 
@@ -53,15 +60,31 @@ def _safe_strip(value) -> str:
     return (value or "").strip() if isinstance(value, str) or value is None else str(value).strip()
 
 
+def _null_if_blocked_macro_region(value: str) -> str:
+    cleaned = _safe_strip(value)
+    if not cleaned:
+        return ""
+    return "" if cleaned.lower() in _BLOCKED_MACRO_VALUES else cleaned
+
+
+def _json_safe_value(value):
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, list):
+        return [_json_safe_value(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _json_safe_value(v) for k, v in value.items()}
+    return value
+
+
+def _json_dumps_safe(value) -> str:
+    return json.dumps(_json_safe_value(value), ensure_ascii=False)
+
+
 def add_no_cache_headers(response):
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
-    return response
-
-
-def add_short_cache_headers(response):
-    response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=30"
     return response
 
 
@@ -102,9 +125,18 @@ def _build_canonical_summary(row_dict, caption: str):
     if isinstance(summary_text, dict) and "english" in summary_text:
         summary_obj = summary_text
     else:
-        bullets = json_loads_maybe(row_dict.get("summary_bullets"), default=row_dict.get("summary_bullets"))
-        hashtags = json_loads_maybe(row_dict.get("summary_hashtags"), default=row_dict.get("summary_hashtags"))
-        emojis = json_loads_maybe(row_dict.get("summary_emojis"), default=row_dict.get("summary_emojis"))
+        bullets = json_loads_maybe(
+            row_dict.get("summary_bullets"),
+            default=row_dict.get("summary_bullets"),
+        )
+        hashtags = json_loads_maybe(
+            row_dict.get("summary_hashtags"),
+            default=row_dict.get("summary_hashtags"),
+        )
+        emojis = json_loads_maybe(
+            row_dict.get("summary_emojis"),
+            default=row_dict.get("summary_emojis"),
+        )
 
         if not isinstance(bullets, list):
             bullets = []
@@ -122,7 +154,22 @@ def _build_canonical_summary(row_dict, caption: str):
             caption=caption,
         )
 
-    english_preview, summary_title_str = extract_english_preview_and_title(summary_obj, summary_title_db)
+    extracted = extract_english_preview_and_title(summary_obj, summary_title_db)
+
+    if isinstance(extracted, tuple):
+        if len(extracted) == 3:
+            english_preview, summary_title_str, _ = extracted
+        elif len(extracted) == 2:
+            english_preview, summary_title_str = extracted
+        elif len(extracted) == 1:
+            english_preview = extracted[0]
+            summary_title_str = summary_title_db
+        else:
+            english_preview = ""
+            summary_title_str = summary_title_db
+    else:
+        english_preview = ""
+        summary_title_str = summary_title_db
 
     if not summary_title_str and caption:
         summary_title_str = caption[:50]
@@ -134,7 +181,7 @@ def _merge_geocoded_coords(location_raw, geocoded_rows: list[dict]) -> list[dict
     if not location_raw or not geocoded_rows:
         return location_raw
 
-    coords_by_pos: dict[int, dict] = {row["position"]: row for row in geocoded_rows}
+    rows_by_pos: dict[int, dict] = {row["position"]: row for row in geocoded_rows}
 
     is_single = isinstance(location_raw, dict)
     locations = [location_raw] if is_single else location_raw
@@ -145,20 +192,40 @@ def _merge_geocoded_coords(location_raw, geocoded_rows: list[dict]) -> list[dict
             enriched.append(loc)
             continue
 
-        geo = coords_by_pos.get(idx)
-        if not geo:
+        row = rows_by_pos.get(idx)
+        if not row:
             enriched.append(loc)
             continue
 
         merged = dict(loc)
-        if merged.get("lat") is None and geo.get("lat") is not None:
-            merged["lat"] = geo["lat"]
-        if merged.get("lng") is None and geo.get("lng") is not None:
-            merged["lng"] = geo["lng"]
-        if not merged.get("google_place_id") and geo.get("google_place_id"):
-            merged["google_place_id"] = geo["google_place_id"]
-        if not merged.get("maps_url") and geo.get("maps_url"):
-            merged["maps_url"] = geo["maps_url"]
+
+        for json_key, db_key in (
+            ("name", "name"),
+            ("description", "description"),
+            ("address", "address"),
+            ("neighborhood", "neighborhood"),
+            ("city", "city"),
+            ("region", "region"),
+            ("country", "country"),
+            ("postal_code", "postal_code"),
+            ("instagram_username", "instagram_username"),
+            ("instagram_account_name", "instagram_account_name"),
+            ("google_place_id", "google_place_id"),
+            ("maps_url", "maps_url"),
+        ):
+            if not merged.get(json_key) and row.get(db_key):
+                merged[json_key] = row[db_key]
+
+        if not merged.get("type") and row.get("place_type"):
+            merged["type"] = row["place_type"]
+
+        if not merged.get("place_type") and row.get("place_type"):
+            merged["place_type"] = row["place_type"]
+
+        if merged.get("lat") is None and row.get("lat") is not None:
+            merged["lat"] = float(row["lat"]) if isinstance(row["lat"], Decimal) else row["lat"]
+        if merged.get("lng") is None and row.get("lng") is not None:
+            merged["lng"] = float(row["lng"]) if isinstance(row["lng"], Decimal) else row["lng"]
 
         enriched.append(merged)
 
@@ -168,9 +235,25 @@ def _merge_geocoded_coords(location_raw, geocoded_rows: list[dict]) -> list[dict
 def _fetch_geocoded_rows(reel_id: str, user_id: str) -> list[dict]:
     rows = fetch_all(
         """
-        SELECT position, lat, lng, google_place_id, maps_url
+        SELECT
+            position,
+            name,
+            place_type,
+            description,
+            address,
+            neighborhood,
+            city,
+            region,
+            country,
+            postal_code,
+            instagram_username,
+            instagram_account_name,
+            lat,
+            lng,
+            google_place_id,
+            maps_url
         FROM reel_locations
-        WHERE reel_id = %s AND user_id = %s AND lat IS NOT NULL
+        WHERE reel_id = %s AND user_id = %s
         ORDER BY position
         """,
         (reel_id, user_id),
@@ -180,7 +263,70 @@ def _fetch_geocoded_rows(reel_id: str, user_id: str) -> list[dict]:
     return [dict(r) if hasattr(r, "keys") else r._asdict() for r in rows]
 
 
+def _reel_exists(process_id: str, user_id: str) -> bool:
+    row = fetch_one(
+        "SELECT id FROM reels WHERE id = %s AND user_id = %s LIMIT 1",
+        (process_id, user_id),
+    )
+    return bool(row)
+
+
+def _fill_place_locality_from_reverse(place: dict) -> dict:
+    if not isinstance(place, dict):
+        return place
+
+    merged = dict(place)
+    lat = merged.get("lat")
+    lng = merged.get("lng")
+
+    if lat is None or lng is None:
+        return merged
+
+    if merged.get("city") and merged.get("region") and merged.get("country"):
+        return merged
+
+    reverse_data = reverse_geocode_one(lat, lng) or {}
+    if not reverse_data:
+        return merged
+
+    for field in ("neighborhood", "city", "region", "country", "postal_code"):
+        if not merged.get(field) and reverse_data.get(field):
+            merged[field] = reverse_data[field]
+
+    return merged
+
+
+def _fill_location_locality_from_reverse(location):
+    if isinstance(location, dict):
+        return _fill_place_locality_from_reverse(location)
+
+    if isinstance(location, list):
+        return [
+            _fill_place_locality_from_reverse(loc) if isinstance(loc, dict) else loc
+            for loc in location
+        ]
+
+    return location
+
+
+def _merge_row_location_from_db(row_dict: dict, reel_id: str, user_id: str) -> dict:
+    if not row_dict.get("location"):
+        return row_dict
+
+    geocoded_rows = _fetch_geocoded_rows(reel_id, user_id)
+    if geocoded_rows:
+        row_dict["location"] = _merge_geocoded_coords(row_dict["location"], geocoded_rows)
+
+    return row_dict
+
+
 def _upsert_reel_locations_conn(conn, reel_id: str, user_id: str, location) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM reel_locations WHERE reel_id = %s AND user_id = %s",
+            (reel_id, user_id),
+        )
+
     if not location:
         return 0
 
@@ -195,6 +341,7 @@ def _upsert_reel_locations_conn(conn, reel_id: str, user_id: str, location) -> i
         name = (loc.get("name") or "").strip()
         if not name:
             continue
+
         rows.append((
             reel_id,
             user_id,
@@ -205,10 +352,15 @@ def _upsert_reel_locations_conn(conn, reel_id: str, user_id: str, location) -> i
             (loc.get("address") or "").strip() or None,
             (loc.get("neighborhood") or "").strip() or None,
             (loc.get("city") or "").strip() or None,
+            (loc.get("region") or "").strip() or None,
+            (loc.get("country") or "").strip() or None,
+            (loc.get("postal_code") or "").strip() or None,
+            (loc.get("instagram_username") or "").strip() or None,
+            (loc.get("instagram_account_name") or "").strip() or None,
             loc.get("lat"),
             loc.get("lng"),
-            loc.get("google_place_id"),
-            loc.get("maps_url"),
+            (loc.get("google_place_id") or "").strip() or None,
+            (loc.get("maps_url") or "").strip() or None,
         ))
 
     if not rows:
@@ -219,20 +371,27 @@ def _upsert_reel_locations_conn(conn, reel_id: str, user_id: str, location) -> i
             reel_id, user_id, position,
             name, place_type, description,
             address, neighborhood, city,
+            region, country, postal_code,
+            instagram_username, instagram_account_name,
             lat, lng, google_place_id, maps_url
         )
         VALUES %s
         ON CONFLICT (reel_id, user_id, position) DO UPDATE SET
-            name            = EXCLUDED.name,
-            place_type      = EXCLUDED.place_type,
-            description     = EXCLUDED.description,
-            address         = EXCLUDED.address,
-            neighborhood    = EXCLUDED.neighborhood,
-            city            = EXCLUDED.city,
-            lat             = COALESCE(EXCLUDED.lat, reel_locations.lat),
-            lng             = COALESCE(EXCLUDED.lng, reel_locations.lng),
-            google_place_id = COALESCE(EXCLUDED.google_place_id, reel_locations.google_place_id),
-            maps_url        = COALESCE(EXCLUDED.maps_url, reel_locations.maps_url);
+            name                   = EXCLUDED.name,
+            place_type             = EXCLUDED.place_type,
+            description            = EXCLUDED.description,
+            address                = EXCLUDED.address,
+            neighborhood           = EXCLUDED.neighborhood,
+            city                   = EXCLUDED.city,
+            region                 = EXCLUDED.region,
+            country                = EXCLUDED.country,
+            postal_code            = EXCLUDED.postal_code,
+            instagram_username     = EXCLUDED.instagram_username,
+            instagram_account_name = EXCLUDED.instagram_account_name,
+            lat                    = COALESCE(EXCLUDED.lat, reel_locations.lat),
+            lng                    = COALESCE(EXCLUDED.lng, reel_locations.lng),
+            google_place_id        = COALESCE(EXCLUDED.google_place_id, reel_locations.google_place_id),
+            maps_url               = COALESCE(EXCLUDED.maps_url, reel_locations.maps_url);
     """
 
     with conn.cursor() as cur:
@@ -273,12 +432,11 @@ def _normalize_row_for_api(row_dict: dict, include_prompt: bool = False) -> dict
     row_dict["folder_id"] = row_dict.get("folder_id") or "default"
     row_dict["is_favorite"] = bool(row_dict.get("is_favorite"))
     row_dict["is_list"] = bool(row_dict.get("is_list", False))
-
-    # Normalize legacy/internal content_type: "tools" → "products", unknown → "general"
     row_dict["content_type"] = _normalize_content_type(row_dict.get("content_type"))
 
-    if row_dict.get("created_at"):
-        row_dict["created_at"] = row_dict["created_at"].isoformat()
+    created_at = row_dict.get("created_at")
+    if created_at and hasattr(created_at, "isoformat"):
+        row_dict["created_at"] = created_at.isoformat()
 
     return row_dict
 
@@ -294,180 +452,105 @@ def _detect_platform_code(source_url: str) -> str:
     return "IG"
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# LIST
-# ──────────────────────────────────────────────────────────────────────────────
+def _derive_gcs_artifacts(process_id: str, source_url: str, user_id: str):
+    platform_code = _detect_platform_code(source_url)
+    shortcode = process_id.split("--")[0] if "--" in process_id else process_id.split("_")[0]
+    gcs_paths = generate_gcs_paths(shortcode, platform_code, user_id=user_id)
+    bucket_name = os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
+    gcs_urls = {
+        key: f"https://storage.googleapis.com/{bucket_name}/{path}"
+        for key, path in gcs_paths.items()
+    }
+    return bucket_name, gcs_paths, gcs_urls
 
 
-@reel_bp.route("/saved_reels", methods=["GET"])
-def list_saved_reels():
-    try:
-        try:
-            user_id = get_user_id_from_request()
-        except ValueError:
-            return jsonify({"error": "Authentication required"}), 401
-
-        page = int(request.args.get("page", 1))
-        per_page = int(request.args.get("per_page", 30))
-        view_mode = request.args.get("view", "full").lower().strip()
-        per_page = max(1, min(per_page, 100))
-        offset = (page - 1) * per_page
-
-        if view_mode == "list":
-            sql = """
-                SELECT
-                    id, source_url, folder_id, is_favorite, status,
-                    summary_category, summary_title, summary_topic, summary_text,
-                    summary_bullets, summary_hashtags, summary_emojis,
-                    content_type, created_at, caption, author_name,
-                    is_long_video, duration,
-                    tools_list, location, recipe,
-                    is_list, list_subtype, list_count, list_type,
-                    gcs_urls::jsonb AS gcs_urls
-                FROM reels
-                WHERE user_id = %s
-                ORDER BY created_at DESC
-                LIMIT %s OFFSET %s
-            """
-            db_rows = fetch_all(sql, (user_id, per_page, offset))
-            transformed_rows = []
-
-            for row in db_rows:
-                if hasattr(row, "keys"):
-                    row_dict = dict(row)
-                elif hasattr(row, "_asdict"):
-                    row_dict = row._asdict()
-                else:
-                    continue
-
-                row_dict = _normalize_row_for_api(row_dict, include_prompt=False)
-
-                transformed_rows.append({
-                    "id": row_dict["id"],
-                    "source_url": row_dict.get("source_url"),
-                    "folder_id": row_dict.get("folder_id"),
-                    "is_favorite": row_dict.get("is_favorite"),
-                    "status": row_dict.get("status") or "processing",
-                    "content_type": row_dict.get("content_type"),
-                    "created_at": row_dict.get("created_at"),
-                    "caption": row_dict.get("caption") or "",
-                    "author_name": row_dict.get("author_name"),
-                    "is_long_video": row_dict.get("is_long_video"),
-                    "duration": row_dict.get("duration"),
-                    "gcs_urls": row_dict.get("gcs_urls") or {},
-                    "tools_list": row_dict.get("tools_list"),
-                    "location": row_dict.get("location"),
-                    "recipe": row_dict.get("recipe"),
-                    "is_list": row_dict.get("is_list"),
-                    "list_subtype": row_dict.get("list_subtype"),
-                    "list_count": row_dict.get("list_count"),
-                    "list_type": row_dict.get("list_type"),
-                    "summary": row_dict.get("summary"),
-                    "title": row_dict.get("title"),
-                })
-
-            return add_no_cache_headers(jsonify({
-                "reels": transformed_rows,
-                "page": page,
-                "per_page": per_page,
-                "has_more": len(transformed_rows) == per_page,
-            }))
-
-        sql = """
-            SELECT
-                id, source_url, folder_id, is_favorite, status,
-                summary_category, summary_title, summary_topic, summary_text,
-                summary_bullets, summary_hashtags, summary_emojis,
-                content_type, created_at, caption, author_name,
-                is_long_video, duration, recipe, workout, transcription,
-                tools_list, location, prompt,
-                is_list, list_subtype, list_count, list_type,
-                gcs_urls::jsonb AS gcs_urls
-            FROM reels
-            WHERE user_id = %s
-            ORDER BY created_at DESC
-            LIMIT %s OFFSET %s
+def _build_reel_payload_for_api(process_id: str, user_id: str, include_prompt: bool = True) -> dict | None:
+    row = fetch_one(
         """
-        db_rows = fetch_all(sql, (user_id, per_page, offset))
-        transformed_rows = []
+        SELECT
+            id, user_id, source_url, folder_id, is_favorite, status,
+            summary_category, summary_title, summary_topic, summary_text,
+            summary_bullets, summary_hashtags, summary_emojis,
+            content_type, created_at, caption, author_name,
+            is_long_video, duration, recipe, workout, transcription,
+            tools_list, location, prompt,
+            is_list, list_subtype, list_count, list_type,
+            gcs_urls
+        FROM reels
+        WHERE user_id = %s AND id = %s
+        LIMIT 1
+        """,
+        (user_id, process_id),
+    )
 
-        for row in db_rows:
-            if hasattr(row, "keys"):
-                row_dict = dict(row)
-            elif hasattr(row, "_asdict"):
-                row_dict = row._asdict()
-            else:
-                continue
+    if not row:
+        return None
 
-            row_dict = _normalize_row_for_api(row_dict, include_prompt=True)
-            transformed_rows.append(row_dict)
+    row_dict = dict(row) if hasattr(row, "keys") else row._asdict()
+    row_dict = _normalize_row_for_api(row_dict, include_prompt=include_prompt)
+    row_dict = _merge_row_location_from_db(row_dict, process_id, user_id)
 
-        return add_no_cache_headers(jsonify({
-            "reels": transformed_rows,
-            "page": page,
-            "per_page": per_page,
-            "has_more": len(transformed_rows) == per_page,
-        }))
+    source_url = row_dict.get("source_url") or ""
+    _, gcs_paths, derived_urls = _derive_gcs_artifacts(process_id, source_url, user_id)
 
-    except Exception as e:
-        logger.error(f"Error in /saved_reels: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+    existing_urls = row_dict.get("gcs_urls")
+    if not isinstance(existing_urls, dict):
+        existing_urls = {}
+    for key, value in derived_urls.items():
+        existing_urls.setdefault(key, value)
 
+    row_dict["gcs_paths"] = gcs_paths
+    row_dict["gcs_urls"] = existing_urls
+    row_dict["process_id"] = row_dict.get("id")
+    row_dict["user_id"] = row_dict.get("user_id") or user_id
 
-# ──────────────────────────────────────────────────────────────────────────────
-# UPDATE
-# ──────────────────────────────────────────────────────────────────────────────
+    return _json_safe_value(row_dict)
 
 
-@reel_bp.route("/update/<process_id>", methods=["PUT"])
-def update_reel(process_id):
+def _refresh_result_json_in_gcs(process_id: str, user_id: str, include_prompt: bool = True) -> dict | None:
+    payload = _build_reel_payload_for_api(process_id, user_id, include_prompt=include_prompt)
+    if not payload:
+        return None
+
     try:
-        try:
-            user_id = get_user_id_from_request()
-        except ValueError:
-            return jsonify({"error": "Authentication required"}), 401
+        from fetcher_api.adapters.gcs_client import gcs_client
 
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"error": "No data provided"}), 400
+        if not gcs_client.available:
+            logger.warning("GCS not available — skipping refreshed result_json upload")
+            return payload
 
-        updates = []
-        params = []
+        source_url = payload.get("source_url") or ""
+        bucket_name = getattr(gcs_client, "analysis_bucket_name", None) or os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
+        _, gcs_paths, gcs_urls = _derive_gcs_artifacts(process_id, source_url, user_id)
 
-        if data.get("folder_id") is not None:
-            updates.append("folder_id = %s")
-            params.append(data["folder_id"])
+        payload["gcs_paths"] = gcs_paths
+        existing_urls = payload.get("gcs_urls")
+        if not isinstance(existing_urls, dict):
+            existing_urls = {}
+        for key, value in gcs_urls.items():
+            existing_urls.setdefault(key, value)
+        payload["gcs_urls"] = existing_urls
 
-        if data.get("is_favorite") is not None:
-            updates.append("is_favorite = %s")
-            params.append(data["is_favorite"])
-
-        if not updates:
-            return jsonify({"error": "No valid fields to update"}), 400
-
-        params.extend([process_id, user_id])
-        execute(
-            f"UPDATE reels SET {', '.join(updates)}, updated_at = NOW() WHERE id = %s AND user_id = %s",
-            tuple(params),
-            commit=True
+        bucket = gcs_client.client.bucket(bucket_name)
+        blob = bucket.blob(gcs_paths["result_json"])
+        blob.upload_from_string(
+            _json_dumps_safe(payload),
+            content_type="application/json",
         )
-        logger.info(f"✅ Updated reel {process_id}: {data}")
+        logger.info(
+            "📄 PATCH /reel/%s/location — refreshed GCS result JSON -> %s",
+            process_id,
+            gcs_paths["result_json"],
+        )
 
-        return jsonify({
-            "status": "updated",
-            "id": process_id,
-            "folder_id": data.get("folder_id"),
-            "is_favorite": data.get("is_favorite"),
-        }), 200
+    except Exception as exc:
+        logger.warning(
+            "⚠️ PATCH /reel/%s/location — failed to refresh GCS result JSON: %s",
+            process_id,
+            exc,
+        )
 
-    except Exception as e:
-        logger.error(f"Error updating reel {process_id}: {e}", exc_info=True)
-        return jsonify({"error": "Internal error"}), 500
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# GET SINGLE + DELETE
-# ──────────────────────────────────────────────────────────────────────────────
+    return payload
 
 
 @reel_bp.route("/reel/<process_id>", methods=["GET", "DELETE", "OPTIONS"])
@@ -487,41 +570,12 @@ def _get_reel(process_id):
         except ValueError:
             return jsonify({"error": "Authentication required"}), 401
 
-        row = fetch_one(
-            """
-            SELECT
-                id, user_id, source_url, folder_id, is_favorite, status,
-                summary_category, summary_title, summary_topic, summary_text,
-                summary_bullets, summary_hashtags, summary_emojis,
-                content_type, created_at, caption, author_name,
-                is_long_video, duration, recipe, workout, transcription,
-                tools_list, location, prompt,
-                is_list, list_subtype, list_count, list_type,
-                gcs_urls
-            FROM reels
-            WHERE user_id = %s AND id = %s
-            LIMIT 1
-            """,
-            (user_id, process_id),
-        )
-
-        if not row:
+        row_dict = _build_reel_payload_for_api(process_id, user_id, include_prompt=True)
+        if not row_dict:
             return jsonify({"error": "Reel not found"}), 404
 
-        row_dict = dict(row) if hasattr(row, "keys") else row._asdict()
-        row_dict = _normalize_row_for_api(row_dict, include_prompt=True)
-
-        if row_dict.get("location"):
-            geocoded_rows = _fetch_geocoded_rows(process_id, user_id)
-            if geocoded_rows:
-                row_dict["location"] = _merge_geocoded_coords(row_dict["location"], geocoded_rows)
-                logger.debug(
-                    "📍 GET /reel/%s — merged %d geocoded rows into location",
-                    process_id, len(geocoded_rows),
-                )
-
         logger.info(f"✅ GET /reel/{process_id} -> {row_dict['id']}")
-        return add_short_cache_headers(jsonify(row_dict))
+        return add_no_cache_headers(jsonify(row_dict))
 
     except Exception as e:
         logger.error(f"Error fetching reel {process_id}: {e}", exc_info=True)
@@ -535,62 +589,100 @@ def _delete_reel(process_id):
         except ValueError:
             return jsonify({"error": "Authentication required"}), 401
 
-        reel_data = fetch_one(
-            "SELECT id, gcs_urls, source_url FROM reels WHERE user_id = %s AND id = %s LIMIT 1",
-            (user_id, process_id),
+        row = fetch_one(
+            """
+            SELECT id, source_url
+            FROM reels
+            WHERE id = %s AND user_id = %s
+            LIMIT 1
+            """,
+            (process_id, user_id),
         )
 
-        if not reel_data:
-            logger.warning(f"⚠️ Reel {process_id} not found for user {user_id}")
+        if not row:
+            logger.warning("⚠️ Reel %s not found for user %s", process_id, user_id)
             return jsonify({"error": "Reel not found"}), 404
 
-        reel_dict = dict(reel_data) if hasattr(reel_data, "keys") else reel_data._asdict()
-        actual_id = reel_dict["id"]
+        row_dict = dict(row) if hasattr(row, "keys") else row._asdict()
+        source_url = row_dict.get("source_url") or ""
 
         try:
             from fetcher_api.adapters.gcs_client import gcs_client
 
-            if not gcs_client.available:
-                logger.warning("GCS not available — skipping file deletion")
-            else:
-                bucket_name = getattr(gcs_client, "analysis_bucket_name", None) or os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
-                bucket = gcs_client.client.bucket(bucket_name)
+            if gcs_client.available:
+                bucket_name = (
+                    getattr(gcs_client, "analysis_bucket_name", None)
+                    or os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
+                )
+                _, gcs_paths, _ = _derive_gcs_artifacts(process_id, source_url, user_id)
 
-                source_url = reel_dict.get("source_url") or ""
-                platform_code = _detect_platform_code(source_url)
-                shortcode = actual_id.split("--")[0] if "--" in actual_id else actual_id.split("_")[0]
+                any_path = next(iter(gcs_paths.values()), "")
+                prefix = f"{any_path.rsplit('/', 1)[0]}/" if "/" in any_path else ""
 
-                gcs_paths = generate_gcs_paths(shortcode, platform_code, user_id=user_id)
-                target_folder = "/".join(gcs_paths["video"].split("/")[:-1]) + "/"
+                if prefix:
+                    logger.info("🔍 Attempting to clear GCS folder: %s", prefix)
+                    bucket = gcs_client.client.bucket(bucket_name)
+                    blobs = list(bucket.list_blobs(prefix=prefix))
 
-                logger.info(f"🔍 Attempting to clear GCS folder: {target_folder}")
-                blobs = list(bucket.list_blobs(prefix=target_folder))
-                if blobs:
+                    deleted = 0
                     for blob in blobs:
-                        blob.delete()
-                    logger.info(f"✅ Deleted {len(blobs)} files from GCS: {target_folder}")
-                else:
-                    logger.info(f"ℹ️ No GCS files found at: {target_folder}")
+                        try:
+                            blob.delete()
+                            deleted += 1
+                        except Exception as blob_exc:
+                            logger.warning(
+                                "⚠️ Failed deleting GCS blob %s for reel %s: %s",
+                                blob.name,
+                                process_id,
+                                blob_exc,
+                            )
 
-        except Exception as gcs_error:
-            logger.error(f"❌ GCS deletion error for {actual_id}: {gcs_error}")
+                    logger.info("✅ Deleted %d files from GCS: %s", deleted, prefix)
 
-        execute(
-            "DELETE FROM reels WHERE user_id = %s AND id = %s",
-            (user_id, actual_id),
-            commit=True
-        )
-        logger.info(f"✅ Deleted reel {actual_id} from database")
-        return jsonify({"status": "deleted", "id": actual_id}), 200
+        except Exception as exc:
+            logger.warning(
+                "⚠️ Failed to clear GCS assets for reel %s: %s",
+                process_id,
+                exc,
+            )
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM reel_locations WHERE reel_id = %s AND user_id = %s",
+                    (process_id, user_id),
+                )
+
+                try:
+                    cur.execute(
+                        "DELETE FROM saved_places WHERE video_id = %s AND user_id = %s",
+                        (process_id, user_id),
+                    )
+                except Exception as saved_places_exc:
+                    logger.warning(
+                        "⚠️ Failed deleting saved_places for reel %s: %s",
+                        process_id,
+                        saved_places_exc,
+                    )
+
+                cur.execute(
+                    "DELETE FROM reels WHERE id = %s AND user_id = %s",
+                    (process_id, user_id),
+                )
+                deleted_rows = cur.rowcount
+
+            conn.commit()
+
+        if not deleted_rows:
+            logger.warning("⚠️ Reel %s vanished before delete commit", process_id)
+            return jsonify({"error": "Reel not found"}), 404
+
+        logger.info("✅ Deleted reel %s from database", process_id)
+        return jsonify({"status": "deleted", "id": process_id}), 200
 
     except Exception as e:
-        logger.error(f"❌ Error in delete_reel: {e}", exc_info=True)
-        return jsonify({"error": "Internal error", "details": str(e)}), 500
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# PATCH LOCATION
-# ──────────────────────────────────────────────────────────────────────────────
+        logger.error(f"❌ Error deleting reel {process_id}: {e}", exc_info=True)
+        return jsonify({"error": "Internal error"}), 500
 
 
 @reel_bp.route("/reel/<process_id>/location", methods=["PATCH"])
@@ -601,6 +693,10 @@ def patch_reel_location(process_id):
         except ValueError:
             return jsonify({"error": "Authentication required"}), 401
 
+        if not _reel_exists(process_id, user_id):
+            logger.warning("⚠️ PATCH /reel/%s/location — reel not found", process_id)
+            return jsonify({"error": "Reel not found"}), 404
+
         data = request.get_json(silent=True)
         if not data or "location" not in data:
             return jsonify({"error": "Missing location array"}), 400
@@ -609,7 +705,6 @@ def patch_reel_location(process_id):
         if not isinstance(location, list):
             return jsonify({"error": "location must be an array"}), 400
 
-        # Check how many rows already have coords in reel_locations
         already_geocoded = fetch_one(
             """
             SELECT COUNT(*) AS cnt
@@ -622,72 +717,103 @@ def patch_reel_location(process_id):
         all_already_done = geocoded_count > 0 and geocoded_count >= len(location)
 
         if all_already_done:
-            # reel_locations is complete — but make sure JSONB is also up to date
             geocoded_rows = _fetch_geocoded_rows(process_id, user_id)
             if geocoded_rows:
                 enriched = _merge_geocoded_coords(location, geocoded_rows)
+                enriched = _fill_location_locality_from_reverse(enriched)
+                enriched = _json_safe_value(enriched)
+
                 with get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT 1 FROM reels WHERE id = %s AND user_id = %s FOR UPDATE",
+                            (process_id, user_id),
+                        )
+                        if not cur.fetchone():
+                            conn.rollback()
+                            return jsonify({"error": "Reel not found"}), 404
+
                         cur.execute(
                             """
                             UPDATE reels
                             SET location = %s::jsonb, updated_at = NOW()
                             WHERE id = %s AND user_id = %s
                             """,
-                            (json.dumps(enriched), process_id, user_id),
+                            (_json_dumps_safe(enriched), process_id, user_id),
                         )
+                    saved = _upsert_reel_locations_conn(conn, process_id, user_id, enriched)
                     conn.commit()
-                logger.info(
-                    "📍 PATCH /reel/%s/location — already geocoded, refreshed JSONB with %d coords",
-                    process_id, len(geocoded_rows),
+
+                refreshed_payload = _refresh_result_json_in_gcs(process_id, user_id, include_prompt=True)
+                response_location = (
+                    refreshed_payload.get("location")
+                    if isinstance(refreshed_payload, dict) and refreshed_payload.get("location") is not None
+                    else _json_safe_value(enriched)
                 )
-                return jsonify({"status": "already_geocoded", "count": geocoded_count, "location": enriched}), 200
+
+                logger.info(
+                    "📍 PATCH /reel/%s/location — already geocoded, refreshed JSONB and %d reel_location rows",
+                    process_id, saved,
+                )
+                return jsonify({
+                    "status": "already_geocoded",
+                    "count": geocoded_count,
+                    "saved": saved,
+                    "location": response_location,
+                }), 200
+
             return jsonify({"status": "already_geocoded", "count": geocoded_count}), 200
 
-        # Geocode any entries that are missing coords
         enriched = []
-        for loc in location:
+        for idx, loc in enumerate(location, start=1):
             if not isinstance(loc, dict):
                 enriched.append(loc)
                 continue
 
             if loc.get("lat") is not None and loc.get("lng") is not None:
-                enriched.append(loc)
+                merged = _fill_place_locality_from_reverse(dict(loc))
+                enriched.append(_json_safe_value(merged))
                 continue
 
             name = _safe_strip(loc.get("name"))
             address = _safe_strip(loc.get("address"))
-            neighborhood = _safe_strip(loc.get("neighborhood"))
-            city = _safe_strip(loc.get("region") or loc.get("city"))
-            country = _safe_strip(loc.get("country"))
+            neighborhood = _null_if_blocked_macro_region(_safe_strip(loc.get("neighborhood")))
+            city = _null_if_blocked_macro_region(_safe_strip(loc.get("city")))
+            region = _null_if_blocked_macro_region(_safe_strip(loc.get("region")))
+            country = _null_if_blocked_macro_region(_safe_strip(loc.get("country")))
+            postal_code = _safe_strip(loc.get("postal_code"))
 
-            # Clear non-geocodable macro values
-            blocked_macro_values = {
-                "europe", "europa",
-                "alps", "dolomites", "mediterranean", "scandinavia",
-            }
-
-            if country.lower() in blocked_macro_values:
-                country = ""
-
-            if city.lower() in blocked_macro_values:
-                city = ""
-
-            if neighborhood.lower() in blocked_macro_values:
-                neighborhood = ""
+            logger.info(
+                "📍 PATCH /reel/%s/location geocode input #%d — name=%r address=%r neighborhood=%r city=%r region=%r postal_code=%r country=%r",
+                process_id, idx, name, address, neighborhood, city, region, postal_code, country,
+            )
 
             coords = geocode_one(
                 name=name,
-                city=city,
-                country=country,
                 address=address,
                 neighborhood=neighborhood,
+                city=city,
+                region=region,
+                country=country,
+                postal_code=postal_code,
             )
 
             merged = dict(loc)
             if coords:
                 merged["lat"], merged["lng"] = coords
-            enriched.append(merged)
+                merged = _fill_place_locality_from_reverse(merged)
+
+                logger.info(
+                    "📍 PATCH /reel/%s/location geocode success #%d — %r -> %.6f, %.6f",
+                    process_id, idx, name, merged["lat"], merged["lng"],
+                )
+            else:
+                logger.info(
+                    "📍 PATCH /reel/%s/location geocode miss #%d — %r",
+                    process_id, idx, name,
+                )
+
+            enriched.append(_json_safe_value(merged))
 
         incoming_with_coords = sum(
             1 for loc in enriched
@@ -697,76 +823,42 @@ def patch_reel_location(process_id):
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
+                    "SELECT 1 FROM reels WHERE id = %s AND user_id = %s FOR UPDATE",
+                    (process_id, user_id),
+                )
+                if not cur.fetchone():
+                    conn.rollback()
+                    return jsonify({"error": "Reel not found"}), 404
+
+                cur.execute(
                     """
                     UPDATE reels
                     SET location = %s::jsonb, updated_at = NOW()
                     WHERE id = %s AND user_id = %s
                     """,
-                    (json.dumps(enriched), process_id, user_id),
+                    (_json_dumps_safe(enriched), process_id, user_id),
                 )
+
             saved = _upsert_reel_locations_conn(conn, process_id, user_id, enriched)
             conn.commit()
+
+        refreshed_payload = _refresh_result_json_in_gcs(process_id, user_id, include_prompt=True)
+        response_location = (
+            refreshed_payload.get("location")
+            if isinstance(refreshed_payload, dict) and refreshed_payload.get("location") is not None
+            else _json_safe_value(enriched)
+        )
 
         logger.info(
             "✅ PATCH /reel/%s/location — %d places, %d/%d geocoded, %d reel_location rows saved",
             process_id, len(enriched), incoming_with_coords, len(enriched), saved,
         )
-        return jsonify({"status": "ok", "saved": saved, "location": enriched}), 200
+        return jsonify({
+            "status": "ok",
+            "saved": saved,
+            "location": response_location,
+        }), 200
 
     except Exception as e:
         logger.error(f"❌ Error patching location for {process_id}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# SEARCH
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-@reel_bp.route("/search", methods=["GET"])
-def search_reels():
-    q = request.args.get("q", "").strip()
-    if not q:
-        return jsonify([])
-
-    try:
-        try:
-            user_id = get_user_id_from_request()
-        except ValueError:
-            return jsonify({"error": "Authentication required"}), 401
-
-        sql = """
-            SELECT
-                id, source_url, folder_id, is_favorite, status,
-                summary_category, summary_title, summary_topic, summary_text,
-                summary_bullets, summary_hashtags, summary_emojis,
-                content_type, recipe, workout, created_at,
-                caption, author_name, is_long_video, duration, transcription,
-                tools_list, location, prompt,
-                is_list, list_subtype, list_count, list_type,
-                gcs_urls::jsonb AS gcs_urls
-            FROM reels
-            WHERE user_id = %s
-              AND search_vector @@ plainto_tsquery('simple', %s)
-            ORDER BY created_at DESC
-            LIMIT 200
-        """
-        rows = fetch_all(sql, (user_id, q))
-        transformed = []
-
-        for row in rows:
-            if hasattr(row, "keys"):
-                row_dict = dict(row)
-            elif hasattr(row, "_asdict"):
-                row_dict = row._asdict()
-            else:
-                continue
-
-            row_dict = _normalize_row_for_api(row_dict, include_prompt=True)
-            transformed.append(row_dict)
-
-        return jsonify(transformed)
-
-    except Exception as e:
-        logger.error(f"Error in /search: {e}", exc_info=True)
-        return jsonify({"error": "Internal error"}), 500

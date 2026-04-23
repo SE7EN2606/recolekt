@@ -7,13 +7,14 @@ Mistral only.
 Environment variables:
     MISTRAL_API_KEY               — required
     MISTRAL_MODEL_EXTRACTION      — primary model for Call 1 (vision + frames)
-                                    default: mistral-small-latest
+                                    default: mistral-large-latest
     MISTRAL_MODEL_SUMMARY         — model for Call 2 / Call 3 (text)
                                     default: mistral-small-latest
     MISTRAL_MODEL                 — legacy single-model override
 
-Notes:
-    - Fallback chain is intentionally Mistral-only
+Default model policy:
+    - Extraction / vision: large first, small fallback
+    - Summary / translation: small first
     - open-mistral-nemo is intentionally excluded
 """
 
@@ -46,8 +47,8 @@ class HttpMixin:
     LLM HTTP transport layer.
 
     Mistral only:
-      - default model is mistral-small-latest
-      - fallback chain intentionally remains single-model unless explicitly overridden
+      - Extraction defaults to mistral-large-latest with small-model fallback
+      - Summary defaults to mistral-small-latest
       - open-mistral-nemo is intentionally excluded
 
     _call_ai contract:
@@ -68,13 +69,15 @@ class HttpMixin:
         legacy = os.getenv("MISTRAL_MODEL", "").strip()
 
         primary_extraction = legacy or os.getenv(
-            "MISTRAL_MODEL_EXTRACTION", "mistral-small-latest"
+            "MISTRAL_MODEL_EXTRACTION", "mistral-large-latest"
         ).strip()
         primary_summary = legacy or os.getenv(
             "MISTRAL_MODEL_SUMMARY", "mistral-small-latest"
         ).strip()
 
-        # Intentionally single-model by default. Do not include open-mistral-nemo.
+        # Best-model defaults:
+        # - extraction/vision: large first, then small fallback
+        # - summary/translation: small only by default
         self._chain_extraction: List[str] = _build_chain(
             primary_extraction,
             ["mistral-small-latest"],
@@ -156,7 +159,7 @@ class HttpMixin:
                 promoted.append({
                     "name": name,
                     "rank": item.get("rank"),
-                    "type": meta.get("type") or "Town",
+                    "type": meta.get("type") or "",
                     "region": meta.get("region") or "",
                     "country": meta.get("country") or "",
                     "description": item.get("description") or "",
@@ -259,7 +262,6 @@ class HttpMixin:
                         time.sleep(_ROTATE_PAUSE_SECONDS)
                         continue
 
-                    # Non-retryable HTTP errors (401, 403, 404 etc.) — surface immediately.
                     resp.raise_for_status()
 
                     raw = resp.json()["choices"][0]["message"]["content"]
@@ -276,7 +278,8 @@ class HttpMixin:
                         time.sleep(_ROTATE_PAUSE_SECONDS)
                         continue
 
-                    if subtype_hint == "places" or call_type == "extraction":
+                    # Only promote location_meta -> location[] for place-ranking extraction.
+                    if subtype_hint == "places":
                         content = self._normalize_places_response(content)
 
                     self._call_log.append({
@@ -342,7 +345,7 @@ class HttpMixin:
                 time.sleep(_EXHAUST_PAUSE_SECONDS)
 
         logger.error(
-            "🔥 _call_ai [%s] exhausted all %d attempts across models: %s — returning {}",
+            "🔥 _call_ai [%s] exhausted all %d attempts across models: %s — returning {{}}",
             call_type,
             total_attempts,
             chain,

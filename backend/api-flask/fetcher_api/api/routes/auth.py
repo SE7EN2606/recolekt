@@ -5,6 +5,7 @@ import jwt
 import requests
 import random
 import resend
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, request, jsonify, session, redirect, url_for, current_app
@@ -171,6 +172,44 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
     except Exception as e:
         logger.error("❌ Resend failed for %s: %s", to, e, exc_info=True)
         return False
+
+
+# ─────────────────────────────────────────────
+# INSTAGRAM / META OAUTH (For App Review)
+# ─────────────────────────────────────────────
+
+@auth_bp.route("/instagram/login", methods=["GET"])
+def instagram_login():
+    # Hardcoded fallback to your ID to ensure the review doesn't fail on a None variable
+    client_id = os.getenv("INSTAGRAM_APP_ID") or "1908143659883149" 
+    redirect_uri = f"{APP_URL}/api/auth/instagram/callback"
+    
+    scopes = [
+    "instagram_basic",
+    "instagram_manage_messages",
+    "public_profile",
+    "pages_show_list",
+    "pages_read_engagement"
+    ]
+    
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "scope": ",".join(scopes),
+        "response_type": "code",
+        "state": "admin_link"
+    }
+    
+    auth_url = f"https://www.facebook.com/v25.0/dialog/oauth?{urllib.parse.urlencode(params)}"
+    logger.info(f"🔗 Redirecting Admin to Meta OAuth with App ID: {client_id}")
+    return redirect(auth_url)
+
+@auth_bp.route("/instagram/callback", methods=["GET"])
+def instagram_callback():
+    code = request.args.get("code")
+    if not code: return redirect(f"{_get_frontend_base()}/auth?error=meta_denied")
+    logger.info("✅ Meta Authorization Successful. Code received.")
+    return redirect(f"{_get_frontend_base()}/gallery?setup=instagram_success")
 
 
 # ─────────────────────────────────────────────

@@ -18,13 +18,19 @@ export interface LocationPlace {
   id?: string;
   name: string;
   type?: string;
+  place_type?: string;
   city?: string;
   region?: string;
   country?: string;
   address?: string;
   neighborhood?: string;
+  postal_code?: string;
   description?: string;
   instagram?: string;
+  instagram_username?: string;
+  instagram_account_name?: string;
+  google_place_id?: string;
+  maps_url?: string;
   emoji?: string;
   rank?: number;
   lat?: number | null;
@@ -81,17 +87,19 @@ function normalizeContentType(raw: unknown): string {
 
   if (!ct || ct === 'generic' || ct === 'summary') return 'general';
   if (ct === 'tools') return 'products';
-  if (ct === 'places') return 'places';
+  if (ct === 'places') return 'location';
 
-  if ([
-    'recipe',
-    'workout',
-    'location',
-    'products',
-    'software',
-    'finance',
-    'general',
-  ].includes(ct)) {
+  if (
+    [
+      'recipe',
+      'workout',
+      'location',
+      'products',
+      'software',
+      'finance',
+      'general',
+    ].includes(ct)
+  ) {
     return ct;
   }
 
@@ -131,6 +139,63 @@ function getToken(): string {
   }
 }
 
+function toNumberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizePlaceIndex(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getSavedPlaceKey(place: Partial<LocationPlace>): string {
+  const vid = String(place._vid || '').trim();
+  const idx = normalizePlaceIndex(place._idx);
+  if (vid && idx != null) return `${vid}:${idx}`;
+
+  return [
+    String(place.id || '').trim().toLowerCase(),
+    String(place.name || '').trim().toLowerCase(),
+    String(place.city || '').trim().toLowerCase(),
+    String(place.country || '').trim().toLowerCase(),
+  ].join('|');
+}
+
+function normalizeSavedPlaceRow(row: any): LocationPlace {
+  const rawIdx =
+    row?.place_index ??
+    row?._idx ??
+    row?.idx ??
+    row?.position;
+
+  return {
+    id: row?.id != null ? String(row.id) : undefined,
+    name: String(row?.name || '').trim(),
+    type: row?.type ?? row?.place_type ?? undefined,
+    place_type: row?.place_type ?? row?.type ?? undefined,
+    city: row?.city ?? undefined,
+    region: row?.region ?? undefined,
+    country: row?.country ?? undefined,
+    address: row?.address ?? undefined,
+    neighborhood: row?.neighborhood ?? undefined,
+    postal_code: row?.postal_code ?? undefined,
+    description: row?.description ?? undefined,
+    instagram: row?.instagram ?? row?.instagram_username ?? undefined,
+    instagram_username: row?.instagram_username ?? row?.instagram ?? undefined,
+    instagram_account_name: row?.instagram_account_name ?? undefined,
+    lat: toNumberOrNull(row?.lat),
+    lng: toNumberOrNull(row?.lng),
+    rank: row?.rank ?? undefined,
+    _vid: row?.video_id ? String(row.video_id) : row?._vid ? String(row._vid) : undefined,
+    _idx: normalizePlaceIndex(rawIdx) ?? undefined,
+  };
+}
+
+const SAVED_REELS_PATH = '/api/saved_reels';
+
 let globalLastFetchTime = 0;
 let isFetchingGlobal = false;
 
@@ -152,7 +217,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 content_type: normalizeContentType(v?.content_type),
               }))
             : [];
-        } catch {}
+        } catch {
+          return [];
+        }
       }
     }
     return [];
@@ -179,6 +246,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isLoading, setIsLoading] = useState(false);
   const [savedPlaces, setSavedPlaces] = useState<LocationPlace[]>([]);
   const savedPlacesLoadedRef = useRef(false);
+  const savedPlacesRef = useRef<LocationPlace[]>([]);
+
+  useEffect(() => {
+    savedPlacesRef.current = savedPlaces;
+  }, [savedPlaces]);
 
   const videosRef = useRef<Video[]>([]);
   videosRef.current = _videos;
@@ -191,6 +263,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!user) {
       setVideos([]);
       setSavedPlaces([]);
+      savedPlacesRef.current = [];
       savedPlacesLoadedRef.current = false;
       const saved = localStorage.getItem('custom_folders');
       setFolders(saved ? JSON.parse(saved) : []);
@@ -229,24 +302,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       })
       .then((rows: any[]) => {
         if (Array.isArray(rows)) {
-          setSavedPlaces(
-            rows.map((r) => ({
-              id: String(r.id),
-              name: r.name,
-              type: r.type ?? undefined,
-              city: r.city ?? undefined,
-              region: r.region ?? undefined,
-              country: r.country ?? undefined,
-              address: r.address ?? undefined,
-              description: r.description ?? undefined,
-              instagram: r.instagram ?? undefined,
-              lat: r.lat ?? null,
-              lng: r.lng ?? null,
-              rank: r.rank ?? undefined,
-              _vid: r.video_id,
-              _idx: r.place_index,
-            })),
-          );
+          setSavedPlaces(rows.map(normalizeSavedPlaceRow));
         }
       })
       .catch((err) => {
@@ -256,75 +312,103 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const toggleSavedPlace = useCallback(
     async (place: LocationPlace) => {
-      const videoId = place._vid;
-      const placeIndex = place._idx;
+      const videoId = String(place._vid || '').trim();
+      const placeIndex = normalizePlaceIndex(place._idx);
 
       if (!videoId || placeIndex == null) {
         console.warn('toggleSavedPlace: place missing _vid or _idx', place);
         return;
       }
 
-      const isAlreadySaved = savedPlaces.some(
-        (s) => s._vid === videoId && s._idx === placeIndex,
-      );
+      const normalizedPlace: LocationPlace = {
+        ...place,
+        _vid: videoId,
+        _idx: placeIndex,
+        lat: toNumberOrNull(place.lat),
+        lng: toNumberOrNull(place.lng),
+        type: place.type ?? place.place_type ?? undefined,
+        place_type: place.place_type ?? place.type ?? undefined,
+        instagram: place.instagram ?? place.instagram_username ?? undefined,
+        instagram_username: place.instagram_username ?? place.instagram ?? undefined,
+      };
+
+      const targetKey = getSavedPlaceKey(normalizedPlace);
+      const wasSaved = savedPlacesRef.current.some((p) => getSavedPlaceKey(p) === targetKey);
 
       setSavedPlaces((prev) =>
-        isAlreadySaved
-          ? prev.filter((s) => !(s._vid === videoId && s._idx === placeIndex))
-          : [...prev, place],
+        wasSaved
+          ? prev.filter((p) => getSavedPlaceKey(p) !== targetKey)
+          : [...prev, normalizedPlace],
       );
 
       const token = getToken();
 
       try {
-        if (isAlreadySaved) {
-          await fetch(joinUrl(API_BASE, '/api/saved-places'), {
-            method: 'DELETE',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            credentials: 'include',
-            body: JSON.stringify({
+        const res = await fetch(joinUrl(API_BASE, '/api/saved-places'), {
+          method: wasSaved ? 'DELETE' : 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          credentials: 'include',
+          body: JSON.stringify(
+            wasSaved
+              ? {
+                  video_id: videoId,
+                  place_index: placeIndex,
+                }
+              : {
+                  video_id: videoId,
+                  place_index: placeIndex,
+                  name: normalizedPlace.name,
+                  type: normalizedPlace.type ?? null,
+                  city: normalizedPlace.city ?? null,
+                  region: normalizedPlace.region ?? null,
+                  country: normalizedPlace.country ?? null,
+                  address: normalizedPlace.address ?? null,
+                  neighborhood: normalizedPlace.neighborhood ?? null,
+                  postal_code: normalizedPlace.postal_code ?? null,
+                  description: normalizedPlace.description ?? null,
+                  instagram: normalizedPlace.instagram ?? null,
+                  instagram_username: normalizedPlace.instagram_username ?? null,
+                  instagram_account_name: normalizedPlace.instagram_account_name ?? null,
+                  lat: normalizedPlace.lat ?? null,
+                  lng: normalizedPlace.lng ?? null,
+                  rank: normalizedPlace.rank ?? null,
+                },
+          ),
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+
+        if (!wasSaved) {
+          const data = await res.json().catch(() => null);
+          if (data && typeof data === 'object') {
+            const savedRow = normalizeSavedPlaceRow({
+              ...normalizedPlace,
+              ...data,
               video_id: videoId,
               place_index: placeIndex,
-            }),
-          });
-        } else {
-          await fetch(joinUrl(API_BASE, '/api/saved-places'), {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-              video_id: videoId,
-              place_index: placeIndex,
-              name: place.name,
-              type: place.type ?? null,
-              city: place.city ?? null,
-              region: place.region ?? null,
-              country: place.country ?? null,
-              address: place.address ?? null,
-              description: place.description ?? null,
-              instagram: place.instagram ?? null,
-              lat: place.lat ?? null,
-              lng: place.lng ?? null,
-              rank: place.rank ?? null,
-            }),
-          });
+            });
+
+            setSavedPlaces((prev) => {
+              const next = prev.filter((p) => getSavedPlaceKey(p) !== targetKey);
+              return [...next, savedRow];
+            });
+          }
         }
       } catch (err) {
-        console.error('toggleSavedPlace network error:', err);
+        console.error('toggleSavedPlace failed:', err);
         setSavedPlaces((prev) =>
-          isAlreadySaved
-            ? [...prev, place]
-            : prev.filter((s) => !(s._vid === videoId && s._idx === placeIndex)),
+          wasSaved
+            ? [...prev, normalizedPlace]
+            : prev.filter((p) => getSavedPlaceKey(p) !== targetKey),
         );
       }
     },
-    [savedPlaces],
+    [],
   );
 
   const fetchVideos = useCallback(async () => {
@@ -344,16 +428,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsLoading(true);
 
     try {
-      const url = joinUrl(API_BASE, `/api/saved_reels?page=1&per_page=100&view=list&t=${now}`);
+      const url = joinUrl(API_BASE, `${SAVED_REELS_PATH}?page=1&per_page=100&view=list&t=${now}`);
 
       const response = await fetch(url, {
         credentials: 'include',
         cache: 'no-store',
-        headers: {
-          ...getAuthHeaders(),
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-        },
+        headers: getAuthHeaders(),
       });
 
       if (response.ok) {
@@ -482,7 +562,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         localStorage.removeItem('auth_token');
         return;
       }
-    } catch {
+
+      console.error('fetchVideos failed:', response.status, response.statusText);
+    } catch (err) {
+      console.error('fetchVideos error:', err);
     } finally {
       isFetchingGlobal = false;
       setIsLoading(false);
@@ -561,7 +644,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       let result: any = null;
-      try { result = await response.json(); } catch {}
+      try {
+        result = await response.json();
+      } catch {}
+
       if (!response.ok) throw new Error(result?.error || 'Failed to import video.');
 
       if (
@@ -845,12 +931,22 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       getVideoById,
     }),
     [
-      _videos, folders, isLoading,
-      savedPlaces, toggleSavedPlace,
-      addFolder, updateFolder, deleteFolder,
-      toggleFavorite, moveVideos, updateVideo,
-      deleteVideos, addVideo, refreshVideos,
-      refreshFolders, getVideoById,
+      _videos,
+      folders,
+      isLoading,
+      savedPlaces,
+      toggleSavedPlace,
+      addFolder,
+      updateFolder,
+      deleteFolder,
+      toggleFavorite,
+      moveVideos,
+      updateVideo,
+      deleteVideos,
+      addVideo,
+      refreshVideos,
+      refreshFolders,
+      getVideoById,
     ],
   );
 

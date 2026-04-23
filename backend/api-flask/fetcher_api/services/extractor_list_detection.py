@@ -24,6 +24,7 @@ _MERGED_TIER_CAT_RE = re.compile(
 )
 
 _MENTION_VERDICT_RE = re.compile(r"@[\w.]+\s*(?:→|->|—|–|-|:)\s*\S", re.MULTILINE)
+_PLAIN_MENTION_RE = re.compile(r"@([A-Za-z0-9._]+)")
 
 _RANKED_TRANSCRIPT_RE = re.compile(
     r"\b(?:number|ranked?|#)\s*(?:one|two|three|four|five|six|seven|eight|nine|ten|\d{1,2})\b",
@@ -53,8 +54,11 @@ _LOCATION_WHOLE_WORDS = frozenset({
     "national park", "hiking trail", "trek", "trekking",
     "hostel", "airbnb",
     "city guide", "day trip", "bucket list",
+    "hotel", "hotels", "resort", "resorts",
+    "family hotel", "family hotels", "family resort", "family resorts",
+    "address", "addresses", "travel planner",
     "itinéraire", "randonnée", "lac", "montagne", "château", "cathédrale",
-    "musée", "quartier", "belvédère",
+    "musée", "quartier", "belvédère", "hôtel", "hôtels", "adresse", "adresses",
     "percorso", "sentiero", "lago", "monte", "castello",
     "wanderung", "ausflug", "sehenswürdigkeit",
 })
@@ -71,6 +75,9 @@ _LOCATION_PATTERNS = [
     r"travel\s+(?:guide|inspo|inspiration)",
     r"best\s+(?:places?|spots?|locations?|destinations?)\s+(?:in|to|for|near)",
     r"(?:best|top)\s+\d*\s*(?:beach|island|lake)\s+resorts?\s+to\s+visit",
+    r"\b\d+\s+(?:addresses?|adresses?)\b",
+    r"\b\d+\s+h[oô]tels?\b",
+    r"\b\d+\s+resorts?\b",
 ]
 
 _TOOL_KEYWORDS = (
@@ -240,7 +247,7 @@ _PLACE_RANKING_KEYWORDS = frozenset({
     "hiking", "trail", "trails", "mountain", "mountains",
     "lake", "lakes", "coast", "coastal", "spot", "spots",
     "station de ski", "domaine skiable", "stazione sciistica",
-    "lieu", "lieux", "endroit", "endroits",
+    "lieu", "lieux", "endroit", "endroits", "hôtel", "hôtels",
 })
 
 _PRODUCT_TEST_SIGNALS = frozenset({
@@ -261,10 +268,6 @@ _PRODUCT_TEST_CATEGORY_HINTS = frozenset({
     "tested above 50", "failed", "best value", "s tier", "a tier", "b tier", "c tier", "d tier", "f tier",
 })
 
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 def _safe_text(value) -> str:
     return str(value or "").strip()
@@ -352,18 +355,41 @@ def _category_signal_subtype(text: str) -> str:
     return "picks"
 
 
-# ---------------------------------------------------------------------------
-# Public classification helpers
-# ---------------------------------------------------------------------------
+def _looks_like_place_selection(transcript: str, caption: str, category: str = "", topic: str = "") -> bool:
+    combined = f"{transcript or ''} {caption or ''} {category or ''} {topic or ''}".lower()
 
-def classify_structured_family(transcript: str, caption: str) -> str:
-    """
-    Infer the public content family from combined text.
-    Used by the classifier layer. Returns: "places" | "finance" | "software" | "products"
-    """
-    combined = f"{transcript or ''} {caption or ''}".lower()
+    if _looks_like_product_test_context(combined):
+        return False
+    if _count_contains(combined, _SUNSCREEN_PRODUCT_TEST_SIGNALS) >= 2:
+        return False
+    if _contains_any(combined, _LIFESTYLE_SIGNALS):
+        return False
 
     if is_place_ranking(transcript, caption):
+        return True
+
+    location_signal = (
+        is_location_list_content(transcript, caption)
+        or _count_contains(combined, _PLACE_RANKING_KEYWORDS) >= 2
+    )
+    mention_count = count_plain_mentions(caption)
+
+    return location_signal and mention_count >= 2
+
+
+def classify_structured_family(
+    transcript: str,
+    caption: str,
+    category: str = "",
+    topic: str = "",
+) -> str:
+    """
+    Infer the public content family from combined text.
+    Returns: "places" | "finance" | "software" | "products"
+    """
+    combined = f"{transcript or ''} {caption or ''} {category or ''} {topic or ''}".lower()
+
+    if _looks_like_place_selection(transcript, caption, category, topic):
         return "places"
     if _contains_any(combined, _FINANCE_SIGNALS):
         return "finance"
@@ -399,7 +425,10 @@ def is_location_list_content(transcript: str, caption: str) -> bool:
     if _count_contains(combined, _SUNSCREEN_PRODUCT_TEST_SIGNALS) >= 2:
         return False
 
-    return _contains_any(combined, _LOCATION_WHOLE_WORDS) or _matches_any(combined, _LOCATION_PATTERNS, re.MULTILINE)
+    return (
+        _contains_any(combined, _LOCATION_WHOLE_WORDS)
+        or _matches_any(combined, _LOCATION_PATTERNS, re.MULTILINE)
+    )
 
 
 def count_numbered_caption_items(caption: str) -> int:
@@ -420,6 +449,11 @@ def count_numbered_caption_items(caption: str) -> int:
 
 def count_mention_verdict_items(caption: str) -> int:
     return len(_MENTION_VERDICT_RE.findall(caption or ""))
+
+
+def count_plain_mentions(caption: str) -> int:
+    handles = [h.lower() for h in _PLAIN_MENTION_RE.findall(caption or "")]
+    return len(dict.fromkeys(handles))
 
 
 def is_tools_list_content(transcript: str, caption: str) -> bool:
@@ -485,7 +519,7 @@ def looks_like_educational_numbered_explainer(transcript: str, caption: str) -> 
 def pre_detect_list_subtype(transcript: str, caption: str) -> str:
     combined = f"{caption or ''} {(transcript or '')[:1200]}".lower()
 
-    if is_place_ranking(transcript, caption):
+    if _looks_like_place_selection(transcript, caption):
         return "places"
     if _looks_like_strong_tier_text(transcript, caption):
         return "tier"
@@ -507,10 +541,6 @@ def pre_detect_list_subtype(transcript: str, caption: str) -> str:
 
     return "picks"
 
-
-# ---------------------------------------------------------------------------
-# Structure analysis — category-level helpers
-# ---------------------------------------------------------------------------
 
 def _non_empty_categories(categories: list[dict]) -> list[dict]:
     out = []
@@ -651,10 +681,6 @@ def _items_have_location_meta(categories: list[dict]) -> bool:
                 hits += 1
     return hits >= max(2, len(rows) // 2)
 
-
-# ---------------------------------------------------------------------------
-# analyze_structure — main structure classification entry point
-# ---------------------------------------------------------------------------
 
 def analyze_structure(
     tools_categories: list[dict],
@@ -825,10 +851,6 @@ def analyze_structure(
         "reason": "No reliable structured pattern detected",
     }
 
-
-# ---------------------------------------------------------------------------
-# detect_list_subtype — convenience wrapper over analyze_structure
-# ---------------------------------------------------------------------------
 
 def detect_list_subtype(
     tools_categories: list[dict],

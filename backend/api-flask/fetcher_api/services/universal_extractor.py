@@ -6,7 +6,7 @@ All heavy logic lives in dedicated mixins:
     extractor_call1.py           → Call1Mixin     (Call 1 parsing)
     extractor_call2.py           → Call2Mixin     (Call 2 summary + Call 3 translation)
     extractor_assembly.py        → AssemblyMixin  (final output assembly)
-    extractor_tools_detection.py → detection helpers
+    extractor_list_detection.py  → detection helpers
 
 Public content families:
     "recipe" | "workout" | "location" | "products" | "software" | "finance" | "general"
@@ -14,22 +14,26 @@ Public content families:
 Internal extraction path:
     Structured products / software / finance content still flows through the
     legacy tools extraction path for now. "tools" is therefore internal-only
-    semantics during Phase 2 migration.
+    semantics during Phase 1 migration.
 
 Structured subtype values on the legacy tools path:
     "software" | "lifestyle" | "gear" | "food" |
     "ranking" | "picks" | "verdict" | "grouped" | "places"
 
 ⚠️ MODEL CHAIN NOTE:
-    extractor_http.py contains the model fallback chain.
-    It MUST be set to ['mistral-small-latest'] only — do NOT include
-    'open-mistral-nemo'. Nemo is weaker and fails tier-list instructions.
+    extractor_http.py owns the model policy.
+    Current default policy is:
+      - Call 1 / vision extraction: ['mistral-large-latest', 'mistral-small-latest']
+      - Call 2 / Call 3 summary/translation: ['mistral-small-latest']
+    Do NOT include 'open-mistral-nemo'. Nemo is weaker and fails tier-list instructions.
 """
 
+import asyncio
 import logging
 import re
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
+from fetcher_api.adapters.meta_client import meta_client
 from fetcher_api.services.category_validator import validate_category
 from fetcher_api.services.extractor_assembly import AssemblyMixin
 from fetcher_api.services.extractor_call1 import Call1Mixin, _is_ranked_list_transcript
@@ -37,17 +41,12 @@ from fetcher_api.services.extractor_call2 import Call2Mixin
 from fetcher_api.services.extractor_helpers import (
     clean_title,
     derive_best_title_from_caption,
-    detect_caption_language,
     is_english,
     safe_list,
     safe_str,
 )
 from fetcher_api.services.extractor_http import HttpMixin
-from fetcher_api.services.extractor_prompts import (
-    build_bookmark_prompt,
-    build_data_extraction_prompt,
-)
-from fetcher_api.services.extractor_tools_detection import (
+from fetcher_api.services.extractor_list_detection import (
     analyze_structure,
     classify_structured_family,
     count_mention_verdict_items,
@@ -62,6 +61,31 @@ from fetcher_api.services.extractor_list_prompts import (
     FRAME_LIST_INSTRUCTION,
     build_location_list_instruction,
     build_tools_list_instruction,
+)
+from fetcher_api.services.extractor_orchestration_helpers import (
+    _CHEZ_BRAND_RE,
+    _FASHION_PRODUCT_RE,
+    _PUBLIC_CONTENT_TYPES,
+    _STRUCTURED_PRODUCT_FAMILIES,
+    _caption_promised_count,
+    _coerce_locations_to_list,
+    _count_location_enrichment_changes,
+    _dedupe_account_candidates,
+    _default_subtype_for_family,
+    _iter_account_like_values,
+    _looks_like_global_ranking,
+    _normalize_requested_public_content_type,
+    _resolve_effective_language,
+    _route_public_family,
+    _strip_garbage_recovery_items,
+    _transcript_promised_count,
+)
+from fetcher_api.services.extractor_prompts import (
+    build_bookmark_prompt,
+    build_data_extraction_prompt,
+)
+from fetcher_api.services.location_account_enrichment import (
+    enrich_locations_with_accounts,
 )
 from fetcher_api.services.summary_formatter import format_ai_summary
 from fetcher_api.utils.ocr_utils import (
@@ -83,309 +107,205 @@ BOOKMARK_MESSAGES = {
     "de": "Lesezeichen gespeichert. Der Ersteller hat keine detaillierte Bildunterschrift oder Transkript bereitgestellt.",
 }
 
-_STRUCTURED_PRODUCT_FAMILIES = {"products", "software", "finance"}
-_PUBLIC_CONTENT_TYPES = {
-    "recipe",
-    "workout",
-    "location",
-    "products",
-    "software",
-    "finance",
-    "general",
-}
-
-_LIST_NOUNS = (
-    r"alternatives?|bags?|sacs?|handbags?|purses?|looks?|outfits?|styles?|"
-    r"jackets?|coats?|shirts?|vestes?|manteaux?|serviettes?|towels?|"
-    r"brands?|marques?|labels?|companies|"
-    r"albums?|songs?|tracks?|records?|playlists?|"
-    r"picks?|places?|spots?|destinations?|resorts?|h[oô]tels?|hotels?|"
-    r"addresses?|adresses?|"
-    r"tools?|apps?|products?|items?|things?|choses?|"
-    r"tips?|conseils?|ideas?|id[ée]es?|ways?|fa[çc]ons?|reasons?|steps?|"
-    r"movies?|films?|shows?|books?|livres?|recipes?|recettes?|"
-    r"wines?|vins?|perfumes?|parfums?|fragrances?|sunscreens?|"
-    r"restaurants?|dishes?|plats?|exercises?|workouts?|"
-    r"options?|choices?|s[ée]lections?|recommendations?|favorites?|favoris?|favourites?|"
-    r"gear|pieces?|essentials?|must.haves?"
-)
-
-_CAPTION_LIST_NOUN_RE = re.compile(
-    r"\b(\d+)\s+(?:\w+\s+)?(?:" + _LIST_NOUNS + r")\b",
-    re.IGNORECASE,
-)
-
-_TRANSCRIPT_LIST_OPENER_RE = re.compile(
-    r"(?:here'?s?|top|best|ranked?|my)\s+(\d+)\s+(?:\w+\s+)?(?:" + _LIST_NOUNS + r")\b",
-    re.IGNORECASE,
-)
-
-_SEQUENTIAL_RANK_RE = re.compile(
-    r"number\s+(?:one|two|three|1|2|3).{0,400}?number\s+(?:two|three|four|2|3|4)"
-    r"|(?:first|second|third).{0,400}?(?:second|third|fourth)",
-    re.IGNORECASE | re.DOTALL,
-)
-
-_SPOKEN_ORDINAL_RE = re.compile(
-    r"\b(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b",
-    re.IGNORECASE,
-)
-
-_NUMBERED_RANK_RE = re.compile(
-    r"\bnumber\s+(?:one|two|three|four|five|six|seven|eight|nine|ten|1|2|3|4|5|6|7|8|9|10)\b",
-    re.IGNORECASE,
-)
-
-_GARBAGE_NAME_START_RE = re.compile(
-    r"^(?:is|are|was|were|the|a|an)\s"
-    r"|^most\s"
-    r"|^(?:number\s+\w+\s+)?(?:and\s+)?(?:the\s+)?most\s",
-    re.IGNORECASE,
-)
-
-_CHEZ_BRAND_RE = re.compile(r"\bchez\s+[A-ZÉÈÀÂÎÔÙÛÄËÏ]", re.UNICODE)
-_FASHION_PRODUCT_RE = re.compile(
-    r"\b(sac|bag|bags|alternative|handbag|purse|pochette|tote|"
-    r"v[êe]tement|robe|chaussure|parfum|cr[èe]me|montre|bijou|collier)\b",
-    re.IGNORECASE,
-)
-
-_ENGLISH_PROSE_MARKERS = (
-    " the ",
-    " and ",
-    " for ",
-    " with ",
-    " save ",
-    " follow ",
-    " our ",
-    " road trip ",
-    " best time to visit ",
-    " must-see ",
-    " hike ",
-    " views ",
-    " less than ",
-    " through ",
-    " without ",
-    " one of the most ",
-    " known as ",
-    " arrive early ",
-    " rent a rowboat ",
-    " parking ",
-    " take the cable car ",
-    " short hike ",
-    " worth it ",
-    " hidden gem ",
-)
+_CAPTION_MENTION_RE = re.compile(r"(?<![\w.])@([A-Za-z0-9._]{2,})")
 
 
-def _looks_clearly_english(text: str) -> bool:
-    t = f" {safe_str(text).lower()} "
-    if len(t.strip()) < 120:
-        return False
-
-    hits = sum(1 for marker in _ENGLISH_PROSE_MARKERS if marker in t)
-    ascii_ratio = sum(1 for ch in t if ord(ch) < 128) / max(1, len(t))
-
-    return hits >= 4 and ascii_ratio >= 0.97
-
-
-def _resolve_effective_language(
-    upstream_lang: str,
-    caption: str,
-    transcript: str = "",
-) -> str:
-    """
-    Conservative language resolution.
-
-    Priority:
-      1. If the caption/transcript is clearly English prose, force 'en'.
-      2. Otherwise trust upstream when present.
-      3. Otherwise fall back to caption detection.
-      4. Otherwise return unknown.
-    """
-    upstream = (upstream_lang or "").strip().lower()
-    caption = caption or ""
-    transcript = transcript or ""
-
-    combined = f"{caption[:2500]} {transcript[:1200]}".strip()
-
-    if _looks_clearly_english(combined):
-        if upstream not in ("", "unknown", "en"):
-            logger.info(
-                "🌍 Language override: %s -> en (clear English prose detected)",
-                upstream,
-            )
-        return "en"
-
-    if upstream and upstream != "unknown":
-        return upstream
-
-    text = caption.strip()
-    if len(text) < 40:
-        return "unknown"
-
-    try:
-        detected = (detect_caption_language(text) or "").strip().lower()
-    except Exception:
-        logger.warning("⚠️ detect_caption_language() failed", exc_info=True)
-        return "unknown"
-
-    return detected if detected and detected != "unknown" else "unknown"
-
-
-def _caption_promised_count(caption: str) -> int:
-    """
-    Extract promised item count from caption with minimal deterministic logic.
-    """
-    text = caption or ""
-
-    match = _CAPTION_LIST_NOUN_RE.search(text)
-    if match:
-        return int(match.group(1))
-
-    mention_count = count_mention_verdict_items(text)
-    if mention_count >= 3:
-        return mention_count
-
-    plain_mentions = count_plain_mentions(text)
-    if plain_mentions >= 3:
-        return plain_mentions
-
-    return 0
-
-
-def _transcript_promised_count(transcript: str) -> int:
-    """
-    Extract promised item count from transcript opener with minimal deterministic logic.
-    """
-    if not transcript:
-        return 0
-
-    head = transcript[:600]
-
-    match = _TRANSCRIPT_LIST_OPENER_RE.search(head)
-    if match:
-        return int(match.group(1))
-
-    match = _CAPTION_LIST_NOUN_RE.search(head)
-    if match:
-        return int(match.group(1))
-
-    return 0
-
-
-def _looks_like_global_ranking(transcript: str, caption: str) -> bool:
-    """
-    Minimal strong-signal ranking detector.
-
-    Guards against false positives from:
-    - Lists of @mention picks that repeat the same emoji
-    - Captions where items are ordered by listing, not by true ranking
-    """
-    text = f"{transcript or ''} {caption or ''}"
-
-    if not transcript.strip() and (
-        count_mention_verdict_items(caption) >= 3 or count_plain_mentions(caption) >= 3
-    ):
-        return False
-
-    if _SEQUENTIAL_RANK_RE.search(text):
-        return True
-
-    ordinal_hits = len(_SPOKEN_ORDINAL_RE.findall(text))
-    numbered_hits = len(_NUMBERED_RANK_RE.findall(text))
-
-    return ordinal_hits >= 3 or numbered_hits >= 3
-
-
-def _strip_garbage_recovery_items(categories: list) -> list:
-    """
-    Remove transcript_recovery items whose names are clearly raw transcript
-    fragments rather than clean names.
-    """
-    for cat in categories or []:
-        items = cat.get("items") or []
-        cleaned = []
-
-        for item in items:
-            if item.get("source") != "transcript_recovery":
-                cleaned.append(item)
-                continue
-
-            name = (item.get("name") or "").strip()
-            if not name or len(name) > 50 or _GARBAGE_NAME_START_RE.search(name):
-                logger.debug("🗑️ Dropping garbage recovery item: %r", name)
-                continue
-
-            cleaned.append(item)
-
-        cat["items"] = cleaned
-
-    return categories
-
-
-def _default_subtype_for_family(public_content_type: str) -> str:
-    """
-    Return the sensible default subtype hint for a given public family,
-    before pre_detect_list_subtype() has a chance to override.
-    """
-    if public_content_type == "location":
-        return "places"
-    if public_content_type == "software":
-        return "software"
-    if public_content_type == "finance":
-        return "grouped"
-    if public_content_type == "products":
-        return "picks"
-    return "picks"
-
-
-def _route_public_family(
-    requested_content_type: str,
+def _call_classify_structured_family_safe(
     transcript: str,
     caption: str,
-    is_location_list: bool,
-    is_tools: bool,
+    category: str = "",
+    topic: str = "",
 ) -> str:
-    """
-    Resolve the public family earlier in the pipeline, before prompt selection.
-
-    Public routing should be domain-first, but structured non-location families
-    still share the internal legacy tools extractor during Phase 2.
-    """
-    requested = (requested_content_type or "").strip().lower()
-
-    if requested in {"recipe", "workout", "location"}:
-        return requested
-
-    if is_location_list:
-        return "location"
-
-    if is_tools:
-        if requested in _STRUCTURED_PRODUCT_FAMILIES:
-            return requested
-
-        inferred = classify_structured_family(
+    try:
+        return classify_structured_family(
             transcript=transcript,
             caption=caption,
-            category=requested if requested in _PUBLIC_CONTENT_TYPES else "",
-            topic="",
+            category=category,
+            topic=topic,
         )
-
-        if inferred == "places":
-            return "location"
-        if inferred in _STRUCTURED_PRODUCT_FAMILIES:
-            return inferred
-        return "products"
-
-    if requested in _PUBLIC_CONTENT_TYPES:
-        return requested
-
-    return "general"
+    except TypeError:
+        return classify_structured_family(transcript, caption)
 
 
 class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
     EXTRACTOR_VERSION = EXTRACTOR_VERSION
+
+    def _extract_caption_mentions(self, caption: str) -> List[str]:
+        if not caption:
+            return []
+
+        seen = set()
+        mentions: List[str] = []
+
+        for match in _CAPTION_MENTION_RE.findall(caption):
+            username = (match or "").strip().lower()
+            if not username or username in seen:
+                continue
+            seen.add(username)
+            mentions.append(username)
+
+        return mentions
+
+    def _collect_candidate_accounts(
+        self,
+        classification: Dict[str, Any],
+        result_data: Dict[str, Any],
+        parsed: Dict[str, Any],
+        caption: str = "",
+    ) -> List[Dict[str, Any]]:
+        raw_candidates: List[Any] = []
+
+        for container in (classification, result_data, parsed):
+            raw_candidates.extend(_iter_account_like_values(container))
+
+        raw_candidates.extend(self._extract_caption_mentions(caption))
+        candidates = _dedupe_account_candidates(raw_candidates)
+
+        if candidates:
+            logger.info(
+                "📎 Found %d candidate account/profile objects for location enrichment",
+                len(candidates),
+            )
+
+        return candidates
+
+    def _maybe_enrich_locations_from_accounts(
+        self,
+        parsed: Dict[str, Any],
+        result_data: Dict[str, Any],
+        classification: Dict[str, Any],
+        caption: str = "",
+    ) -> None:
+        """
+        Best-effort location enrichment with remote IG profile lookup.
+
+        This path now:
+          - collects account/profile objects already present in payloads
+          - also extracts @mentions from the caption
+          - enriches missing accounts through meta_client.get_instagram_profile()
+          - merges bio-derived address/city/country into location entries
+        """
+        location_payload = parsed.get("location")
+        if not location_payload:
+            return
+
+        candidate_accounts = self._collect_candidate_accounts(
+            classification=classification,
+            result_data=result_data,
+            parsed=parsed,
+            caption=caption,
+        )
+        if not candidate_accounts:
+            return
+
+        locations_before, was_single = _coerce_locations_to_list(location_payload)
+        if not locations_before:
+            return
+
+        try:
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                locations_after = loop.run_until_complete(
+                    enrich_locations_with_accounts(
+                        locations=locations_before,
+                        mentioned_accounts=candidate_accounts,
+                        fetch_account=meta_client.get_instagram_profile,
+                    )
+                )
+            finally:
+                asyncio.set_event_loop(None)
+                loop.close()
+        except Exception as exc:
+            logger.warning("📍 Location account enrichment failed (non-fatal): %s", exc)
+            return
+
+        changed_count = _count_location_enrichment_changes(locations_before, locations_after)
+        if changed_count:
+            logger.info("📍 Enriched %d location entries from account/profile metadata", changed_count)
+
+        parsed["location"] = locations_after[0] if was_single and locations_after else locations_after
+
+    def _extract_frame_images(
+        self,
+        transcript: str,
+        caption: str,
+        extraction_content_type: str,
+        video_path: Optional[str],
+        duration_seconds: Optional[int],
+        silent: bool,
+        is_tools: bool,
+        is_location_list: bool,
+        promised_count: int,
+    ) -> List[str]:
+        if not video_path:
+            logger.warning("⚠️ video_path is None — frames cannot be extracted")
+            return []
+
+        has_good_transcript = len(transcript.strip()) > 200
+
+        if is_location_list:
+            frame_images = extract_and_stitch_frames(
+                video_path,
+                duration_seconds=duration_seconds,
+                n_raw_frames=12,
+                n_composites=4,
+                is_silent=silent,
+                start_offset_seconds=0.0,
+            )
+            logger.info(
+                "📍 Location list — %d composite frames (12 raw stitched 3-per-composite, from 0s)",
+                len(frame_images),
+            )
+            return frame_images
+
+        if is_tools and not has_good_transcript:
+            if silent and promised_count >= 3:
+                n_raw = min(promised_count * 3, 24)
+                n_comp = min(promised_count, 8)
+                frame_images = extract_and_stitch_frames(
+                    video_path,
+                    duration_seconds=duration_seconds,
+                    n_raw_frames=n_raw,
+                    n_composites=n_comp,
+                    is_silent=True,
+                    start_offset_seconds=0.0,
+                )
+                logger.info(
+                    "🎵 Silent list — %d composite frames (%d raw, promised=%d items)",
+                    len(frame_images),
+                    n_raw,
+                    promised_count,
+                )
+                return frame_images
+
+            frame_images = extract_video_frames_base64(
+                video_path,
+                duration_seconds=duration_seconds,
+                max_frames=4,
+                is_silent=silent,
+            )
+            if frame_images:
+                logger.info("🎞️ %d frames (structured list, short transcript)", len(frame_images))
+            return frame_images
+
+        if should_extract_frames(
+            transcript,
+            caption,
+            extraction_content_type,
+            transcription_status="music_only" if silent else "",
+        ):
+            frame_images = extract_video_frames_base64(
+                video_path,
+                duration_seconds=duration_seconds,
+                max_frames=3,
+                is_silent=silent,
+            )
+            if frame_images:
+                logger.info("🎞️ %d frames (heuristic)", len(frame_images))
+            return frame_images
+
+        return []
 
     def extract(
         self,
@@ -406,10 +326,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         lang = (lang or "unknown").strip() or "unknown"
         classification = classification or {}
 
-        requested_public_content_type = (classification.get("label") or "general").strip().lower()
-        if requested_public_content_type not in _PUBLIC_CONTENT_TYPES and requested_public_content_type != "tools":
-            requested_public_content_type = "general"
-
+        requested_public_content_type = _normalize_requested_public_content_type(classification)
         signals = classification.get("signals", {}) or {}
 
         effective_lang = _resolve_effective_language(lang, caption, transcript)
@@ -432,8 +349,10 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                 logger.info("🔢 Promised count from transcript opener: %d", promised_count)
 
         combined_text = f"{transcript} {caption}"
+
         mention_verdicts = count_mention_verdict_items(caption)
         mention_items = count_plain_mentions(caption)
+
         looks_ranked = _looks_like_global_ranking(transcript, caption)
         looks_educational_explainer = looks_like_educational_numbered_explainer(
             transcript,
@@ -567,70 +486,17 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
 
         logger.info("🏷️ extraction_content_type resolved to: %r", extraction_content_type)
 
-        frame_images = []
-
-        if video_path:
-            has_good_transcript = len(transcript.strip()) > 200
-
-            if is_location_list:
-                frame_images = extract_and_stitch_frames(
-                    video_path,
-                    duration_seconds=duration_seconds,
-                    n_raw_frames=12,
-                    n_composites=4,
-                    is_silent=silent,
-                    start_offset_seconds=0.0,
-                )
-                logger.info(
-                    "📍 Location list — %d composite frames (12 raw stitched 3-per-composite, from 0s)",
-                    len(frame_images),
-                )
-
-            elif is_tools and not has_good_transcript:
-                if silent and promised_count >= 3:
-                    n_raw = min(promised_count * 3, 24)
-                    n_comp = min(promised_count, 8)
-                    frame_images = extract_and_stitch_frames(
-                        video_path,
-                        duration_seconds=duration_seconds,
-                        n_raw_frames=n_raw,
-                        n_composites=n_comp,
-                        is_silent=True,
-                        start_offset_seconds=0.0,
-                    )
-                    logger.info(
-                        "🎵 Silent list — %d composite frames (%d raw, promised=%d items)",
-                        len(frame_images),
-                        n_raw,
-                        promised_count,
-                    )
-                else:
-                    frame_images = extract_video_frames_base64(
-                        video_path,
-                        duration_seconds=duration_seconds,
-                        max_frames=4,
-                        is_silent=silent,
-                    )
-                    if frame_images:
-                        logger.info("🎞️ %d frames (structured list, short transcript)", len(frame_images))
-
-            else:
-                if should_extract_frames(
-                    transcript,
-                    caption,
-                    extraction_content_type,
-                    transcription_status="music_only" if silent else "",
-                ):
-                    frame_images = extract_video_frames_base64(
-                        video_path,
-                        duration_seconds=duration_seconds,
-                        max_frames=3,
-                        is_silent=silent,
-                    )
-                    if frame_images:
-                        logger.info("🎞️ %d frames (heuristic)", len(frame_images))
-        else:
-            logger.warning("⚠️ video_path is None — frames cannot be extracted")
+        frame_images = self._extract_frame_images(
+            transcript=transcript,
+            caption=caption,
+            extraction_content_type=extraction_content_type,
+            video_path=video_path,
+            duration_seconds=duration_seconds,
+            silent=silent,
+            is_tools=is_tools,
+            is_location_list=is_location_list,
+            promised_count=promised_count,
+        )
 
         call1_prompt = build_data_extraction_prompt(
             transcript=transcript,
@@ -674,7 +540,12 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         }
 
         logger.info("📞 CALL 1: Extracting structured data...")
-        result_data = self._call_ai(call1_prompt, images=frame_images, call_type="extraction")
+        result_data = self._call_ai(
+            call1_prompt,
+            images=frame_images,
+            call_type="extraction",
+            subtype_hint=subtype_hint if is_tools else "",
+        )
         prompt_trace["call1_response_keys"] = (
             list(result_data.keys()) if isinstance(result_data, dict) else []
         )
@@ -703,13 +574,21 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                     after,
                 )
 
+        if parsed.get("location"):
+            self._maybe_enrich_locations_from_accounts(
+                parsed=parsed,
+                result_data=result_data if isinstance(result_data, dict) else {},
+                classification=classification,
+                caption=caption,
+            )
+
         final_content_type = public_content_type
 
         if parsed.get("location"):
             final_content_type = "location"
             logger.info("📍 public content_type confirmed → 'location' (location populated)")
         elif parsed.get("tools_categories"):
-            inferred_family = classify_structured_family(
+            inferred_family = _call_classify_structured_family_safe(
                 transcript=transcript,
                 caption=caption,
                 category=parsed.get("category", ""),

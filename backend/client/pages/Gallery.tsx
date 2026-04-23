@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { MobileMenuDrawer } from "@/components/MobileMenuDrawer";
 import { Footer } from "@/components/Footer";
 import { normalizeReel } from "@/services/normalizeReel";
+import { getAuthHeaders } from "@/contexts/AuthContext";
 
 type Reel = ReturnType<typeof normalizeReel>;
 
@@ -14,6 +15,12 @@ const API_BASE =
   (import.meta as any).env?.VITE_API_BASE ||
   (window as any).__API_BASE__ ||
   "http://127.0.0.1:5001/api";
+
+function joinUrl(base: string, path: string) {
+  const b = String(base || "").replace(/\/+$/, "");
+  const p = String(path || "").replace(/^\/+/, "");
+  return `${b}/${p}`;
+}
 
 export default function Gallery() {
   const { id: folderParam } = useParams();
@@ -58,7 +65,7 @@ export default function Gallery() {
         caption: "",
         author_name: "",
         transcription: { transcript: "" },
-      };
+      } as Reel;
 
       setReels((prev) => [temp, ...prev]);
       navigate("/gallery/all", { replace: true });
@@ -68,10 +75,24 @@ export default function Gallery() {
   useEffect(() => {
     const fetchReels = async () => {
       try {
-        const res = await fetch(`${API_BASE}/saved_reels`);
-        if (!res.ok) throw new Error("Failed to fetch reels");
+        const res = await fetch(
+          joinUrl(API_BASE, "saved_reels"),
+          {
+            method: "GET",
+            credentials: "include",
+            headers: {
+              ...getAuthHeaders(),
+            },
+          }
+        );
 
-        const rows = await res.json();
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`Failed to fetch reels: HTTP ${res.status} ${text}`);
+        }
+
+        const payload = await res.json();
+        const rows = Array.isArray(payload) ? payload : payload?.reels || [];
         const backend: Reel[] = rows.map((r: any) => normalizeReel(r));
 
         setReels((current) => {
@@ -80,7 +101,7 @@ export default function Gallery() {
               const u = new URL(url);
               return `${u.origin}${u.pathname}`.replace(/\/$/, "");
             } catch {
-              return url.split("?")[0].replace(/\/$/, "");
+              return String(url || "").split("?")[0].replace(/\/$/, "");
             }
           };
 
@@ -90,13 +111,13 @@ export default function Gallery() {
             const backendUrl = normalizeUrl(b.source_url || "");
 
             const tempIndex = updated.findIndex((r) => {
-              if (!r.isTemp) return false;
+              if (!(r as any).isTemp) return false;
               const tempUrl = normalizeUrl(r.source_url || "");
               return tempUrl === backendUrl;
             });
 
             if (tempIndex !== -1) {
-              updated[tempIndex] = { ...b, isTemp: false };
+              updated[tempIndex] = { ...b, isTemp: false } as Reel;
             } else {
               const exist = updated.findIndex(
                 (r) => r.process_id === b.process_id
@@ -108,7 +129,7 @@ export default function Gallery() {
 
           const localFavs = new Map(
             current
-              .filter((r) => !r.isTemp)
+              .filter((r) => !(r as any).isTemp)
               .map((r) => [r.process_id, r.is_favorite || false])
           );
 
@@ -132,7 +153,13 @@ export default function Gallery() {
 
   const deleteReel = async (processId: string) => {
     try {
-      await fetch(`${API_BASE}/delete_reel/${processId}`, { method: "DELETE" });
+      await fetch(joinUrl(API_BASE, `reel/${encodeURIComponent(processId)}`), {
+        method: "DELETE",
+        credentials: "include",
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
     } catch (err) {
       console.warn("Delete error:", err);
     }
@@ -155,8 +182,8 @@ export default function Gallery() {
     folderId === "all"
       ? "All my videos"
       : folderId === "favorites"
-      ? "Favorites"
-      : folderId.charAt(0).toUpperCase() + folderId.slice(1);
+        ? "Favorites"
+        : folderId.charAt(0).toUpperCase() + folderId.slice(1);
 
   const toggleSelect = (id: string) =>
     setSelected((prev) =>
@@ -237,7 +264,6 @@ export default function Gallery() {
 
                   return (
                     <div key={r.process_id} className="relative">
-                      {/* ✅ POSTER - Keep overflow-hidden for rounded corners */}
                       <div
                         onClick={() => openReel(r)}
                         className={`relative block aspect-[9/16] rounded-lg bg-slate-900 overflow-hidden ${

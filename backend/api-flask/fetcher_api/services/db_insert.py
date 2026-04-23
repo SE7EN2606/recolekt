@@ -99,6 +99,15 @@ def _upsert_reel_locations(conn, reel_id: str, user_id: str, location) -> int:
                 (loc.get("address") or "").strip() or None,
                 (loc.get("neighborhood") or "").strip() or None,
                 (loc.get("city") or "").strip() or None,
+                (loc.get("region") or "").strip() or None,
+                (loc.get("country") or "").strip() or None,
+                (loc.get("postal_code") or "").strip() or None,
+                (loc.get("instagram_username") or "").strip() or None,
+                (loc.get("instagram_account_name") or "").strip() or None,
+                loc.get("lat"),
+                loc.get("lng"),
+                (loc.get("google_place_id") or "").strip() or None,
+                (loc.get("maps_url") or "").strip() or None,
             )
         )
 
@@ -110,16 +119,28 @@ def _upsert_reel_locations(conn, reel_id: str, user_id: str, location) -> int:
         INSERT INTO reel_locations (
             reel_id, user_id, position,
             name, place_type, description,
-            address, neighborhood, city
+            address, neighborhood, city,
+            region, country, postal_code,
+            instagram_username, instagram_account_name,
+            lat, lng, google_place_id, maps_url
         )
         VALUES %s
         ON CONFLICT (reel_id, user_id, position) DO UPDATE SET
-            name         = EXCLUDED.name,
-            place_type   = EXCLUDED.place_type,
-            description  = EXCLUDED.description,
-            address      = EXCLUDED.address,
-            neighborhood = EXCLUDED.neighborhood,
-            city         = EXCLUDED.city;
+            name                   = EXCLUDED.name,
+            place_type             = EXCLUDED.place_type,
+            description            = EXCLUDED.description,
+            address                = EXCLUDED.address,
+            neighborhood           = EXCLUDED.neighborhood,
+            city                   = EXCLUDED.city,
+            region                 = EXCLUDED.region,
+            country                = EXCLUDED.country,
+            postal_code            = EXCLUDED.postal_code,
+            instagram_username     = EXCLUDED.instagram_username,
+            instagram_account_name = EXCLUDED.instagram_account_name,
+            lat                    = EXCLUDED.lat,
+            lng                    = EXCLUDED.lng,
+            google_place_id        = EXCLUDED.google_place_id,
+            maps_url               = EXCLUDED.maps_url;
     """
 
     with conn.cursor() as cur:
@@ -148,7 +169,6 @@ def insert_reel_into_db(reel_data):
         summary_en = summary_struct.get("english", {}) if isinstance(summary_struct, dict) else {}
         summary_orig = summary_struct.get("original", {}) if isinstance(summary_struct, dict) else {}
 
-        # ── summary_title ────────────────────────────────────────────────
         raw_title = reel_data.get("summary_title")
         if isinstance(raw_title, dict):
             summary_title_str = (
@@ -167,31 +187,25 @@ def insert_reel_into_db(reel_data):
                 or None
             )
 
-        # ── summary_text ─────────────────────────────────────────────────
         raw_text = reel_data.get("summary_text")
         if raw_text is None:
             raw_text = reel_data.get("summary")
         summary_text_json = _to_jsonb(raw_text)
 
         final_status = reel_data.get("status", "processing")
-
-        # ── gcs_urls ─────────────────────────────────────────────────────
         gcs_urls = _to_jsonb(reel_data.get("gcs_urls", {}))
 
-        # ── transcription ────────────────────────────────────────────────
         transcription = reel_data.get("transcription")
         if isinstance(transcription, dict):
             transcription = json.dumps(transcription, ensure_ascii=False)
         elif transcription is None:
             transcription = ""
 
-        # ── summary_bullets ──────────────────────────────────────────────
         summary_bullets = reel_data.get("summary_bullets")
         if summary_bullets is None and isinstance(summary_en, dict):
             summary_bullets = summary_en.get("headlines", [])
         summary_bullets_json = _to_jsonb_array(summary_bullets)
 
-        # ── jsonb fields ─────────────────────────────────────────────────
         recipe_json = _to_jsonb(reel_data.get("recipe"))
         workout_json = _to_jsonb(reel_data.get("workout"))
         tools_list_json = _to_jsonb(reel_data.get("tools_list"))

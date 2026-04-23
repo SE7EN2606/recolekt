@@ -7,7 +7,7 @@ the heuristic routing module.
 
 from __future__ import annotations
 
-from fetcher_api.services.extractor_tools_detection import count_numbered_caption_items
+from fetcher_api.services.extractor_list_detection import count_numbered_caption_items
 
 
 # ---------------------------------------------------------------------------

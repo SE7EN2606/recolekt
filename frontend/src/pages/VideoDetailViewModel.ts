@@ -1,4 +1,3 @@
-// src/pages/VideoDetailViewModel.ts
 import { resolveContentType } from '../components/ContentTypeBadge';
 import {
   fmt, safe, inferLang, detectPlatform,
@@ -44,6 +43,84 @@ export const firstNonEmpty = (...values: unknown[]): string => {
     if (s) return s;
   }
   return '';
+};
+
+const firstDefined = <T,>(...values: T[]): T | undefined => {
+  for (const v of values) {
+    if (v !== undefined && v !== null) return v;
+  }
+  return undefined;
+};
+
+const toNumberOrNull = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const normalizeLocationPlace = (place: any): LocationPlace => {
+  const lat = toNumberOrNull(place?.lat);
+  const lng = toNumberOrNull(place?.lng);
+
+  return {
+    ...place,
+    name: safe(place?.name),
+    type: safe(place?.type || place?.place_type),
+    place_type: safe(place?.place_type || place?.type),
+    city: safe(place?.city) || undefined,
+    region: safe(place?.region) || undefined,
+    country: safe(place?.country) || undefined,
+    address: safe(place?.address) || undefined,
+    neighborhood: safe(place?.neighborhood) || undefined,
+    description: safe(place?.description) || undefined,
+    instagram: safe(place?.instagram || place?.instagram_username) || undefined,
+    instagram_username: safe(place?.instagram_username || place?.instagram) || undefined,
+    instagram_account_name: safe(place?.instagram_account_name) || undefined,
+    postal_code: safe(place?.postal_code) || undefined,
+    google_place_id: safe(place?.google_place_id) || undefined,
+    maps_url: safe(place?.maps_url) || undefined,
+    lat,
+    lng,
+  } as LocationPlace;
+};
+
+const looksLikeSinglePlace = (obj: any): boolean =>
+  !!obj
+  && typeof obj === 'object'
+  && !Array.isArray(obj)
+  && !!obj.name;
+
+const normalizeLocationData = (rawLoc: any): LocationData | null => {
+  const parsed = parseMaybeJson<any>(rawLoc, null);
+  if (!parsed) return null;
+
+  if (Array.isArray(parsed)) {
+    return {
+      places: parsed.map(normalizeLocationPlace),
+    };
+  }
+
+  if (looksLikeSinglePlace(parsed)) {
+    return {
+      places: [normalizeLocationPlace(parsed)],
+    };
+  }
+
+  if (typeof parsed === 'object') {
+    const places = Array.isArray(parsed.places)
+      ? parsed.places.map(normalizeLocationPlace)
+      : Array.isArray(parsed.items)
+        ? parsed.items.map(normalizeLocationPlace)
+        : [];
+
+    return {
+      ...parsed,
+      places,
+      items: places,
+    };
+  }
+
+  return null;
 };
 
 export const normalizeToolsList = (toolsList: unknown): ToolsList | null => {
@@ -102,34 +179,40 @@ export const setPinnedMap = (map: Record<string, boolean>) => {
 };
 
 export const mergeVideoPayload = (db: any, gcs: any, fallbackThumb?: string) => {
-  const merged = { ...(db || {}), ...(gcs || {}), raw: db, gcs: gcs };
+  const merged = { ...(gcs || {}), ...(db || {}), raw: db, gcs };
 
-  merged.id = merged.id || merged.process_id || db?.id || db?.process_id;
-  merged.process_id = merged.process_id || db?.process_id || merged.id;
-  merged.summary = merged.summary ?? gcs?.summary ?? db?.summary;
-  merged.tools_list = merged.tools_list ?? gcs?.tools_list ?? db?.tools_list;
-  merged.structure_analysis = merged.structure_analysis ?? gcs?.structure_analysis ?? db?.structure_analysis;
-  merged.location = merged.location ?? gcs?.location ?? db?.location;
-  merged.recipe = merged.recipe ?? gcs?.recipe ?? db?.recipe;
-  merged.workout = merged.workout ?? gcs?.workout ?? db?.workout;
-  merged.caption = merged.caption ?? gcs?.caption ?? db?.caption;
-  merged.transcription = merged.transcription ?? gcs?.transcription ?? db?.transcription;
-  merged.content_type = merged.content_type ?? gcs?.content_type ?? db?.content_type;
-  merged.summary_title = merged.summary_title ?? gcs?.summary_title ?? db?.summary_title;
-  merged.summary_category = merged.summary_category ?? gcs?.summary_category ?? db?.summary_category;
-  merged.summary_topic = merged.summary_topic ?? gcs?.summary_topic ?? db?.summary_topic;
-  merged.detected_language = merged.detected_language ?? gcs?.detected_language ?? db?.detected_language;
-  merged.list_subtype = merged.list_subtype ?? gcs?.list_subtype ?? db?.list_subtype;
-  merged.list_type = merged.list_type ?? gcs?.list_type ?? db?.list_type;
-  merged.is_list = merged.is_list ?? gcs?.is_list ?? db?.is_list;
-  merged.list_count = merged.list_count ?? gcs?.list_count ?? db?.list_count;
-  merged.list_summary = merged.list_summary ?? gcs?.list_summary ?? db?.list_summary;
+  merged.id = firstDefined(db?.id, db?.process_id, gcs?.id, gcs?.process_id);
+  merged.process_id = firstDefined(db?.process_id, db?.id, gcs?.process_id, gcs?.id);
+
+  // Fresh DB must win for mutable fields.
+  merged.summary = firstDefined(db?.summary, gcs?.summary, merged.summary);
+  merged.tools_list = firstDefined(db?.tools_list, gcs?.tools_list, merged.tools_list);
+  merged.structure_analysis = firstDefined(db?.structure_analysis, gcs?.structure_analysis, merged.structure_analysis);
+  merged.location = firstDefined(db?.location, gcs?.location, merged.location);
+  merged.recipe = firstDefined(db?.recipe, gcs?.recipe, merged.recipe);
+  merged.workout = firstDefined(db?.workout, gcs?.workout, merged.workout);
+  merged.caption = firstDefined(db?.caption, gcs?.caption, merged.caption);
+  merged.transcription = firstDefined(db?.transcription, gcs?.transcription, merged.transcription);
+  merged.content_type = firstDefined(db?.content_type, gcs?.content_type, merged.content_type);
+  merged.summary_title = firstDefined(db?.summary_title, gcs?.summary_title, merged.summary_title);
+  merged.summary_category = firstDefined(db?.summary_category, gcs?.summary_category, merged.summary_category);
+  merged.summary_topic = firstDefined(db?.summary_topic, gcs?.summary_topic, merged.summary_topic);
+  merged.detected_language = firstDefined(db?.detected_language, gcs?.detected_language, merged.detected_language);
+  merged.list_subtype = firstDefined(db?.list_subtype, gcs?.list_subtype, merged.list_subtype);
+  merged.list_type = firstDefined(db?.list_type, gcs?.list_type, merged.list_type);
+  merged.is_list = firstDefined(db?.is_list, gcs?.is_list, merged.is_list);
+  merged.list_count = firstDefined(db?.list_count, gcs?.list_count, merged.list_count);
+  merged.list_summary = firstDefined(db?.list_summary, gcs?.list_summary, merged.list_summary);
+
+  merged.gcs_urls = firstDefined(db?.gcs_urls, gcs?.gcs_urls, merged.gcs_urls) || {};
   merged.thumbnailUrl =
-    merged.thumbnailUrl
-    || merged.gcs_urls?.preview_thumbnail
-    || db?.gcs_urls?.preview_thumbnail
-    || gcs?.gcs_urls?.preview_thumbnail
-    || fallbackThumb;
+    firstNonEmpty(
+      db?.thumbnailUrl,
+      db?.gcs_urls?.preview_thumbnail,
+      gcs?.thumbnailUrl,
+      gcs?.gcs_urls?.preview_thumbnail,
+      fallbackThumb,
+    ) || undefined;
 
   return merged;
 };
@@ -173,14 +256,7 @@ export const buildViewModel = (
   if (workoutData && Object.keys(workoutData).length === 0) workoutData = null;
 
   const toolsList = normalizeToolsList(v.tools_list);
-
-  let locationData: LocationData | null = null;
-  const rawLoc = parseMaybeJson<any>(v.location, null);
-  if (Array.isArray(rawLoc)) {
-    locationData = { places: rawLoc.map((p: any) => ({ ...p, region: p.region ?? p.city ?? undefined })) };
-  } else if (rawLoc && typeof rawLoc === 'object') {
-    locationData = rawLoc as LocationData;
-  }
+  const locationData = normalizeLocationData(v.location);
 
   let transcript = '';
   if (v.transcription) {
@@ -218,7 +294,7 @@ export const buildViewModel = (
 
   const rawContentType = resolveInternalContentType(v);
   const contentType = rawContentType === 'location'
-    ? 'places'
+    ? 'location'
     : resolveContentType(rawContentType);
 
   const structureAnalysis = parseMaybeJson<StructureAnalysis | null>(v.structure_analysis, null);

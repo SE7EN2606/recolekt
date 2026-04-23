@@ -17,52 +17,38 @@ Internal compatibility:
   - Call 1 / Call 2 / parsers may still use legacy internal "tools" concepts
   - But public final payload should no longer expose content_type="tools"
 
-v25:
-  - Uses classify_structured_family() for public family routing of structured lists.
-  - Treats place rankings/lists as public content_type="location" even when they are
-    rendered as structured lists rather than map payloads.
-  - Keeps location-first override only for credible extracted location payloads.
-  - Preserves deterministic tier restoration / merged-tier repair from helpers.
-
-v24:
-  - Removes stale item_names= kwarg from make_summary_block() call — was causing
-    TypeError crash. Structural paragraph guardrail now lives inside
-    summary_formatter.validate_and_repair_summary_paragraph() and is called
-    directly after make_summary_block() returns, using _extract_item_names_from_cats().
-
-v23:
-  - Uses analyze_structure() from extractor_tools_detection as source of truth.
-  - Reuses parsed["structure_analysis"] when already computed.
-  - Verdict/tier/grouped/ranking structured reels suppress fallback bullet headlines.
-  - Unknown / weak structures fall back to standard bookmark mode.
-  - Deduplicates emojis globally.
-  - Clears software-only fields like free/url on clearly non-software product lists.
-  - Repairs obviously wrong detected_language for clearly French captions.
-  - Avoids misleading original=english fallback for non-English posts.
-  - Location only takes precedence when the extracted location payload looks credible.
+v27:
+  - Sanitizes merged/promoted location rows before final promotion.
+  - Strengthens venue/account matching with accent folding, separator cleanup,
+    common venue suffix removal, and conservative containment matching.
+  - Preserves full base row coverage while allowing IG enrichment to fill only
+    missing fields.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import unicodedata
 
-from fetcher_api.services.extractor_tools_detection import (
+from fetcher_api.adapters.meta_client import meta_client
+from fetcher_api.services.extractor_list_detection import (
     analyze_structure,
     classify_structured_family,
 )
 from fetcher_api.services.extractor_assembly_helpers import (
+    build_tools_list,
+    count_valid_items,
     dedupe_preserve_order,
-    repair_language_if_obviously_wrong,
-    normalize_nonsoftware_tool_fields,
     extract_list_count_and_type,
     filter_placeholder_headlines,
-    sanitize_highlights,
     make_summary_block,
-    build_tools_list,
+    normalize_nonsoftware_tool_fields,
     promote_items_to_tools_list,
+    repair_language_if_obviously_wrong,
     restore_tiers,
-    count_valid_items,
+    sanitize_highlights,
 )
 from fetcher_api.services.instagram_bio_scraper import enrich_tools_with_instagram_locations
 from fetcher_api.services.summary_formatter import validate_and_repair_summary_paragraph
@@ -90,6 +76,292 @@ _EMPTY_STRUCTURE_ANALYSIS = {
     "group_ordered": False,
     "reason": "No tools list available",
 }
+
+_FAKE_REGION_TERMS = {
+    "europe", "europa", "alps", "alpine", "dolomites", "mediterranean",
+    "scandinavia", "middle east", "southeast asia", "asia", "africa",
+    "north america", "south america", "latin america", "oceania",
+    "caribbean", "balkans", "nordics", "benelux", "central europe",
+    "eastern europe", "western europe", "northern europe", "southern europe",
+}
+
+_COMMON_VENUE_SUFFIXES = (
+    "family resort",
+    "familyresort",
+    "boutique hotel",
+    "hotel",
+    "resort",
+    "lodge",
+    "chalet",
+    "villa",
+    "apartments",
+    "apartment",
+    "suites",
+    "suite",
+    "spa",
+)
+
+_MARKETING_HINTS = (
+    "seit",
+    "since",
+    "urban",
+    "lifestyle",
+    "retreat",
+    "escape",
+    "hideaway",
+    "grosszügig",
+    "großzügig",
+    "unkompliziert",
+    "family time",
+    "experience",
+)
+
+_ADDRESS_HINTS = (
+    "street", "st", "st.", "road", "rd", "rd.", "avenue", "ave", "ave.",
+    "boulevard", "blvd", "blvd.", "lane", "ln", "ln.", "drive", "dr", "dr.",
+    "rue", "via", "platz", "plaza", "piazza", "straße", "strasse", "route",
+    "weg", "allee", "quai", "cours", "promenade",
+)
+
+
+def _fold_accents(value: str) -> str:
+    text = unicodedata.normalize("NFKD", value or "")
+    return "".join(ch for ch in text if not unicodedata.combining(ch))
+
+
+def _clean_text(value) -> str:
+    if value is None:
+        return ""
+    text = str(value)
+    text = text.replace("\u00a0", " ").replace("\u200b", " ")
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"(?:\s*\.\s*){2,}", ". ", text)
+    return text.strip(" ,;\n\t.-|•·")
+
+
+def _contains_letters(value: str) -> bool:
+    return any(ch.isalpha() for ch in value or "")
+
+
+def _looks_like_symbol_only(value: str) -> bool:
+    return bool(value) and not any(ch.isalnum() for ch in value)
+
+
+def _looks_like_marketing_tagline(text: str) -> bool:
+    if not text:
+        return False
+
+    lowered = f" {_fold_accents(text).lower()} "
+
+    if any(f" {hint} " in lowered for hint in _MARKETING_HINTS):
+        return True
+
+    if (" - " in text or " – " in text) and not any(ch.isdigit() for ch in text):
+        parts = [p.strip() for p in re.split(r"\s+[–-]\s+", text) if p.strip()]
+        if len(parts) >= 2:
+            return True
+
+    if len(text.split()) >= 5 and not any(ch.isdigit() for ch in text) and "," not in text:
+        return True
+
+    return False
+
+
+def _looks_like_address(text: str) -> bool:
+    lowered = f" {_fold_accents(text).lower()} "
+    if any(f" {hint} " in lowered for hint in _ADDRESS_HINTS):
+        return True
+    if re.search(r"\d", text) and _contains_letters(text):
+        return True
+    if "," in text and any(ch.isdigit() for ch in text):
+        return True
+    return False
+
+
+def _strip_flag_emoji(text: str) -> str:
+    if not text:
+        return ""
+    text = re.sub(r"[\U0001F1E6-\U0001F1FF]{2}", " ", text)
+    text = re.sub(r"[\U0001F1E6-\U0001F1FF]", " ", text)
+    return text
+
+
+def _strip_leading_markers(text: str) -> str:
+    if not text:
+        return ""
+    i = 0
+    while i < len(text) and not text[i].isalnum():
+        i += 1
+    return text[i:]
+
+
+def _clean_geo_value(value) -> str:
+    text = _clean_text(value)
+    if not text:
+        return ""
+    text = _strip_flag_emoji(text)
+    text = _strip_leading_markers(text)
+    text = re.sub(r"[|•·]+", ", ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip(" ,;\n\t.-")
+
+
+def _clean_name_value(value) -> str | None:
+    text = _clean_geo_value(value)
+    if not text:
+        return None
+    return text
+
+
+def _clean_city_value(value) -> str | None:
+    text = _clean_geo_value(value)
+    if not text:
+        return None
+    if _looks_like_symbol_only(text):
+        return None
+    if _looks_like_marketing_tagline(text):
+        return None
+    lowered = _fold_accents(text).lower()
+    if lowered in _FAKE_REGION_TERMS:
+        return None
+    if not _contains_letters(text):
+        return None
+    if any(ch.isdigit() for ch in text):
+        return None
+    if len(text.split()) > 4:
+        return None
+    return text
+
+
+def _clean_region_value(value) -> str | None:
+    text = _clean_geo_value(value)
+    if not text:
+        return None
+    if _looks_like_symbol_only(text):
+        return None
+    if _looks_like_marketing_tagline(text):
+        return None
+    lowered = _fold_accents(text).lower()
+    if lowered in _FAKE_REGION_TERMS:
+        return None
+    if not _contains_letters(text):
+        return None
+    return text
+
+
+def _clean_country_value(value) -> str | None:
+    text = _clean_geo_value(value)
+    if not text:
+        return None
+    if _looks_like_symbol_only(text):
+        return None
+    lowered = _fold_accents(text).lower()
+    if lowered in _FAKE_REGION_TERMS:
+        return None
+    if _looks_like_marketing_tagline(text):
+        return None
+    if not _contains_letters(text):
+        return None
+    return text
+
+
+def _clean_address_value(value) -> str | None:
+    text = _clean_geo_value(value)
+    if not text:
+        return None
+    if _looks_like_symbol_only(text):
+        return None
+    if _looks_like_marketing_tagline(text) and not _looks_like_address(text):
+        return None
+    if not _looks_like_address(text):
+        return None
+    return text
+
+
+def _clean_postal_code_value(value, *, country: str | None = None, context: str = "") -> str | None:
+    text = _clean_geo_value(value).replace(" ", "")
+    if not text:
+        return None
+
+    if not re.fullmatch(r"[A-Za-z0-9\-]{3,10}", text):
+        return None
+
+    if not any(ch.isdigit() for ch in text):
+        return None
+
+    if re.fullmatch(r"(1[5-9]\d{2}|20\d{2})", text):
+        combined = f"{country or ''} {context or ''}".lower()
+        if not any(hint in combined for hint in _ADDRESS_HINTS) and "," not in combined:
+            return None
+
+    return text
+
+
+def _sanitize_location_row(row: dict) -> dict:
+    out = dict(row or {})
+
+    name = _clean_name_value(out.get("name"))
+    address = _clean_address_value(out.get("address"))
+    neighborhood = _clean_region_value(out.get("neighborhood"))
+    city = _clean_city_value(out.get("city"))
+    region = _clean_region_value(out.get("region"))
+    country = _clean_country_value(out.get("country"))
+    postal_code = _clean_postal_code_value(
+        out.get("postal_code"),
+        country=country,
+        context=" ".join(x for x in [address, city, region, country] if x),
+    )
+
+    if country and region and _normalize_place_key(country) == _normalize_place_key(region):
+        region = None
+
+    if country and city and _normalize_place_key(country) == _normalize_place_key(city):
+        city = None
+
+    out["name"] = name
+    out["address"] = address
+    out["neighborhood"] = neighborhood
+    out["city"] = city
+    out["region"] = region
+    out["country"] = country
+    out["postal_code"] = postal_code
+
+    for key in (
+        "description",
+        "instagram_username",
+        "instagram_account_name",
+        "google_place_id",
+        "maps_url",
+        "type",
+        "place_type",
+    ):
+        value = _clean_text(out.get(key)) or None
+        out[key] = value
+
+    if not out.get("type") and out.get("place_type"):
+        out["type"] = out["place_type"]
+
+    if not out.get("place_type") and out.get("type"):
+        out["place_type"] = out["type"]
+
+    if out.get("lat") == "":
+        out["lat"] = None
+    if out.get("lng") == "":
+        out["lng"] = None
+
+    return out
+
+
+def _sanitize_location_rows(location_data) -> list[dict]:
+    rows = _normalize_location_rows(location_data)
+    sanitized: list[dict] = []
+
+    for row in rows:
+        clean = _sanitize_location_row(row)
+        if clean.get("name"):
+            sanitized.append(clean)
+
+    return sanitized
 
 
 def _collect_tool_names(tools_categories: list[dict] | None) -> set[str]:
@@ -134,7 +406,7 @@ def _is_credible_location_payload(location_data, tools_categories: list[dict] | 
       - empty city/country/address on nearly all rows
       - generic fake types like 'Town' for brands
     """
-    rows = _normalize_location_rows(location_data)
+    rows = _sanitize_location_rows(location_data)
     if not rows:
         return False
 
@@ -194,6 +466,181 @@ def _looks_like_finance_text(*parts: str) -> bool:
     return any(sig in text for sig in signals)
 
 
+def _call_classify_structured_family(
+    transcript: str,
+    caption: str,
+    category: str = "",
+    topic: str = "",
+) -> str:
+    """
+    Compatibility wrapper for extractor_list_detection.classify_structured_family().
+    """
+    try:
+        return classify_structured_family(
+            transcript=transcript,
+            caption=caption,
+            category=category,
+            topic=topic,
+        )
+    except TypeError:
+        return classify_structured_family(transcript, caption)
+
+
+def _guess_place_type_from_name(name: str) -> str:
+    n = (name or "").strip().lower()
+
+    if "resort" in n:
+        return "Resort"
+    if "hotel" in n or "hôtel" in n:
+        return "Hotel"
+    if "lodge" in n:
+        return "Lodge"
+    if "chalet" in n:
+        return "Chalet"
+    if "villa" in n:
+        return "Villa"
+    if "domaine" in n:
+        return "Estate"
+
+    return "Hotel"
+
+
+def _normalize_place_key(value: str) -> str:
+    text = _fold_accents(value or "").lower()
+    text = text.replace("&", " and ")
+    text = text.replace("@", "")
+    text = text.replace("_", " ")
+    text = text.replace("-", " ")
+    text = re.sub(r"[^a-z0-9]+", " ", text).strip()
+    text = re.sub(r"\s+", " ", text)
+
+    for suffix in sorted(_COMMON_VENUE_SUFFIXES, key=len, reverse=True):
+        if text.endswith(f" {suffix}"):
+            text = text[: -len(suffix)].strip()
+            break
+
+    return text
+
+
+def _tool_items_to_location_rows(tools_categories: list[dict] | None) -> list[dict]:
+    rows: list[dict] = []
+
+    for cat in tools_categories or []:
+        for item in cat.get("items", []) or []:
+            name = (item.get("name") or "").strip()
+            if not name:
+                continue
+
+            row = {
+                "name": name,
+                "type": _guess_place_type_from_name(name),
+                "description": (item.get("description") or "").strip() or None,
+                "address": None,
+                "neighborhood": None,
+                "city": None,
+                "region": None,
+                "country": None,
+                "postal_code": None,
+                "instagram_username": None,
+                "instagram_account_name": None,
+                "lat": None,
+                "lng": None,
+                "google_place_id": None,
+                "maps_url": None,
+            }
+            rows.append(_sanitize_location_row(row))
+
+    return rows
+
+
+def _keys_match(base_keys: list[str], enriched_keys: list[str]) -> bool:
+    if not base_keys or not enriched_keys:
+        return False
+
+    for bk in base_keys:
+        for ek in enriched_keys:
+            if bk == ek:
+                return True
+            if len(bk) >= 6 and bk in ek:
+                return True
+            if len(ek) >= 6 and ek in bk:
+                return True
+
+    return False
+
+
+def _merge_tool_rows_with_enriched_locations(
+    base_rows: list[dict],
+    enriched_rows: list[dict] | None,
+) -> list[dict]:
+    if not base_rows:
+        return _sanitize_location_rows(enriched_rows or [])
+
+    if not enriched_rows:
+        return _sanitize_location_rows(base_rows)
+
+    def _candidate_keys(row: dict) -> list[str]:
+        raw = [
+            row.get("name"),
+            row.get("instagram_account_name"),
+            row.get("instagram_username"),
+        ]
+        keys = [_normalize_place_key(v) for v in raw if v]
+        return [k for k in keys if k]
+
+    merged: list[dict] = []
+    used_indexes: set[int] = set()
+
+    clean_base_rows = _sanitize_location_rows(base_rows)
+    clean_enriched_rows = _sanitize_location_rows(enriched_rows)
+
+    for base in clean_base_rows:
+        base_keys = _candidate_keys(base)
+        match_index = None
+
+        for idx, enriched in enumerate(clean_enriched_rows):
+            if idx in used_indexes:
+                continue
+
+            enriched_keys = _candidate_keys(enriched)
+            if _keys_match(base_keys, enriched_keys):
+                match_index = idx
+                break
+
+        out = dict(base)
+
+        if match_index is not None:
+            used_indexes.add(match_index)
+            enriched = clean_enriched_rows[match_index]
+
+            for field in (
+                "type",
+                "description",
+                "address",
+                "neighborhood",
+                "city",
+                "region",
+                "country",
+                "postal_code",
+                "instagram_username",
+                "instagram_account_name",
+                "google_place_id",
+                "maps_url",
+            ):
+                if not out.get(field) and enriched.get(field):
+                    out[field] = enriched[field]
+
+            if out.get("lat") is None and enriched.get("lat") is not None:
+                out["lat"] = enriched["lat"]
+
+            if out.get("lng") is None and enriched.get("lng") is not None:
+                out["lng"] = enriched["lng"]
+
+        merged.append(_sanitize_location_row(out))
+
+    return merged
+
+
 def _infer_public_content_type(
     requested_content_type: str,
     parsed: dict,
@@ -205,12 +652,6 @@ def _infer_public_content_type(
 ) -> str:
     """
     Map internal/legacy semantics into Phase 1 public content families.
-
-    Priority:
-      1. location / recipe / workout remain explicit
-      2. explicit requested public families win when plausible
-      3. structured legacy 'tools' is remapped via public family classifier
-      4. fallback is general
     """
     requested = (requested_content_type or "").strip().lower()
     category = (parsed.get("category") or "").strip()
@@ -235,13 +676,11 @@ def _infer_public_content_type(
     if requested == "location":
         return "location"
 
-    # Structured place rankings/lists should still be public "location" family
-    # even when they do not carry a separate location map payload.
     if structure_type == "places" or list_subtype == "places":
         return "location"
 
     if tools_list:
-        family = classify_structured_family(
+        family = _call_classify_structured_family(
             transcript=transcript_preview,
             caption=caption,
             category=category,
@@ -265,7 +704,6 @@ def _infer_public_content_type(
 
 
 def _extract_item_names_from_cats(tools_cats_en: list[dict] | None, limit: int = 8) -> list[str]:
-    """Pull flat item name list from EN categories for summary paragraph fallback context."""
     names: list[str] = []
     for cat in tools_cats_en or []:
         for item in cat.get("items", []) or []:
@@ -302,7 +740,6 @@ class AssemblyMixin:
         hashtags = dedupe_preserve_order(parsed.get("hashtags", []))
         emojis = dedupe_preserve_order(parsed.get("emojis", []))
 
-        # ── tools_list (internal compatibility field) ────────────────────
         tools_cats_en = parsed.get("tools_categories") or (
             (parsed.get("tools") or {}).get("categories")
         )
@@ -329,7 +766,6 @@ class AssemblyMixin:
         if tools_list:
             logger.info("🔧 Assembled tools_list with %d EN categories", len(tools_cats_en or []))
 
-        # ── Restore tier values lost during Call 2 translation ───────────
         if tools_list:
             tools_list = restore_tiers(
                 tools_list=tools_list,
@@ -351,19 +787,20 @@ class AssemblyMixin:
                     "pass call1_raw_tools= to _assemble_output() to fix this"
                 )
 
-        # ── Normalize non-software product comparisons ───────────────────
         if tools_list:
             tools_list = normalize_nonsoftware_tool_fields(tools_list, parsed)
 
-        # ── Location credibility check ────────────────────────────────────
         raw_location_data = parsed.get("location")
-        has_location = _is_credible_location_payload(raw_location_data, tools_cats_en)
+        if raw_location_data:
+            sanitized_existing_locations = _sanitize_location_rows(raw_location_data)
+            parsed["location"] = sanitized_existing_locations or None
 
-        if raw_location_data and not has_location:
+        has_location = _is_credible_location_payload(parsed.get("location"), tools_cats_en)
+
+        if parsed.get("location") and not has_location:
             logger.info("📍 Dropping non-credible location payload before final assembly")
             parsed["location"] = None
 
-        # ── Instagram bio location enrichment for venue lists ────────────
         if not has_location and tools_list and tools_cats_en:
             caption_text = (prompt_trace or {}).get("caption", "")
             if caption_text:
@@ -375,6 +812,7 @@ class AssemblyMixin:
                             enrich_tools_with_instagram_locations(
                                 tools_categories=tools_cats_en,
                                 caption=caption_text,
+                                fetch_account=meta_client.get_instagram_profile,
                             )
                         )
                     finally:
@@ -382,16 +820,34 @@ class AssemblyMixin:
                         loop.close()
 
                     if ig_locations:
-                        parsed["location"] = ig_locations
-                        has_location = True
-                        logger.info(
-                            "📍 IG bio enrichment produced %d location entries, promoting to location",
-                            len(ig_locations),
+                        base_locations = _tool_items_to_location_rows(tools_cats_en)
+                        merged_locations = _merge_tool_rows_with_enriched_locations(
+                            base_rows=base_locations,
+                            enriched_rows=ig_locations,
                         )
+                        merged_locations = _sanitize_location_rows(merged_locations)
+
+                        merged_is_credible = _is_credible_location_payload(
+                            merged_locations,
+                            tools_cats_en,
+                        )
+
+                        if merged_is_credible and len(merged_locations) >= len(base_locations):
+                            parsed["location"] = merged_locations
+                            has_location = True
+                            logger.info(
+                                "📍 IG bio enrichment merged %d enriched rows into %d total location entries, promoting to location",
+                                len(ig_locations),
+                                len(merged_locations),
+                            )
+                        else:
+                            logger.info(
+                                "📍 IG bio enrichment returned %d rows but merged payload was not credible enough to promote",
+                                len(ig_locations),
+                            )
                 except Exception as _ig_err:
                     logger.warning("📍 IG bio enrichment failed (non-fatal): %s", _ig_err)
 
-        # ── Fallback: promote vision-extracted items → tools_list ────────
         promoted = False
         if not tools_list and parsed.get("items") and not has_location:
             tools_list = promote_items_to_tools_list(parsed["items"])
@@ -405,7 +861,6 @@ class AssemblyMixin:
                     len(tools_cats_en),
                 )
 
-        # ── Structure analysis ────────────────────────────────────────────
         structure_analysis = _EMPTY_STRUCTURE_ANALYSIS.copy()
         list_subtype = ""
         is_ranked = False
@@ -463,7 +918,6 @@ class AssemblyMixin:
             and structure_type in {"verdict", "ranking", "tier", "grouped", "places"}
         )
 
-        # ── Headlines ─────────────────────────────────────────────────────
         if structured_tools_mode:
             headlines_en = []
             headlines_og = []
@@ -472,7 +926,6 @@ class AssemblyMixin:
             headlines_en = summary_result.get("headlines_en") or parsed.get("highlights", [])
             headlines_og = summary_result.get("headlines_og") or []
 
-        # ── List metadata: is_list, list_count, list_type, list_summary ──
         is_list = False
         list_count = 0
         list_type = ""
@@ -523,7 +976,6 @@ class AssemblyMixin:
                         list_type,
                     )
 
-        # ── Sanitize headlines: bookmark mode only ────────────────────────
         named_item_count: int | None = None
 
         if not is_list:
@@ -548,11 +1000,9 @@ class AssemblyMixin:
                     len(headlines_og),
                 )
 
-        # ── Filter placeholder headlines always ───────────────────────────
         headlines_en = filter_placeholder_headlines(headlines_en)
         headlines_og = filter_placeholder_headlines(headlines_og)
 
-        # ── Headline cap ──────────────────────────────────────────────────
         max_headlines: int | None = None
 
         promised_count = (prompt_trace or {}).get("caption_promised_count")
@@ -565,7 +1015,6 @@ class AssemblyMixin:
         transcript_preview = (prompt_trace or {}).get("transcript_preview", "")
         caption_text = (prompt_trace or {}).get("caption", "")
 
-        # ── Determine public content type before summary block ───────────
         public_content_type = _infer_public_content_type(
             requested_content_type=content_type,
             parsed=parsed,
@@ -576,7 +1025,6 @@ class AssemblyMixin:
             caption=caption_text,
         )
 
-        # ── Build summary block ───────────────────────────────────────────
         summary = make_summary_block(
             title_en=title_en,
             title_og=title_og,
@@ -591,7 +1039,6 @@ class AssemblyMixin:
             detected_language=lang,
         )
 
-        # ── Post-generation paragraph guardrail ───────────────────────────
         item_names = _extract_item_names_from_cats(tools_cats_en)
 
         for lang_key in ("english", "original"):
@@ -616,9 +1063,9 @@ class AssemblyMixin:
                 )
                 block["summary"] = repaired
 
-        # ── Final public content_type guard ───────────────────────────────
         if has_location:
             public_content_type = "location"
+            parsed["location"] = _sanitize_location_rows(parsed.get("location"))
             is_list = False
             list_count = 0
             list_type = ""

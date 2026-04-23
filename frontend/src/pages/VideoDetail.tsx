@@ -1,4 +1,3 @@
-// src/pages/VideoDetail.tsx
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -25,23 +24,60 @@ import { useScrollLock } from '../utils/useScrollLock';
 import { apiUrl, fetchGcsJson, fetchBackend, HASHTAG_STYLE } from '../utils/videoDetailUtils';
 import { CustomMessageSquareMoreIcon, IOSShareIcon, PlatformIconAuthor } from '../components/CustomIcons';
 import {
-  getPinnedMap, setPinnedMap, mergeVideoPayload, buildViewModel,
-  getToolsCategoriesForLanguage, isBadgeToolsSubtype, isToolsContentType,
+  mergeVideoPayload,
+  buildViewModel,
+  getToolsCategoriesForLanguage,
+  isBadgeToolsSubtype,
+  isToolsContentType,
   parseSummaryObject,
 } from './VideoDetailViewModel';
 
 const MoveCollectionModalExt = MoveCollectionModal as React.ComponentType<{
-  isOpen: boolean; onClose: () => void; videoIds: string[]; onMove: (folderId: string) => void;
+  isOpen: boolean;
+  onClose: () => void;
+  videoIds: string[];
+  onMove: (folderId: string) => void;
 }>;
 
 const ReportModalExt = ReportModal as React.ComponentType<{
-  isOpen: boolean; onClose: () => void; videoId?: string;
+  isOpen: boolean;
+  onClose: () => void;
+  videoId?: string;
 }>;
+
+const cachedLocationNeedsHydration = (candidate: any, thumb?: string) => {
+  try {
+    const vm = buildViewModel(candidate, false, thumb);
+    const places = vm?.location
+      ? (vm.location.places ?? vm.location.items ?? [])
+      : [];
+
+    if (!places.length) return false;
+
+    return places.some((p: any) =>
+      p?.lat == null ||
+      p?.lng == null ||
+      (!p?.city && !p?.region && !p?.country),
+    );
+  } catch {
+    return false;
+  }
+};
 
 export const VideoDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { videos, folders, deleteVideos, moveVideos, toggleFavorite, updateVideo, getVideoById } = useData();
+
+  const {
+    videos,
+    folders,
+    deleteVideos,
+    moveVideos,
+    toggleFavorite,
+    updateVideo,
+    getVideoById,
+  } = useData();
+
   const { showOriginal, toggleLanguage } = useLanguage();
   const { t } = useTranslation(['videoDetail', 'common', 'modals']);
 
@@ -57,20 +93,35 @@ export const VideoDetail: React.FC = () => {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
-  useScrollLock(isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen);
+  useScrollLock(
+    isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen,
+  );
 
   const enrichVideo = useCallback(async () => {
-    if (!id || !navigator.onLine) { setLoading(false); return; }
+    if (!id || !navigator.onLine) {
+      setLoading(false);
+      return;
+    }
+
     try {
-      const db = await fetchBackend(apiUrl(`api/reel/${encodeURIComponent(id)}`));
-      if (!db) { setLoading(false); return; }
-      const gcs = db.gcs_urls?.result_json ? await fetchGcsJson(db.gcs_urls.result_json) : null;
-      const pins = getPinnedMap();
+      const db = await fetchBackend(
+        apiUrl(`api/reel/${encodeURIComponent(id)}?ts=${Date.now()}`),
+      );
+
+      if (!db) {
+        setLoading(false);
+        return;
+      }
+
+      const gcs = db.gcs_urls?.result_json
+        ? await fetchGcsJson(db.gcs_urls.result_json)
+        : null;
+
       const merged = mergeVideoPayload(db, gcs, galleryThumbnail);
+
       setVideo((prev: any) => ({
         ...(prev || {}),
         ...merged,
-        location_saved: pins[id] ?? merged.location_saved ?? prev?.location_saved ?? false,
       }));
     } catch (err) {
       console.error('Enrichment error', err);
@@ -81,19 +132,31 @@ export const VideoDetail: React.FC = () => {
 
   useEffect(() => {
     if (!id) return;
-    const cached = (getVideoById(id) as any) || videos.find((v: any) => v.id === id || v.process_id === id);
-    if (cached) {
-      const pins = getPinnedMap();
-      const thumb = cached.thumbnailUrl || cached.gcs_urls?.preview_thumbnail;
-      if (thumb) setGalleryThumbnail(thumb);
-      setVideo({
-        ...cached,
-        id: cached.id || cached.process_id,
-        process_id: cached.process_id || cached.id,
-        location_saved: pins[id] ?? cached.location_saved ?? false,
-      });
-      setLoading(false);
+
+    const cached =
+      (getVideoById(id) as any) ||
+      videos.find((v: any) => v.id === id || v.process_id === id);
+
+    if (!cached) {
+      setLoading(true);
+      return;
     }
+
+    const thumb = cached.thumbnailUrl || cached.gcs_urls?.preview_thumbnail;
+    if (thumb) setGalleryThumbnail(thumb);
+
+    const hydratedCached = {
+      ...cached,
+      id: cached.id || cached.process_id,
+      process_id: cached.process_id || cached.id,
+    };
+
+    setVideo(hydratedCached);
+
+    const needsHydration =
+      navigator.onLine && cachedLocationNeedsHydration(hydratedCached, thumb);
+
+    setLoading(needsHydration);
   }, [id, videos, getVideoById]);
 
   const fetchedId = useRef<string | null>(null);
@@ -105,41 +168,92 @@ export const VideoDetail: React.FC = () => {
   }, [id, enrichVideo]);
 
   useEffect(() => {
-    if (isEditing && video) setEditedVideo(JSON.parse(JSON.stringify(video)));
+    if (isEditing && video) {
+      setEditedVideo(JSON.parse(JSON.stringify(video)));
+    }
   }, [isEditing, video]);
 
   const handleEditField = (field: string, value: any) => {
     setEditedVideo((prev: any) => {
       if (!prev) return prev;
+
       const next = { ...prev };
-      let s = parseSummaryObject(next.summary);
-      const lk = showOriginal && s.english && s.original ? 'original' : 'english';
-      s[lk] = { ...(s[lk] || {}) };
-      if (field === 'title') { next.title = value; next.summary_title = value; s[lk].title = value; }
-      if (field === 'summary') { next.summary_text = value; s[lk].summary = value; }
-      if (field === 'bullets') { next.bullets = value; s[lk].headlines = value; }
-      if (field === 'category') { next.category = value; next.summary_category = value; }
-      if (field === 'topic') { next.topic = value; next.summary_topic = value; next.subCategory = value; }
-      if (field === 'tags') { next.tags = value; s[lk].hashtags = value; }
-      next.summary = s;
+      const summary = parseSummaryObject(next.summary);
+      const langKey = showOriginal && summary.english && summary.original
+        ? 'original'
+        : 'english';
+
+      summary[langKey] = { ...(summary[langKey] || {}) };
+
+      if (field === 'title') {
+        next.title = value;
+        next.summary_title = value;
+        summary[langKey].title = value;
+      }
+
+      if (field === 'summary') {
+        next.summary_text = value;
+        summary[langKey].summary = value;
+      }
+
+      if (field === 'bullets') {
+        next.bullets = value;
+        summary[langKey].headlines = value;
+      }
+
+      if (field === 'category') {
+        next.category = value;
+        next.summary_category = value;
+      }
+
+      if (field === 'topic') {
+        next.topic = value;
+        next.summary_topic = value;
+        next.subCategory = value;
+      }
+
+      if (field === 'tags') {
+        next.tags = value;
+        summary[langKey].hashtags = value;
+      }
+
+      next.summary = summary;
       return next;
     });
   };
 
-  const handleToggleFavorite = () => toggleFavorite(video.id);
-  const handleArchive = () => { moveVideos(video.id, 'archive'); setIsActionSheetOpen(false); };
+  const currentVideoId = useMemo(
+    () => video?.id || video?.process_id || id || '',
+    [video?.id, video?.process_id, id],
+  );
+
+  const handleToggleFavorite = () => {
+    if (!currentVideoId) return;
+    toggleFavorite(currentVideoId);
+  };
+
+  const handleArchive = () => {
+    if (!currentVideoId) return;
+    moveVideos([currentVideoId], 'archive');
+    setIsActionSheetOpen(false);
+  };
 
   const handleDelete = async () => {
-    if (!video?.id) return;
-    try { await deleteVideos([video.id]); } catch (err) { console.error('Delete failed', err); } finally {
+    if (!currentVideoId) return;
+
+    try {
+      await deleteVideos([currentVideoId]);
+    } catch (err) {
+      console.error('Delete failed', err);
+    } finally {
       setIsDeleteConfirmOpen(false);
       navigate('/gallery', { replace: true });
     }
   };
 
   const handleSaveEdit = () => {
-    if (editedVideo && video && typeof updateVideo === 'function') {
-      updateVideo(video.id, editedVideo);
+    if (editedVideo && currentVideoId && typeof updateVideo === 'function') {
+      updateVideo(currentVideoId, editedVideo);
       setVideo(editedVideo);
     }
     setIsEditing(false);
@@ -147,28 +261,25 @@ export const VideoDetail: React.FC = () => {
 
   const handleShare = async () => {
     if (navigator.share) {
-      try { await navigator.share({ title: video.title, url: window.location.href }); } catch {}
+      try {
+        await navigator.share({
+          title: video?.title || 'Rekolekt',
+          url: window.location.href,
+        });
+      } catch {}
     } else {
       await navigator.clipboard.writeText(window.location.href);
       alert(t('videoDetail:linkCopied', 'Link copied!'));
     }
   };
 
-  const handleSavePlace = useCallback(
-    (_place: any, index: number, saved: boolean) => {
-      if (!id) return;
-      const pins = getPinnedMap();
-      const key = `${id}:${index}`;
-      if (saved) { pins[key] = true; } else { delete pins[key]; }
-      setPinnedMap(pins);
-    },
-    [id],
-  );
-
   const findFolderById = (targetId: string, list: any[]): any | null => {
     for (const f of list) {
       if (f.id === targetId) return f;
-      if (f.subFolders?.length) { const found = findFolderById(targetId, f.subFolders); if (found) return found; }
+      if (f.subFolders?.length) {
+        const found = findFolderById(targetId, f.subFolders);
+        if (found) return found;
+      }
     }
     return null;
   };
@@ -181,36 +292,44 @@ export const VideoDetail: React.FC = () => {
 
   const viewModel = useMemo(() => {
     if (!video) return null;
-    const v = isEditing && editedVideo ? editedVideo : video;
-    return buildViewModel(v, showOriginal, galleryThumbnail);
+    const source = isEditing && editedVideo ? editedVideo : video;
+    return buildViewModel(source, showOriginal, galleryThumbnail);
   }, [video, editedVideo, isEditing, showOriginal, galleryThumbnail]);
 
   if (loading || !viewModel) return <Skeleton />;
 
   const toolsCategories = getToolsCategoriesForLanguage(viewModel.toolsList, showOriginal);
-  const hasToolsList = Array.isArray(toolsCategories)
-    && toolsCategories.some((cat: any) => Array.isArray(cat?.items) && cat.items.length > 0);
+
+  const hasToolsList =
+    Array.isArray(toolsCategories) &&
+    toolsCategories.some((cat: any) => Array.isArray(cat?.items) && cat.items.length > 0);
 
   const hasBullets = Array.isArray(viewModel.bullets) && viewModel.bullets.length > 0;
 
   const structuredBadgeSubtype = isBadgeToolsSubtype(viewModel.structuredType)
     ? viewModel.structuredType
     : undefined;
+
   const derivedSubtype = deriveToolsSubtype(viewModel.toolsList);
   const safeDerivedSubtype = isBadgeToolsSubtype(derivedSubtype) ? derivedSubtype : 'picks';
+
   const toolsSubtype = isToolsContentType(viewModel.contentType)
     ? structuredBadgeSubtype ?? safeDerivedSubtype
     : undefined;
 
   const showTypeBadge = viewModel.contentType !== 'general';
 
-  const normalizedLocations: LocationPlace[] = viewModel.location
-    ? (viewModel.location.places ?? viewModel.location.items ?? [])
-    : [];
-  const hasLocations = normalizedLocations.length > 0;
+  const normalizedLocations: LocationPlace[] = (
+    viewModel.location
+      ? (viewModel.location.places ?? viewModel.location.items ?? [])
+      : []
+  ).map((place: any, idx: number) => ({
+    ...place,
+    _vid: place?._vid || currentVideoId,
+    _idx: typeof place?._idx === 'number' ? place._idx : idx,
+  }));
 
-  // When location content is present, hide the ToolsListCard entirely.
-  // The map IS the list for location content — no need for a ranked card above it.
+  const hasLocations = normalizedLocations.length > 0;
   const isLocationContent = viewModel.contentType === 'location' || hasLocations;
 
   const showToolsListCard =
@@ -218,20 +337,37 @@ export const VideoDetail: React.FC = () => {
     hasToolsList &&
     (viewModel.isStructuredTools || !!viewModel.structuredType || !hasBullets);
 
-  const actionItems = (video ? [
-    { icon: <IOSShareIcon />, label: t('videoDetail:share', 'Share'), onClick: handleShare },
-    { icon: <Pencil />, label: t('videoDetail:editReel', 'Edit details'), onClick: () => setIsEditing(true) },
-    {
-      icon: <Heart />,
-      label: video.isFavorite ? t('videoDetail:removeFromFavorites') : t('videoDetail:addToFavorites'),
-      onClick: handleToggleFavorite,
-      variant: video.isFavorite ? 'default' : 'primary',
-    },
-    { icon: <FolderInput />, label: t('videoDetail:moveToCollection', 'Move to Collection'), onClick: () => setIsMoveModalOpen(true) },
-    { icon: <Archive />, label: t('videoDetail:archive', 'Archive'), onClick: handleArchive },
-    { icon: <Trash2 />, label: t('videoDetail:deleteReel', 'Delete'), onClick: () => setIsDeleteConfirmOpen(true), variant: 'danger' },
-    { icon: <AlertCircle />, label: t('videoDetail:reportIssue', 'Report issue'), onClick: () => setIsReportModalOpen(true) },
-  ] : []) as unknown as ActionItem[];
+  const actionItems = (video
+    ? [
+        { icon: <IOSShareIcon />, label: t('videoDetail:share', 'Share'), onClick: handleShare },
+        { icon: <Pencil />, label: t('videoDetail:editReel', 'Edit details'), onClick: () => setIsEditing(true) },
+        {
+          icon: <Heart />,
+          label: video.isFavorite
+            ? t('videoDetail:removeFromFavorites')
+            : t('videoDetail:addToFavorites'),
+          onClick: handleToggleFavorite,
+          variant: video.isFavorite ? 'default' : 'primary',
+        },
+        {
+          icon: <FolderInput />,
+          label: t('videoDetail:moveToCollection', 'Move to Collection'),
+          onClick: () => setIsMoveModalOpen(true),
+        },
+        { icon: <Archive />, label: t('videoDetail:archive', 'Archive'), onClick: handleArchive },
+        {
+          icon: <Trash2 />,
+          label: t('videoDetail:deleteReel', 'Delete'),
+          onClick: () => setIsDeleteConfirmOpen(true),
+          variant: 'danger',
+        },
+        {
+          icon: <AlertCircle />,
+          label: t('videoDetail:reportIssue', 'Report issue'),
+          onClick: () => setIsReportModalOpen(true),
+        },
+      ]
+    : []) as unknown as ActionItem[];
 
   return (
     <div className="animate-fade-in relative px-0 pb-20 md:pb-6">
@@ -290,7 +426,9 @@ export const VideoDetail: React.FC = () => {
                 {folderName && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
                     <Folder size={12} className="text-primary-400" strokeWidth={2.5} />
-                    <span className="text-[11px] font-bold text-white uppercase tracking-wide">{folderName}</span>
+                    <span className="text-[11px] font-bold text-white uppercase tracking-wide">
+                      {folderName}
+                    </span>
                   </div>
                 )}
               </div>
@@ -301,11 +439,14 @@ export const VideoDetail: React.FC = () => {
                     {viewModel.duration}
                   </div>
                 )}
-                {/* When location content: show only the Places badge via ContentTypeBadge,
-                    skip the separate hasLocations badge to avoid duplicates */}
+
                 {showTypeBadge && (
-                  <ContentTypeBadge type={viewModel.contentType as any} toolsSubtype={toolsSubtype} />
+                  <ContentTypeBadge
+                    type={viewModel.contentType as any}
+                    toolsSubtype={toolsSubtype}
+                  />
                 )}
+
                 {hasLocations && !isLocationContent && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-teal-50/90 text-teal-700 border-teal-200/80 backdrop-blur-sm">
                     <MapPin size={10} strokeWidth={2.5} aria-hidden="true" />
@@ -326,12 +467,18 @@ export const VideoDetail: React.FC = () => {
           </div>
 
           <div className="mb-6 flex items-center justify-between">
-            <a href={viewModel.originalUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 group/author">
+            <a
+              href={viewModel.originalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 group/author"
+            >
               <PlatformIconAuthor platform={viewModel.platform} />
               <span className="text-xs font-medium text-gray-500 truncate group-hover/author:text-gray-900 transition-colors">
                 {viewModel.author.replace('@', '')}
               </span>
             </a>
+
             {viewModel.savedAt && (
               <div className="flex items-center gap-1.5 text-xs text-gray-400">
                 <span>{viewModel.savedAt}</span>
@@ -355,9 +502,14 @@ export const VideoDetail: React.FC = () => {
               <h3 className="text-primary-700 font-bold text-sm uppercase tracking-wide">
                 {t('videoDetail:aiSummary', 'AI Summary')}
               </h3>
+
               {viewModel.hasTranslation && !isEditing && (
                 <button
-                  onClick={(e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); toggleLanguage(); }}
+                  onClick={(e: React.MouseEvent) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleLanguage();
+                  }}
                   className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm bg-primary-600 hover:bg-primary-700 text-white transition-colors"
                 >
                   <Globe size={14} />
@@ -372,7 +524,9 @@ export const VideoDetail: React.FC = () => {
               <textarea
                 className="w-full text-gray-700 leading-relaxed mb-4 font-medium bg-white/50 border border-primary-200 rounded-xl p-3 min-h-25"
                 value={viewModel.summary}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleEditField('summary', e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                  handleEditField('summary', e.target.value)
+                }
               />
             ) : (
               <div className="text-gray-700 text-sm md:text-base leading-relaxed mb-4 font-medium whitespace-pre-line">
@@ -382,7 +536,10 @@ export const VideoDetail: React.FC = () => {
 
             {showToolsListCard ? (
               <div className="mt-4 pt-4 border-t border-primary-100/50">
-                <ToolsListCard toolsList={viewModel.toolsList ?? undefined} showOriginal={showOriginal} />
+                <ToolsListCard
+                  toolsList={viewModel.toolsList ?? undefined}
+                  showOriginal={showOriginal}
+                />
               </div>
             ) : hasBullets ? (
               <div className="space-y-3 mt-4 pt-4 border-t border-primary-100/50">
@@ -397,10 +554,14 @@ export const VideoDetail: React.FC = () => {
                   viewModel.bullets.map((bullet: any, idx: number) => (
                     <div key={idx} className="flex items-start gap-3 text-gray-600 text-sm">
                       {bullet.emoji && (
-                        <span className="text-base leading-none mt-0.5 shrink-0">{bullet.emoji}</span>
+                        <span className="text-base leading-none mt-0.5 shrink-0">
+                          {bullet.emoji}
+                        </span>
                       )}
                       <span className="leading-relaxed">
-                        {bullet.headline && <span className="font-bold text-gray-900">{bullet.headline} </span>}
+                        {bullet.headline && (
+                          <span className="font-bold text-gray-900">{bullet.headline} </span>
+                        )}
                         {bullet.text || bullet.description || ''}
                       </span>
                     </div>
@@ -428,19 +589,27 @@ export const VideoDetail: React.FC = () => {
 
           {hasLocations && normalizedLocations.length > 0 && (
             <div className="mb-5">
-              <LocationCard locations={normalizedLocations} videoId={viewModel.id} />
+              <LocationCard
+                locations={normalizedLocations}
+                videoId={currentVideoId || viewModel.id}
+              />
             </div>
           )}
 
           {viewModel.caption && (
             <Accordion icon={<AlignLeft size={16} />} label={t('videoDetail:caption', 'Caption')}>
-              <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{viewModel.caption}</div>
+              <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                {viewModel.caption}
+              </div>
             </Accordion>
           )}
 
           {viewModel.transcript && (
             <div className="md:hidden">
-              <Accordion icon={<CustomMessageSquareMoreIcon size={16} />} label={t('videoDetail:transcript', 'Transcript')}>
+              <Accordion
+                icon={<CustomMessageSquareMoreIcon size={16} />}
+                label={t('videoDetail:transcript', 'Transcript')}
+              >
                 <div className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap font-medium italic border-l-2 border-gray-100 pl-4">
                   {viewModel.transcript}
                 </div>
@@ -450,17 +619,28 @@ export const VideoDetail: React.FC = () => {
 
           {isEditing && (
             <div className="md:hidden mt-4 flex gap-2">
-              <button onClick={() => setIsEditing(false)} className="flex-1 py-3 bg-gray-200 rounded-xl text-sm font-bold text-gray-700">
+              <button
+                onClick={() => setIsEditing(false)}
+                className="flex-1 py-3 bg-gray-200 rounded-xl text-sm font-bold text-gray-700"
+              >
                 {t('common:cancel', 'Cancel')}
               </button>
-              <button onClick={handleSaveEdit} className="flex-1 py-3 bg-primary-600 rounded-xl text-sm font-bold text-white shadow-lg">
+              <button
+                onClick={handleSaveEdit}
+                className="flex-1 py-3 bg-primary-600 rounded-xl text-sm font-bold text-white shadow-lg"
+              >
                 {t('common:saveChanges', 'Save Changes')}
               </button>
             </div>
           )}
 
           {viewModel.originalUrl && (
-            <OriginalLink url={viewModel.originalUrl} platform={viewModel.platform} t={t} className="md:hidden mt-4" />
+            <OriginalLink
+              url={viewModel.originalUrl}
+              platform={viewModel.platform}
+              t={t}
+              className="md:hidden mt-4"
+            />
           )}
         </div>
 
@@ -477,7 +657,10 @@ export const VideoDetail: React.FC = () => {
           />
 
           {viewModel.transcript && (
-            <Accordion icon={<CustomMessageSquareMoreIcon size={16} />} label={t('videoDetail:transcript', 'Transcript')}>
+            <Accordion
+              icon={<CustomMessageSquareMoreIcon size={16} />}
+              label={t('videoDetail:transcript', 'Transcript')}
+            >
               <div className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap font-medium italic border-l-2 border-gray-100 pl-4">
                 {viewModel.transcript}
               </div>
@@ -490,13 +673,21 @@ export const VideoDetail: React.FC = () => {
         </div>
       </div>
 
-      <ActionSheet isOpen={isActionSheetOpen} onClose={() => setIsActionSheetOpen(false)} actions={actionItems} />
+      <ActionSheet
+        isOpen={isActionSheetOpen}
+        onClose={() => setIsActionSheetOpen(false)}
+        actions={actionItems}
+      />
 
       <MoveCollectionModalExt
         isOpen={isMoveModalOpen}
         onClose={() => setIsMoveModalOpen(false)}
-        videoIds={video ? [video.id] : []}
-        onMove={(folderId: string) => { moveVideos(video.id, folderId); setIsMoveModalOpen(false); }}
+        videoIds={currentVideoId ? [currentVideoId] : []}
+        onMove={(folderId: string) => {
+          if (!currentVideoId) return;
+          moveVideos([currentVideoId], folderId);
+          setIsMoveModalOpen(false);
+        }}
       />
 
       <ConfirmModal
@@ -513,8 +704,10 @@ export const VideoDetail: React.FC = () => {
       <ReportModalExt
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
-        videoId={video?.id}
+        videoId={currentVideoId}
       />
     </div>
   );
 };
+
+export default VideoDetail;

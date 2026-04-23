@@ -1,7 +1,7 @@
 import { API_BASE } from "../utils/api";
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock, User, AlertCircle, KeyRound, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, User, AlertCircle, KeyRound, Eye, EyeOff, Instagram } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -37,6 +37,7 @@ export const Auth: React.FC = () => {
   const [view, setView] = useState<ViewState>('login');
   const [emailLoading, setEmailLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [instagramLoading, setInstagramLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const { t, i18n } = useTranslation(['auth', 'common']);
 
@@ -117,6 +118,13 @@ export const Auth: React.FC = () => {
       if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
       doRedirectLogin();
     }
+  };
+
+  const handleInstagramSetup = () => {
+    setInstagramLoading(true);
+    setErrorMsg('');
+    // Trigger the backend route that starts the Meta OAuth flow
+    window.location.assign(joinUrl(API_BASE, '/api/auth/instagram/login'));
   };
 
   const handleResendCode = async () => {
@@ -407,15 +415,15 @@ export const Auth: React.FC = () => {
                   </div>
                 )}
 
-                <div className="relative mb-4 mt-3">
+                <div className="space-y-3 mb-4 mt-3">
                   <button
                     type="button"
                     onClick={handleGoogleLogin}
-                    disabled={googleLoading || emailLoading}
+                    disabled={googleLoading || emailLoading || instagramLoading}
                     className="w-full flex items-center justify-center gap-3 p-4 bg-white/40 hover:bg-white/80 text-gray-800 font-bold rounded-xl transition-all border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 disabled:opacity-50 text-base"
                   >
                     {googleLoading ? (
-                      <svg className="animate-spin w-5 h-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <svg className="animate-spin w-5 h-5 text-gray-50" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                       </svg>
@@ -425,7 +433,25 @@ export const Auth: React.FC = () => {
                     <span>{googleLoading ? t('common:processing') : t('auth:googleContinue')}</span>
                   </button>
 
-                  {lastAuthMethod === 'google' && !googleLoading && (
+                  {/* NEW: Authorize Instagram (Admin) Button */}
+                  <button
+                    type="button"
+                    onClick={handleInstagramSetup}
+                    disabled={googleLoading || emailLoading || instagramLoading}
+                    className="w-full flex items-center justify-center gap-3 p-4 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white font-bold rounded-xl transition-all shadow-md hover:shadow-xl hover:-translate-y-1 disabled:opacity-50 text-base"
+                  >
+                    {instagramLoading ? (
+                      <svg className="animate-spin w-5 h-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                      </svg>
+                    ) : (
+                      <Instagram size={20} />
+                    )}
+                    <span>{t('auth:instagramSetup', 'Authorize Instagram (Admin)')}</span>
+                  </button>
+
+                  {lastAuthMethod === 'google' && !googleLoading && !instagramLoading && (
                     <span className="absolute -top-3.5 -right-1 translate-x-1 inline-flex items-center gap-1 bg-gray-900 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shadow-md pointer-events-none">
                       <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
                       {t('auth:lastUsed')}
@@ -486,7 +512,7 @@ export const Auth: React.FC = () => {
 
                   <button
                     type="submit"
-                    disabled={emailLoading || googleLoading}
+                    disabled={emailLoading || googleLoading || instagramLoading}
                     className="w-full mt-4 px-8 py-4 text-lg font-black text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-xl shadow-primary-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {emailLoading ? t('common:processing') : (view === 'login' ? t('common:signIn') : t('auth:createAccount'))}
