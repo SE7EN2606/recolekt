@@ -23,6 +23,7 @@ const SubscribePage   = lazy(() => import('./pages/SubscribePage').then(m => ({ 
 const Features        = lazy(() => import('./pages/Features').then(m => ({ default: m.Features })));
 const Auth            = lazy(() => import('./pages/Auth').then(m => ({ default: m.Auth })));
 const SavedPlaces     = lazy(() => import('./pages/SavedPlaces').then(m => ({ default: m.SavedPlaces })));
+const AdminPanel      = lazy(() => import('./pages/AdminPanel').then(m => ({ default: m.AdminPanel })));
 const MobileBottomNav = lazy(() => import('./components/MobileBottomNav').then(m => ({ default: m.MobileBottomNav })));
 const AddVideoModal   = lazy(() => import('./components/AddVideoModal').then(m => ({ default: m.AddVideoModal })));
 
@@ -131,6 +132,7 @@ function App() {
                   <Route path="/settings/app" element={<AppSettings />} />
                   <Route path="/settings/account" element={<AccountSettings />} />
                   <Route path="/places" element={<SavedPlaces />} />
+                  <Route path="/admin" element={<AdminPanel />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </Layout>
