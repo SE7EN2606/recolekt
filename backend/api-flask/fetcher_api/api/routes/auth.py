@@ -5,15 +5,15 @@ import requests
 import random
 import resend
 import urllib.parse
+import time
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, request, jsonify, session, redirect, url_for, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from fetcher_api.api.helpers.auth import get_user_id_from_request
-from fetcher_api.adapters.db import execute, fetch_one
+from fetcher_api.adapters.db import execute, fetch_one, fetch_all
 from fetcher_api.utils.timestamps import get_unique_id
-
 logger = logging.getLogger("auth")
 
 auth_bp = Blueprint("auth", __name__)
@@ -22,6 +22,8 @@ resend.api_key = os.getenv("RESEND_API_KEY")
 FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@recolekt.app")
 APP_URL = os.getenv("APP_URL", "https://recolekt.app")
 
+# 🔥 MEMORY CACHE to prevent duplicate webhook processing
+PROCESSED_WEBHOOKS = {}
 
 def get_signing_key():
     return os.getenv("SECRET_KEY", "recolekt-titanium-secret-2026")
@@ -210,45 +212,30 @@ def instagram_webhook():
 
         try:
             for entry in data.get("entry", []):
-                processed_mids = set()
 
-                # messaging[] takes priority — real DMs arrive here
-                for messaging in entry.get("messaging", []):
-                    sender_id = messaging.get("sender", {}).get("id")
-                    message = messaging.get("message", {})
-                    mid = message.get("mid", "")
-                    text = (message.get("text") or "").strip()
-
-                    if not sender_id or not mid:
-                        continue
-                    if message.get("is_echo"):
-                        continue
-                    if mid in processed_mids:
-                        continue
-
-                    processed_mids.add(mid)
-                    logger.info(f"📨 messaging[] from {sender_id}: '{text}'")
-                    _handle_incoming_message(sender_id, text, message)
-
-                # changes[] fallback — skip any mid already handled above
+                # ── Instagram Business API: entry.changes[] ──
                 for change in entry.get("changes", []):
                     if change.get("field") != "messages":
                         continue
                     value = change.get("value", {})
                     sender_id = value.get("sender", {}).get("id")
                     message = value.get("message", {})
-                    mid = message.get("mid", "")
                     text = (message.get("text") or "").strip()
 
-                    if not sender_id or not mid:
-                        continue
-                    if message.get("is_echo"):
-                        continue
-                    if mid in processed_mids:
+                    if not sender_id:
                         continue
 
-                    processed_mids.add(mid)
-                    logger.info(f"📨 changes[] from {sender_id}: '{text}'")
+                    _handle_incoming_message(sender_id, text, message)
+
+                # ── Messenger API fallback: entry.messaging[] ──
+                for messaging in entry.get("messaging", []):
+                    sender_id = messaging.get("sender", {}).get("id")
+                    message = messaging.get("message", {})
+                    text = (message.get("text") or "").strip()
+
+                    if not sender_id:
+                        continue
+
                     _handle_incoming_message(sender_id, text, message)
 
         except Exception as e:
@@ -258,13 +245,40 @@ def instagram_webhook():
 
 
 def _handle_incoming_message(sender_id: str, text: str, message: dict):
-    if message.get("is_echo"):
+    # 🔥 1. Deduplication Guard: Stop Meta from processing the exact same message twice
+    mid = message.get("mid")
+    dedupe_key = mid if mid else f"{sender_id}:{text}"
+    now = time.time()
+    
+    # Cleanup memory dict of messages older than 5 mins
+    expired = [k for k, v in PROCESSED_WEBHOOKS.items() if now - v > 300]
+    for k in expired:
+        del PROCESSED_WEBHOOKS[k]
+        
+    if dedupe_key in PROCESSED_WEBHOOKS:
+        return # We already processed this exact message
+    PROCESSED_WEBHOOKS[dedupe_key] = now
+
+    # 🔥 2. Echo Guard: Ignore bot's own sent messages flag
+    if message.get("is_echo") in [True, "true"]:
+        return
+        
+    # 🔥 3. Identity Guard: Absolutely NEVER reply to our own Bot Account IDs (Fixes the infinite loop)
+    bot_ids = [
+        str(os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "34572224849088745")), 
+        str(os.getenv("INSTAGRAM_PAGE_ID", "852014951320759")),
+        "852014951320759",
+        "17841477914830252",
+        "34572224849088745"
+    ]
+    if str(sender_id) in bot_ids:
         return
 
-    # Ignore messages sent by the bot itself
-    ig_bot_id = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "34572224849088745")
-    if sender_id == ig_bot_id:
+    # 🔥 4. Actionable Content Guard: Ignore empty messages (like reactions)
+    if not text and not message.get("attachments"):
         return
+
+    logger.info(f"📨 Processing Message from {sender_id}: '{text}'")
 
     # ── CASE 1: 6-digit PIN → link account ──
     if text.isdigit() and len(text) == 6:
@@ -287,13 +301,14 @@ def _handle_incoming_message(sender_id: str, text: str, message: dict):
             _send_ig_reply(sender_id, "❌ Invalid or expired code. Please generate a new one in the Recolekt app.")
         return
 
-    # ── CASE 2: Known sender → save reel ──
+    # ── CASE 2: Known sender → save reel to inbox ──
     user_row = fetch_one(
         "SELECT user_id FROM users WHERE instagram_sender_id = %s",
         (sender_id,)
     )
     if user_row:
         linked_user_id = user_row["user_id"] if isinstance(user_row, dict) else user_row[0]
+
         url = None
         if "instagram.com/reel" in text or "instagram.com/p/" in text:
             url = text
@@ -303,22 +318,19 @@ def _handle_incoming_message(sender_id: str, text: str, message: dict):
                 url = payload.get("url") or payload.get("src")
                 if url:
                     break
-        execute(
-            "INSERT INTO inbox_items (user_id, platform, sender_ig_id, raw_url, message_text, status) "
-            "VALUES (%s, 'instagram', %s, %s, %s, 'PENDING')",
-            (linked_user_id, sender_id, url, text),
-            commit=True
-        )
-        logger.info(f"📥 Saved inbox item for user {linked_user_id}: {url or text}")
-        _send_ig_reply(sender_id, "✅ Got it! Saving this reel to your Recolekt library...")
-        return
 
-    # ── CASE 3: Unknown sender — only reply to text, ignore attachments/reactions ──
-    if text:
+        if url:
+            execute(
+                "INSERT INTO inbox_items (user_id, platform, sender_ig_id, raw_url, message_text, status) "
+                "VALUES (%s, 'instagram', %s, %s, %s, 'PENDING')",
+                (linked_user_id, sender_id, url, text),
+                commit=True
+            )
+            logger.info(f"📥 Saved inbox item for user {linked_user_id}: {url or text}")
+            _send_ig_reply(sender_id, "✅ Got it! Saving this reel to your Recolekt library...")
+    else:
         logger.info(f"👤 Unknown sender {sender_id} — not linked")
         _send_ig_reply(sender_id, "👋 To save reels, first link your Instagram in the Recolekt app at recolekt.app")
-    else:
-        logger.info(f"👤 Unknown sender {sender_id} sent non-text — ignoring")
 
 
 # ─────────────────────────────────────────────
@@ -655,6 +667,47 @@ def google_verify():
     except Exception as e:
         logger.error(f"❌ Google verify failed: {e}")
         return jsonify({"error": "Verification failed"}), 500
+
+
+# ─────────────────────────────────────────────
+# USER STATS
+# ─────────────────────────────────────────────
+@auth_bp.route("/user/stats", methods=["GET", "OPTIONS"])
+def get_user_stats():
+    if request.method == "OPTIONS": 
+        return "", 200
+    
+    try:
+        user_id = get_user_id_from_request()
+    except Exception:
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+
+    # Fetch all video URLs for this user
+    rows = fetch_all("SELECT url FROM videos WHERE user_id = %s", (user_id,))
+    
+    stats = {
+        "total": len(rows) if rows else 0,
+        "instagram": 0,
+        "youtube": 0,
+        "tiktok": 0,
+        "facebook": 0
+    }
+
+    if rows:
+        for row in rows:
+            # Check if row is dictionary or tuple based on your fetch_all implementation
+            url = (row["url"] if isinstance(row, dict) else row[0]).lower()
+            
+            if "instagram.com" in url:
+                stats["instagram"] += 1
+            elif "youtube.com" in url or "youtu.be" in url:
+                stats["youtube"] += 1
+            elif "tiktok.com" in url:
+                stats["tiktok"] += 1
+            elif "facebook.com" in url or "fb.watch" in url:
+                stats["facebook"] += 1
+
+    return jsonify({"success": True, "stats": stats}), 200
 
 
 # ─────────────────────────────────────────────

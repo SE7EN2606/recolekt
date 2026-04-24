@@ -92,11 +92,10 @@ export const InstagramLink: React.FC<InstagramLinkProps> = ({ onLinked, authToke
     }
   };
 
+  // 🔥 FIX: Replaced broken link with official ig.me deep link
   const openInstagram = () => {
-    // Copy PIN then open Instagram DMs
     navigator.clipboard.writeText(pin).catch(() => {});
-    window.open('instagram://direct-v2', '_blank') ||
-    window.open('https://www.instagram.com/direct/t/recolekt', '_blank');
+    window.open('https://ig.me/m/recolekt', '_blank');
   };
 
   const formatTime = (s: number) => {

@@ -15,7 +15,7 @@ interface TokenInfo {
   last_used_at?: string;
 }
 
-export const AccountSettings: React.FC = () => {
+export const ProfileSettings: React.FC = () => {
   const navigate = useNavigate();
   const { user, loading, isAuthenticated } = useAuth();
   const { t } = useTranslation(['account', 'common']); // 🔥 HOOK
