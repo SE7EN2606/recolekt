@@ -245,6 +245,9 @@ def instagram_webhook():
 
 
 def _handle_incoming_message(sender_id: str, text: str, message: dict):
+    # Ignore echo messages (bot's own sent messages)
+    if message.get("is_echo"):
+        return
     # ── CASE 1: 6-digit PIN → link account ──
     if text.isdigit() and len(text) == 6:
         pin_row = fetch_one(
