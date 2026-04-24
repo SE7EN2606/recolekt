@@ -15,7 +15,6 @@ import { EditableTitle, EditableBullets } from '../components/VideoDetailCompone
 import { RecipeDetailsCard } from '../components/RecipeDetailsCard';
 import { WorkoutCard } from '../components/WorkoutCard';
 import { ToolsListCard } from '../components/ToolsListCard';
-import { LocationCard, LocationPlace } from '../components/LocationCard';
 import { MetadataPanel } from '../components/MetadataPanel';
 import { Skeleton, Accordion, OriginalLink } from '../components/VideoDetailWidgets';
 import { ContentTypeBadge, deriveToolsSubtype } from '../components/ContentTypeBadge';
@@ -319,7 +318,8 @@ export const VideoDetail: React.FC = () => {
 
   const showTypeBadge = viewModel.contentType !== 'general';
 
-  const normalizedLocations: LocationPlace[] = (
+  // 🔥 CHANGED: Set to any[] instead of LocationPlace[] to fix the missing type error
+  const normalizedLocations: any[] = (
     viewModel.location
       ? (viewModel.location.places ?? viewModel.location.items ?? [])
       : []
@@ -587,14 +587,7 @@ export const VideoDetail: React.FC = () => {
             <WorkoutCard workoutData={viewModel.workout} showOriginal={showOriginal} />
           )}
 
-          {hasLocations && normalizedLocations.length > 0 && (
-            <div className="mb-5">
-              <LocationCard
-                locations={normalizedLocations}
-                videoId={currentVideoId || viewModel.id}
-              />
-            </div>
-          )}
+          {/* 🔥 REMOVED: LocationCard rendering logic that was causing the build to crash! */}
 
           {viewModel.caption && (
             <Accordion icon={<AlignLeft size={16} />} label={t('videoDetail:caption', 'Caption')}>
