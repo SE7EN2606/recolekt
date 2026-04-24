@@ -172,7 +172,7 @@ def _send_ig_reply(recipient_id: str, text: str) -> bool:
 
     try:
         resp = requests.post(
-            f"https://graph.instagram.com/v25.0/{ig_id}/messages",
+            f"https://graph.facebook.com/v25.0/852014951320759/messages",
             json={
                 "recipient": {"id": recipient_id},
                 "message": {"text": text}
@@ -351,6 +351,44 @@ def instagram_link_status():
     sender_id = user.get("instagram_sender_id") if isinstance(user, dict) else user[0]
     return jsonify({"linked": bool(sender_id), "sender_id": sender_id}), 200
 
+@auth_bp.route("/instagram/unlink", methods=["POST", "OPTIONS"])
+def instagram_unlink():
+    if request.method == "OPTIONS":
+        return "", 200
+    try:
+        user_id = get_user_id_from_request()
+    except Exception:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    execute(
+        "UPDATE users SET instagram_sender_id = NULL WHERE user_id = %s",
+        (user_id,),
+        commit=True
+    )
+    logger.info(f"🔓 Unlinked Instagram for user {user_id}")
+    return jsonify({"unlinked": True}), 200
+
+@auth_bp.route("/instagram/account-info", methods=["GET", "OPTIONS"])
+def instagram_account_info():
+    """Returns @recolekt IG account info — demonstrates instagram_business_basic."""
+    if request.method == "OPTIONS":
+        return "", 200
+
+    ig_token = os.getenv("INSTAGRAM_PAGE_ACCESS_TOKEN")
+    ig_id = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "34572224849088745")
+
+    if not ig_token:
+        return jsonify({"error": "No token configured"}), 500
+
+    try:
+        resp = requests.get(
+            f"https://graph.facebook.com/v25.0/{ig_id}",
+            params={"fields": "id,username,account_type", "access_token": ig_token}
+        )
+        return jsonify(resp.json()), 200
+    except Exception as e:
+        logger.error(f"❌ account-info failed: {e}")
+        return jsonify({"error": str(e)}), 500
 
 # ─────────────────────────────────────────────
 # INSTAGRAM OAUTH (admin / app review)
