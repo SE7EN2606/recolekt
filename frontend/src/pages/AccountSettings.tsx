@@ -1,7 +1,7 @@
 import { API_BASE } from "../utils/api";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Globe, Crown, Video, LogOut, HelpCircle, Info, Moon, Sun, Check, Zap, Infinity, ChartPie, Activity, AlertTriangle, BarChart3 } from 'lucide-react';
+import { User, Globe, Crown, Video, LogOut, HelpCircle, Info, Moon, Sun, Check, Zap, Infinity, ChartPie, Activity, AlertTriangle, BarChart3, Instagram, Copy, CheckCircle, Loader2, RefreshCw, Link2 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useData } from '../context/DataContext';
@@ -28,7 +28,14 @@ export const AccountSettings: React.FC = () => {
   const [loadingLimits, setLoadingLimits] = useState(true);
 
   const lang = i18n.language.toUpperCase().startsWith('FR') ? 'FR' : 'EN';
-  
+
+  // Instagram linking state
+  const [igLinked, setIgLinked] = useState(false);
+  const [igPin, setIgPin] = useState('');
+  const [igPinExpiry, setIgPinExpiry] = useState(0);
+  const [igLinkState, setIgLinkState] = useState<'idle' | 'generating' | 'waiting' | 'linked' | 'error'>('idle');
+  const [igCopied, setIgCopied] = useState(false);
+
   const isPro = false;
   const clipsUsed = 4;
   const clipsLimit = 5;
@@ -50,6 +57,79 @@ export const AccountSettings: React.FC = () => {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  // Check Instagram link status on mount
+  useEffect(() => {
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    if (!token) return;
+    fetch(`${API_BASE}/api/auth/instagram/link-status`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(d => { if (d.linked) { setIgLinked(true); setIgLinkState('linked'); } })
+      .catch(() => {});
+  }, []);
+
+  // Countdown timer for PIN expiry
+  useEffect(() => {
+    if (igLinkState !== 'waiting' || igPinExpiry <= 0) return;
+    const t = setTimeout(() => setIgPinExpiry(s => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [igLinkState, igPinExpiry]);
+
+  // Poll for link confirmation
+  useEffect(() => {
+    if (igLinkState !== 'waiting') return;
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/instagram/link-status`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.linked) {
+          setIgLinked(true);
+          setIgLinkState('linked');
+          clearInterval(interval);
+        }
+      } catch {}
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [igLinkState]);
+
+  const generateIgPin = async () => {
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    setIgLinkState('generating');
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/instagram/generate-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.pin) {
+        setIgPin(data.pin);
+        setIgPinExpiry(data.expires_in || 900);
+        setIgLinkState('waiting');
+      } else {
+        setIgLinkState('error');
+      }
+    } catch {
+      setIgLinkState('error');
+    }
+  };
+
+  const copyIgPin = () => {
+    navigator.clipboard.writeText(igPin).catch(() => {});
+    setIgCopied(true);
+    setTimeout(() => setIgCopied(false), 2000);
+  };
+
+  const openInstagramDM = () => {
+    navigator.clipboard.writeText(igPin).catch(() => {});
+    window.open('https://www.instagram.com/direct/t/recolekt', '_blank');
+  };
+
+  const formatPinTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
   const handleLogout = async () => {
     await signOut();
@@ -303,6 +383,110 @@ export const AccountSettings: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Instagram Drop Box Card */}
+        <div className="bg-white rounded-3xl shadow-sm p-6 md:p-8 border border-gray-100">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 rounded-2xl flex items-center justify-center shadow-lg">
+              <Instagram size={20} className="text-white" />
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-gray-900">Instagram Drop Box</h3>
+              <p className="text-sm text-gray-400">Save reels by DMing @recolekt</p>
+            </div>
+          </div>
+
+          {/* LINKED */}
+          {igLinkState === 'linked' && (
+            <div className="flex items-center gap-3 p-4 bg-green-50 rounded-2xl border border-green-100">
+              <CheckCircle size={20} className="text-green-500 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-green-800">Instagram linked!</p>
+                <p className="text-xs text-green-600">DM any reel URL to <span className="font-bold">@recolekt</span> to save it instantly.</p>
+              </div>
+            </div>
+          )}
+
+          {/* IDLE */}
+          {igLinkState === 'idle' && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500">Link your Instagram to save reels by simply DMing their URL to <span className="font-bold text-gray-800">@recolekt</span>.</p>
+              <button
+                onClick={generateIgPin}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white font-bold rounded-xl text-sm shadow-md"
+              >
+                <Link2 size={16} />
+                Link Instagram Account
+              </button>
+            </div>
+          )}
+
+          {/* GENERATING */}
+          {igLinkState === 'generating' && (
+            <div className="flex items-center justify-center gap-2 py-6 text-gray-400 text-sm">
+              <Loader2 size={18} className="animate-spin" />
+              Generating your code...
+            </div>
+          )}
+
+          {/* WAITING FOR DM */}
+          {igLinkState === 'waiting' && (
+            <div className="space-y-4">
+              <ol className="text-sm text-gray-600 space-y-2">
+                <li className="flex gap-3">
+                  <span className="w-5 h-5 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">1</span>
+                  <span>Copy the code below and open Instagram</span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="w-5 h-5 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">2</span>
+                  <span>Send it as a DM to <span className="font-bold text-gray-900">@recolekt</span></span>
+                </li>
+                <li className="flex gap-3">
+                  <span className="w-5 h-5 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">3</span>
+                  <span>Come back — we'll detect it automatically</span>
+                </li>
+              </ol>
+
+              <div className="bg-gray-50 border border-gray-100 rounded-2xl py-5 px-6 flex flex-col items-center gap-1">
+                <span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Your PIN</span>
+                <span className="font-mono text-4xl font-black tracking-[0.4em] text-gray-900">{igPin}</span>
+                <span className="text-xs text-gray-400">Expires in {formatPinTime(igPinExpiry)}</span>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={openInstagramDM}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white font-bold rounded-xl text-sm"
+                >
+                  <Instagram size={16} />
+                  Copy PIN & open Instagram
+                </button>
+                <button
+                  onClick={copyIgPin}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-colors"
+                >
+                  {igCopied ? <CheckCircle size={16} className="text-green-500" /> : <Copy size={16} />}
+                  {igCopied ? 'Copied!' : 'Copy PIN only'}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
+                <Loader2 size={12} className="animate-spin" />
+                Waiting for your DM...
+              </div>
+            </div>
+          )}
+
+          {/* ERROR */}
+          {igLinkState === 'error' && (
+            <div className="space-y-3">
+              <p className="text-sm text-red-500">Something went wrong. Please try again.</p>
+              <button onClick={generateIgPin} className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                <RefreshCw size={14} /> Try again
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Two Columns at Bottom: Preferences (60%) + Resources (40%) */}
         <div className="grid md:grid-cols-[1.5fr_1fr] gap-6">
