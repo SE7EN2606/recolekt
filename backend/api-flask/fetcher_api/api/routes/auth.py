@@ -460,7 +460,7 @@ def instagram_send_test_dm():
 
     try:
         resp = requests.post(
-            f"https://graph.facebook.com/v25.0/{PAGE_ID}/messages",
+            f"https://graph.facebook.com/v25.0/852014951320759/messages",
             json={
                 "recipient": {"id": recipient_id},
                 "message": {"text": message_text},
