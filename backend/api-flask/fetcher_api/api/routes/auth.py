@@ -210,32 +210,45 @@ def instagram_webhook():
 
         try:
             for entry in data.get("entry", []):
+                processed_mids = set()
 
-                # ── Instagram Business API: entry.changes[] ──
+                # messaging[] takes priority — real DMs arrive here
+                for messaging in entry.get("messaging", []):
+                    sender_id = messaging.get("sender", {}).get("id")
+                    message = messaging.get("message", {})
+                    mid = message.get("mid", "")
+                    text = (message.get("text") or "").strip()
+
+                    if not sender_id or not mid:
+                        continue
+                    if message.get("is_echo"):
+                        continue
+                    if mid in processed_mids:
+                        continue
+
+                    processed_mids.add(mid)
+                    logger.info(f"📨 messaging[] from {sender_id}: '{text}'")
+                    _handle_incoming_message(sender_id, text, message)
+
+                # changes[] fallback — skip any mid already handled above
                 for change in entry.get("changes", []):
                     if change.get("field") != "messages":
                         continue
                     value = change.get("value", {})
                     sender_id = value.get("sender", {}).get("id")
                     message = value.get("message", {})
+                    mid = message.get("mid", "")
                     text = (message.get("text") or "").strip()
 
-                    if not sender_id:
+                    if not sender_id or not mid:
+                        continue
+                    if message.get("is_echo"):
+                        continue
+                    if mid in processed_mids:
                         continue
 
-                    logger.info(f"📨 Message from {sender_id}: '{text}'")
-                    _handle_incoming_message(sender_id, text, message)
-
-                # ── Messenger API fallback: entry.messaging[] ──
-                for messaging in entry.get("messaging", []):
-                    sender_id = messaging.get("sender", {}).get("id")
-                    message = messaging.get("message", {})
-                    text = (message.get("text") or "").strip()
-
-                    if not sender_id:
-                        continue
-
-                    logger.info(f"📨 Message from {sender_id}: '{text}'")
+                    processed_mids.add(mid)
+                    logger.info(f"📨 changes[] from {sender_id}: '{text}'")
                     _handle_incoming_message(sender_id, text, message)
 
         except Exception as e:
@@ -245,9 +258,14 @@ def instagram_webhook():
 
 
 def _handle_incoming_message(sender_id: str, text: str, message: dict):
-    # Ignore echo messages (bot's own sent messages)
     if message.get("is_echo"):
         return
+
+    # Ignore messages sent by the bot itself
+    ig_bot_id = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "34572224849088745")
+    if sender_id == ig_bot_id:
+        return
+
     # ── CASE 1: 6-digit PIN → link account ──
     if text.isdigit() and len(text) == 6:
         pin_row = fetch_one(
@@ -269,14 +287,13 @@ def _handle_incoming_message(sender_id: str, text: str, message: dict):
             _send_ig_reply(sender_id, "❌ Invalid or expired code. Please generate a new one in the Recolekt app.")
         return
 
-    # ── CASE 2: Known sender → save reel to inbox ──
+    # ── CASE 2: Known sender → save reel ──
     user_row = fetch_one(
         "SELECT user_id FROM users WHERE instagram_sender_id = %s",
         (sender_id,)
     )
     if user_row:
         linked_user_id = user_row["user_id"] if isinstance(user_row, dict) else user_row[0]
-
         url = None
         if "instagram.com/reel" in text or "instagram.com/p/" in text:
             url = text
@@ -286,7 +303,6 @@ def _handle_incoming_message(sender_id: str, text: str, message: dict):
                 url = payload.get("url") or payload.get("src")
                 if url:
                     break
-
         execute(
             "INSERT INTO inbox_items (user_id, platform, sender_ig_id, raw_url, message_text, status) "
             "VALUES (%s, 'instagram', %s, %s, %s, 'PENDING')",
@@ -295,9 +311,14 @@ def _handle_incoming_message(sender_id: str, text: str, message: dict):
         )
         logger.info(f"📥 Saved inbox item for user {linked_user_id}: {url or text}")
         _send_ig_reply(sender_id, "✅ Got it! Saving this reel to your Recolekt library...")
-    else:
+        return
+
+    # ── CASE 3: Unknown sender — only reply to text, ignore attachments/reactions ──
+    if text:
         logger.info(f"👤 Unknown sender {sender_id} — not linked")
         _send_ig_reply(sender_id, "👋 To save reels, first link your Instagram in the Recolekt app at recolekt.app")
+    else:
+        logger.info(f"👤 Unknown sender {sender_id} sent non-text — ignoring")
 
 
 # ─────────────────────────────────────────────
