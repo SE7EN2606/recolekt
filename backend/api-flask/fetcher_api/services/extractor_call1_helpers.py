@@ -517,6 +517,7 @@ def parse_rank(raw) -> int | None:
     s = str(raw).strip().lower()
     if not s:
         return None
+    s = re.sub(r"(?:st|nd|rd|th)$", "", s)
     if s in ORDINAL_TO_INT:
         return ORDINAL_TO_INT[s]
     try:
@@ -526,138 +527,348 @@ def parse_rank(raw) -> int | None:
         return None
 
 
+def _strip_asr_source_headers(transcript: str) -> str:
+    """
+    Removes labels like [Deepgram], [Voxtral], and helper notes while keeping
+    the actual transcript text.
+    """
+    if not transcript:
+        return ""
+
+    lines: list[str] = []
+    for line in safe_str(transcript).splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("[") and stripped.endswith("]"):
+            continue
+        lines.append(stripped)
+
+    return " ".join(lines).strip()
+
+
+def _clean_rank_name_fragment(name: str) -> str:
+    """
+    Clean a name fragment found near a rank number.
+
+    Important: do not over-normalize here. Canonical name repair is handled by
+    resolve_tool_display_name/canonicalize_tool_name and, later, the LLM name
+    normalization micro-call.
+    """
+    s = _clean_transcript_name(name)
+    s = re.sub(r"\b(?:and|then|next|number|ranked?|rank)\b$", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"^(?:and|then|next)\s+", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"\s{2,}", " ", s)
+    return s.strip(" ,.-–—:;")
+
+
+def _add_rank_pair(
+    pairs: list[tuple[str, int]],
+    seen: set[tuple[str, int]],
+    name: str,
+    rank_raw,
+) -> None:
+    rank = parse_rank(rank_raw)
+    if rank is None:
+        return
+
+    cleaned = _clean_rank_name_fragment(name)
+    if not cleaned:
+        return
+
+    if len(cleaned) > 70 or len(cleaned.split()) > 8:
+        return
+
+    # Reject obvious garbage fragments.
+    if re.search(r"^\d+$", cleaned):
+        return
+    if cleaned.lower() in {"number", "rank", "ranked", "and", "then", "next"}:
+        return
+
+    key = (norm(cleaned), rank)
+    if not key[0] or key in seen:
+        return
+
+    seen.add(key)
+    pairs.append((cleaned, rank))
+
+
+def _dedupe_rank_pairs(pairs: list[tuple[str, int]]) -> list[tuple[str, int]]:
+    """
+    Deduplicate rank pairs.
+
+    Prefer the more canonical-looking name when the same rank appears multiple
+    times from multiple ASR sources.
+    """
+    by_rank: dict[int, str] = {}
+
+    def score_name(name: str) -> tuple[int, int, int]:
+        # Higher is better.
+        has_space = 1 if " " in name else 0
+        has_acronym = 1 if re.search(r"\b[A-Z]{2,}\b", name) else 0
+        length_score = min(len(name), 40)
+        return (has_space, has_acronym, length_score)
+
+    for name, rank in pairs:
+        existing = by_rank.get(rank)
+        if not existing:
+            by_rank[rank] = name
+            continue
+
+        if score_name(name) > score_name(existing):
+            by_rank[rank] = name
+
+    return sorted(
+        [(name, rank) for rank, name in by_rank.items()],
+        key=lambda x: x[1],
+    )
+
+
 def parse_transcript_rank_pairs(transcript: str) -> list[tuple[str, int]]:
+    """
+    Parse explicit item/rank pairs from ASR transcript.
+
+    Handles all of these patterns:
+
+      "Rolex. 9. Breguet. 2."
+      "Rolex 9 Breguet 2 Cartier 7"
+      "number 9 Rolex"
+      "ranked 9 Rolex"
+      "Rolex is 9"
+      "Rolex ninth"
+
+    Critical behavior:
+      In short ranked-list transcripts, the number immediately AFTER the name
+      is treated as the rank. Mention order is never treated as rank.
+    """
     if not transcript:
         return []
 
-    pairs: list[tuple[str, int]] = []
-    seen_ranks: set[int] = set()
+    t = _strip_asr_source_headers(transcript)
+    if not t:
+        return []
 
-    inline_re = re.compile(
-        rf"\b(?:number|ranked?)\s+(\d+|{ORDINAL_WORDS_RE})[,\s]+([A-Z][^,\.]+?)(?:[,\.]|$)",
+    pairs: list[tuple[str, int]] = []
+    seen: set[tuple[str, int]] = set()
+
+    # Pattern A: "number 9 Rolex" / "ranked 9 Rolex"
+    rank_before_name_re = re.compile(
+        rf"\b(?:number|ranked?|rank)\s+(\d+|{ORDINAL_WORDS_RE})[,\s:;-]+"
+        rf"([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\- ]{{1,70}}?)"
+        rf"(?=(?:[,\.]|$|\s+(?:number|ranked?|rank)\s+\d|\s+[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\- ]+\s+\d))",
         re.IGNORECASE,
     )
-    for m in inline_re.finditer(transcript):
-        rank_str = m.group(1).strip().lower()
-        name_frag = m.group(2).strip()
-        rank = ORDINAL_TO_INT.get(rank_str) or parse_rank(rank_str)
-        if rank and name_frag and rank not in seen_ranks:
-            if len(name_frag.split()) > 7 or len(name_frag) > 60:
-                continue
-            pairs.append((_clean_transcript_name(name_frag), rank))
-            seen_ranks.add(rank)
+    for m in rank_before_name_re.finditer(t):
+        _add_rank_pair(pairs, seen, m.group(2), m.group(1))
 
-    if len(pairs) >= 2:
-        return sorted(pairs, key=lambda x: x[1])
-
-    tokens = [t.strip().rstrip(".").strip() for t in re.split(r"\.\s+", transcript.strip())]
-    tokens = [t for t in tokens if t]
+    # Pattern B: "Rolex. 9. Breguet. 2."
+    tokens = [tok.strip().rstrip(".").strip() for tok in re.split(r"\.\s+", t.strip())]
+    tokens = [tok for tok in tokens if tok]
 
     i = 0
     while i < len(tokens) - 1:
-        name_tok = tokens[i]
-        next_tok = tokens[i + 1].strip().lower()
+        current = tokens[i]
+        nxt = tokens[i + 1]
 
-        rank = ORDINAL_TO_INT.get(next_tok) or parse_rank(next_tok)
-        if rank is not None and rank not in seen_ranks:
-            if len(name_tok.split()) <= 7 and len(name_tok) <= 60:
-                pairs.append((_clean_transcript_name(name_tok), rank))
-                seen_ranks.add(rank)
+        # name -> rank
+        rank_after = parse_rank(nxt)
+        if rank_after is not None:
+            _add_rank_pair(pairs, seen, current, rank_after)
             i += 2
             continue
 
-        rank_self = ORDINAL_TO_INT.get(name_tok.strip().lower()) or parse_rank(name_tok.strip().lower())
-        if rank_self is not None and rank_self not in seen_ranks:
-            next_name = tokens[i + 1]
-            if len(next_name.split()) <= 7 and len(next_name) <= 60:
-                pairs.append((_clean_transcript_name(next_name), rank_self))
-                seen_ranks.add(rank_self)
+        # rank -> name
+        rank_current = parse_rank(current)
+        if rank_current is not None:
+            _add_rank_pair(pairs, seen, nxt, rank_current)
             i += 2
             continue
 
         i += 1
 
-    return sorted(pairs, key=lambda x: x[1])
+    # Pattern C: inline compact list:
+    # "Rolex 9 Breguet 2 GLC 4 Cartier 7 Patek 3 ..."
+    #
+    # This is the important one for the watch-ranking case.
+    name_then_rank_re = re.compile(
+        rf"(?<!\w)"
+        rf"([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\-]*(?:\s+[A-ZÀ-ÖØ-Þ]?[A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\-]+){{0,4}}?)"
+        rf"\s+(\d+|{ORDINAL_WORDS_RE})(?:st|nd|rd|th)?"
+        rf"(?=(?:[\.,;:]|\s+[A-ZÀ-ÖØ-Þ]|\s*$))",
+        re.IGNORECASE,
+    )
+    for m in name_then_rank_re.finditer(t):
+        name = m.group(1)
+        rank_raw = m.group(2)
+
+        # Avoid false positives where the "name" starts too far back.
+        name = re.sub(
+            r"^.*?(?=([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\-]*(?:\s|$)))",
+            "",
+            name,
+        ).strip()
+
+        _add_rank_pair(pairs, seen, name, rank_raw)
+
+    # Pattern D: "Rolex is 9" / "Rolex is ninth"
+    is_rank_re = re.compile(
+        rf"\b([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\- ]{{1,70}}?)\s+"
+        rf"(?:is|was|comes|came|ranked)\s+"
+        rf"(?:at\s+|in\s+)?(?:number\s+)?(\d+|{ORDINAL_WORDS_RE})(?:st|nd|rd|th)?\b",
+        re.IGNORECASE,
+    )
+    for m in is_rank_re.finditer(t):
+        _add_rank_pair(pairs, seen, m.group(1), m.group(2))
+
+    return _dedupe_rank_pairs(pairs)
 
 
 def is_ranked_list_transcript(transcript: str) -> bool:
     if not transcript:
         return False
-    t = transcript.lower()
+
+    t = _strip_asr_source_headers(transcript).lower()
+    if not t:
+        return False
 
     marker_hits = len(re.findall(
-        rf"\b(?:number|ranked?)\s+(?:\d+|{ORDINAL_WORDS_RE})\b", t
+        rf"\b(?:number|ranked?|rank)\s+(?:\d+|{ORDINAL_WORDS_RE})\b", t
     ))
     if marker_hits >= 2:
         return True
 
-    return len(parse_transcript_rank_pairs(transcript)) >= 3
+    pairs = parse_transcript_rank_pairs(transcript)
+    if len(pairs) >= 3:
+        return True
+
+    # Compact ranked-list form: repeated "Name number" rhythm.
+    compact_hits = len(re.findall(
+        rf"\b[A-ZÀ-ÖØ-Þ]?[a-zà-öø-ÿA-Z0-9&'’\.\-]+\s+"
+        rf"(?:\d+|{ORDINAL_WORDS_RE})(?:st|nd|rd|th)?"
+        rf"(?=(?:[\.,;:]|\s+[A-ZÀ-ÖØ-Þ]|\s*$))",
+        _strip_asr_source_headers(transcript),
+        flags=re.IGNORECASE,
+    ))
+    return compact_hits >= 3
 
 
 def has_complete_rank_sequence(tools_categories: list[dict]) -> bool:
     """
-    True when parsed items already contain a clean global 1..N sequence.
-    Used to avoid polluting a valid ranked list with transcript_recovery items.
+    Keep this function for compatibility, but do NOT use a complete 1..N sequence
+    as proof that ranks are correct.
+
+    Mistral often creates a fake complete sequence from mention order. In ranked
+    transcripts, explicit transcript pairs must override LLM ranks.
+
+    Returning False here forces Call1Mixin to run transcript rank enrichment
+    instead of skipping it.
     """
-    ranks: list[int] = []
-    names_seen: set[str] = set()
-
-    for cat in tools_categories or []:
-        for item in cat.get("items", []) or []:
-            name = safe_str(item.get("name")).strip()
-            if not name:
-                continue
-            n = norm(name)
-            if not n or n in names_seen:
-                continue
-            names_seen.add(n)
-
-            rank = item.get("rank")
-            if isinstance(rank, int) and rank > 0:
-                ranks.append(rank)
-
-    if len(ranks) < 3:
-        return False
-
-    unique_sorted = sorted(set(ranks))
-    expected = list(range(1, len(unique_sorted) + 1))
-    return unique_sorted == expected
+    return False
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TRANSCRIPT-DRIVEN RANK ENRICHMENT
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _loose_name_keys(name: str) -> set[str]:
+    """
+    Build forgiving keys for matching ASR fragments to canonical item names.
+
+    This is not a global brand dictionary. It is a generic matching helper:
+      - normalized full string
+      - useful words
+      - initials/acronyms
+      - stems for common ASR endings
+    """
+    raw = safe_str(name).strip()
+    n = norm(raw)
+
+    keys: set[str] = set()
+    if n:
+        keys.add(n)
+        if len(n) >= 8:
+            keys.add(n[:8])
+        if len(n) >= 6:
+            keys.add(n[:6])
+
+    words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+", raw)
+    useful_words = [
+        w for w in words
+        if len(norm(w)) >= 3 and norm(w) not in {"the", "and", "for", "with"}
+    ]
+
+    for word in useful_words:
+        wn = norm(word)
+        if wn:
+            keys.add(wn)
+            if len(wn) >= 5:
+                keys.add(wn[:5])
+            # Common ASR drift: "Langer" / "Langa" for "Lange".
+            if len(wn) >= 5 and wn.endswith(("r", "a", "er")):
+                keys.add(re.sub(r"(?:er|r|a)$", "e", wn))
+
+    if len(useful_words) >= 2:
+        initials = "".join(w[0] for w in useful_words if w)
+        if len(initials) >= 2:
+            keys.add(initials.lower())
+
+    # For names like "A. Lange & Söhne", make "lange" very easy to match.
+    if len(useful_words) >= 2 and len(norm(useful_words[0])) <= 2:
+        second = norm(useful_words[1])
+        if second:
+            keys.add(second)
+            if len(second) >= 5:
+                keys.add(second[:5])
+
+    return {k for k in keys if k}
+
+
+def _names_match_loose(item_name: str, fragment: str) -> bool:
+    item_keys = _loose_name_keys(item_name)
+    frag_keys = _loose_name_keys(fragment)
+
+    if not item_keys or not frag_keys:
+        return False
+
+    if item_keys & frag_keys:
+        return True
+
+    item_norm = norm(item_name)
+    frag_norm = norm(fragment)
+
+    if item_norm and frag_norm:
+        if item_norm.startswith(frag_norm) or frag_norm.startswith(item_norm):
+            return True
+
+        # Prefix overlap for ASR-shortened fragments.
+        if len(frag_norm) >= 4 and frag_norm[:4] in item_norm:
+            return True
+
+        if len(item_norm) >= 4 and item_norm[:4] in frag_norm:
+            return True
+
+    canonical_frag = canonicalize_tool_name(fragment)
+    canonical_norm = norm(canonical_frag)
+    if canonical_norm and item_norm:
+        if canonical_norm == item_norm:
+            return True
+        if canonical_norm.startswith(item_norm[:6]) or item_norm.startswith(canonical_norm[:6]):
+            return True
+
+    return False
+
+
 def match_item_to_rank(
     item_name: str,
     pairs: list[tuple[str, int]],
 ) -> int | None:
-    n = norm(item_name)
+    if not item_name or not pairs:
+        return None
+
     for frag, rank in pairs:
-        frag_n = norm(frag)
-        if n == frag_n:
-            return rank
-        if n.startswith(frag_n) or frag_n.startswith(n):
+        if _names_match_loose(item_name, frag):
             return rank
 
-        item_words = item_name.split()
-        frag_words = frag.split()
-        item_fw = norm(item_words[0]) if item_words else ""
-        frag_fw = norm(frag_words[0]) if frag_words else ""
-        if item_fw and frag_fw and (
-            item_fw == frag_fw
-            or item_fw.startswith(frag_fw)
-            or frag_fw.startswith(item_fw)
-        ):
-            if len(item_fw) >= 3:
-                return rank
-
-        canonical_frag = canonicalize_tool_name(frag)
-        canonical_n = norm(canonical_frag)
-        if canonical_n == n:
-            return rank
-        if canonical_n and n and (canonical_n.startswith(n[:6]) or n.startswith(canonical_n[:6])):
-            return rank
     return None
 
 
@@ -665,21 +876,64 @@ def enrich_ranks_from_transcript(
     tools_categories: list[dict],
     pairs: list[tuple[str, int]],
 ) -> list[dict]:
+    """
+    Transcript rank pairs are authoritative.
+
+    If the transcript says "Rolex 9", Rolex becomes rank 9 even if the LLM
+    previously made Rolex rank 1 because it was mentioned first.
+    """
     if not pairs or not tools_categories:
         return tools_categories
 
     enriched = []
+    changed = 0
+
     for cat in tools_categories:
         new_items = []
         for item in cat.get("items", []):
             name = item.get("name", "")
             matched = match_item_to_rank(name, pairs)
+
             if matched is not None and matched != item.get("rank"):
-                logger.info("enrich_ranks: '%s' → rank %d (from transcript)", name, matched)
+                logger.info(
+                    "enrich_ranks: '%s' rank %r → %d (explicit transcript pair)",
+                    name,
+                    item.get("rank"),
+                    matched,
+                )
                 item = {**item, "rank": matched}
+                changed += 1
+
             new_items.append(item)
+
         enriched.append({**cat, "items": new_items})
-    return enriched
+
+    if changed:
+        logger.info("enrich_ranks: corrected %d item ranks from transcript", changed)
+
+    return _sort_ranked_tools_categories(enriched)
+
+
+def _sort_ranked_tools_categories(tools_categories: list[dict]) -> list[dict]:
+    """
+    Sort ranked items by rank when a category is clearly ranked.
+    Keeps unranked items after ranked ones.
+    """
+    result = []
+    for cat in tools_categories or []:
+        items = list(cat.get("items", []) or [])
+        ranked_count = sum(1 for item in items if isinstance(item.get("rank"), int))
+
+        if ranked_count >= 2:
+            items.sort(key=lambda x: (
+                x.get("rank") is None,
+                x.get("rank") if isinstance(x.get("rank"), int) else 9999,
+                safe_str(x.get("name", "")).lower(),
+            ))
+
+        result.append({**cat, "items": items})
+
+    return result
 
 
 def add_missing_transcript_items(
@@ -687,6 +941,12 @@ def add_missing_transcript_items(
     pairs: list[tuple[str, int]],
     handle_display_map: dict[str, str] | None = None,
 ) -> list[dict]:
+    """
+    Add items present in explicit transcript rank pairs but missing from the
+    LLM's structured output.
+
+    This avoids relying on the LLM to list every ranked item correctly.
+    """
     if not pairs or not tools_categories:
         return tools_categories
 
@@ -695,49 +955,46 @@ def add_missing_transcript_items(
 
     for cat in tools_categories:
         for item in cat.get("items", []):
-            n = norm(item.get("name", ""))
-            if n:
-                existing_norms.add(n)
-                existing_norms.add(n[:8])
-                existing_norms.add(n[:6])
+            name = safe_str(item.get("name", "")).strip()
+            if name:
+                for key in _loose_name_keys(name):
+                    existing_norms.add(key)
 
             rank = item.get("rank")
             if isinstance(rank, int) and rank > 0:
                 existing_ranks.add(rank)
 
     added: list[dict] = []
-    for frag, rank in pairs:
-        if rank in existing_ranks:
-            continue
 
+    for frag, rank in pairs:
         resolved = resolve_tool_display_name(frag, handle_display_map=handle_display_map)
         canonical = canonicalize_tool_name(resolved)
-        cn = norm(canonical)
-        already = (
-            cn in existing_norms
-            or cn[:8] in existing_norms
-            or cn[:6] in existing_norms
-            or norm(frag) in existing_norms
-            or norm(frag)[:6] in existing_norms
-        )
-        if already:
+
+        if not canonical or not is_valid_tool_name(canonical):
             continue
-        if not is_valid_tool_name(canonical):
+
+        frag_keys = _loose_name_keys(frag) | _loose_name_keys(canonical)
+        already_by_name = bool(existing_norms & frag_keys)
+        already_by_rank = rank in existing_ranks
+
+        # If rank already exists and the name is only a weak ASR variant, do not add duplicate.
+        if already_by_name:
             continue
-        if (
-            len(canonical) > 60
-            or "\n" in canonical
-            or canonical.startswith("[")
-            or len(canonical.split()) > 6
-        ):
+
+        if already_by_rank:
             logger.debug(
-                "add_missing: rejected long/garbage fragment '%s'", canonical[:50]
+                "add_missing: rank %d already exists; not adding weak extra fragment '%s'",
+                rank,
+                frag,
             )
             continue
 
-        existing_norms.add(cn)
-        existing_norms.add(cn[:8])
-        existing_norms.add(cn[:6])
+        if len(canonical) > 60 or "\n" in canonical or canonical.startswith("[") or len(canonical.split()) > 6:
+            logger.debug("add_missing: rejected long/garbage fragment '%s'", canonical[:50])
+            continue
+
+        for key in _loose_name_keys(canonical):
+            existing_norms.add(key)
         existing_ranks.add(rank)
 
         added.append({
@@ -752,18 +1009,22 @@ def add_missing_transcript_items(
             "source": "transcript_recovery",
             "creator_rating": None,
         })
+
         logger.info(
-            "add_missing: recovered '%s' (rank %d) from transcript fragment '%s'",
-            canonical, rank, frag,
+            "add_missing: recovered '%s' rank %d from transcript fragment '%s'",
+            canonical,
+            rank,
+            frag,
         )
 
     if not added:
-        return tools_categories
+        return _sort_ranked_tools_categories(tools_categories)
 
     enriched = list(tools_categories)
     first = enriched[0]
     enriched[0] = {**first, "items": first.get("items", []) + added}
-    return enriched
+
+    return _sort_ranked_tools_categories(enriched)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

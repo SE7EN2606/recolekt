@@ -15,12 +15,13 @@ import { EditableTitle, EditableBullets } from '../components/VideoDetailCompone
 import { RecipeDetailsCard } from '../components/RecipeDetailsCard';
 import { WorkoutCard } from '../components/WorkoutCard';
 import { ToolsListCard } from '../components/ToolsListCard';
+import { LocationCard } from '../components/LocationCard';
 import { MetadataPanel } from '../components/MetadataPanel';
 import { Skeleton, Accordion, OriginalLink } from '../components/VideoDetailWidgets';
 import { ContentTypeBadge, deriveToolsSubtype } from '../components/ContentTypeBadge';
 import { useTranslation } from 'react-i18next';
 import { useScrollLock } from '../utils/useScrollLock';
-import { apiUrl, fetchGcsJson, fetchBackend, HASHTAG_STYLE } from '../utils/videoDetailUtils';
+import { apiUrl, fetchGcsJson, HASHTAG_STYLE } from '../utils/videoDetailUtils';
 import { CustomMessageSquareMoreIcon, IOSShareIcon, PlatformIconAuthor } from '../components/CustomIcons';
 import {
   mergeVideoPayload,
@@ -44,12 +45,101 @@ const ReportModalExt = ReportModal as React.ComponentType<{
   videoId?: string;
 }>;
 
+const getAuthToken = (): string => {
+  try {
+    const direct =
+      (window as any).__REKOLEKT_TOKEN__ ||
+      localStorage.getItem('auth_token') ||
+      localStorage.getItem('token') ||
+      localStorage.getItem('access_token') ||
+      localStorage.getItem('jwt') ||
+      localStorage.getItem('recolekt_token') ||
+      '';
+
+    if (direct) {
+      return String(direct).replace(/^Bearer\s+/i, '').trim();
+    }
+
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+
+      const value = localStorage.getItem(key);
+      if (!value) continue;
+
+      const lowerKey = key.toLowerCase();
+      const looksRelevant =
+        lowerKey.includes('token') ||
+        lowerKey.includes('jwt') ||
+        lowerKey.includes('auth');
+
+      const looksLikeJwt = value.split('.').length === 3;
+
+      if (looksRelevant && looksLikeJwt) {
+        return value.replace(/^Bearer\s+/i, '').trim();
+      }
+    }
+
+    return '';
+  } catch {
+    return '';
+  }
+};
+
+const fetchBackendAuthed = async (url: string) => {
+  const token = getAuthToken();
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      'Cache-Control': 'no-cache',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    credentials: 'omit',
+  });
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+
+  return res.json();
+};
+
+const extractLocationPlaces = (location: any): any[] => {
+  if (!location) return [];
+
+  if (Array.isArray(location)) {
+    return location;
+  }
+
+  if (Array.isArray(location.places)) {
+    return location.places;
+  }
+
+  if (Array.isArray(location.items)) {
+    return location.items;
+  }
+
+  if (Array.isArray(location.location)) {
+    return location.location;
+  }
+
+  if (location.location && typeof location.location === 'object') {
+    return [location.location];
+  }
+
+  if (location.name) {
+    return [location];
+  }
+
+  return [];
+};
+
 const cachedLocationNeedsHydration = (candidate: any, thumb?: string) => {
   try {
     const vm = buildViewModel(candidate, false, thumb);
-    const places = vm?.location
-      ? (vm.location.places ?? vm.location.items ?? [])
-      : [];
+    const places = extractLocationPlaces(vm?.location);
 
     if (!places.length) return false;
 
@@ -103,7 +193,7 @@ export const VideoDetail: React.FC = () => {
     }
 
     try {
-      const db = await fetchBackend(
+      const db = await fetchBackendAuthed(
         apiUrl(`api/reel/${encodeURIComponent(id)}?ts=${Date.now()}`),
       );
 
@@ -121,6 +211,8 @@ export const VideoDetail: React.FC = () => {
       setVideo((prev: any) => ({
         ...(prev || {}),
         ...merged,
+        id: merged.id || merged.process_id || db.id || db.process_id || id,
+        process_id: merged.process_id || merged.id || db.process_id || db.id || id,
       }));
     } catch (err) {
       console.error('Enrichment error', err);
@@ -318,16 +410,13 @@ export const VideoDetail: React.FC = () => {
 
   const showTypeBadge = viewModel.contentType !== 'general';
 
-  // 🔥 CHANGED: Set to any[] instead of LocationPlace[] to fix the missing type error
-  const normalizedLocations: any[] = (
-    viewModel.location
-      ? (viewModel.location.places ?? viewModel.location.items ?? [])
-      : []
-  ).map((place: any, idx: number) => ({
-    ...place,
-    _vid: place?._vid || currentVideoId,
-    _idx: typeof place?._idx === 'number' ? place._idx : idx,
-  }));
+  const normalizedLocations: any[] = extractLocationPlaces(viewModel.location).map(
+    (place: any, idx: number) => ({
+      ...place,
+      _vid: place?._vid || currentVideoId,
+      _idx: typeof place?._idx === 'number' ? place._idx : idx,
+    }),
+  );
 
   const hasLocations = normalizedLocations.length > 0;
   const isLocationContent = viewModel.contentType === 'location' || hasLocations;
@@ -587,7 +676,14 @@ export const VideoDetail: React.FC = () => {
             <WorkoutCard workoutData={viewModel.workout} showOriginal={showOriginal} />
           )}
 
-          {/* 🔥 REMOVED: LocationCard rendering logic that was causing the build to crash! */}
+          {isLocationContent && normalizedLocations.length > 0 && (
+            <div className="mb-5">
+              <LocationCard
+                location={normalizedLocations}
+                processId={currentVideoId}
+              />
+            </div>
+          )}
 
           {viewModel.caption && (
             <Accordion icon={<AlignLeft size={16} />} label={t('videoDetail:caption', 'Caption')}>

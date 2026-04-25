@@ -892,6 +892,16 @@ def geocode_proxy():
     if not q:
         return jsonify({"error": "q is required"}), 400
 
+    first_part = q.split(",", 1)[0].strip()
+    if _looks_placeholder_place_name(first_part):
+        logger.warning("geocode proxy: placeholder query rejected: %r", q)
+        return jsonify({"lat": None, "lng": None}), 200
+
+    weak_query = q.strip().lower()
+    if weak_query in _FAKE_COUNTRIES:
+        logger.warning("geocode proxy: weak macro/country-only query rejected: %r", q)
+        return jsonify({"lat": None, "lng": None}), 200
+
     key = _cache_key(q, countrycodes)
     if key in _geocode_cache:
         cached = _geocode_cache[key]
@@ -909,20 +919,6 @@ def geocode_proxy():
 
     with _nominatim_lock:
         result = _nominatim_query(q, countrycodes, headers)
-
-        if result is None and "," in q:
-            city_part = q.split(",", 1)[1].strip()
-            if city_part and city_part.lower() != q.lower():
-                logger.info(
-                    "geocode proxy: city-rescue — '%s' not found, retrying with '%s'",
-                    q, city_part,
-                )
-                result = _nominatim_query(city_part, countrycodes, headers)
-                if result:
-                    logger.info(
-                        "geocode proxy: ✅ city-rescue '%s' → '%s' → %.4f, %.4f",
-                        q, city_part, result["lat"], result["lng"],
-                    )
 
     if result is None:
         result = _google_places_findplace_query(q)
