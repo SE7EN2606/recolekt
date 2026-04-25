@@ -6,6 +6,7 @@ import random
 import resend
 import urllib.parse
 import time
+import threading
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, request, jsonify, session, redirect, url_for, current_app
@@ -326,11 +327,48 @@ def _handle_incoming_message(sender_id: str, text: str, message: dict):
                 (linked_user_id, sender_id, url, text),
                 commit=True
             )
-            logger.info(f"📥 Saved inbox item for user {linked_user_id}: {url or text}")
+            logger.info(f"📥 Saved inbox item for user {linked_user_id}: {url}")
             _send_ig_reply(sender_id, "✅ Got it! Saving this reel to your Recolekt library...")
+            
+            # 🔥 NEW: Wake up the scraper pipeline!
+            base_url = request.host_url.rstrip("/")
+            threading.Thread(
+                target=_trigger_summarize_job, 
+                args=(base_url, url, linked_user_id)
+            ).start()
+            
     else:
         logger.info(f"👤 Unknown sender {sender_id} — not linked")
         _send_ig_reply(sender_id, "👋 To save reels, first link your Instagram in the Recolekt app at recolekt.app")
+
+
+def _trigger_summarize_job(base_url: str, reel_url: str, user_id: str):
+    # Give the database 1 second to fully commit the PENDING status
+    time.sleep(1)
+    
+    # Create an internal token so the API trusts this request
+    token = create_jwt_token(user_id, "webhook@recolekt.app")
+    
+    # Depending on how your Flask app mounts the blueprint, it's either /summarize or /api/summarize. 
+    # Adjust this path if your endpoint is different!
+    target_url = f"{base_url}/summarize" 
+    
+    logger.info(f"🚀 Webhook triggering background scrape for {reel_url} to {target_url}")
+    
+    try:
+        # We fire the POST request. We use a 3-second timeout because your 
+        # /summarize route immediately spawns its own background thread anyway!
+        requests.post(
+            target_url,
+            json={"url": reel_url, "force_retry": "false"},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=3 
+        )
+    except requests.exceptions.ReadTimeout:
+        # This is fine! It just means the server started working on it.
+        pass
+    except Exception as e:
+        logger.error(f"❌ Failed to trigger summarize job: {e}")
 
 
 # ─────────────────────────────────────────────

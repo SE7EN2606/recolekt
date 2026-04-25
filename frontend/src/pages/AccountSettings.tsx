@@ -54,8 +54,8 @@ export const AccountSettings: React.FC = () => {
     const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
     if (!token) return;
 
-    // Call your backend API to get the real counts
-    fetch(`${API_BASE}/api/user/stats`, { headers: { Authorization: `Bearer ${token}` } })
+    // 🔥 FIXED: URL changed to /api/auth/user/stats
+    fetch(`${API_BASE}/api/auth/user/stats`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => res.json())
       .then(data => {
         if (data.success && data.stats) {
