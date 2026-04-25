@@ -336,7 +336,7 @@ def _handle_incoming_message(sender_id: str, text: str, message: dict):
                 target=_trigger_summarize_job, 
                 args=(base_url, url, linked_user_id)
             ).start()
-            
+
     else:
         logger.info(f"👤 Unknown sender {sender_id} — not linked")
         _send_ig_reply(sender_id, "👋 To save reels, first link your Instagram in the Recolekt app at recolekt.app")
@@ -351,7 +351,7 @@ def _trigger_summarize_job(base_url: str, reel_url: str, user_id: str):
     
     # Depending on how your Flask app mounts the blueprint, it's either /summarize or /api/summarize. 
     # Adjust this path if your endpoint is different!
-    target_url = f"{base_url}/summarize" 
+    target_url = f"{base_url}/api/summarize"
     
     logger.info(f"🚀 Webhook triggering background scrape for {reel_url} to {target_url}")
     
