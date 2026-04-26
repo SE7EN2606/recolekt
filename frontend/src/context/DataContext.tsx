@@ -1,4 +1,4 @@
-import { API_BASE } from "../utils/api";
+import { API_BASE } from '../utils/api';
 import React, {
   createContext,
   useContext,
@@ -71,6 +71,13 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
+const SAVED_REELS_PATH = '/api/saved_reels';
+const SAVED_PLACES_PATH = '/api/saved-places';
+const SAVED_PLACES_TIMEOUT_MS = 10000;
+
+let globalLastFetchTime = 0;
+let isFetchingGlobal = false;
+
 function joinUrl(base: string, path: string) {
   const p = String(path || '').replace(/^\/+/, '');
   if (!base) return `/${p}`;
@@ -80,6 +87,10 @@ function joinUrl(base: string, path: string) {
 
 function makeCacheKey(user: any) {
   return user?.id ? `reels_cache_${user.id}` : null;
+}
+
+function makeSavedPlacesCacheKey(userId: string | number | null | undefined) {
+  return userId ? `saved_places_cache_${userId}` : null;
 }
 
 function normalizeContentType(raw: unknown): string {
@@ -194,15 +205,37 @@ function normalizeSavedPlaceRow(row: any): LocationPlace {
   };
 }
 
-const SAVED_REELS_PATH = '/api/saved_reels';
+function normalizeSavedPlacesPayload(data: any): any[] {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.places)) return data.places;
+  if (Array.isArray(data?.saved_places)) return data.saved_places;
+  if (Array.isArray(data?.rows)) return data.rows;
+  return [];
+}
 
-let globalLastFetchTime = 0;
-let isFetchingGlobal = false;
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = SAVED_PLACES_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 /* ── Provider ────────────────────────────────────────────────────────────── */
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
+  const userId = user?.id ? String(user.id) : '';
 
   const [_videos, _setVideos] = useState<Video[]>(() => {
     if (user?.id) {
@@ -228,24 +261,32 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const setVideos = useCallback((updater: React.SetStateAction<Video[]>) => {
     _setVideos((prev) => {
       const next = typeof updater === 'function' ? (updater as any)(prev) : updater;
+
       try {
-        const cacheKey = user?.id ? `reels_cache_${user.id}` : null;
+        const cacheKey = userId ? `reels_cache_${userId}` : null;
         if (cacheKey) {
           localStorage.setItem(cacheKey, JSON.stringify(stripRawForCache(next)));
         }
       } catch {}
+
       return next;
     });
-  }, [user?.id]);
+  }, [userId]);
 
   const [folders, setFolders] = useState<Folder[]>(() => {
-    const saved = localStorage.getItem('custom_folders');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('custom_folders');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
   const [isLoading, setIsLoading] = useState(false);
   const [savedPlaces, setSavedPlaces] = useState<LocationPlace[]>([]);
+
   const savedPlacesLoadedRef = useRef(false);
+  const savedPlacesUserRef = useRef<string | null>(null);
   const savedPlacesRef = useRef<LocationPlace[]>([]);
 
   useEffect(() => {
@@ -256,59 +297,142 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   videosRef.current = _videos;
 
   useEffect(() => {
-    localStorage.setItem('custom_folders', JSON.stringify(folders));
+    try {
+      localStorage.setItem('custom_folders', JSON.stringify(folders));
+    } catch {}
   }, [folders]);
 
   useEffect(() => {
-    if (!user) {
+    if (!userId) {
       setVideos([]);
       setSavedPlaces([]);
       savedPlacesRef.current = [];
       savedPlacesLoadedRef.current = false;
-      const saved = localStorage.getItem('custom_folders');
-      setFolders(saved ? JSON.parse(saved) : []);
+      savedPlacesUserRef.current = null;
+
+      try {
+        const saved = localStorage.getItem('custom_folders');
+        setFolders(saved ? JSON.parse(saved) : []);
+      } catch {
+        setFolders([]);
+      }
+
       return;
     }
 
-    const cacheKey = makeCacheKey(user);
-    if (!cacheKey) return;
+    const cacheKey = makeCacheKey({ id: userId });
+    if (cacheKey) {
+      try {
+        const raw = localStorage.getItem(cacheKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            setVideos(
+              parsed.map((v: any) => ({
+                ...v,
+                content_type: normalizeContentType(v?.content_type),
+              })),
+            );
+          }
+        }
+      } catch {}
+    }
 
-    try {
-      const raw = localStorage.getItem(cacheKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        setVideos(
-          parsed.map((v: any) => ({
-            ...v,
-            content_type: normalizeContentType(v?.content_type),
-          })),
-        );
+    if (savedPlacesUserRef.current !== userId) {
+      savedPlacesUserRef.current = userId;
+      savedPlacesLoadedRef.current = false;
+
+      const placesCacheKey = makeSavedPlacesCacheKey(userId);
+      if (placesCacheKey) {
+        try {
+          const rawPlaces = localStorage.getItem(placesCacheKey);
+          if (rawPlaces) {
+            const parsedPlaces = JSON.parse(rawPlaces);
+            if (Array.isArray(parsedPlaces)) {
+              setSavedPlaces(parsedPlaces.map(normalizeSavedPlaceRow));
+            }
+          } else {
+            setSavedPlaces([]);
+          }
+        } catch {
+          setSavedPlaces([]);
+        }
       }
-    } catch {}
-  }, [user?.id, setVideos]);
+    }
+  }, [userId, setVideos]);
 
   useEffect(() => {
-    if (!user?.id || savedPlacesLoadedRef.current) return;
+    if (!userId || savedPlacesLoadedRef.current) return;
+
     savedPlacesLoadedRef.current = true;
 
-    fetch(joinUrl(API_BASE, '/api/saved-places'), {
-      headers: getAuthHeaders(),
-      credentials: 'include',
-    })
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((rows: any[]) => {
-        if (Array.isArray(rows)) {
-          setSavedPlaces(rows.map(normalizeSavedPlaceRow));
+    let cancelled = false;
+    let retryTimer: number | null = null;
+
+    const loadSavedPlaces = async (attempt = 0) => {
+      if (!navigator.onLine) return;
+
+      const token = getToken();
+      const headers = {
+        ...getAuthHeaders(),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      try {
+        const response = await fetchWithTimeout(joinUrl(API_BASE, SAVED_PLACES_PATH), {
+          method: 'GET',
+          headers,
+          credentials: 'include',
+          cache: 'no-store',
+        });
+
+        if (cancelled) return;
+
+        if (response.status === 401) {
+          localStorage.removeItem('auth_token');
+          setSavedPlaces([]);
+          return;
         }
-      })
-      .catch((err) => {
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json().catch(() => []);
+        const rows = normalizeSavedPlacesPayload(data);
+        const normalized = rows.map(normalizeSavedPlaceRow);
+
+        setSavedPlaces(normalized);
+
+        const cacheKey = makeSavedPlacesCacheKey(userId);
+        if (cacheKey) {
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify(normalized));
+          } catch {}
+        }
+      } catch (err) {
+        if (cancelled) return;
+
+        if (attempt === 0 && navigator.onLine) {
+          retryTimer = window.setTimeout(() => {
+            loadSavedPlaces(1);
+          }, 900);
+          return;
+        }
+
         console.warn('Failed to load saved places:', err);
-      });
-  }, [user?.id]);
+      }
+    };
+
+    loadSavedPlaces();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+      }
+    };
+  }, [userId]);
 
   const toggleSavedPlace = useCallback(
     async (place: LocationPlace) => {
@@ -344,9 +468,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const token = getToken();
 
       try {
-        const res = await fetch(joinUrl(API_BASE, '/api/saved-places'), {
+        const res = await fetch(joinUrl(API_BASE, SAVED_PLACES_PATH), {
           method: wasSaved ? 'DELETE' : 'POST',
           headers: {
+            ...getAuthHeaders(),
             'Content-Type': 'application/json',
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
@@ -399,8 +524,21 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             });
           }
         }
+
+        const cacheKey = makeSavedPlacesCacheKey(userId);
+        if (cacheKey) {
+          window.setTimeout(() => {
+            try {
+              localStorage.setItem(
+                cacheKey,
+                JSON.stringify(savedPlacesRef.current),
+              );
+            } catch {}
+          }, 0);
+        }
       } catch (err) {
         console.error('toggleSavedPlace failed:', err);
+
         setSavedPlaces((prev) =>
           wasSaved
             ? [...prev, normalizedPlace]
@@ -408,11 +546,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         );
       }
     },
-    [],
+    [userId],
   );
 
   const fetchVideos = useCallback(async () => {
-    if (!user) return;
+    if (!userId) return;
 
     if (!navigator.onLine) {
       console.log('Offline: Skipping fetchVideos');
@@ -469,7 +607,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const transcriptText =
             (typeof r.transcription === 'string' ? r.transcription : '') ||
             r.transcription?.transcript ||
-            r.transcript || '';
+            r.transcript ||
+            '';
 
           const rawFolderId = r.folder_id || 'unsorted';
           const normalizedFolderId =
@@ -531,6 +670,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           for (const v of finalVideos as any[]) {
             if (v?.id) uniqueById.set(v.id, v);
           }
+
           const result = Array.from(uniqueById.values());
 
           let changed = prevVideos.length !== result.length;
@@ -555,6 +695,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           if (!changed) return prevVideos;
           return result;
         });
+
         return;
       }
 
@@ -570,10 +711,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       isFetchingGlobal = false;
       setIsLoading(false);
     }
-  }, [user, setVideos]);
+  }, [userId, setVideos]);
 
   const refreshFolders = useCallback(async () => {
-    if (!user) return;
+    if (!userId) return;
     if (!navigator.onLine) return;
 
     try {
@@ -582,39 +723,46 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         headers: getAuthHeaders(),
         credentials: 'include',
       });
+
       if (!response.ok) return;
+
       const data = await response.json();
       setFolders(data?.folders || []);
     } catch (error) {
       console.error('Failed to refresh folders', error);
     }
-  }, [user?.id]);
+  }, [userId]);
 
   const initRef = useRef(false);
+
   useEffect(() => {
-    if (!user?.id) {
+    if (!userId) {
       initRef.current = false;
       return;
     }
+
     if (!initRef.current) {
       initRef.current = true;
       refreshFolders();
       globalLastFetchTime = 0;
       fetchVideos();
     }
-  }, [user?.id, refreshFolders, fetchVideos]);
+  }, [userId, refreshFolders, fetchVideos]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!userId) return;
+
     const interval = window.setInterval(() => {
       const currentVideos = videosRef.current;
       const hasProcessing = currentVideos.some((v: any) => v?.category === 'Processing');
+
       if (hasProcessing && !isFetchingGlobal) {
         fetchVideos();
       }
     }, 10000);
+
     return () => window.clearInterval(interval);
-  }, [user?.id, fetchVideos]);
+  }, [userId, fetchVideos]);
 
   const addVideo = useCallback(
     async (url: string, forceRetry: boolean = false): Promise<AddVideoResult> => {
@@ -721,6 +869,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           videoIds.includes(v.id) ? { ...v, folderId: targetFolderId } : v,
         ),
       );
+
       if (!navigator.onLine) return;
 
       try {
@@ -747,11 +896,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     async (videoId: string) => {
       const video = videosRef.current.find((v) => v.id === videoId);
       if (!video) return;
+
       const newFav = !video.isFavorite;
 
       setVideos((prev) =>
         prev.map((v: any) => (v.id === videoId ? { ...v, isFavorite: newFav } : v)),
       );
+
       if (!navigator.onLine) return;
 
       try {
@@ -776,7 +927,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         ...(updates?.content_type ? { content_type: normalizeContentType(updates.content_type) } : {}),
       };
 
-      setVideos((prev) => prev.map((v) => (v.id === id ? { ...v, ...normalizedUpdates } : v)));
+      setVideos((prev) =>
+        prev.map((v) => (v.id === id ? { ...v, ...normalizedUpdates } : v)),
+      );
+
       if (!navigator.onLine) return;
 
       try {
@@ -826,6 +980,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const addFolder = useCallback(
     async (name: string, parentId: string | null = null) => {
       if (!navigator.onLine) throw new Error('Offline');
+
       const res = await fetch(joinUrl(API_BASE, '/api/folders'), {
         method: 'POST',
         credentials: 'include',
@@ -837,6 +992,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData.error || 'Failed to create folder');
       }
+
       await refreshFolders();
     },
     [refreshFolders],
@@ -860,6 +1016,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData.error || 'Failed to update folder');
       }
+
       await refreshFolders();
     },
     [refreshFolders],
@@ -902,7 +1059,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const getVideoById = useCallback((id: string): Video | undefined => {
     if (!id) return undefined;
+
     const vids = videosRef.current || [];
+
     return (
       vids.find((v) => v.id === id) ||
       vids.find(

@@ -3,7 +3,7 @@ import {
   fmt, safe, inferLang, detectPlatform,
 } from '../utils/videoDetailUtils';
 import { getCategory, getTopic } from '../utils/videoUtils';
-import { LocationPlace } from '../components/LocationCard';
+import type { LocationPlace } from '../utils/locationCardUtils';
 import { ToolsList } from '../components/ToolsListCard';
 
 export interface LocationData {
@@ -58,29 +58,195 @@ const toNumberOrNull = (value: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-const normalizeLocationPlace = (place: any): LocationPlace => {
+const extractRawLocationPlaces = (location: any): any[] => {
+  const parsed = parseMaybeJson<any>(location, null);
+  if (!parsed) return [];
+
+  if (Array.isArray(parsed)) {
+    return parsed;
+  }
+
+  if (Array.isArray(parsed.places)) {
+    return parsed.places;
+  }
+
+  if (Array.isArray(parsed.items)) {
+    return parsed.items;
+  }
+
+  if (Array.isArray(parsed.location)) {
+    return parsed.location;
+  }
+
+  if (parsed.location && typeof parsed.location === 'object') {
+    return [parsed.location];
+  }
+
+  if (parsed.name) {
+    return [parsed];
+  }
+
+  return [];
+};
+
+const locationQualityScore = (location: any): number => {
+  const places = extractRawLocationPlaces(location);
+  if (!places.length) return 0;
+
+  return places.reduce((score, place) => {
+    const lat = toNumberOrNull(place?.lat);
+    const lng = toNumberOrNull(place?.lng);
+
+    return score +
+      1 +
+      (lat !== null && lng !== null ? 10 : 0) +
+      (safe(place?.city) ? 2 : 0) +
+      (safe(place?.region) ? 2 : 0) +
+      (safe(place?.country) ? 2 : 0) +
+      (safe(place?.photo_url) ? 5 : 0) +
+      (safe(place?.google_place_id) ? 4 : 0) +
+      (toNumberOrNull(place?.rating ?? place?.google_rating) !== null ? 3 : 0) +
+      (toNumberOrNull(place?.user_ratings_total ?? place?.review_count) !== null ? 2 : 0);
+  }, 0);
+};
+
+const mergeLocationPlaces = (primaryLocation: any, secondaryLocation: any): any => {
+  const primaryPlaces = extractRawLocationPlaces(primaryLocation);
+  const secondaryPlaces = extractRawLocationPlaces(secondaryLocation);
+
+  if (!primaryPlaces.length) return secondaryLocation ?? primaryLocation ?? null;
+  if (!secondaryPlaces.length) return primaryLocation ?? secondaryLocation ?? null;
+
+  const secondaryByKey = new Map<string, any>();
+
+  secondaryPlaces.forEach((place: any, idx: number) => {
+    const name = safe(place?.name || place?.google_name).toLowerCase();
+    const rank = place?.rank != null ? String(place.rank) : String(idx + 1);
+
+    if (name) secondaryByKey.set(`name:${name}`, place);
+    secondaryByKey.set(`rank:${rank}`, place);
+    secondaryByKey.set(`idx:${idx}`, place);
+  });
+
+  const mergedPlaces = primaryPlaces.map((place: any, idx: number) => {
+    const name = safe(place?.name || place?.google_name).toLowerCase();
+    const rank = place?.rank != null ? String(place.rank) : String(idx + 1);
+
+    const fallback =
+      (name && secondaryByKey.get(`name:${name}`)) ||
+      secondaryByKey.get(`rank:${rank}`) ||
+      secondaryByKey.get(`idx:${idx}`) ||
+      null;
+
+    if (!fallback) return place;
+
+    return {
+      ...fallback,
+      ...place,
+      name: safe(place?.name) || safe(fallback?.name) || safe(place?.google_name) || safe(fallback?.google_name),
+      google_name: safe(place?.google_name) || safe(fallback?.google_name) || undefined,
+      type: safe(place?.type || place?.place_type) || safe(fallback?.type || fallback?.place_type) || undefined,
+      place_type: safe(place?.place_type || place?.type) || safe(fallback?.place_type || fallback?.type) || undefined,
+      city: safe(place?.city) || safe(fallback?.city) || undefined,
+      region: safe(place?.region) || safe(fallback?.region) || undefined,
+      country: safe(place?.country) || safe(fallback?.country) || undefined,
+      address: safe(place?.address) || safe(fallback?.address) || undefined,
+      neighborhood: safe(place?.neighborhood) || safe(fallback?.neighborhood) || undefined,
+      postal_code: safe(place?.postal_code) || safe(fallback?.postal_code) || undefined,
+      description: safe(place?.description) || safe(fallback?.description) || undefined,
+      instagram_username: safe(place?.instagram_username || place?.instagram) || safe(fallback?.instagram_username || fallback?.instagram) || undefined,
+      instagram_account_name: safe(place?.instagram_account_name) || safe(fallback?.instagram_account_name) || undefined,
+      google_place_id: safe(place?.google_place_id) || safe(fallback?.google_place_id) || undefined,
+      maps_url: safe(place?.maps_url) || safe(fallback?.maps_url) || undefined,
+      photo_url: safe(place?.photo_url) || safe(fallback?.photo_url) || undefined,
+      rating: firstDefined(place?.rating, fallback?.rating, place?.google_rating, fallback?.google_rating) ?? undefined,
+      google_rating: firstDefined(place?.google_rating, fallback?.google_rating, place?.rating, fallback?.rating) ?? undefined,
+      user_ratings_total: firstDefined(place?.user_ratings_total, fallback?.user_ratings_total, place?.review_count, fallback?.review_count) ?? undefined,
+      review_count: firstDefined(place?.review_count, fallback?.review_count, place?.user_ratings_total, fallback?.user_ratings_total) ?? undefined,
+      price_level: firstDefined(place?.price_level, fallback?.price_level) ?? undefined,
+      lat: firstDefined(place?.lat, fallback?.lat) ?? null,
+      lng: firstDefined(place?.lng, fallback?.lng) ?? null,
+      is_saved: firstDefined(place?.is_saved, fallback?.is_saved, place?.isSaved, fallback?.isSaved, place?.saved, fallback?.saved, place?.is_bookmarked, fallback?.is_bookmarked) ?? undefined,
+      isSaved: firstDefined(place?.isSaved, fallback?.isSaved, place?.is_saved, fallback?.is_saved, place?.saved, fallback?.saved, place?.is_bookmarked, fallback?.is_bookmarked) ?? undefined,
+      saved: firstDefined(place?.saved, fallback?.saved, place?.is_saved, fallback?.is_saved, place?.isSaved, fallback?.isSaved, place?.is_bookmarked, fallback?.is_bookmarked) ?? undefined,
+      is_bookmarked: firstDefined(place?.is_bookmarked, fallback?.is_bookmarked, place?.is_saved, fallback?.is_saved, place?.isSaved, fallback?.isSaved, place?.saved, fallback?.saved) ?? undefined,
+    };
+  });
+
+  const primaryObj =
+    primaryLocation && !Array.isArray(primaryLocation) && typeof primaryLocation === 'object'
+      ? primaryLocation
+      : {};
+
+  const secondaryObj =
+    secondaryLocation && !Array.isArray(secondaryLocation) && typeof secondaryLocation === 'object'
+      ? secondaryLocation
+      : {};
+
+  return {
+    ...secondaryObj,
+    ...primaryObj,
+    country: safe(primaryObj?.country) || safe(secondaryObj?.country) || undefined,
+    title: safe(primaryObj?.title) || safe(secondaryObj?.title) || undefined,
+    places: mergedPlaces,
+    items: mergedPlaces,
+  };
+};
+
+const chooseMergedLocation = (dbLocation: any, gcsLocation: any, fallbackLocation: any): any => {
+  const dbScore = locationQualityScore(dbLocation);
+  const gcsScore = locationQualityScore(gcsLocation);
+
+  if (dbScore === 0 && gcsScore === 0) {
+    return firstDefined(dbLocation, gcsLocation, fallbackLocation);
+  }
+
+  if (dbScore >= gcsScore) {
+    return mergeLocationPlaces(dbLocation, gcsLocation);
+  }
+
+  return mergeLocationPlaces(gcsLocation, dbLocation);
+};
+
+const normalizeLocationPlace = (place: any, fallbackCountry?: string): LocationPlace => {
   const lat = toNumberOrNull(place?.lat);
   const lng = toNumberOrNull(place?.lng);
+  const rating = toNumberOrNull(place?.rating ?? place?.google_rating);
+  const googleRating = toNumberOrNull(place?.google_rating ?? place?.rating);
+  const userRatingsTotal = toNumberOrNull(place?.user_ratings_total ?? place?.review_count);
+  const reviewCount = toNumberOrNull(place?.review_count ?? place?.user_ratings_total);
+  const priceLevel = toNumberOrNull(place?.price_level);
 
   return {
     ...place,
-    name: safe(place?.name),
-    type: safe(place?.type || place?.place_type),
-    place_type: safe(place?.place_type || place?.type),
+    rank: place?.rank,
+    name: safe(place?.name) || safe(place?.google_name),
+    google_name: safe(place?.google_name) || undefined,
+    type: safe(place?.type || place?.place_type) || undefined,
+    place_type: safe(place?.place_type || place?.type) || undefined,
     city: safe(place?.city) || undefined,
     region: safe(place?.region) || undefined,
-    country: safe(place?.country) || undefined,
+    country: safe(place?.country) || safe(fallbackCountry) || undefined,
     address: safe(place?.address) || undefined,
     neighborhood: safe(place?.neighborhood) || undefined,
     description: safe(place?.description) || undefined,
-    instagram: safe(place?.instagram || place?.instagram_username) || undefined,
     instagram_username: safe(place?.instagram_username || place?.instagram) || undefined,
     instagram_account_name: safe(place?.instagram_account_name) || undefined,
     postal_code: safe(place?.postal_code) || undefined,
     google_place_id: safe(place?.google_place_id) || undefined,
     maps_url: safe(place?.maps_url) || undefined,
+    photo_url: safe(place?.photo_url) || undefined,
+    rating,
+    google_rating: googleRating,
+    user_ratings_total: userRatingsTotal,
+    review_count: reviewCount,
+    price_level: priceLevel,
     lat,
     lng,
+    is_saved: firstDefined(place?.is_saved, place?.isSaved, place?.saved, place?.is_bookmarked) ?? undefined,
+    isSaved: firstDefined(place?.isSaved, place?.is_saved, place?.saved, place?.is_bookmarked) ?? undefined,
+    saved: firstDefined(place?.saved, place?.is_saved, place?.isSaved, place?.is_bookmarked) ?? undefined,
+    is_bookmarked: firstDefined(place?.is_bookmarked, place?.is_saved, place?.isSaved, place?.saved) ?? undefined,
   } as LocationPlace;
 };
 
@@ -88,7 +254,7 @@ const looksLikeSinglePlace = (obj: any): boolean =>
   !!obj
   && typeof obj === 'object'
   && !Array.isArray(obj)
-  && !!obj.name;
+  && !!(obj.name || obj.google_name);
 
 const normalizeLocationData = (rawLoc: any): LocationData | null => {
   const parsed = parseMaybeJson<any>(rawLoc, null);
@@ -96,25 +262,37 @@ const normalizeLocationData = (rawLoc: any): LocationData | null => {
 
   if (Array.isArray(parsed)) {
     return {
-      places: parsed.map(normalizeLocationPlace),
+      places: parsed.map((place) => normalizeLocationPlace(place)),
+      items: parsed.map((place) => normalizeLocationPlace(place)),
     };
   }
 
   if (looksLikeSinglePlace(parsed)) {
+    const place = normalizeLocationPlace(parsed, parsed.country);
+
     return {
-      places: [normalizeLocationPlace(parsed)],
+      country: safe(parsed.country) || undefined,
+      title: safe(parsed.title) || undefined,
+      places: [place],
+      items: [place],
     };
   }
 
   if (typeof parsed === 'object') {
+    const fallbackCountry = safe(parsed.country) || undefined;
+
     const places = Array.isArray(parsed.places)
-      ? parsed.places.map(normalizeLocationPlace)
+      ? parsed.places.map((place: any) => normalizeLocationPlace(place, fallbackCountry))
       : Array.isArray(parsed.items)
-        ? parsed.items.map(normalizeLocationPlace)
-        : [];
+        ? parsed.items.map((place: any) => normalizeLocationPlace(place, fallbackCountry))
+        : Array.isArray(parsed.location)
+          ? parsed.location.map((place: any) => normalizeLocationPlace(place, fallbackCountry))
+          : [];
 
     return {
       ...parsed,
+      country: fallbackCountry,
+      title: safe(parsed.title) || undefined,
       places,
       items: places,
     };
@@ -163,7 +341,7 @@ export const isBadgeToolsSubtype = (
   || value === 'verdict' || value === 'grouped' || value === 'picks';
 
 export const resolveInternalContentType = (v: any): string =>
-  String(v?.content_type || '').toLowerCase();
+  String(v?.content_type || v?.contentType || '').toLowerCase();
 
 export const isToolsContentType = (contentType: string): boolean =>
   contentType === 'products' || contentType === 'software' || contentType === 'finance';
@@ -184,11 +362,10 @@ export const mergeVideoPayload = (db: any, gcs: any, fallbackThumb?: string) => 
   merged.id = firstDefined(db?.id, db?.process_id, gcs?.id, gcs?.process_id);
   merged.process_id = firstDefined(db?.process_id, db?.id, gcs?.process_id, gcs?.id);
 
-  // Fresh DB must win for mutable fields.
   merged.summary = firstDefined(db?.summary, gcs?.summary, merged.summary);
   merged.tools_list = firstDefined(db?.tools_list, gcs?.tools_list, merged.tools_list);
   merged.structure_analysis = firstDefined(db?.structure_analysis, gcs?.structure_analysis, merged.structure_analysis);
-  merged.location = firstDefined(db?.location, gcs?.location, merged.location);
+  merged.location = chooseMergedLocation(db?.location, gcs?.location, merged.location);
   merged.recipe = firstDefined(db?.recipe, gcs?.recipe, merged.recipe);
   merged.workout = firstDefined(db?.workout, gcs?.workout, merged.workout);
   merged.caption = firstDefined(db?.caption, gcs?.caption, merged.caption);

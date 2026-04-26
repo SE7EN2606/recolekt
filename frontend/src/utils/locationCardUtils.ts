@@ -63,15 +63,26 @@ export const BLUE_BORDER = '#bfdbfe';
 export const TEXT = '#111827';
 export const MUTED = '#6b7280';
 
+function envValue(...keys: string[]): string {
+  for (const key of keys) {
+    const value = ((import.meta as any).env?.[key] as string | undefined)?.trim();
+    if (value) return value;
+  }
+
+  return '';
+}
+
 const RAW_API_BASE =
-  ((import.meta as any).env?.VITE_API_BASE as string | undefined) ??
-  'http://localhost:5001';
+  envValue('VITE_API_BASE', 'VITE_API_URL', 'VITE_BACKEND_URL') ||
+  ((import.meta as any).env?.DEV ? 'http://localhost:5001' : '');
 
 const API_BASE = RAW_API_BASE.replace(/\/$/, '');
 
-const MAPS_KEY =
-  ((import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY as string | undefined) ??
-  '';
+const MAPS_KEY = envValue(
+  'VITE_GOOGLE_MAPS_API_KEY',
+  'VITE_GOOGLE_MAPS_KEY',
+  'VITE_GOOGLE_API_KEY',
+);
 
 export const hydrationInFlight = new Map<string, Promise<GeocodedPlace[] | null>>();
 export const hydrationDone = new Set<string>();
@@ -293,6 +304,11 @@ export async function patchBackendLocations(
   processId: string,
   places: GeocodedPlace[],
 ): Promise<GeocodedPlace[] | null> {
+  if (!API_BASE) {
+    console.error('Missing API base URL. Set VITE_API_BASE, VITE_API_URL, or VITE_BACKEND_URL.');
+    return null;
+  }
+
   const payload = places.map(mapPlaceForBackend);
 
   const res = await fetch(apiPath(`/reel/${encodeURIComponent(processId)}/location`), {
@@ -320,7 +336,7 @@ export async function persistSavedPlace(
   processId: string | undefined,
   place: GeocodedPlace,
 ): Promise<void> {
-  if (!processId) return;
+  if (!processId || !API_BASE) return;
 
   const mappedPlace = mapPlaceForBackend({
     ...place,
@@ -443,7 +459,7 @@ export function ratingMeta(place: GeocodedPlace): string {
   const parts: string[] = [];
 
   if (rating !== null) {
-    parts.push(`${rating.toFixed(1)} ★★★★★`);
+    parts.push(`${rating.toFixed(1)} ★`);
   }
 
   if (reviews !== null) {
@@ -601,6 +617,9 @@ async function fetchGoogleDetailsForPlace(
       const best = results[0];
 
       if (!best?.place_id) {
+        const lat = best?.geometry?.location?.lat?.();
+        const lng = best?.geometry?.location?.lng?.();
+
         resolve({
           google_name: best?.name || null,
           photo_url: photoUrlFromPlace(best),
@@ -609,6 +628,8 @@ async function fetchGoogleDetailsForPlace(
           user_ratings_total: best?.user_ratings_total ?? null,
           review_count: best?.user_ratings_total ?? null,
           type: place.type || googleTypesToType(best?.types) || null,
+          lat: Number.isFinite(lat) ? lat : null,
+          lng: Number.isFinite(lng) ? lng : null,
         });
         return;
       }
@@ -624,6 +645,7 @@ async function fetchGoogleDetailsForPlace(
             'types',
             'url',
             'place_id',
+            'geometry',
           ],
         },
         (details: any, detailStatus: any) => {
@@ -631,6 +653,9 @@ async function fetchGoogleDetailsForPlace(
             detailStatus === google.maps.places.PlacesServiceStatus.OK && details
               ? details
               : best;
+
+          const lat = source?.geometry?.location?.lat?.() ?? best?.geometry?.location?.lat?.();
+          const lng = source?.geometry?.location?.lng?.() ?? best?.geometry?.location?.lng?.();
 
           resolve({
             google_name: source?.name || best?.name || null,
@@ -648,6 +673,8 @@ async function fetchGoogleDetailsForPlace(
             review_count:
               source?.user_ratings_total ?? best?.user_ratings_total ?? null,
             type: place.type || googleTypesToType(source?.types || best?.types) || null,
+            lat: Number.isFinite(lat) ? lat : null,
+            lng: Number.isFinite(lng) ? lng : null,
           });
         },
       );
@@ -664,6 +691,7 @@ export async function enrichPlacesWithGoogleDetails(
   const enriched = await Promise.all(
     places.map(async (place) => {
       const needsGoogle =
+        !place.coords ||
         !place.photo_url ||
         !place.google_name ||
         ratingValue(place) === null ||
@@ -675,6 +703,19 @@ export async function enrichPlacesWithGoogleDetails(
         const details = await fetchGoogleDetailsForPlace(place);
 
         if (!details) return place;
+
+        const lat = numberOrNull(details.lat);
+        const lng = numberOrNull(details.lng);
+
+        const coords =
+          lat !== null &&
+          lng !== null &&
+          lat >= -90 &&
+          lat <= 90 &&
+          lng >= -180 &&
+          lng <= 180
+            ? { lat, lng }
+            : place.coords;
 
         return {
           ...place,
@@ -695,6 +736,10 @@ export async function enrichPlacesWithGoogleDetails(
             details.user_ratings_total ||
             null,
           type: place.type || details.type || null,
+          lat: place.lat ?? lat,
+          lng: place.lng ?? lng,
+          coords,
+          status: coords ? 'done' : place.status,
           rank: Number(place.rank),
         };
       } catch {
@@ -747,6 +792,8 @@ export function mergeEnrichedPlaces(
       'country',
       'city',
       'region',
+      'lat',
+      'lng',
     ];
 
     if (
@@ -765,6 +812,9 @@ export function mergeEnrichedPlaces(
 
 export const css = {
   card: {
+    position: 'relative',
+    zIndex: 0,
+    isolation: 'isolate',
     borderRadius: 22,
     overflow: 'hidden',
     background: '#ffffff',
@@ -776,17 +826,15 @@ export const css = {
   header: {
     display: 'flex',
     alignItems: 'center',
-    gap: 14,
-    padding: '22px 28px',
-    background: '#ffffff',
-    borderBottom: '1px solid #eef2f7',
+    gap: 12,
+    padding: '16px 20px',
+    background: 'rgba(219, 234, 254, 0.6)',
+    borderBottom: '1px solid #f9fafb',
   } as React.CSSProperties,
 
   headerIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: '50%',
-    background: BLUE_SOFT,
+    width: 20,
+    height: 20,
     color: BLUE,
     display: 'flex',
     alignItems: 'center',
@@ -796,10 +844,9 @@ export const css = {
 
   headerLabel: {
     fontSize: 18,
-    fontWeight: 850,
-    letterSpacing: '0.08em',
+    fontWeight: 700,
     color: TEXT,
-    textTransform: 'uppercase',
+    lineHeight: 1.25,
   } as React.CSSProperties,
 
   headerStatus: {
@@ -813,6 +860,8 @@ export const css = {
     height: 315,
     background: '#e8ebe6',
     position: 'relative',
+    zIndex: 0,
+    isolation: 'isolate',
     overflow: 'hidden',
   } as React.CSSProperties,
 
@@ -845,10 +894,11 @@ export const css = {
 
   mapCard: {
     position: 'absolute',
-    left: 14,
-    bottom: 50,
-    zIndex: 500,
-    width: 'min(455px, calc(100% - 28px))',
+    left: '50%',
+    bottom: 28,
+    transform: 'translateX(-50%)',
+    zIndex: 20,
+    width: 'min(455px, calc(100% - 56px))',
     minHeight: 112,
     background: '#ffffff',
     borderRadius: 16,
@@ -860,13 +910,21 @@ export const css = {
     gap: 14,
   } as React.CSSProperties,
 
-  mapCardPhoto: {
+  mapCardPhotoWrap: {
+    position: 'relative',
     width: 104,
     height: 82,
     borderRadius: 12,
-    objectFit: 'cover',
+    overflow: 'hidden',
     flexShrink: 0,
     background: '#eef2f7',
+  } as React.CSSProperties,
+
+  mapCardPhoto: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    display: 'block',
   } as React.CSSProperties,
 
   mapCardRank: {
@@ -960,17 +1018,18 @@ export const css = {
 
   rank: (active: boolean): React.CSSProperties => ({
     flexShrink: 0,
-    width: 38,
-    height: 38,
+    width: 28,
+    height: 28,
     borderRadius: '50%',
     background: active ? BLUE_DARK : BLUE,
     color: '#fff',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: 15,
-    fontWeight: 850,
-    boxShadow: '0 4px 10px rgba(37,99,255,0.22)',
+    fontSize: 12,
+    fontWeight: 900,
+    lineHeight: 1,
+    boxShadow: '0 4px 10px rgba(37,99,255,0.18)',
   }),
 
   titleRow: {

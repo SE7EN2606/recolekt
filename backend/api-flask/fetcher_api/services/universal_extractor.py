@@ -551,10 +551,12 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         )
 
         call1_raw_tools: List[dict] = []
-        if isinstance(result_data, dict):
+
+        if extraction_content_type != "location" and isinstance(result_data, dict):
             raw_tools_block = result_data.get("tools") or {}
             if isinstance(raw_tools_block, dict):
-                call1_raw_tools = raw_tools_block.get("categories", [])
+                call1_raw_tools = raw_tools_block.get("categories", []) or []
+
         if call1_raw_tools:
             logger.info("🔧 Captured %d raw Call 1 tool categories", len(call1_raw_tools))
 

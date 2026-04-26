@@ -9,10 +9,10 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
-# Broad enough for venue matching without getting too permissive.
 COUNTRY_ALIASES: Dict[str, str] = {
     "austria": "Austria",
     "österreich": "Austria",
+    "autriche": "Austria",
     "germany": "Germany",
     "deutschland": "Germany",
     "switzerland": "Switzerland",
@@ -20,6 +20,7 @@ COUNTRY_ALIASES: Dict[str, str] = {
     "suisse": "Switzerland",
     "italy": "Italy",
     "italia": "Italy",
+    "italie": "Italy",
     "france": "France",
     "spain": "Spain",
     "españa": "Spain",
@@ -45,11 +46,18 @@ COUNTRY_ALIASES: Dict[str, str] = {
     "australia": "Australia",
     "new zealand": "New Zealand",
     "japan": "Japan",
+    "japon": "Japan",
     "thailand": "Thailand",
+    "thaïlande": "Thailand",
+    "thailande": "Thailand",
     "indonesia": "Indonesia",
+    "indonésie": "Indonesia",
+    "indonesie": "Indonesia",
     "bali": "Indonesia",
     "greece": "Greece",
     "turkey": "Turkey",
+    "turquie": "Turkey",
+    "maldives": "Maldives",
     "uae": "United Arab Emirates",
     "united arab emirates": "United Arab Emirates",
     "dubai": "United Arab Emirates",
@@ -74,11 +82,30 @@ COUNTRY_ALIASES: Dict[str, str] = {
 }
 
 _FAKE_REGION_TERMS = {
-    "europe", "europa", "alps", "alpine", "dolomites", "mediterranean",
-    "scandinavia", "middle east", "southeast asia", "asia", "africa",
-    "north america", "south america", "latin america", "oceania",
-    "caribbean", "balkans", "nordics", "benelux", "central europe",
-    "eastern europe", "western europe", "northern europe", "southern europe",
+    "europe",
+    "europa",
+    "alps",
+    "alpine",
+    "dolomites",
+    "mediterranean",
+    "scandinavia",
+    "middle east",
+    "southeast asia",
+    "asia",
+    "africa",
+    "north america",
+    "south america",
+    "latin america",
+    "oceania",
+    "caribbean",
+    "balkans",
+    "nordics",
+    "benelux",
+    "central europe",
+    "eastern europe",
+    "western europe",
+    "northern europe",
+    "southern europe",
 }
 
 NOISE_PHRASES = {
@@ -129,11 +156,48 @@ _COMMON_VENUE_SUFFIXES = (
 )
 
 ADDRESS_KEYWORDS = {
-    "street", "st", "st.", "road", "rd", "rd.", "avenue", "ave", "ave.",
-    "lane", "ln", "ln.", "boulevard", "blvd", "blvd.", "drive", "dr", "dr.",
-    "place", "pl", "pl.", "square", "sq", "sq.", "way", "route", "rue",
-    "via", "viale", "calle", "camino", "paseo", "rua", "strasse", "straße",
-    "gasse", "platz", "weg", "allee", "quai", "cours", "promenade",
+    "street",
+    "st",
+    "st.",
+    "road",
+    "rd",
+    "rd.",
+    "avenue",
+    "ave",
+    "ave.",
+    "lane",
+    "ln",
+    "ln.",
+    "boulevard",
+    "blvd",
+    "blvd.",
+    "drive",
+    "dr",
+    "dr.",
+    "place",
+    "pl",
+    "pl.",
+    "square",
+    "sq",
+    "sq.",
+    "way",
+    "route",
+    "rue",
+    "via",
+    "viale",
+    "calle",
+    "camino",
+    "paseo",
+    "rua",
+    "strasse",
+    "straße",
+    "gasse",
+    "platz",
+    "weg",
+    "allee",
+    "quai",
+    "cours",
+    "promenade",
 }
 
 _CAPTION_MENTION_RE = re.compile(r"(?<![\w.])@([A-Za-z0-9._]{2,})")
@@ -147,6 +211,24 @@ _ITEM_ACCOUNT_KEYS = (
     "mention",
     "account",
     "account_username",
+)
+
+_BAD_BIO_ADDRESS_FRAGMENT_RE = re.compile(
+    r"\b("
+    r"\d+\s*[-–]?\s*(?:sterne|star)s?|"
+    r"hotel\s+auf\s+\d+|"
+    r"resort\s+at\s+\d+|"
+    r"auf\s+\d+|"
+    r"above\s+\d+|"
+    r"altitude|"
+    r"elevation"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_ALTITUDE_POSTAL_RE = re.compile(
+    r"^\d{1,4}(?:[.,]\d{1,3})?m$",
+    re.IGNORECASE,
 )
 
 
@@ -233,6 +315,29 @@ def _looks_like_symbol_only(value: str) -> bool:
     return bool(value) and not any(ch.isalnum() for ch in value)
 
 
+def _looks_like_altitude_or_rating_fragment(value: Any) -> bool:
+    text = _normalize_geo_text(value)
+    if not text:
+        return False
+
+    folded = _fold_accents(text).lower()
+    compact = re.sub(r"\s+", "", folded)
+
+    if _ALTITUDE_POSTAL_RE.fullmatch(compact):
+        return True
+
+    if _BAD_BIO_ADDRESS_FRAGMENT_RE.search(folded):
+        return True
+
+    if re.fullmatch(r"\d+(?:[.,]\d+)?\s*m", folded):
+        return True
+
+    if re.fullmatch(r"\d+\s*[-–]?\s*(?:sterne|stars?)", folded):
+        return True
+
+    return False
+
+
 def _has_location_marker(text: str) -> bool:
     lowered = (text or "").lower()
     return any(marker in lowered for marker in (
@@ -272,6 +377,8 @@ def _looks_like_place_name(text: str) -> bool:
     if not text:
         return False
     if _looks_like_symbol_only(text):
+        return False
+    if _looks_like_altitude_or_rating_fragment(text):
         return False
     if _looks_like_marketing_tagline(text):
         return False
@@ -342,6 +449,21 @@ def _looks_like_postal_code(token: str, context: str = "") -> bool:
     if not token:
         return False
 
+    token_lower = token.lower()
+    context_lower = _fold_accents(context).lower()
+
+    if _ALTITUDE_POSTAL_RE.fullmatch(token_lower):
+        return False
+
+    if re.search(r"(?:sterne|star|hotel|resort)", token_lower):
+        return False
+
+    if token_lower.endswith("m") and re.search(
+        r"\b(?:auf|at|above|altitude|elevation)\s*\d",
+        context_lower,
+    ):
+        return False
+
     if not re.fullmatch(r"[A-Z0-9\-]{3,10}", token.upper()):
         return False
 
@@ -349,7 +471,6 @@ def _looks_like_postal_code(token: str, context: str = "") -> bool:
         return False
 
     if re.fullmatch(r"(1[5-9]\d{2}|20\d{2})", token):
-        context_lower = _fold_accents(context).lower()
         if not any(keyword in context_lower for keyword in ADDRESS_KEYWORDS) and "," not in context:
             return False
 
@@ -361,7 +482,11 @@ def _extract_postal_code(text: str) -> Optional[str]:
         return None
 
     cleaned_text = _normalize_geo_text(text)
-    candidates = re.findall(r"\b[A-Z]?\d[A-Z0-9\- ]{2,8}\b|\b\d{4,6}\b", cleaned_text, flags=re.IGNORECASE)
+    candidates = re.findall(
+        r"\b[A-Z]?\d[A-Z0-9\- ]{2,8}\b|\b\d{4,6}\b",
+        cleaned_text,
+        flags=re.IGNORECASE,
+    )
     cleaned: List[str] = []
 
     for candidate in candidates:
@@ -429,7 +554,11 @@ def _split_locationish_fragments(text: str) -> List[str]:
         return []
 
     text = _clean_text(text)
-    raw_lines = [line.strip(" ,;") for line in re.split(r"[\n|]+", text) if line.strip(" ,;")]
+    raw_lines = [
+        line.strip(" ,;")
+        for line in re.split(r"[\n|]+", text)
+        if line.strip(" ,;")
+    ]
 
     fragments: List[str] = []
     seen: set[str] = set()
@@ -448,14 +577,22 @@ def _split_locationish_fragments(text: str) -> List[str]:
 
         comma_parts = [part.strip(" ,;") for part in line.split(",") if part.strip(" ,;")]
         if len(comma_parts) >= 2 and any(_is_locationish_fragment(part) for part in comma_parts):
-            candidate = ", ".join(_normalize_geo_text(part) for part in comma_parts if _normalize_geo_text(part))
+            candidate = ", ".join(
+                _normalize_geo_text(part)
+                for part in comma_parts
+                if _normalize_geo_text(part)
+            )
             key = candidate.casefold()
             if candidate and key not in seen:
                 seen.add(key)
                 fragments.append(candidate)
             continue
 
-        dot_parts = [part.strip(" ,;.") for part in re.split(r"\.+", line) if part.strip(" ,;.")]
+        dot_parts = [
+            part.strip(" ,;.")
+            for part in re.split(r"\.+", line)
+            if part.strip(" ,;.")
+        ]
         if len(dot_parts) >= 2 and sum(1 for part in dot_parts if _looks_like_place_name(part)) >= 2:
             candidate = ", ".join(dot_parts[:3])
             key = candidate.casefold()
@@ -467,12 +604,16 @@ def _split_locationish_fragments(text: str) -> List[str]:
 
 
 def _looks_like_address(text: str) -> bool:
-    lowered = _fold_accents(_normalize_geo_text(text)).lower()
+    normalized = _normalize_geo_text(text)
+    lowered = _fold_accents(normalized).lower()
+
+    if _looks_like_altitude_or_rating_fragment(normalized):
+        return False
 
     if any(keyword in lowered for keyword in ADDRESS_KEYWORDS):
         return True
 
-    if re.search(r"\d", text) and re.search(r"[A-Za-zÄÖÜäöüß]", text):
+    if re.search(r"\d", normalized) and re.search(r"[A-Za-zÄÖÜäöüß]", normalized):
         return True
 
     return False
@@ -487,10 +628,13 @@ def _tokenize_location_fragment(text: str) -> List[str]:
         return []
 
     if "," in normalized:
-        tokens = [token.strip(" ,;") for token in normalized.split(",") if token.strip(" ,;")]
-        return tokens
+        return [token.strip(" ,;") for token in normalized.split(",") if token.strip(" ,;")]
 
-    dot_parts = [part.strip(" ,;.") for part in re.split(r"\.+", normalized) if part.strip(" ,;.")]
+    dot_parts = [
+        part.strip(" ,;.")
+        for part in re.split(r"\.+", normalized)
+        if part.strip(" ,;.")
+    ]
     if len(dot_parts) >= 2:
         return dot_parts
 
@@ -502,6 +646,8 @@ def _clean_city_value(value: Any) -> Optional[str]:
     if not text:
         return None
     if _looks_like_symbol_only(text):
+        return None
+    if _looks_like_altitude_or_rating_fragment(text):
         return None
     if _looks_like_marketing_tagline(text):
         return None
@@ -517,15 +663,34 @@ def _clean_region_value(value: Any) -> Optional[str]:
     text = _normalize_geo_text(value)
     if not text:
         return None
+
     if _looks_like_symbol_only(text):
         return None
+
+    if _looks_like_altitude_or_rating_fragment(text):
+        logger.info("📍 Dropping altitude/rating fragment parsed as region: %r", text)
+        return None
+
+    lowered = _fold_accents(text).lower()
+    compact = re.sub(r"\s+", "", lowered)
+
+    if _ALTITUDE_POSTAL_RE.fullmatch(compact):
+        logger.info("📍 Dropping altitude parsed as region: %r", text)
+        return None
+
+    if re.search(r"\d", text):
+        logger.info("📍 Dropping digit-bearing weak region fragment: %r", text)
+        return None
+
     if _looks_like_marketing_tagline(text):
         return None
-    lowered = _fold_accents(text).lower()
+
     if lowered in _FAKE_REGION_TERMS:
         return None
+
     if not _contains_letters(text):
         return None
+
     return text
 
 
@@ -533,12 +698,21 @@ def _clean_address_value(value: Any) -> Optional[str]:
     text = _normalize_geo_text(value)
     if not text:
         return None
+
     if _looks_like_symbol_only(text):
         return None
+
+    folded = _fold_accents(text).lower()
+    if _BAD_BIO_ADDRESS_FRAGMENT_RE.search(folded):
+        logger.info("📍 Dropping weak IG-bio address fragment: %r", text)
+        return None
+
     if _looks_like_marketing_tagline(text) and not _looks_like_address(text):
         return None
+
     if not _looks_like_address(text):
         return None
+
     return text
 
 
@@ -548,6 +722,9 @@ def _clean_country_value(value: Any) -> Optional[str]:
         return None
     if _looks_like_symbol_only(text):
         return None
+    if _looks_like_altitude_or_rating_fragment(text):
+        return None
+
     lowered = _fold_accents(text).lower()
     if lowered in _FAKE_REGION_TERMS:
         return None
@@ -569,8 +746,14 @@ def _clean_postal_code_value(value: Any, *, context: str = "") -> Optional[str]:
     text = _normalize_geo_text(value).replace(" ", "")
     if not text:
         return None
+
+    if _ALTITUDE_POSTAL_RE.fullmatch(text.lower()):
+        logger.info("📍 Dropping altitude parsed as postal_code: %r", text)
+        return None
+
     if not _looks_like_postal_code(text, context=context):
         return None
+
     return text
 
 
@@ -626,7 +809,7 @@ def _parse_location_fragment(fragment: str) -> Dict[str, Optional[str]]:
 
     tokens = _tokenize_location_fragment(fragment)
     if not tokens:
-        return result
+        return _sanitize_location_dict(result)
 
     cleaned_tokens: List[str] = []
     for token in tokens:
@@ -636,7 +819,11 @@ def _parse_location_fragment(fragment: str) -> Dict[str, Optional[str]]:
 
         if result["country"]:
             alias_patterns = sorted(
-                {_fold_accents(k).lower() for k, v in COUNTRY_ALIASES.items() if v == result["country"]},
+                {
+                    _fold_accents(k).lower()
+                    for k, v in COUNTRY_ALIASES.items()
+                    if v == result["country"]
+                },
                 key=len,
                 reverse=True,
             )
@@ -679,14 +866,14 @@ def _parse_location_fragment(fragment: str) -> Dict[str, Optional[str]]:
         result["address"] = first
         remaining = cleaned_tokens[1:]
 
-    if remaining:
-        if _looks_like_place_name(remaining[0]):
-            result["city"] = remaining[0]
+    if remaining and _looks_like_place_name(remaining[0]):
+        result["city"] = remaining[0]
 
     if len(remaining) >= 2:
-        if _contains_letters(remaining[1]) and not _extract_country(remaining[1]):
-            result["region"] = remaining[1]
-            result["state"] = remaining[1]
+        region_candidate = remaining[1]
+        if _contains_letters(region_candidate) and not _extract_country(region_candidate):
+            result["region"] = region_candidate
+            result["state"] = region_candidate
 
     if len(remaining) >= 3 and not result["country"]:
         maybe_country = _extract_country(remaining[2])
@@ -740,10 +927,6 @@ def extract_location_hints_from_text(text: str) -> Dict[str, Optional[str]]:
 
 
 def account_to_enrichment_candidate(account: Any) -> Dict[str, Any]:
-    """
-    Accepts either a dict or a plain username string.
-    Returns a normalized candidate dict used for matching + enrichment.
-    """
     if isinstance(account, str):
         username = _username_from_any(account)
         return {
@@ -811,7 +994,11 @@ def score_account_match(location: Dict[str, Any], account: Dict[str, Any]) -> fl
 
     account_username = account.get("username") or ""
     account_display = _display_name_from_account(account)
-    account_candidates = [value for value in [account_username, account_display] if _clean_text(value)]
+    account_candidates = [
+        value
+        for value in [account_username, account_display]
+        if _clean_text(value)
+    ]
 
     if not account_candidates:
         return 0.0
@@ -1041,16 +1228,6 @@ async def enrich_locations_with_accounts(
     min_match_score: float = 0.88,
     log: Optional[logging.Logger] = None,
 ) -> List[Dict[str, Any]]:
-    """
-    Main async entry point.
-
-    Expected inputs:
-    - locations: [{"name": "Hotel Stern"}, ...]
-    - mentioned_accounts:
-        - ["hotelstern", "sonnwies_familyresort"]
-        - or [{"username": "hotelstern", "bio": "..."}]
-    - fetch_account(username): optional callable that returns richer IG profile data
-    """
     log = log or logger
     locations = deepcopy(locations or [])
     mentioned_accounts = list(mentioned_accounts or [])
@@ -1078,10 +1255,6 @@ def enrich_locations_with_accounts_sync(
     mentioned_accounts: Optional[Iterable[Any]] = None,
     min_match_score: float = 0.88,
 ) -> List[Dict[str, Any]]:
-    """
-    Sync version for cases where mentioned_accounts already contain bio/profile data.
-    Does not attempt remote fetching.
-    """
     locations = deepcopy(locations or [])
     mentioned_accounts = list(mentioned_accounts or [])
 
@@ -1130,7 +1303,7 @@ def _tool_item_to_location_candidate(item: Dict[str, Any]) -> Optional[Dict[str,
     if not name:
         return None
 
-    candidate = {
+    return {
         "name": name,
         "description": _first_non_empty(item.get("description"), item.get("brief_description")),
         "address": _clean_address_value(_first_non_empty(item.get("address"))),
@@ -1154,8 +1327,6 @@ def _tool_item_to_location_candidate(item: Dict[str, Any]) -> Optional[Dict[str,
         ),
         "source": item.get("source") or "instagram_bio",
     }
-
-    return candidate
 
 
 def _collect_tool_item_accounts(tools_categories: Iterable[Dict[str, Any]]) -> List[Any]:
@@ -1186,20 +1357,6 @@ async def enrich_tools_with_instagram_locations(
     min_match_score: float = 0.88,
     log: Optional[logging.Logger] = None,
 ) -> List[Dict[str, Any]]:
-    """
-    Compatibility entry point used by extractor_assembly.py.
-
-    It converts tools/list items into provisional location candidates, collects
-    Instagram accounts from caption mentions and item-level handles, enriches
-    those candidates from account bio/profile metadata, and returns only rows
-    that now contain credible place metadata.
-
-    Note:
-    - If fetch_account is not provided, this only uses already-available account
-      metadata or usernames/handles.
-    - This keeps older assembly code working while reusing the canonical
-      location/account enrichment implementation above.
-    """
     log = log or logger
     tools_categories = tools_categories or []
 

@@ -20,9 +20,8 @@ import json
 import logging
 import pathlib
 import re
-from typing import Optional
 
-from fetcher_api.services.extractor_helpers import safe_list, safe_str
+from fetcher_api.services.extractor_helpers import safe_str
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +50,14 @@ def _load_asr_corrections() -> tuple[dict[str, str], list[tuple[str, str]]]:
                 text_replacements.append((pair[0], pair[1]))
             else:
                 logger.warning(
-                    "asr_corrections: skipping malformed text_replacement entry: %r", pair
+                    "asr_corrections: skipping malformed text_replacement entry: %r",
+                    pair,
                 )
 
         logger.debug(
             "asr_corrections loaded: %d tool_names, %d text_replacements",
-            len(tool_names), len(text_replacements),
+            len(tool_names),
+            len(text_replacements),
         )
         return tool_names, text_replacements
     except Exception as exc:
@@ -71,21 +72,26 @@ def fix_asr_in_text(text: str) -> str:
     """Apply known ASR text replacements to free text."""
     if not text:
         return text
+
     result = text
     for garbled, canonical in ASR_TEXT_REPLACEMENTS:
         if not isinstance(garbled, str) or not isinstance(canonical, str):
-            logger.warning("fix_asr_in_text: skipping non-string pair (%r, %r)", garbled, canonical)
+            logger.warning(
+                "fix_asr_in_text: skipping non-string pair (%r, %r)",
+                garbled,
+                canonical,
+            )
             continue
+
         if garbled.lower() in result.lower():
             result = re.sub(re.escape(garbled), canonical, result, flags=re.IGNORECASE)
+
     return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # HANDLE / @MENTION RESOLUTION
 # ═══════════════════════════════════════════════════════════════════════════════
-
-_HANDLE_RE = re.compile(r"@([a-z0-9._]+)", re.IGNORECASE)
 
 _CAPTION_HANDLE_LINE_RE = re.compile(
     r"^\s*@([a-z0-9._]+)\s*(?:→|->|[-–—:]|\.)",
@@ -107,20 +113,29 @@ def _titlecase_phrase(text: str) -> str:
     for word in safe_str(text).strip().split():
         if not word:
             continue
+
         if word.upper() in {"H&M", "COS", "BMW", "IWC", "GOTS"}:
             words.append(word.upper())
             continue
+
         if len(word) <= 3 and word.isupper():
             words.append(word)
             continue
+
         words.append(word[:1].upper() + word[1:].lower())
+
     return " ".join(words).strip()
 
 
 def _clean_transcript_name(name: str) -> str:
     s = safe_str(name).strip(" ,.-–—:;")
     s = re.sub(r"\s{2,}", " ", s)
-    s = re.sub(r"^(?:la|le|les|des|du)\s+", lambda m: m.group(0).lower(), s, flags=re.IGNORECASE)
+    s = re.sub(
+        r"^(?:la|le|les|des|du)\s+",
+        lambda m: m.group(0).lower(),
+        s,
+        flags=re.IGNORECASE,
+    )
 
     special = {
         "cosse": "COS",
@@ -152,6 +167,7 @@ def _humanize_handle(handle: str) -> str:
 
     n = norm(raw)
     n8 = n[:8]
+
     if n in CANONICAL_TOOL_NAMES:
         return CANONICAL_TOOL_NAMES[n]
     if n8 in CANONICAL_TOOL_NAMES:
@@ -209,22 +225,26 @@ def build_handle_display_map(caption: str, transcript: str) -> dict[str, str]:
     seen_handles: set[str] = set()
 
     for line in safe_str(caption).splitlines():
-        m = _CAPTION_HANDLE_LINE_RE.match(line)
-        if not m:
+        match = _CAPTION_HANDLE_LINE_RE.match(line)
+        if not match:
             continue
-        handle = m.group(1).strip().lower()
+
+        handle = match.group(1).strip().lower()
         if handle and handle not in seen_handles:
             seen_handles.add(handle)
             handle_order.append(handle)
 
     transcript_names: list[str] = []
     seen_names: set[str] = set()
-    for m in _TRANSCRIPT_VERDICT_NAME_RE.finditer(safe_str(transcript)):
-        candidate = _clean_transcript_name(m.group(1))
-        n = norm(candidate)
-        if not candidate or not n or n in seen_names:
+
+    for match in _TRANSCRIPT_VERDICT_NAME_RE.finditer(safe_str(transcript)):
+        candidate = _clean_transcript_name(match.group(1))
+        key = norm(candidate)
+
+        if not candidate or not key or key in seen_names:
             continue
-        seen_names.add(n)
+
+        seen_names.add(key)
         transcript_names.append(candidate)
 
     result: dict[str, str] = {}
@@ -257,25 +277,25 @@ def resolve_tool_display_name(
     if not original:
         return original
 
-    s = original
     handle_display_map = handle_display_map or {}
 
-    if s.startswith("@"):
-        handle = s.lstrip("@").strip().lower()
+    if original.startswith("@"):
+        handle = original.lstrip("@").strip().lower()
         mapped = handle_display_map.get(handle)
         if mapped:
             return mapped
         return _humanize_handle(handle)
 
-    if re.fullmatch(r"[a-z0-9._]+", s, flags=re.IGNORECASE) and ("." in s or "_" in s):
-        handle = s.strip().lower()
+    if re.fullmatch(r"[a-z0-9._]+", original, flags=re.IGNORECASE) and (
+        "." in original or "_" in original
+    ):
+        handle = original.strip().lower()
         mapped = handle_display_map.get(handle)
         if mapped:
             return mapped
         return _humanize_handle(handle)
 
-    canonical = canonicalize_tool_name(s)
-    return canonical
+    return canonicalize_tool_name(original)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -283,36 +303,98 @@ def resolve_tool_display_name(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 INVALID_TOOL_NAMES = frozenset({
-    "", "i", "ia", "ai", "app", "tool", "platform", "software",
-    "application", "service", "site", "website", "solution",
-    "outil", "outils", "logiciel", "logiciels",
-    "producto", "productos", "marca", "marcas",
-    "produkt", "produkte", "marke", "marken",
+    "",
+    "i",
+    "ia",
+    "ai",
+    "app",
+    "tool",
+    "platform",
+    "software",
+    "application",
+    "service",
+    "site",
+    "website",
+    "solution",
+    "outil",
+    "outils",
+    "logiciel",
+    "logiciels",
+    "producto",
+    "productos",
+    "marca",
+    "marcas",
+    "produkt",
+    "produkte",
+    "marke",
+    "marken",
 })
 
 TECH_SUFFIXES = frozenset({
-    "ai", "lab", "labs", "app", "io", "clip", "magic", "finder",
-    "chat", "bot", "hub", "flow", "cast", "kit", "sdk", "api",
-    "cloud", "gen", "gpt", "llm", "ml", "studio", "engine", "pro",
-    "plus", "max", "one", "go", "now", "live", "stream", "base",
-    "suite", "run", "link", "site", "web", "box", "list",
+    "ai",
+    "lab",
+    "labs",
+    "app",
+    "io",
+    "clip",
+    "magic",
+    "finder",
+    "chat",
+    "bot",
+    "hub",
+    "flow",
+    "cast",
+    "kit",
+    "sdk",
+    "api",
+    "cloud",
+    "gen",
+    "gpt",
+    "llm",
+    "ml",
+    "studio",
+    "engine",
+    "pro",
+    "plus",
+    "max",
+    "one",
+    "go",
+    "now",
+    "live",
+    "stream",
+    "base",
+    "suite",
+    "run",
+    "link",
+    "site",
+    "web",
+    "box",
+    "list",
 })
 
 _TEACHING_SIGNALS = (
-    "teaches", "teach", "training", "formation", "cours ",
-    "apprend", "enseigne", "income from social", "generate more",
-    "generate income", "make money", "earn money",
-    "coach", "mentor", "expert", "consultant",
+    "teaches",
+    "teach",
+    "training",
+    "formation",
+    "cours ",
+    "apprend",
+    "enseigne",
+    "income from social",
+    "generate more",
+    "generate income",
+    "make money",
+    "earn money",
+    "coach",
+    "mentor",
+    "expert",
+    "consultant",
 )
 
 
 def norm(name: str) -> str:
     """Lowercase + strip non-alphanumeric. Used as lookup key."""
-    return re.sub(r"[^a-z0-9]", "", name.lower())
-
-
-def norm8(name: str) -> str:
-    return norm(name)[:8]
+    return re.sub(r"[^a-z0-9]", "", safe_str(name).lower())
 
 
 def canonicalize_tool_name(name: str) -> str:
@@ -335,22 +417,25 @@ def canonicalize_tool_name(name: str) -> str:
         "malay": "Millet",
         "millet": "Millet",
     }
+
     if n in special:
         return special[n]
 
     if n in CANONICAL_TOOL_NAMES:
         return CANONICAL_TOOL_NAMES[n]
+
     if n8 in CANONICAL_TOOL_NAMES:
         return CANONICAL_TOOL_NAMES[n8]
+
     return raw
 
 
 def clean_tool_name(name: str) -> str:
-    return (name or "").strip()
+    return safe_str(name).strip()
 
 
 def is_valid_tool_name(name: str) -> bool:
-    cleaned_raw = (name or "").strip()
+    cleaned_raw = safe_str(name).strip()
     cleaned = cleaned_raw.lower()
 
     if cleaned in INVALID_TOOL_NAMES:
@@ -373,23 +458,27 @@ def is_valid_tool_name(name: str) -> bool:
         return True
     if len(cleaned) < 2:
         return False
+
     return True
 
 
 def looks_like_person_name(name: str, description: str = "") -> bool:
-    words = name.strip().split()
+    words = safe_str(name).strip().split()
     if len(words) != 2:
         return False
+
     first_w, last_w = words[0].lower(), words[1].lower()
     if first_w in TECH_SUFFIXES or last_w in TECH_SUFFIXES:
         return False
+
     both_proper = (
-        re.match(r"^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+$", words[0]) and
-        re.match(r"^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+$", words[1])
+        re.match(r"^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+$", words[0])
+        and re.match(r"^[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+$", words[1])
     )
     if not both_proper:
         return False
-    desc_lower = description.lower()
+
+    desc_lower = safe_str(description).lower()
     return any(sig in desc_lower for sig in _TEACHING_SIGNALS)
 
 
@@ -403,13 +492,13 @@ _VALID_CREATOR_RATINGS = {"best", "good", "bad"}
 def parse_creator_rating(raw) -> str | None:
     if not raw:
         return None
-    v = str(raw).strip().lower()
-    return v if v in _VALID_CREATOR_RATINGS else None
+
+    value = str(raw).strip().lower()
+    return value if value in _VALID_CREATOR_RATINGS else None
 
 
 def resolve_creator_rating(raw, rank=None) -> str | None:
-    explicit = parse_creator_rating(raw)
-    return explicit
+    return parse_creator_rating(raw)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -423,18 +512,23 @@ _FALSE_VALUES = {"false", "0", "no", "n", "paid", "premium", "payant"}
 def parse_optional_bool(raw, default=None):
     if raw is None:
         return default
+
     if isinstance(raw, bool):
         return raw
+
     if isinstance(raw, (int, float)):
         return bool(raw)
 
-    s = str(raw).strip().lower()
-    if not s:
+    value = str(raw).strip().lower()
+    if not value:
         return default
-    if s in _TRUE_VALUES:
+
+    if value in _TRUE_VALUES:
         return True
-    if s in _FALSE_VALUES:
+
+    if value in _FALSE_VALUES:
         return False
+
     return default
 
 
@@ -464,16 +558,20 @@ _ALTITUDE_RE = re.compile(
 def strip_fabricated_specs(description: str) -> str:
     if not description:
         return description
+
     cleaned = _FABRICATED_SPEC_RE.sub("", description)
     cleaned = _ALTITUDE_RE.sub("", cleaned)
     cleaned = re.sub(r"\s{2,}", " ", cleaned)
     cleaned = re.sub(r"^[\s,\.]+|[\s,\.]+$", "", cleaned)
     cleaned = re.sub(r",\s*,", ",", cleaned)
+
     if cleaned != description:
         logger.debug(
             "strip_fabricated_specs: '%s' → '%s'",
-            description[:80], cleaned[:80],
+            description[:80],
+            cleaned[:80],
         )
+
     return cleaned
 
 
@@ -487,8 +585,9 @@ _VALID_TIERS = frozenset({"S", "A", "B", "C", "D", "F"})
 def parse_tier(raw) -> str | None:
     if not raw:
         return None
-    v = str(raw).strip().upper()
-    return v if v in _VALID_TIERS else None
+
+    value = str(raw).strip().upper()
+    return value if value in _VALID_TIERS else None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -496,13 +595,36 @@ def parse_tier(raw) -> str | None:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 ORDINAL_TO_INT: dict[str, int] = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
-    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
-    "nineteen": 19, "twenty": 20,
-    "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
-    "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+    "first": 1,
+    "second": 2,
+    "third": 3,
+    "fourth": 4,
+    "fifth": 5,
+    "sixth": 6,
+    "seventh": 7,
+    "eighth": 8,
+    "ninth": 9,
+    "tenth": 10,
 }
 
 ORDINAL_WORDS_RE = "|".join(re.escape(w) for w in ORDINAL_TO_INT)
@@ -511,18 +633,23 @@ ORDINAL_WORDS_RE = "|".join(re.escape(w) for w in ORDINAL_TO_INT)
 def parse_rank(raw) -> int | None:
     if raw is None:
         return None
+
     if isinstance(raw, (int, float)):
-        v = int(raw)
-        return v if v > 0 else None
-    s = str(raw).strip().lower()
-    if not s:
+        value = int(raw)
+        return value if value > 0 else None
+
+    text = str(raw).strip().lower()
+    if not text:
         return None
-    s = re.sub(r"(?:st|nd|rd|th)$", "", s)
-    if s in ORDINAL_TO_INT:
-        return ORDINAL_TO_INT[s]
+
+    text = re.sub(r"(?:st|nd|rd|th)$", "", text)
+
+    if text in ORDINAL_TO_INT:
+        return ORDINAL_TO_INT[text]
+
     try:
-        v = int(s)
-        return v if v > 0 else None
+        value = int(text)
+        return value if value > 0 else None
     except (ValueError, TypeError):
         return None
 
@@ -555,11 +682,16 @@ def _clean_rank_name_fragment(name: str) -> str:
     resolve_tool_display_name/canonicalize_tool_name and, later, the LLM name
     normalization micro-call.
     """
-    s = _clean_transcript_name(name)
-    s = re.sub(r"\b(?:and|then|next|number|ranked?|rank)\b$", "", s, flags=re.IGNORECASE)
-    s = re.sub(r"^(?:and|then|next)\s+", "", s, flags=re.IGNORECASE)
-    s = re.sub(r"\s{2,}", " ", s)
-    return s.strip(" ,.-–—:;")
+    text = _clean_transcript_name(name)
+    text = re.sub(
+        r"\b(?:and|then|next|number|ranked?|rank)\b$",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"^(?:and|then|next)\s+", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s{2,}", " ", text)
+    return text.strip(" ,.-–—:;")
 
 
 def _add_rank_pair(
@@ -579,9 +711,9 @@ def _add_rank_pair(
     if len(cleaned) > 70 or len(cleaned.split()) > 8:
         return
 
-    # Reject obvious garbage fragments.
     if re.search(r"^\d+$", cleaned):
         return
+
     if cleaned.lower() in {"number", "rank", "ranked", "and", "then", "next"}:
         return
 
@@ -603,7 +735,6 @@ def _dedupe_rank_pairs(pairs: list[tuple[str, int]]) -> list[tuple[str, int]]:
     by_rank: dict[int, str] = {}
 
     def score_name(name: str) -> tuple[int, int, int]:
-        # Higher is better.
         has_space = 1 if " " in name else 0
         has_acronym = 1 if re.search(r"\b[A-Z]{2,}\b", name) else 0
         length_score = min(len(name), 40)
@@ -629,7 +760,6 @@ def parse_transcript_rank_pairs(transcript: str) -> list[tuple[str, int]]:
     Parse explicit item/rank pairs from ASR transcript.
 
     Handles all of these patterns:
-
       "Rolex. 9. Breguet. 2."
       "Rolex 9 Breguet 2 Cartier 7"
       "number 9 Rolex"
@@ -644,25 +774,23 @@ def parse_transcript_rank_pairs(transcript: str) -> list[tuple[str, int]]:
     if not transcript:
         return []
 
-    t = _strip_asr_source_headers(transcript)
-    if not t:
+    text = _strip_asr_source_headers(transcript)
+    if not text:
         return []
 
     pairs: list[tuple[str, int]] = []
     seen: set[tuple[str, int]] = set()
 
-    # Pattern A: "number 9 Rolex" / "ranked 9 Rolex"
     rank_before_name_re = re.compile(
         rf"\b(?:number|ranked?|rank)\s+(\d+|{ORDINAL_WORDS_RE})[,\s:;-]+"
         rf"([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\- ]{{1,70}}?)"
         rf"(?=(?:[,\.]|$|\s+(?:number|ranked?|rank)\s+\d|\s+[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\- ]+\s+\d))",
         re.IGNORECASE,
     )
-    for m in rank_before_name_re.finditer(t):
-        _add_rank_pair(pairs, seen, m.group(2), m.group(1))
+    for match in rank_before_name_re.finditer(text):
+        _add_rank_pair(pairs, seen, match.group(2), match.group(1))
 
-    # Pattern B: "Rolex. 9. Breguet. 2."
-    tokens = [tok.strip().rstrip(".").strip() for tok in re.split(r"\.\s+", t.strip())]
+    tokens = [tok.strip().rstrip(".").strip() for tok in re.split(r"\.\s+", text.strip())]
     tokens = [tok for tok in tokens if tok]
 
     i = 0
@@ -670,14 +798,12 @@ def parse_transcript_rank_pairs(transcript: str) -> list[tuple[str, int]]:
         current = tokens[i]
         nxt = tokens[i + 1]
 
-        # name -> rank
         rank_after = parse_rank(nxt)
         if rank_after is not None:
             _add_rank_pair(pairs, seen, current, rank_after)
             i += 2
             continue
 
-        # rank -> name
         rank_current = parse_rank(current)
         if rank_current is not None:
             _add_rank_pair(pairs, seen, nxt, rank_current)
@@ -686,10 +812,6 @@ def parse_transcript_rank_pairs(transcript: str) -> list[tuple[str, int]]:
 
         i += 1
 
-    # Pattern C: inline compact list:
-    # "Rolex 9 Breguet 2 GLC 4 Cartier 7 Patek 3 ..."
-    #
-    # This is the important one for the watch-ranking case.
     name_then_rank_re = re.compile(
         rf"(?<!\w)"
         rf"([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\-]*(?:\s+[A-ZÀ-ÖØ-Þ]?[A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\-]+){{0,4}}?)"
@@ -697,11 +819,10 @@ def parse_transcript_rank_pairs(transcript: str) -> list[tuple[str, int]]:
         rf"(?=(?:[\.,;:]|\s+[A-ZÀ-ÖØ-Þ]|\s*$))",
         re.IGNORECASE,
     )
-    for m in name_then_rank_re.finditer(t):
-        name = m.group(1)
-        rank_raw = m.group(2)
+    for match in name_then_rank_re.finditer(text):
+        name = match.group(1)
+        rank_raw = match.group(2)
 
-        # Avoid false positives where the "name" starts too far back.
         name = re.sub(
             r"^.*?(?=([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\-]*(?:\s|$)))",
             "",
@@ -710,15 +831,14 @@ def parse_transcript_rank_pairs(transcript: str) -> list[tuple[str, int]]:
 
         _add_rank_pair(pairs, seen, name, rank_raw)
 
-    # Pattern D: "Rolex is 9" / "Rolex is ninth"
     is_rank_re = re.compile(
         rf"\b([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\- ]{{1,70}}?)\s+"
         rf"(?:is|was|comes|came|ranked)\s+"
         rf"(?:at\s+|in\s+)?(?:number\s+)?(\d+|{ORDINAL_WORDS_RE})(?:st|nd|rd|th)?\b",
         re.IGNORECASE,
     )
-    for m in is_rank_re.finditer(t):
-        _add_rank_pair(pairs, seen, m.group(1), m.group(2))
+    for match in is_rank_re.finditer(text):
+        _add_rank_pair(pairs, seen, match.group(1), match.group(2))
 
     return _dedupe_rank_pairs(pairs)
 
@@ -727,12 +847,13 @@ def is_ranked_list_transcript(transcript: str) -> bool:
     if not transcript:
         return False
 
-    t = _strip_asr_source_headers(transcript).lower()
-    if not t:
+    text = _strip_asr_source_headers(transcript).lower()
+    if not text:
         return False
 
     marker_hits = len(re.findall(
-        rf"\b(?:number|ranked?|rank)\s+(?:\d+|{ORDINAL_WORDS_RE})\b", t
+        rf"\b(?:number|ranked?|rank)\s+(?:\d+|{ORDINAL_WORDS_RE})\b",
+        text,
     ))
     if marker_hits >= 2:
         return True
@@ -741,7 +862,6 @@ def is_ranked_list_transcript(transcript: str) -> bool:
     if len(pairs) >= 3:
         return True
 
-    # Compact ranked-list form: repeated "Name number" rhythm.
     compact_hits = len(re.findall(
         rf"\b[A-ZÀ-ÖØ-Þ]?[a-zà-öø-ÿA-Z0-9&'’\.\-]+\s+"
         rf"(?:\d+|{ORDINAL_WORDS_RE})(?:st|nd|rd|th)?"
@@ -749,21 +869,8 @@ def is_ranked_list_transcript(transcript: str) -> bool:
         _strip_asr_source_headers(transcript),
         flags=re.IGNORECASE,
     ))
+
     return compact_hits >= 3
-
-
-def has_complete_rank_sequence(tools_categories: list[dict]) -> bool:
-    """
-    Keep this function for compatibility, but do NOT use a complete 1..N sequence
-    as proof that ranks are correct.
-
-    Mistral often creates a fake complete sequence from mention order. In ranked
-    transcripts, explicit transcript pairs must override LLM ranks.
-
-    Returning False here forces Call1Mixin to run transcript rank enrichment
-    instead of skipping it.
-    """
-    return False
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -773,23 +880,17 @@ def has_complete_rank_sequence(tools_categories: list[dict]) -> bool:
 def _loose_name_keys(name: str) -> set[str]:
     """
     Build forgiving keys for matching ASR fragments to canonical item names.
-
-    This is not a global brand dictionary. It is a generic matching helper:
-      - normalized full string
-      - useful words
-      - initials/acronyms
-      - stems for common ASR endings
     """
     raw = safe_str(name).strip()
-    n = norm(raw)
+    normalized = norm(raw)
 
     keys: set[str] = set()
-    if n:
-        keys.add(n)
-        if len(n) >= 8:
-            keys.add(n[:8])
-        if len(n) >= 6:
-            keys.add(n[:6])
+    if normalized:
+        keys.add(normalized)
+        if len(normalized) >= 8:
+            keys.add(normalized[:8])
+        if len(normalized) >= 6:
+            keys.add(normalized[:6])
 
     words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+", raw)
     useful_words = [
@@ -798,21 +899,23 @@ def _loose_name_keys(name: str) -> set[str]:
     ]
 
     for word in useful_words:
-        wn = norm(word)
-        if wn:
-            keys.add(wn)
-            if len(wn) >= 5:
-                keys.add(wn[:5])
-            # Common ASR drift: "Langer" / "Langa" for "Lange".
-            if len(wn) >= 5 and wn.endswith(("r", "a", "er")):
-                keys.add(re.sub(r"(?:er|r|a)$", "e", wn))
+        word_norm = norm(word)
+        if not word_norm:
+            continue
+
+        keys.add(word_norm)
+
+        if len(word_norm) >= 5:
+            keys.add(word_norm[:5])
+
+        if len(word_norm) >= 5 and word_norm.endswith(("r", "a", "er")):
+            keys.add(re.sub(r"(?:er|r|a)$", "e", word_norm))
 
     if len(useful_words) >= 2:
         initials = "".join(w[0] for w in useful_words if w)
         if len(initials) >= 2:
             keys.add(initials.lower())
 
-    # For names like "A. Lange & Söhne", make "lange" very easy to match.
     if len(useful_words) >= 2 and len(norm(useful_words[0])) <= 2:
         second = norm(useful_words[1])
         if second:
@@ -820,7 +923,7 @@ def _loose_name_keys(name: str) -> set[str]:
             if len(second) >= 5:
                 keys.add(second[:5])
 
-    return {k for k in keys if k}
+    return {key for key in keys if key}
 
 
 def _names_match_loose(item_name: str, fragment: str) -> bool:
@@ -840,7 +943,6 @@ def _names_match_loose(item_name: str, fragment: str) -> bool:
         if item_norm.startswith(frag_norm) or frag_norm.startswith(item_norm):
             return True
 
-        # Prefix overlap for ASR-shortened fragments.
         if len(frag_norm) >= 4 and frag_norm[:4] in item_norm:
             return True
 
@@ -849,6 +951,7 @@ def _names_match_loose(item_name: str, fragment: str) -> bool:
 
     canonical_frag = canonicalize_tool_name(fragment)
     canonical_norm = norm(canonical_frag)
+
     if canonical_norm and item_norm:
         if canonical_norm == item_norm:
             return True
@@ -865,8 +968,8 @@ def match_item_to_rank(
     if not item_name or not pairs:
         return None
 
-    for frag, rank in pairs:
-        if _names_match_loose(item_name, frag):
+    for fragment, rank in pairs:
+        if _names_match_loose(item_name, fragment):
             return rank
 
     return None
@@ -920,6 +1023,7 @@ def _sort_ranked_tools_categories(tools_categories: list[dict]) -> list[dict]:
     Keeps unranked items after ranked ones.
     """
     result = []
+
     for cat in tools_categories or []:
         items = list(cat.get("items", []) or [])
         ranked_count = sum(1 for item in items if isinstance(item.get("rank"), int))
@@ -944,8 +1048,6 @@ def add_missing_transcript_items(
     """
     Add items present in explicit transcript rank pairs but missing from the
     LLM's structured output.
-
-    This avoids relying on the LLM to list every ranked item correctly.
     """
     if not pairs or not tools_categories:
         return tools_categories
@@ -966,18 +1068,20 @@ def add_missing_transcript_items(
 
     added: list[dict] = []
 
-    for frag, rank in pairs:
-        resolved = resolve_tool_display_name(frag, handle_display_map=handle_display_map)
+    for fragment, rank in pairs:
+        resolved = resolve_tool_display_name(
+            fragment,
+            handle_display_map=handle_display_map,
+        )
         canonical = canonicalize_tool_name(resolved)
 
         if not canonical or not is_valid_tool_name(canonical):
             continue
 
-        frag_keys = _loose_name_keys(frag) | _loose_name_keys(canonical)
-        already_by_name = bool(existing_norms & frag_keys)
+        fragment_keys = _loose_name_keys(fragment) | _loose_name_keys(canonical)
+        already_by_name = bool(existing_norms & fragment_keys)
         already_by_rank = rank in existing_ranks
 
-        # If rank already exists and the name is only a weak ASR variant, do not add duplicate.
         if already_by_name:
             continue
 
@@ -985,16 +1089,22 @@ def add_missing_transcript_items(
             logger.debug(
                 "add_missing: rank %d already exists; not adding weak extra fragment '%s'",
                 rank,
-                frag,
+                fragment,
             )
             continue
 
-        if len(canonical) > 60 or "\n" in canonical or canonical.startswith("[") or len(canonical.split()) > 6:
+        if (
+            len(canonical) > 60
+            or "\n" in canonical
+            or canonical.startswith("[")
+            or len(canonical.split()) > 6
+        ):
             logger.debug("add_missing: rejected long/garbage fragment '%s'", canonical[:50])
             continue
 
         for key in _loose_name_keys(canonical):
             existing_norms.add(key)
+
         existing_ranks.add(rank)
 
         added.append({
@@ -1014,7 +1124,7 @@ def add_missing_transcript_items(
             "add_missing: recovered '%s' rank %d from transcript fragment '%s'",
             canonical,
             rank,
-            frag,
+            fragment,
         )
 
     if not added:
@@ -1041,23 +1151,50 @@ _DISH_RECIPE_RE = re.compile(
     re.IGNORECASE,
 )
 
+_LOCATION_COUNTRY_NORMALIZATION = {
+    "thaïlande": "Thailand",
+    "thailande": "Thailand",
+    "italie": "Italy",
+    "indonésie": "Indonesia",
+    "indonesie": "Indonesia",
+    "france": "France",
+    "japon": "Japan",
+    "autriche": "Austria",
+    "turquie": "Turkey",
+    "maldives": "Maldives",
+}
+
 
 def sanitize_location(location: dict | None) -> dict | None:
     if not isinstance(location, dict):
         return location
-    what_to_try = location.get("what_to_try")
+
+    out = dict(location)
+
+    country = safe_str(out.get("country", "")).strip()
+    if country:
+        out["country"] = _LOCATION_COUNTRY_NORMALIZATION.get(
+            country.lower(),
+            country,
+        )
+
+    what_to_try = out.get("what_to_try")
     if not isinstance(what_to_try, list):
-        return location
+        return out
+
     cleaned = []
     for dish in what_to_try:
         if not isinstance(dish, dict):
             continue
+
         text = dish.get("text") or ""
         if text and _DISH_RECIPE_RE.search(text):
             logger.info("Stripped recipe instruction from location dish: %r", text[:60])
             dish = {**dish, "text": None}
+
         cleaned.append(dish)
-    return {**location, "what_to_try": cleaned}
+
+    return {**out, "what_to_try": cleaned}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1071,6 +1208,7 @@ def parse_tools_categories(
     """Parse and sanitise the tools categories block from Mistral's response."""
     if not isinstance(raw_tools, dict):
         return None
+
     categories_raw = raw_tools.get("categories", [])
     if not isinstance(categories_raw, list) or not categories_raw:
         return None
@@ -1085,6 +1223,7 @@ def parse_tools_categories(
         cat_name = safe_str(cat.get("name", "")).strip()
         cat_emoji = safe_str(cat.get("emoji", "")).strip()
         raw_items = cat.get("items", [])
+
         if not isinstance(raw_items, list):
             continue
 
@@ -1104,6 +1243,7 @@ def parse_tools_categories(
                 handle_display_map=handle_display_map,
             )
             canonical = canonicalize_tool_name(name)
+
             if canonical != name or name != raw_name:
                 logger.info("parse_tools: '%s' -> '%s'", raw_name, canonical)
                 name = canonical
@@ -1117,6 +1257,7 @@ def parse_tools_categories(
 
             key_full = norm(name)
             key8 = key_full[:8]
+
             if (
                 not key_full
                 or key_full in seen_in_cat
@@ -1149,7 +1290,11 @@ def parse_tools_categories(
             })
 
         if clean_items:
-            categories.append({"name": cat_name, "emoji": cat_emoji, "items": clean_items})
+            categories.append({
+                "name": cat_name,
+                "emoji": cat_emoji,
+                "items": clean_items,
+            })
 
     return categories if categories else None
 
@@ -1175,9 +1320,11 @@ def promote_items_to_tools(
 
     seen: set[str] = set()
     clean: list[dict] = []
-    for idx, item in enumerate(items):
+
+    for item in items:
         if not isinstance(item, dict):
             continue
+
         raw_name = clean_tool_name(safe_str(item.get("name", "")))
         if not is_valid_tool_name(raw_name):
             continue
@@ -1187,14 +1334,17 @@ def promote_items_to_tools(
             handle_display_map=handle_display_map,
         )
         canonical = canonicalize_tool_name(name)
+
         if canonical != name or name != raw_name:
             logger.info("promote_items: '%s' -> '%s'", raw_name, canonical)
             name = canonical
 
         key_full = norm(name)
         key8 = key_full[:8]
+
         if key_full in seen or key8 in seen:
             continue
+
         seen.add(key_full)
         seen.add(key8)
 
@@ -1204,7 +1354,11 @@ def promote_items_to_tools(
         if tier_str is None and rank_int is None and pairs:
             rank_int = match_item_to_rank(name, pairs)
             if rank_int is not None:
-                logger.info("promote_items: '%s' inferred rank %d from transcript", name, rank_int)
+                logger.info(
+                    "promote_items: '%s' inferred rank %d from transcript",
+                    name,
+                    rank_int,
+                )
 
         desc = safe_str(item.get("description", "")).strip()
         desc = strip_fabricated_specs(desc)
@@ -1225,10 +1379,23 @@ def promote_items_to_tools(
     if len(clean) < 2:
         return None
 
-    clean.sort(key=lambda x: ((x["rank"] is None), x["rank"] or 999, x["name"].lower()))
+    clean.sort(key=lambda x: (
+        x["rank"] is None,
+        x["rank"] or 999,
+        x["name"].lower(),
+    ))
 
-    logger.info("promote_items_to_tools: promoted %d items -> category '%s'", len(clean), category_name)
-    return [{"name": category_name, "emoji": category_emoji, "items": clean}]
+    logger.info(
+        "promote_items_to_tools: promoted %d items -> category '%s'",
+        len(clean),
+        category_name,
+    )
+
+    return [{
+        "name": category_name,
+        "emoji": category_emoji,
+        "items": clean,
+    }]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1296,9 +1463,10 @@ async def normalize_brand_names_via_llm(
             and len(corrected) == len(names)
             and all(isinstance(n, str) for n in corrected)
         ):
-            for orig, fixed in zip(names, corrected):
-                if orig != fixed:
-                    logger.info("normalize_brands: '%s' -> '%s'", orig, fixed)
+            for original, fixed in zip(names, corrected):
+                if original != fixed:
+                    logger.info("normalize_brands: '%s' -> '%s'", original, fixed)
+
             return corrected
 
         logger.warning("normalize_brands: unexpected response shape, using originals")
@@ -1314,13 +1482,19 @@ def apply_normalized_names(
     name_map: dict[str, str],
 ) -> list[dict]:
     result = []
+
     for cat in tools_categories:
         new_items = []
+
         for item in cat.get("items", []):
-            orig = item.get("name", "")
-            fixed = name_map.get(orig)
-            if fixed and fixed != orig:
+            original = item.get("name", "")
+            fixed = name_map.get(original)
+
+            if fixed and fixed != original:
                 item = {**item, "name": fixed}
+
             new_items.append(item)
+
         result.append({**cat, "items": new_items})
+
     return result

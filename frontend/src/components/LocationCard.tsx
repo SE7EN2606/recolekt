@@ -20,15 +20,11 @@ import {
   extractPlaces,
   fallbackCountryFromInput,
   GeocodedPlace,
-  hydrationCache,
-  hydrationDone,
-  hydrationInFlight,
   LocationInput,
   LocationPlace,
   makeNumberedIcon,
   mergeEnrichedPlaces,
   normalizePlace,
-  patchBackendLocations,
   persistSavedPlace,
   placeKey,
   ratingMeta,
@@ -88,9 +84,11 @@ function ActiveFlyer({ place }: { place: GeocodedPlace | null }) {
     const zoom = 14;
     const latLng = L.latLng(place.coords.lat, place.coords.lng);
     const projected = map.project(latLng, zoom);
+    const mapHeight = map.getSize().y || 315;
+    const yOffset = Math.min(120, Math.max(76, mapHeight * 0.28));
 
     const offsetCenter = map.unproject(
-      L.point(projected.x, projected.y + 44),
+      L.point(projected.x, projected.y + yOffset),
       zoom,
     );
 
@@ -98,7 +96,7 @@ function ActiveFlyer({ place }: { place: GeocodedPlace | null }) {
       animate: true,
       duration: 0.7,
     });
-  }, [map, place?._idx]);
+  }, [map, place?._idx, place?.coords?.lat, place?.coords?.lng]);
 
   return null;
 }
@@ -124,7 +122,6 @@ export const LocationCard: React.FC<LocationCardProps> = ({
   const [places, setPlaces] = useState<GeocodedPlace[]>([]);
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const [isHydrating, setIsHydrating] = useState(false);
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
 
@@ -151,6 +148,10 @@ export const LocationCard: React.FC<LocationCardProps> = ({
         city: p.city ?? null,
         region: p.region ?? null,
         country: p.country ?? null,
+        google_place_id: p.google_place_id ?? null,
+        photo_url: p.photo_url ?? null,
+        rating: p.rating ?? p.google_rating ?? null,
+        user_ratings_total: p.user_ratings_total ?? p.review_count ?? null,
       })),
     );
   }, [normalizedPlaces]);
@@ -179,103 +180,14 @@ export const LocationCard: React.FC<LocationCardProps> = ({
   }, [normalizedSignature, normalizedPlaces]);
 
   useEffect(() => {
-    let cancelled = false;
-
     setPlaces(normalizedPlaces);
+
     setActiveIdx((prev) =>
-      prev !== null && normalizedPlaces.some((p) => p._idx === prev)
+      prev !== null && normalizedPlaces.some((p) => p._idx === prev && p.coords)
         ? prev
         : null,
     );
-
-    const needsBackendHydration =
-      !!processId &&
-      normalizedPlaces.length > 0 &&
-      normalizedPlaces.some((p) => !p.coords);
-
-    if (!needsBackendHydration) {
-      setIsHydrating(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const hydrationKey = `${processId}:${normalizedSignature}`;
-
-    if (hydrationDone.has(hydrationKey)) {
-      const cached = hydrationCache.get(hydrationKey);
-
-      if (cached?.length) {
-        setPlaces((prev) => {
-          const { places: merged } = mergeEnrichedPlaces(prev, cached);
-          return merged;
-        });
-
-        setIsHydrating(false);
-        return () => {
-          cancelled = true;
-        };
-      }
-
-      hydrationDone.delete(hydrationKey);
-    }
-
-    setIsHydrating(true);
-    setPlaces((prev) =>
-      prev.map((p) => ({
-        ...p,
-        rank: Number(p.rank) || p._idx + 1,
-        status: p.coords ? 'done' : 'loading',
-      })),
-    );
-
-    let promise = hydrationInFlight.get(hydrationKey);
-
-    if (!promise) {
-      promise = patchBackendLocations(processId, normalizedPlaces);
-      hydrationInFlight.set(hydrationKey, promise);
-    }
-
-    promise
-      .then((enriched) => {
-        if (cancelled) return;
-
-        if (enriched?.length) {
-          const cleaned = enriched.map((p) => ({
-            ...p,
-            rank: Number(p.rank) || p._idx + 1,
-            status: p.coords ? ('done' as const) : ('failed' as const),
-          }));
-
-          hydrationDone.add(hydrationKey);
-          hydrationCache.set(hydrationKey, cleaned);
-
-          setPlaces((prev) => {
-            const { places: merged } = mergeEnrichedPlaces(prev, cleaned);
-            return merged;
-          });
-        } else {
-          setPlaces((prev) =>
-            prev.map((p) => ({
-              ...p,
-              rank: Number(p.rank) || p._idx + 1,
-              status: p.coords ? 'done' : 'failed',
-            })),
-          );
-        }
-      })
-      .finally(() => {
-        hydrationInFlight.delete(hydrationKey);
-
-        if (!cancelled) {
-          setIsHydrating(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [normalizedSignature, normalizedPlaces, processId]);
+  }, [normalizedSignature, normalizedPlaces]);
 
   const googleEnrichmentSignature = useMemo(() => {
     return JSON.stringify(
@@ -296,12 +208,12 @@ export const LocationCard: React.FC<LocationCardProps> = ({
     let cancelled = false;
 
     const needsGoogleDetails = places.some((place) =>
-      place.coords &&
-      (!place.photo_url ||
-        !place.google_name ||
-        place.rating == null ||
-        place.google_rating == null ||
-        place.user_ratings_total == null),
+      !place.coords ||
+      !place.photo_url ||
+      !place.google_name ||
+      place.rating == null ||
+      place.google_rating == null ||
+      place.user_ratings_total == null,
     );
 
     if (!needsGoogleDetails) {
@@ -322,7 +234,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [googleEnrichmentSignature]);
+  }, [googleEnrichmentSignature, places]);
 
   const mappablePlaces = useMemo(() => {
     return places.filter((p) => p.coords);
@@ -332,9 +244,11 @@ export const LocationCard: React.FC<LocationCardProps> = ({
   const hasDisplayPlaces = places.length > 0;
   const hasMappablePlaces = mappablePlaces.length > 0;
 
+  const shouldShowMapPanel = !hasDisplayPlaces || hasMappablePlaces;
+
   const activePlace = useMemo(() => {
     if (activeIdx === null) return null;
-    return places.find((place) => place._idx === activeIdx) ?? null;
+    return places.find((place) => place._idx === activeIdx && place.coords) ?? null;
   }, [activeIdx, places]);
 
   const defaultCenter = useMemo<[number, number]>(() => {
@@ -343,6 +257,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({
   }, [mappablePlaces]);
 
   const handleItemClick = useCallback((place: GeocodedPlace) => {
+    if (!place.coords) return;
     setActiveIdx((prev) => (prev === place._idx ? null : place._idx));
   }, []);
 
@@ -434,7 +349,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({
   );
 
   const headerCount = places.length || rawPlaces.length;
-  const headerLabel = `${headerCount} ${headerCount === 1 ? 'PLACE' : 'PLACES'}`;
+  const headerLabel = `${headerCount} ${headerCount === 1 ? 'Place' : 'Places'}`;
 
   return (
     <div style={css.card}>
@@ -470,6 +385,23 @@ export const LocationCard: React.FC<LocationCardProps> = ({
             background: transparent;
             border: none;
           }
+
+          .recolekt-location-card .recolekt-map-active-card {
+            left: 50% !important;
+            right: auto !important;
+            bottom: 28px !important;
+            transform: translateX(-50%) !important;
+          }
+
+          @media (max-width: 520px) {
+            .recolekt-location-card .recolekt-map-active-card {
+              left: 50% !important;
+              right: auto !important;
+              bottom: 28px !important;
+              transform: translateX(-50%) !important;
+              width: min(455px, calc(100% - 56px)) !important;
+            }
+          }
         `}
       </style>
 
@@ -477,8 +409,8 @@ export const LocationCard: React.FC<LocationCardProps> = ({
         <div style={css.header}>
           <div style={css.headerIcon}>
             <svg
-              width="27"
-              height="27"
+              width="20"
+              height="20"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -490,108 +422,104 @@ export const LocationCard: React.FC<LocationCardProps> = ({
           </div>
 
           <span style={css.headerLabel}>{headerLabel}</span>
-
-          {isHydrating && (
-            <span style={css.headerStatus}>locating…</span>
-          )}
         </div>
 
-        <div style={css.mapWrap}>
-          {!hasDisplayPlaces ? (
-            <div style={css.emptyMap}>
-              {hasRawPlaces
-                ? 'Exact map pins are unavailable because the reel does not reveal real place names.'
-                : 'No exact places were found for this reel.'}
-            </div>
-          ) : isHydrating && !hasMappablePlaces ? (
-            <div style={css.mapLoading}>Locating map pins…</div>
-          ) : !hasMappablePlaces ? (
-            <div style={css.emptyMap}>
-              Exact map pins are unavailable for these places.
-            </div>
-          ) : (
-            <>
-              <MapContainer
-                center={defaultCenter}
-                zoom={6}
-                minZoom={2}
-                maxZoom={18}
-                scrollWheelZoom={false}
-                style={{ width: '100%', height: '100%' }}
-              >
-                <TileLayer
-                  attribution="&copy; Google Maps"
-                  url="https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
-                  subdomains={['mt0', 'mt1', 'mt2', 'mt3']}
-                />
-
-                <MapInvalidator />
-                <BoundsFitter places={mappablePlaces} />
-                <ActiveFlyer place={activePlace} />
-
-                {mappablePlaces.map((place) => (
-                  <Marker
-                    key={`marker-${place._idx}`}
-                    position={[place.coords!.lat, place.coords!.lng]}
-                    icon={makeNumberedIcon(
-                      place.rank,
-                      activeIdx === place._idx,
-                    )}
-                    eventHandlers={{
-                      click: () => {
-                        setActiveIdx((prev) =>
-                          prev === place._idx ? null : place._idx,
-                        );
-                      },
-                    }}
+        {shouldShowMapPanel && (
+          <div style={css.mapWrap}>
+            {!hasDisplayPlaces ? (
+              <div style={css.emptyMap}>
+                {hasRawPlaces
+                  ? 'Exact map pins are unavailable because the reel does not reveal real place names.'
+                  : 'No exact places were found for this reel.'}
+              </div>
+            ) : (
+              <>
+                <MapContainer
+                  center={defaultCenter}
+                  zoom={6}
+                  minZoom={2}
+                  maxZoom={18}
+                  scrollWheelZoom={false}
+                  style={{ width: '100%', height: '100%' }}
+                >
+                  <TileLayer
+                    attribution="&copy; Google Maps"
+                    url="https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+                    subdomains={['mt0', 'mt1', 'mt2', 'mt3']}
                   />
-                ))}
-              </MapContainer>
 
-              {activePlace && (
-                <div style={css.mapCard}>
-                  {activePlace.photo_url ? (
-                    <img
-                      src={activePlace.photo_url}
-                      alt={displayName(activePlace)}
-                      style={css.mapCardPhoto}
-                      loading="lazy"
+                  <MapInvalidator />
+                  <BoundsFitter places={mappablePlaces} />
+                  <ActiveFlyer place={activePlace} />
+
+                  {mappablePlaces.map((place) => (
+                    <Marker
+                      key={`marker-${place._idx}`}
+                      position={[place.coords!.lat, place.coords!.lng]}
+                      icon={makeNumberedIcon(
+                        place.rank,
+                        activeIdx === place._idx,
+                      )}
+                      eventHandlers={{
+                        click: () => {
+                          setActiveIdx((prev) =>
+                            prev === place._idx ? null : place._idx,
+                          );
+                        },
+                      }}
                     />
-                  ) : (
-                    <div style={css.mapCardRank}>{activePlace.rank}</div>
-                  )}
+                  ))}
+                </MapContainer>
 
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={css.mapCardTitleRow}>
-                      <div style={css.mapCardTitle}>{displayName(activePlace)}</div>
+                {activePlace && (
+                  <div className="recolekt-map-active-card" style={css.mapCard}>
+                    {activePlace.photo_url ? (
+                      <div style={css.mapCardPhotoWrap}>
+                        <img
+                          src={activePlace.photo_url}
+                          alt={displayName(activePlace)}
+                          style={css.mapCardPhoto}
+                          loading="lazy"
+                        />
+                      </div>
+                    ) : (
+                      <div style={css.mapCardRank}>{activePlace.rank}</div>
+                    )}
 
-                      {activePlace.country && (
-                        <div style={css.mapCardCountry}>
-                          {activePlace.country}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={css.mapCardTitleRow}>
+                        <div style={css.mapCardTitle}>
+                          {displayName(activePlace)}
+                        </div>
+
+                        {activePlace.country && (
+                          <div style={css.mapCardCountry}>
+                            {activePlace.country}
+                          </div>
+                        )}
+                      </div>
+
+                      {ratingMeta(activePlace) && (
+                        <div style={css.mapCardMeta}>
+                          {ratingMeta(activePlace)}
                         </div>
                       )}
                     </div>
 
-                    {ratingMeta(activePlace) && (
-                      <div style={css.mapCardMeta}>
-                        {ratingMeta(activePlace)}
-                      </div>
-                    )}
+                    <button
+                      type="button"
+                      style={css.mapCardClose}
+                      onClick={() => setActiveIdx(null)}
+                      aria-label="Close place card"
+                    >
+                      ×
+                    </button>
                   </div>
-
-                  <button
-                    type="button"
-                    style={css.mapCardClose}
-                    onClick={() => setActiveIdx(null)}
-                    aria-label="Close place card"
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {hasDisplayPlaces && (
           <div style={css.list}>
@@ -613,21 +541,35 @@ export const LocationCard: React.FC<LocationCardProps> = ({
               return (
                 <div
                   key={`place-${place._idx}`}
+                  className="location-place-item"
                   style={css.item(active, hovered, hasPin)}
                   onClick={() => handleItemClick(place)}
                   onMouseEnter={() => setHoverIdx(place._idx)}
                   onMouseLeave={() => setHoverIdx(null)}
                 >
-                  <div style={css.rank(active)}>
+                  <div className="location-place-rank" style={css.rank(active)}>
                     {place.rank}
                   </div>
 
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={css.titleRow}>
-                      <div style={css.name}>{place.name}</div>
+                  <div
+                    className="location-place-main"
+                    style={{ flex: 1, minWidth: 0 }}
+                  >
+                    <div
+                      className="location-place-title-row"
+                      style={css.titleRow}
+                    >
+                      <div className="location-place-name" style={css.name}>
+                        {place.name}
+                      </div>
 
                       {countryLabel && (
-                        <span style={css.countryInline}>{countryLabel}</span>
+                        <span
+                          className="location-place-country"
+                          style={css.countryInline}
+                        >
+                          {countryLabel}
+                        </span>
                       )}
                     </div>
 
@@ -640,9 +582,10 @@ export const LocationCard: React.FC<LocationCardProps> = ({
                     ) : null}
                   </div>
 
-                  <div style={css.actions}>
+                  <div className="location-place-actions" style={css.actions}>
                     <button
                       type="button"
+                      className="location-bookmark-btn"
                       style={{
                         ...css.bookmarkBtn(saved),
                         opacity: saving ? 0.65 : 1,
@@ -666,6 +609,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({
 
                     <button
                       type="button"
+                      className="location-directions-btn"
                       style={css.directionsBtn}
                       onClick={(event) => handleDirections(event, place)}
                       aria-label={`Directions to ${place.name}`}
@@ -681,7 +625,9 @@ export const LocationCard: React.FC<LocationCardProps> = ({
                         <line x1="22" y1="2" x2="11" y2="13" />
                         <polygon points="22 2 15 22 11 13 2 9 22 2" />
                       </svg>
-                      Directions
+                      <span className="location-directions-label">
+                        Directions
+                      </span>
                     </button>
                   </div>
                 </div>

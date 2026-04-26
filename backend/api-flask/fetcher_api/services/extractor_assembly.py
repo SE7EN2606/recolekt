@@ -17,12 +17,14 @@ Internal compatibility:
   - Call 1 / Call 2 / parsers may still use legacy internal "tools" concepts
   - But public final payload should no longer expose content_type="tools"
 
-v27:
+v28:
   - Sanitizes merged/promoted location rows before final promotion.
   - Strengthens venue/account matching with accent folding, separator cleanup,
     common venue suffix removal, and conservative containment matching.
   - Preserves full base row coverage while allowing IG enrichment to fill only
     missing fields.
+  - Repairs final public count claims for location lists so summaries/titles do
+    not say "Top 10" when only 9 real places were extracted.
 """
 
 from __future__ import annotations
@@ -121,6 +123,15 @@ _ADDRESS_HINTS = (
     "boulevard", "blvd", "blvd.", "lane", "ln", "ln.", "drive", "dr", "dr.",
     "rue", "via", "platz", "plaza", "piazza", "straße", "strasse", "route",
     "weg", "allee", "quai", "cours", "promenade",
+)
+
+_PLACE_COUNT_NOUN_PATTERN = (
+    r"(?:"
+    r"top[- ]rated\s+)?"
+    r"(?:"
+    r"resorts?|hotels?|hôtels?|places?|destinations?|properties|venues?|spots?|"
+    r"picks?|options?|complexes(?:\s+hôteliers)?|établissements|lieux|adresses"
+    r")"
 )
 
 
@@ -362,6 +373,61 @@ def _sanitize_location_rows(location_data) -> list[dict]:
             sanitized.append(clean)
 
     return sanitized
+
+
+def _count_locations(location_data) -> int:
+    rows = _normalize_location_rows(location_data)
+    return len([row for row in rows if isinstance(row, dict) and row.get("name")])
+
+
+def _repair_count_claims(text: str, actual_count: int) -> str:
+    if not text or actual_count <= 0:
+        return text
+
+    def replace_top(match: re.Match) -> str:
+        prefix = match.group(1)
+        claimed = int(match.group(2))
+        return f"{prefix}{actual_count}" if claimed != actual_count else match.group(0)
+
+    def replace_numbered_place_noun(match: re.Match) -> str:
+        claimed = int(match.group(1))
+        suffix = match.group(2)
+        return f"{actual_count}{suffix}" if claimed != actual_count else match.group(0)
+
+    repaired = re.sub(
+        r"\b([Tt]op\s+|TOP\s+)(\d+)\b",
+        replace_top,
+        text,
+    )
+
+    repaired = re.sub(
+        rf"\b(\d+)(\s+{_PLACE_COUNT_NOUN_PATTERN}\b)",
+        replace_numbered_place_noun,
+        repaired,
+        flags=re.IGNORECASE,
+    )
+
+    return repaired
+
+
+def _repair_location_count_claims_in_highlights(highlights, actual_count: int):
+    if not isinstance(highlights, list) or actual_count <= 0:
+        return highlights
+
+    repaired = []
+    for item in highlights:
+        if not isinstance(item, dict):
+            repaired.append(item)
+            continue
+
+        next_item = dict(item)
+        for key in ("headline", "description", "text"):
+            if isinstance(next_item.get(key), str):
+                next_item[key] = _repair_count_claims(next_item[key], actual_count)
+
+        repaired.append(next_item)
+
+    return repaired
 
 
 def _collect_tool_names(tools_categories: list[dict] | None) -> set[str]:
@@ -1025,6 +1091,30 @@ class AssemblyMixin:
             caption=caption_text,
         )
 
+        if has_location:
+            public_content_type = "location"
+            parsed["location"] = _sanitize_location_rows(parsed.get("location"))
+
+            location_count = _count_locations(parsed.get("location"))
+            if location_count:
+                title_en = _repair_count_claims(title_en, location_count)
+                title_og = _repair_count_claims(title_og, location_count)
+                summary_en = _repair_count_claims(summary_en, location_count)
+                summary_og = _repair_count_claims(summary_og, location_count)
+                headlines_en = _repair_location_count_claims_in_highlights(headlines_en, location_count)
+                headlines_og = _repair_location_count_claims_in_highlights(headlines_og, location_count)
+
+            is_list = False
+            list_count = 0
+            list_type = ""
+            list_summary = ""
+            list_subtype = ""
+            structure_analysis = None
+            logger.info("📍 Credible location present, forcing location-first render semantics")
+
+        if public_content_type not in _PUBLIC_CONTENT_TYPES:
+            public_content_type = "general"
+
         summary = make_summary_block(
             title_en=title_en,
             title_og=title_og,
@@ -1062,20 +1152,6 @@ class AssemblyMixin:
                     len(repaired),
                 )
                 block["summary"] = repaired
-
-        if has_location:
-            public_content_type = "location"
-            parsed["location"] = _sanitize_location_rows(parsed.get("location"))
-            is_list = False
-            list_count = 0
-            list_type = ""
-            list_summary = ""
-            list_subtype = ""
-            structure_analysis = None
-            logger.info("📍 Credible location present, forcing location-first render semantics")
-
-        if public_content_type not in _PUBLIC_CONTENT_TYPES:
-            public_content_type = "general"
 
         final_list_subtype = None
         if not has_location and is_list:

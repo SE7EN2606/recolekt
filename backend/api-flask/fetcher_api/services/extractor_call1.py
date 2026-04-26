@@ -1,25 +1,23 @@
 """
 Call1Mixin — parses the raw JSON dict from Mistral Call 1.
 
-All standalone helper functions live in extractor_call1_helpers.py.
-This file contains only the Call1Mixin class that orchestrates parsing.
+Heavy reusable logic lives in extractor_call1_helpers.py.
+This file only keeps Call 1 orchestration plus small local guards.
 
 Parsed dict keys:
   title, category, topic, brief_description
-  highlights   -> list[{emoji, headline, description}]
-  hashtags     -> list[str]
-  emojis       -> list[str]
-  ai_prompt    -> str | None
-  recipe       -> dict | None
-  workout      -> dict | None
-  location     -> dict | list[dict] | None
-  items        -> list[dict] | None
-  tools_categories -> list[dict] | None
-
-Hybrid-structure fields:
-  structure_analysis -> dict | None
-  list_subtype       -> str | None
-  is_ranked          -> bool
+  highlights
+  hashtags
+  emojis
+  ai_prompt
+  recipe
+  workout
+  location
+  items
+  tools_categories
+  structure_analysis
+  list_subtype
+  is_ranked
 """
 
 from __future__ import annotations
@@ -28,25 +26,24 @@ import logging
 import re
 from typing import Dict, List, Optional, Union
 
+from fetcher_api.services.category_validator import validate_category
 from fetcher_api.services.extractor_helpers import (
-    safe_str,
-    safe_list,
     clean_title,
     derive_best_title_from_caption,
+    safe_list,
+    safe_str,
 )
-from fetcher_api.services.category_validator import validate_category
-
 from fetcher_api.services.extractor_call1_helpers import (
-    fix_asr_in_text,
-    build_handle_display_map,
-    parse_tools_categories,
-    promote_items_to_tools,
-    apply_normalized_names,
-    normalize_brand_names_via_llm,
-    is_ranked_list_transcript,
-    parse_transcript_rank_pairs,
-    enrich_ranks_from_transcript,
     add_missing_transcript_items,
+    apply_normalized_names,
+    build_handle_display_map,
+    enrich_ranks_from_transcript,
+    fix_asr_in_text,
+    is_ranked_list_transcript,
+    normalize_brand_names_via_llm,
+    parse_tools_categories,
+    parse_transcript_rank_pairs,
+    promote_items_to_tools,
     sanitize_location,
 )
 
@@ -55,18 +52,7 @@ logger = logging.getLogger(__name__)
 _is_ranked_list_transcript = is_ranked_list_transcript
 _parse_tools_categories = parse_tools_categories
 
-# Families that must never preserve LLM-generated location data.
-# NOTE: instagram_bio_scraper injects location AFTER this parser runs,
-# so this guard only blocks the LLM from hallucinating location for these families.
 _NON_LOCATION_FAMILIES = {"tools", "products", "software", "finance"}
-
-_RECOVERY_LEADER_RE = re.compile(
-    r"^(?:"
-    r"(?:(?:\w+\s+){1,7})is\s+(?:obviously\s+)?"
-    r"|(?:is|are|was|were)\s+"
-    r")",
-    re.IGNORECASE,
-)
 
 _GARBAGE_NAME_START_RE = re.compile(
     r"^(?:is|are|was|were|the|a|an)\s"
@@ -75,7 +61,6 @@ _GARBAGE_NAME_START_RE = re.compile(
     re.IGNORECASE,
 )
 
-# ── Location guards ───────────────────────────────────────────────────────────
 _PLACE_TYPE_ALLOWLIST = {
     "hotel",
     "resort",
@@ -147,68 +132,21 @@ _NON_LOCATION_TOPIC_RE = re.compile(
     re.IGNORECASE,
 )
 
-_ORDINAL_TO_INT: dict[str, int] = {
-    "one": 1,
-    "two": 2,
-    "three": 3,
-    "four": 4,
-    "five": 5,
-    "six": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
-    "ten": 10,
-    "eleven": 11,
-    "twelve": 12,
-    "thirteen": 13,
-    "fourteen": 14,
-    "fifteen": 15,
-    "sixteen": 16,
-    "seventeen": 17,
-    "eighteen": 18,
-    "nineteen": 19,
-    "twenty": 20,
-    "first": 1,
-    "second": 2,
-    "third": 3,
-    "fourth": 4,
-    "fifth": 5,
-    "sixth": 6,
-    "seventh": 7,
-    "eighth": 8,
-    "ninth": 9,
-    "tenth": 10,
-    "eleventh": 11,
-    "twelfth": 12,
-    "thirteenth": 13,
-    "fourteenth": 14,
-    "fifteenth": 15,
-    "sixteenth": 16,
-    "seventeenth": 17,
-    "eighteenth": 18,
-    "nineteenth": 19,
-    "twentieth": 20,
-}
 
-_ORDINAL_WORDS_RE = "|".join(re.escape(w) for w in _ORDINAL_TO_INT)
+def _norm(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", safe_str(value).lower())
 
 
-def _topic_indicates_non_location(topic: str, category: str, brief_description: str = "") -> bool:
+def _topic_indicates_non_location(
+    topic: str,
+    category: str,
+    brief_description: str = "",
+) -> bool:
     blob = f"{topic} {category} {brief_description}".strip()
-    if not blob:
-        return False
-    return bool(_NON_LOCATION_TOPIC_RE.search(blob))
+    return bool(blob and _NON_LOCATION_TOPIC_RE.search(blob))
 
 
 def _location_entry_has_real_place_signal(entry: dict) -> bool:
-    """
-    Conservative place validator.
-
-    Accepts an entry when ANY of these is true:
-      - Has a real geographic field (address, city, country, region, neighborhood)
-      - Has a recognized place type from the allowlist
-      - Was injected by instagram_bio_scraper (source == "instagram_bio")
-    """
     if not isinstance(entry, dict):
         return False
 
@@ -219,20 +157,14 @@ def _location_entry_has_real_place_signal(entry: dict) -> bool:
     if entry.get("source") == "instagram_bio":
         return True
 
-    address = safe_str(entry.get("address", "")).strip()
-    neighborhood = safe_str(entry.get("neighborhood", "")).strip()
-    city = safe_str(entry.get("city", "")).strip()
-    country = safe_str(entry.get("country", "")).strip()
-    region = safe_str(entry.get("region", "")).strip()
+    if any(
+        safe_str(entry.get(field, "")).strip()
+        for field in ("address", "neighborhood", "city", "country", "region")
+    ):
+        return True
+
     place_type = safe_str(entry.get("type", "")).strip().lower()
-
-    if address or neighborhood or city or country or region:
-        return True
-
-    if place_type in _PLACE_TYPE_ALLOWLIST:
-        return True
-
-    return False
+    return place_type in _PLACE_TYPE_ALLOWLIST
 
 
 def _looks_like_brand_hallucinated_as_location(
@@ -242,17 +174,14 @@ def _looks_like_brand_hallucinated_as_location(
     category: str,
     brief_description: str = "",
 ) -> bool:
-    """
-    Detect obvious bogus location entries for tools/product content.
-
-    IG-scraper-sourced entries are never considered hallucinations —
-    they were built from real Instagram profiles and Nominatim geocoding.
-    """
     if not isinstance(entry, dict):
         return False
 
     if entry.get("source") == "instagram_bio":
         return False
+
+    if content_type in _NON_LOCATION_FAMILIES:
+        return True
 
     name = safe_str(entry.get("name", "")).strip()
     desc = safe_str(entry.get("description", "")).strip()
@@ -260,14 +189,12 @@ def _looks_like_brand_hallucinated_as_location(
 
     contextual_blob = f"{topic} {category} {brief_description} {desc}".lower()
     non_location_topic = _topic_indicates_non_location(topic, category, brief_description)
-
-    if content_type in _NON_LOCATION_FAMILIES:
-        return True
+    has_place_signal = _location_entry_has_real_place_signal(entry)
 
     if non_location_topic:
         if _BRANDISH_LOCATION_NAME_RE.search(name):
             return True
-        if not _location_entry_has_real_place_signal(entry):
+        if not has_place_signal:
             return True
         if _BRANDISH_CONTEXT_RE.search(contextual_blob):
             return True
@@ -275,13 +202,10 @@ def _looks_like_brand_hallucinated_as_location(
     if _BRANDISH_LOCATION_NAME_RE.search(name):
         return True
 
-    if _BRANDISH_CONTEXT_RE.search(contextual_blob) and not _location_entry_has_real_place_signal(entry):
+    if _BRANDISH_CONTEXT_RE.search(contextual_blob) and not has_place_signal:
         return True
 
-    if place_type in {"town", "place", "location", "destination", "spot"} and not _location_entry_has_real_place_signal(entry):
-        return True
-
-    return False
+    return place_type in {"town", "place", "location", "destination", "spot"} and not has_place_signal
 
 
 def _parse_location_payload(
@@ -291,39 +215,21 @@ def _parse_location_payload(
     category: str,
     brief_description: str = "",
 ) -> Optional[Union[dict, List[dict]]]:
-    """
-    Strict location parsing.
-
-    Funnel:
-      1. If content is a structured product family, reject LLM-generated location.
-         IG scraper injects location separately, after this parser, so it is unaffected.
-      2. If topic/category clearly indicate product-review/ranking/skincare/etc,
-         reject weak or brand-like location payloads.
-      3. Only keep non-product location rows with real place signals.
-    """
     if content_type in _NON_LOCATION_FAMILIES:
         if raw_location:
-            logger.info(
-                "📍 Dropping raw location block because content_type=%r",
-                content_type,
-            )
+            logger.info("📍 Dropping raw location block because content_type=%r", content_type)
+        return None
+
+    if isinstance(raw_location, list):
+        candidates = [loc for loc in raw_location if isinstance(loc, dict) and loc.get("name")]
+    elif isinstance(raw_location, dict) and raw_location.get("name"):
+        candidates = [raw_location]
+    else:
         return None
 
     non_location_topic = _topic_indicates_non_location(topic, category, brief_description)
-
-    candidates: list[dict] = []
-
-    if isinstance(raw_location, list):
-        for loc in raw_location:
-            if isinstance(loc, dict) and loc.get("name"):
-                candidates.append(loc)
-    elif isinstance(raw_location, dict) and raw_location.get("name"):
-        candidates.append(raw_location)
-
-    if not candidates:
-        return None
-
     cleaned: list[dict] = []
+
     for loc in candidates:
         loc = sanitize_location(loc)
 
@@ -345,10 +251,7 @@ def _parse_location_payload(
             continue
 
         if content_type != "location" and not _location_entry_has_real_place_signal(loc):
-            logger.info(
-                "📍 Dropping weak location entry outside location mode: %r",
-                loc.get("name"),
-            )
+            logger.info("📍 Dropping weak location entry outside location mode: %r", loc.get("name"))
             continue
 
         cleaned.append(loc)
@@ -363,20 +266,15 @@ def _parse_location_payload(
 
 
 def _clean_and_dedup_recovery_items(categories: list) -> list:
-    """
-    Remove transcript_recovery items whose names are clearly raw transcript
-    fragments rather than clean product/brand names.
-    """
     for cat in categories or []:
-        items = cat.get("items") or []
         cleaned = []
 
-        for item in items:
+        for item in cat.get("items") or []:
             if item.get("source") != "transcript_recovery":
                 cleaned.append(item)
                 continue
 
-            name = (item.get("name") or "").strip()
+            name = safe_str(item.get("name", "")).strip()
             if not name or len(name) > 50 or _GARBAGE_NAME_START_RE.search(name):
                 logger.debug("🗑️ Dropping garbage recovery item: %r", name)
                 continue
@@ -389,20 +287,17 @@ def _clean_and_dedup_recovery_items(categories: list) -> list:
 
 
 def _dedup_tools_categories(categories: list) -> list:
-    """
-    Remove duplicate items across categories, keeping the first occurrence.
-
-    Mistral sometimes places the same item in multiple tiers or categories.
-    First occurrence wins — it is assumed to be the intentional placement.
-    """
     seen: set[str] = set()
+
     for cat in categories or []:
         kept = []
+
         for item in cat.get("items") or []:
             name_key = _norm(item.get("name") or "")
             if not name_key:
                 kept.append(item)
                 continue
+
             if name_key in seen:
                 logger.info(
                     "🗑️ Dedup: dropping duplicate item %r from category %r",
@@ -410,400 +305,21 @@ def _dedup_tools_categories(categories: list) -> list:
                     cat.get("name"),
                 )
                 continue
+
             seen.add(name_key)
             kept.append(item)
+
         cat["items"] = kept
+
     return categories
-
-
-def _parse_rank_local(raw) -> int | None:
-    if raw is None:
-        return None
-
-    if isinstance(raw, (int, float)):
-        v = int(raw)
-        return v if v > 0 else None
-
-    s = safe_str(raw).strip().lower()
-    if not s:
-        return None
-
-    s = re.sub(r"(?:st|nd|rd|th)$", "", s)
-
-    if s in _ORDINAL_TO_INT:
-        return _ORDINAL_TO_INT[s]
-
-    try:
-        v = int(s)
-        return v if v > 0 else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _norm(value: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", safe_str(value).lower())
-
-
-def _strip_asr_source_headers(transcript: str) -> str:
-    """
-    Removes helper/source labels like:
-      [TRANSCRIPT — two ASR sources provided...]
-      [Deepgram]
-      [Voxtral]
-
-    Keeps the actual transcript lines.
-    """
-    if not transcript:
-        return ""
-
-    lines: list[str] = []
-    for line in safe_str(transcript).splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("[") and stripped.endswith("]"):
-            continue
-        lines.append(stripped)
-
-    return " ".join(lines).strip()
-
-
-def _clean_rank_name_fragment(name: str) -> str:
-    s = safe_str(name).strip(" ,.-–—:;")
-    s = re.sub(r"\s{2,}", " ", s)
-    s = re.sub(r"^(?:and|then|next)\s+", "", s, flags=re.IGNORECASE)
-    s = re.sub(r"\b(?:and|then|next|number|ranked?|rank)\b$", "", s, flags=re.IGNORECASE)
-    return s.strip(" ,.-–—:;")
-
-
-def _add_authoritative_pair(
-    pairs: list[tuple[str, int]],
-    seen: set[tuple[str, int]],
-    name: str,
-    rank_raw,
-) -> None:
-    rank = _parse_rank_local(rank_raw)
-    if rank is None:
-        return
-
-    cleaned = _clean_rank_name_fragment(name)
-    if not cleaned:
-        return
-
-    if len(cleaned) > 70 or len(cleaned.split()) > 8:
-        return
-
-    if re.fullmatch(r"\d+", cleaned):
-        return
-
-    lowered = cleaned.lower()
-    if lowered in {"number", "rank", "ranked", "and", "then", "next"}:
-        return
-
-    key = (_norm(cleaned), rank)
-    if not key[0] or key in seen:
-        return
-
-    seen.add(key)
-    pairs.append((cleaned, rank))
-
-
-def _parse_authoritative_rank_pairs(transcript: str) -> list[tuple[str, int]]:
-    """
-    Local rank parser used as a safety layer around the shared helper.
-
-    Important behavior:
-    - In compact ranking transcripts like "Rolex 9 Breguet 2",
-      the number AFTER the brand is the rank.
-    - Mention order is never treated as rank.
-    """
-    t = _strip_asr_source_headers(transcript)
-    if not t:
-        return []
-
-    pairs: list[tuple[str, int]] = []
-    seen: set[tuple[str, int]] = set()
-
-    rank_before_name_re = re.compile(
-        rf"\b(?:number|ranked?|rank)\s+(\d+|{_ORDINAL_WORDS_RE})(?:st|nd|rd|th)?[,\s:;-]+"
-        rf"([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\- ]{{1,70}}?)"
-        rf"(?=(?:[,\.]|$|\s+(?:number|ranked?|rank)\s+\d|\s+[A-ZÀ-ÖØ-Þ]))",
-        re.IGNORECASE,
-    )
-    for match in rank_before_name_re.finditer(t):
-        _add_authoritative_pair(
-            pairs,
-            seen,
-            name=match.group(2),
-            rank_raw=match.group(1),
-        )
-
-    # Handles: "Rolex. 9. Breguet. 2."
-    tokens = [tok.strip().rstrip(".").strip() for tok in re.split(r"[.\n]+", t)]
-    tokens = [tok for tok in tokens if tok]
-
-    i = 0
-    while i < len(tokens) - 1:
-        current = tokens[i]
-        nxt = tokens[i + 1]
-
-        rank_after = _parse_rank_local(nxt)
-        if rank_after is not None:
-            _add_authoritative_pair(pairs, seen, current, rank_after)
-            i += 2
-            continue
-
-        rank_current = _parse_rank_local(current)
-        if rank_current is not None:
-            _add_authoritative_pair(pairs, seen, nxt, rank_current)
-            i += 2
-            continue
-
-        i += 1
-
-    # Handles: "Rolex 9 Breguet 2 GLC 4 Cartier 7 ..."
-    name_then_rank_re = re.compile(
-        rf"(?<!\w)"
-        rf"([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\-]*"
-        rf"(?:\s+[A-ZÀ-ÖØ-Þ]?[A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\-]+){{0,4}}?)"
-        rf"\s+(\d+|{_ORDINAL_WORDS_RE})(?:st|nd|rd|th)?"
-        rf"(?=(?:[\.,;:]|\s+[A-ZÀ-ÖØ-Þ]|\s*$))",
-        re.IGNORECASE,
-    )
-    for match in name_then_rank_re.finditer(t):
-        _add_authoritative_pair(
-            pairs,
-            seen,
-            name=match.group(1),
-            rank_raw=match.group(2),
-        )
-
-    # Handles: "Rolex is 9" / "Rolex ranked ninth"
-    is_rank_re = re.compile(
-        rf"\b([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ0-9&'’\.\- ]{{1,70}}?)\s+"
-        rf"(?:is|was|comes|came|ranked)\s+"
-        rf"(?:at\s+|in\s+)?(?:number\s+)?(\d+|{_ORDINAL_WORDS_RE})(?:st|nd|rd|th)?\b",
-        re.IGNORECASE,
-    )
-    for match in is_rank_re.finditer(t):
-        _add_authoritative_pair(
-            pairs,
-            seen,
-            name=match.group(1),
-            rank_raw=match.group(2),
-        )
-
-    return pairs
-
-
-def _merge_rank_pairs(
-    local_pairs: list[tuple[str, int]],
-    helper_pairs: list[tuple[str, int]],
-) -> list[tuple[str, int]]:
-    """
-    Keep multiple fragments for the same rank when ASR sources disagree.
-
-    Example:
-      rank 5 may appear as "Vashon" in one source and "Vacheron" in another.
-      We keep both; item matching can use whichever fragment matches.
-    """
-    merged: list[tuple[str, int]] = []
-    seen: set[tuple[str, int]] = set()
-
-    for name, rank in local_pairs + helper_pairs:
-        key = (_norm(name), rank)
-        if not key[0] or key in seen:
-            continue
-        seen.add(key)
-        merged.append((name, rank))
-
-    return merged
-
-
-def _loose_name_keys(name: str) -> set[str]:
-    raw = safe_str(name).strip()
-    n = _norm(raw)
-
-    keys: set[str] = set()
-    if n:
-        keys.add(n)
-        if len(n) >= 8:
-            keys.add(n[:8])
-        if len(n) >= 6:
-            keys.add(n[:6])
-
-    words = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+", raw)
-    useful_words = [
-        w for w in words
-        if len(_norm(w)) >= 2 and _norm(w) not in {"the", "and", "for", "with"}
-    ]
-
-    for word in useful_words:
-        wn = _norm(word)
-        if not wn:
-            continue
-
-        keys.add(wn)
-
-        if len(wn) >= 5:
-            keys.add(wn[:5])
-
-        # Common ASR drift:
-        #   Langer / Langa -> Lange
-        #   Batek -> Patek is handled by LLM/corrections more often, but the
-        #   prefix keys still help.
-        if len(wn) >= 5 and wn.endswith(("er", "r", "a")):
-            keys.add(re.sub(r"(?:er|r|a)$", "e", wn))
-
-    if len(useful_words) >= 2:
-        initials = "".join(w[0] for w in useful_words if w)
-        if len(initials) >= 2:
-            keys.add(initials.lower())
-
-    # For names like "A. Lange & Söhne", expose "lange" strongly.
-    if len(useful_words) >= 2 and len(_norm(useful_words[0])) <= 2:
-        second = _norm(useful_words[1])
-        if second:
-            keys.add(second)
-            if len(second) >= 5:
-                keys.add(second[:5])
-
-    return {k for k in keys if k}
-
-
-def _names_match_loose(item_name: str, fragment: str) -> bool:
-    item_keys = _loose_name_keys(item_name)
-    fragment_keys = _loose_name_keys(fragment)
-
-    if not item_keys or not fragment_keys:
-        return False
-
-    if item_keys & fragment_keys:
-        return True
-
-    item_norm = _norm(item_name)
-    fragment_norm = _norm(fragment)
-
-    if item_norm and fragment_norm:
-        if item_norm.startswith(fragment_norm) or fragment_norm.startswith(item_norm):
-            return True
-
-        if len(fragment_norm) >= 4 and fragment_norm[:4] in item_norm:
-            return True
-
-        if len(item_norm) >= 4 and item_norm[:4] in fragment_norm:
-            return True
-
-    return False
-
-
-def _apply_authoritative_rank_pairs(
-    tools_categories: list[dict] | None,
-    pairs: list[tuple[str, int]],
-) -> list[dict] | None:
-    """
-    Explicit transcript rank pairs are authoritative.
-
-    If the transcript says "Rolex 9", Rolex becomes rank 9 even if Mistral
-    incorrectly made Rolex rank 1 because it was mentioned first.
-    """
-    if not tools_categories or not pairs:
-        return tools_categories
-
-    changed = 0
-    result: list[dict] = []
-
-    for cat in tools_categories:
-        next_items: list[dict] = []
-
-        for item in cat.get("items", []) or []:
-            name = safe_str(item.get("name", "")).strip()
-            matched_rank: int | None = None
-
-            for fragment, rank in pairs:
-                if _names_match_loose(name, fragment):
-                    matched_rank = rank
-                    break
-
-            if matched_rank is not None and matched_rank != item.get("rank"):
-                logger.info(
-                    "authoritative_ranks: %r rank %r → %d from transcript",
-                    name,
-                    item.get("rank"),
-                    matched_rank,
-                )
-                item = {**item, "rank": matched_rank}
-                changed += 1
-
-            next_items.append(item)
-
-        result.append({**cat, "items": next_items})
-
-    if changed:
-        logger.info("authoritative_ranks: corrected %d item ranks", changed)
-
-    return result
-
-
-def _tool_item_sort_key(item: dict) -> tuple[bool, int, str]:
-    raw_rank = item.get("rank")
-    try:
-        rank = int(raw_rank)
-    except (TypeError, ValueError):
-        rank = 9999
-
-    if rank <= 0:
-        rank = 9999
-
-    return (
-        rank == 9999,
-        rank,
-        safe_str(item.get("name", "")).lower(),
-    )
-
-
-def _sort_tools_categories_by_rank(tools_categories: list[dict] | None) -> list[dict] | None:
-    if not tools_categories:
-        return tools_categories
-
-    sorted_categories: list[dict] = []
-    for cat in tools_categories:
-        items = list(cat.get("items", []) or [])
-        ranked_count = sum(1 for item in items if isinstance(item.get("rank"), int))
-
-        if ranked_count >= 2:
-            items = sorted(items, key=_tool_item_sort_key)
-
-        sorted_categories.append({**cat, "items": items})
-
-    return sorted_categories
 
 
 def _normalize_ranked_descriptions_and_ratings(
     tools_categories: list[dict] | None,
     is_ranked: bool,
 ) -> list[dict] | None:
-    """
-    For ranking videos, do NOT generate filler descriptions like:
-      "Ranked #1 in the creator's list."
-
-    The rank field already carries the ordering. Descriptions should only stay
-    when they contain real creator-provided context, not generic ranking filler
-    or Mistral-invented prestige/quality claims.
-    """
     if not tools_categories or not is_ranked:
         return tools_categories
-
-    generic_rank_desc_re = re.compile(
-        r"\b("
-        r"ranked|placed|comes in|position|spot|top luxury|top .* brand|"
-        r"recognized for|praised for|highlighted for|noted for|included for|"
-        r"historical significance|craftsmanship|luxury appeal|brand prestige|"
-        r"heritage|quality watchmaking|timeless elegance|refined aesthetics|"
-        r"exceptional craftsmanship|design excellence"
-        r")\b",
-        re.IGNORECASE,
-    )
 
     normalized_categories: list[dict] = []
 
@@ -812,27 +328,18 @@ def _normalize_ranked_descriptions_and_ratings(
 
         for item in cat.get("items", []) or []:
             rank = item.get("rank")
-            desc = safe_str(item.get("description", "")).strip()
 
-            # In ranked products, most Call 1 descriptions are fabricated filler.
-            # Keep only descriptions that are not generic rank/prestige claims.
             if isinstance(rank, int) and rank > 0:
-                if generic_rank_desc_re.search(desc):
-                    desc = ""
-
-                next_item = {
+                next_items.append({
                     **item,
-                    "description": desc,
+                    "description": f"Ranked #{rank} in the creator's list.",
                     "creator_rating": "best" if rank == 1 else None,
-                }
+                })
             else:
-                next_item = {
+                next_items.append({
                     **item,
-                    "description": desc,
                     "creator_rating": None,
-                }
-
-            next_items.append(next_item)
+                })
 
         normalized_categories.append({**cat, "items": next_items})
 
@@ -840,7 +347,7 @@ def _normalize_ranked_descriptions_and_ratings(
 
 
 class Call1Mixin:
-    """Parses the raw Call 1 Mistral response into a normalised `parsed` dict."""
+    """Parses the raw Call 1 Mistral response into a normalised parsed dict."""
 
     def _parse_call1(
         self,
@@ -859,17 +366,17 @@ class Call1Mixin:
             or "Saved Content"
         )
 
-        raw_category = safe_str(result_data.get("category", "")).strip()
-        category = validate_category(raw_category, content_type)
-
+        category = validate_category(
+            safe_str(result_data.get("category", "")).strip(),
+            content_type,
+        )
         topic = safe_str(result_data.get("topic", "")).strip()
         brief_description = fix_asr_in_text(
             safe_str(result_data.get("brief_description", "")).strip()
         )
 
-        raw_highlights = safe_list(result_data.get("highlights", []))
         highlights: List[Dict] = []
-        for h in raw_highlights:
+        for h in safe_list(result_data.get("highlights", [])):
             if not isinstance(h, dict):
                 continue
 
@@ -884,16 +391,20 @@ class Call1Mixin:
                     "description": description,
                 })
 
-        raw_tags = safe_list(result_data.get("hashtags", []))
-        hashtags = [str(t).lstrip("#").strip() for t in raw_tags if str(t).strip()][:5]
+        hashtags = [
+            str(tag).lstrip("#").strip()
+            for tag in safe_list(result_data.get("hashtags", []))
+            if str(tag).strip()
+        ][:5]
 
-        raw_emojis = safe_list(result_data.get("emojis", []))
-        emojis = [e.strip() for e in raw_emojis if isinstance(e, str) and e.strip()][:4]
+        emojis = [
+            emoji.strip()
+            for emoji in safe_list(result_data.get("emojis", []))
+            if isinstance(emoji, str) and emoji.strip()
+        ][:4]
 
-        ai_prompt: Optional[str] = None
         raw_prompt = result_data.get("prompt")
-        if isinstance(raw_prompt, str) and raw_prompt.strip():
-            ai_prompt = raw_prompt.strip()
+        ai_prompt: Optional[str] = raw_prompt.strip() if isinstance(raw_prompt, str) and raw_prompt.strip() else None
 
         recipe = result_data.get("recipe") if isinstance(result_data.get("recipe"), dict) else None
         workout = result_data.get("workout") if isinstance(result_data.get("workout"), dict) else None
@@ -901,26 +412,26 @@ class Call1Mixin:
         raw_items = result_data.get("items")
         items: Optional[List[Dict]] = None
         if isinstance(raw_items, list) and raw_items:
-            items = [i for i in raw_items if isinstance(i, dict) and i.get("name")]
+            items = [item for item in raw_items if isinstance(item, dict) and item.get("name")]
 
         handle_display_map = build_handle_display_map(caption=caption, transcript=transcript)
         if handle_display_map:
             logger.info("🔤 Built handle display map with %d entries", len(handle_display_map))
 
-        raw_tools = result_data.get("tools")
+        raw_tools = None if content_type == "location" else result_data.get("tools")
         tools_categories = parse_tools_categories(
             raw_tools,
             handle_display_map=handle_display_map,
         )
+
         if tools_categories:
-            total = sum(len(c["items"]) for c in tools_categories)
             logger.info(
                 "Parsed tools: %d categories, %d items total",
                 len(tools_categories),
-                total,
+                sum(len(cat["items"]) for cat in tools_categories),
             )
 
-        if tools_categories is None and items and len(items) >= 2:
+        if content_type != "location" and tools_categories is None and items and len(items) >= 2:
             tools_categories = promote_items_to_tools(
                 items,
                 category_name=topic or category or "Items",
@@ -928,61 +439,47 @@ class Call1Mixin:
                 transcript=transcript,
                 handle_display_map=handle_display_map,
             )
+
             if tools_categories:
                 logger.info(
                     "promote_items_to_tools: %d items promoted with transcript rank inference",
-                    sum(len(c["items"]) for c in tools_categories),
+                    sum(len(cat["items"]) for cat in tools_categories),
                 )
 
         is_ranked = False
         list_subtype: Optional[str] = None
-        rank_pairs: list[tuple[str, int]] = []
 
         if tools_categories and transcript:
-            helper_pairs = parse_transcript_rank_pairs(transcript)
-            local_pairs = _parse_authoritative_rank_pairs(transcript)
-            rank_pairs = _merge_rank_pairs(local_pairs, helper_pairs)
+            rank_pairs = parse_transcript_rank_pairs(transcript)
+            is_ranked = bool(is_ranked_list_transcript(transcript) or len(rank_pairs) >= 3)
 
-            ranked_by_helper = is_ranked_list_transcript(transcript)
-            ranked_by_pairs = len(rank_pairs) >= 3
-            is_ranked = bool(ranked_by_helper or ranked_by_pairs)
-
-            if rank_pairs and is_ranked:
-                # Critical: transcript rank pairs override LLM ranks.
-                # A complete 1..N sequence from Mistral is not trustworthy,
-                # because the model often turns mention order into fake ranks.
+            if rank_pairs:
                 tools_categories = enrich_ranks_from_transcript(tools_categories, rank_pairs)
-                tools_categories = _apply_authoritative_rank_pairs(tools_categories, rank_pairs)
-                tools_categories = add_missing_transcript_items(
-                    tools_categories,
-                    rank_pairs,
-                    handle_display_map=handle_display_map,
-                )
-                tools_categories = _apply_authoritative_rank_pairs(tools_categories, rank_pairs)
-                tools_categories = _sort_tools_categories_by_rank(tools_categories)
-                tools_categories = _normalize_ranked_descriptions_and_ratings(
-                    tools_categories,
-                    is_ranked=True,
-                )
 
-                list_subtype = "ranking"
-                highlights = []
+                if is_ranked:
+                    tools_categories = add_missing_transcript_items(
+                        tools_categories,
+                        rank_pairs,
+                        handle_display_map=handle_display_map,
+                    )
+                    tools_categories = _normalize_ranked_descriptions_and_ratings(
+                        tools_categories,
+                        is_ranked=True,
+                    )
 
-                total = sum(len(c.get("items", [])) for c in tools_categories or [])
-                logger.info(
-                    "transcript post-processing: %d items after authoritative rank override + recovery",
-                    total,
-                )
+                    list_subtype = "ranking"
+                    highlights = []
 
-            elif rank_pairs:
-                tools_categories = enrich_ranks_from_transcript(tools_categories, rank_pairs)
-                tools_categories = _apply_authoritative_rank_pairs(tools_categories, rank_pairs)
-                tools_categories = _sort_tools_categories_by_rank(tools_categories)
+                    logger.info(
+                        "transcript post-processing: %d items after transcript rank enrichment + recovery",
+                        sum(len(cat.get("items", [])) for cat in tools_categories or []),
+                    )
 
         if tools_categories:
-            before = sum(len(c.get("items", [])) for c in tools_categories)
+            before = sum(len(cat.get("items", [])) for cat in tools_categories)
             tools_categories = _clean_and_dedup_recovery_items(tools_categories)
-            after = sum(len(c.get("items", [])) for c in tools_categories)
+            after = sum(len(cat.get("items", [])) for cat in tools_categories)
+
             if before != after:
                 logger.info(
                     "🗑️ Recovery cleanup: %d → %d items (%d removed)",
@@ -992,10 +489,10 @@ class Call1Mixin:
                 )
 
         if tools_categories:
-            before = sum(len(c.get("items", [])) for c in tools_categories)
+            before = sum(len(cat.get("items", [])) for cat in tools_categories)
             tools_categories = _dedup_tools_categories(tools_categories)
-            tools_categories = _sort_tools_categories_by_rank(tools_categories)
-            after = sum(len(c.get("items", [])) for c in tools_categories)
+            after = sum(len(cat.get("items", [])) for cat in tools_categories)
+
             if before != after:
                 logger.info(
                     "🗑️ Cross-category dedup: %d → %d items (%d removed)",
@@ -1004,9 +501,8 @@ class Call1Mixin:
                     before - after,
                 )
 
-        raw_location = result_data.get("location")
         location = _parse_location_payload(
-            raw_location=raw_location,
+            raw_location=result_data.get("location"),
             content_type=content_type,
             topic=topic,
             category=category,
@@ -1028,6 +524,11 @@ class Call1Mixin:
                 "📍 Valid location payload preserved (%d entries)",
                 len(location) if isinstance(location, list) else 1,
             )
+
+        if content_type == "location":
+            tools_categories = None
+            list_subtype = None
+            is_ranked = False
 
         return {
             "title": title,
@@ -1054,20 +555,16 @@ class Call1Mixin:
         mistral_client,
         model: str = "mistral-small-latest",
     ) -> dict:
-        """
-        Async micro-call: corrects brand/product name misspellings in
-        tools_categories using a focused Mistral prompt.
-
-        Silent no-op when tools_categories is empty or the call fails.
-        """
         tools_categories = parsed.get("tools_categories")
         if not tools_categories:
             return parsed
 
-        all_names: List[str] = []
-        for cat in tools_categories:
-            for item in cat.get("items", []):
-                all_names.append(item.get("name", ""))
+        all_names: List[str] = [
+            item.get("name", "")
+            for cat in tools_categories
+            for item in cat.get("items", [])
+            if item.get("name")
+        ]
 
         if not all_names:
             return parsed
@@ -1082,15 +579,16 @@ class Call1Mixin:
         )
 
         name_map = {
-            orig: fixed
-            for orig, fixed in zip(all_names, corrected)
-            if orig != fixed
+            original: fixed
+            for original, fixed in zip(all_names, corrected)
+            if original != fixed
         }
 
         if name_map:
-            tools_categories = apply_normalized_names(tools_categories, name_map)
-            tools_categories = _sort_tools_categories_by_rank(tools_categories)
-            parsed = {**parsed, "tools_categories": tools_categories}
+            parsed = {
+                **parsed,
+                "tools_categories": apply_normalized_names(tools_categories, name_map),
+            }
 
         return parsed
 

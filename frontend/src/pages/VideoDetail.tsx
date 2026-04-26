@@ -251,6 +251,7 @@ export const VideoDetail: React.FC = () => {
   }, [id, videos, getVideoById]);
 
   const fetchedId = useRef<string | null>(null);
+
   useEffect(() => {
     if (id && fetchedId.current !== id) {
       fetchedId.current = id;
@@ -459,12 +460,12 @@ export const VideoDetail: React.FC = () => {
     : []) as unknown as ActionItem[];
 
   return (
-    <div className="animate-fade-in relative px-0 pb-20 md:pb-6">
+    <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
       <style>{HASHTAG_STYLE}</style>
 
       <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-6 items-start">
         <div className="min-w-0 w-full flex flex-col">
-          <div className="relative w-full aspect-9/8 bg-black rounded-2xl overflow-hidden shadow-sm mb-5 group mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0">
+          <div className="relative z-0 w-full aspect-9/8 bg-black rounded-2xl overflow-hidden shadow-sm mb-5 group mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0">
             {viewModel.thumbnailUrl && (
               <img
                 src={viewModel.thumbnailUrl}
@@ -677,7 +678,7 @@ export const VideoDetail: React.FC = () => {
           )}
 
           {isLocationContent && normalizedLocations.length > 0 && (
-            <div className="mb-5">
+            <div className="relative z-0 mb-5">
               <LocationCard
                 location={normalizedLocations}
                 processId={currentVideoId}

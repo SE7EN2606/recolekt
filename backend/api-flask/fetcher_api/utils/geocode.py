@@ -6,6 +6,7 @@ Strategy:
   Tier 1 — Nominatim (OpenStreetMap): free, no key, good for well-known places
   Tier 2 — Google Places Find Place: branded venue fallback
   Tier 3 — Google Places Text Search: broader/branded venue fallback
+  Tier 4 — Google Places Details: enrich Google result with photo/rating/type/url
 
 Public callables:
     geocode_one(...) -> tuple[float, float] | None
@@ -19,9 +20,16 @@ Important:
       "lat": ...,
       "lng": ...,
       "provider": "nominatim" | "google_findplace" | "google_textsearch",
+      "google_name": "...",
       "google_place_id": "...",
       "maps_url": "...",
-      "photo_url": "..."
+      "photo_url": "...",
+      "rating": 4.7,
+      "google_rating": 4.7,
+      "user_ratings_total": 1234,
+      "review_count": 1234,
+      "price_level": 3,
+      "place_type": "Resort"
     }
 
 CRITICAL SAFETY:
@@ -53,7 +61,6 @@ _MAX_RETRIES = 2
 _geocode_cache: dict[str, dict | None] = {}
 _reverse_cache: dict[str, dict[str, str] | None] = {}
 
-# Continent/macro-region names the AI hallucinates as countries.
 _FAKE_COUNTRIES = {
     "europe", "europa",
     "alps", "alpine", "dolomites", "mediterranean",
@@ -146,7 +153,7 @@ _PLACEHOLDER_NAME_PATTERNS = (
     r"^tbd\b",
 )
 
-_GOOGLE_MAX_QUERIES = 6
+_GOOGLE_MAX_QUERIES = 8
 
 
 def _sanitize_country(country: str | None) -> str:
@@ -198,6 +205,62 @@ def _google_photo_url(photo_reference: str | None) -> str | None:
     )
 
 
+def _google_types_to_place_type(types: list[str] | None) -> str | None:
+    if not types:
+        return None
+
+    if "resort_hotel" in types:
+        return "Resort"
+    if "lodging" in types:
+        return "Hotel"
+    if "restaurant" in types:
+        return "Restaurant"
+    if "cafe" in types:
+        return "Café"
+    if "bar" in types:
+        return "Bar"
+    if "tourist_attraction" in types:
+        return "Attraction"
+    if "amusement_park" in types:
+        return "Theme Park"
+    if "campground" in types:
+        return "Campground"
+
+    return None
+
+
+def _extract_google_address_parts(address_components: list[dict] | None) -> dict:
+    if not address_components:
+        return {}
+
+    result: dict[str, str] = {}
+
+    def first_for(*wanted_types: str) -> str:
+        for component in address_components:
+            types = set(component.get("types") or [])
+            if any(t in types for t in wanted_types):
+                return component.get("long_name") or component.get("short_name") or ""
+        return ""
+
+    result["neighborhood"] = first_for(
+        "neighborhood",
+        "sublocality",
+        "sublocality_level_1",
+        "sublocality_level_2",
+    )
+    result["city"] = first_for(
+        "locality",
+        "postal_town",
+        "administrative_area_level_3",
+        "administrative_area_level_2",
+    )
+    result["region"] = first_for("administrative_area_level_1")
+    result["country"] = first_for("country")
+    result["postal_code"] = first_for("postal_code")
+
+    return {k: v for k, v in result.items() if v}
+
+
 def _nominatim_query(
     q: str,
     countrycodes: str,
@@ -243,9 +306,16 @@ def _nominatim_query(
                     "lng": float(item["lon"]),
                     "provider": "nominatim",
                     "display_name": item.get("display_name"),
+                    "google_name": None,
                     "google_place_id": None,
                     "maps_url": None,
                     "photo_url": None,
+                    "rating": None,
+                    "google_rating": None,
+                    "user_ratings_total": None,
+                    "review_count": None,
+                    "price_level": None,
+                    "place_type": None,
                 }
             return None
 
@@ -266,27 +336,117 @@ def _build_google_result_from_candidate(candidate: dict, *, provider: str, query
         location = geometry.get("location") or {}
         lat = location.get("lat")
         lng = location.get("lng")
+
         if lat is None or lng is None:
             return None
 
         place_id = candidate.get("place_id")
-        photo_ref = None
-
         photos = candidate.get("photos") or []
-        if photos and isinstance(photos, list):
-            photo_ref = photos[0].get("photo_reference")
+        photo_ref = photos[0].get("photo_reference") if photos and isinstance(photos, list) else None
+        rating = candidate.get("rating")
+        reviews = candidate.get("user_ratings_total")
+        types = candidate.get("types") or []
+        address_parts = _extract_google_address_parts(candidate.get("address_components") or [])
 
         return {
             "lat": float(lat),
             "lng": float(lng),
             "provider": provider,
             "display_name": candidate.get("formatted_address") or candidate.get("name") or query,
+            "google_name": candidate.get("name"),
             "google_place_id": place_id,
-            "maps_url": _google_maps_url_for_place(place_id, query),
+            "maps_url": candidate.get("url") or _google_maps_url_for_place(place_id, query),
             "photo_url": _google_photo_url(photo_ref),
+            "rating": rating,
+            "google_rating": rating,
+            "user_ratings_total": reviews,
+            "review_count": reviews,
+            "price_level": candidate.get("price_level"),
+            "place_type": _google_types_to_place_type(types),
+            **address_parts,
         }
     except Exception:
         return None
+
+
+def _google_place_details_query(place_id: str) -> dict | None:
+    api_key = _google_api_key()
+    if not api_key or not place_id:
+        return None
+
+    try:
+        resp = httpx.get(
+            "https://maps.googleapis.com/maps/api/place/details/json",
+            params={
+                "place_id": place_id,
+                "fields": (
+                    "name,geometry,formatted_address,address_component,"
+                    "rating,user_ratings_total,photos,types,url,place_id,price_level"
+                ),
+                "key": api_key,
+            },
+            timeout=8,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        status = data.get("status")
+
+        if status != "OK":
+            logger.info("Google Details: %s for place_id=%s", status, place_id)
+            return None
+
+        result = data.get("result") or {}
+        return _build_google_result_from_candidate(
+            result,
+            provider="google_details",
+            query=result.get("name") or place_id,
+        )
+
+    except Exception as exc:
+        logger.warning("Google Details error for place_id=%s: %s", place_id, exc)
+        return None
+
+
+def _merge_google_details(base: dict | None) -> dict | None:
+    if not base:
+        return None
+
+    place_id = base.get("google_place_id")
+    if not place_id:
+        return base
+
+    details = _google_place_details_query(place_id)
+    if not details:
+        return base
+
+    merged = dict(base)
+
+    for key in (
+        "google_name",
+        "display_name",
+        "maps_url",
+        "photo_url",
+        "rating",
+        "google_rating",
+        "user_ratings_total",
+        "review_count",
+        "price_level",
+        "place_type",
+        "neighborhood",
+        "city",
+        "region",
+        "country",
+        "postal_code",
+    ):
+        if merged.get(key) in (None, "", []):
+            merged[key] = details.get(key)
+
+    if merged.get("lat") is None and details.get("lat") is not None:
+        merged["lat"] = details["lat"]
+    if merged.get("lng") is None and details.get("lng") is not None:
+        merged["lng"] = details["lng"]
+
+    return merged
 
 
 def _google_places_findplace_query(query: str) -> dict | None:
@@ -307,6 +467,15 @@ def _google_places_findplace_query(query: str) -> dict | None:
         )
         resp.raise_for_status()
         data = resp.json()
+        status = data.get("status")
+
+        if status not in {"OK", "ZERO_RESULTS"}:
+            logger.warning(
+                "Google Find Place status for '%s': %s — %s",
+                query,
+                status,
+                data.get("error_message") or "",
+            )
 
         candidates = data.get("candidates") or []
         if not candidates:
@@ -317,6 +486,8 @@ def _google_places_findplace_query(query: str) -> dict | None:
             provider="google_findplace",
             query=query,
         )
+        result = _merge_google_details(result)
+
         if result:
             logger.info(
                 "Google Find Place: ✅ '%s' → %.4f, %.4f",
@@ -345,6 +516,15 @@ def _google_places_text_search_query(query: str) -> dict | None:
         )
         resp.raise_for_status()
         data = resp.json()
+        status = data.get("status")
+
+        if status not in {"OK", "ZERO_RESULTS"}:
+            logger.warning(
+                "Google Text Search status for '%s': %s — %s",
+                query,
+                status,
+                data.get("error_message") or "",
+            )
 
         results = data.get("results") or []
         if not results:
@@ -355,6 +535,8 @@ def _google_places_text_search_query(query: str) -> dict | None:
             provider="google_textsearch",
             query=query,
         )
+        result = _merge_google_details(result)
+
         if result:
             logger.info(
                 "Google Text Search: ✅ '%s' → %.4f, %.4f",
@@ -529,13 +711,6 @@ def _has_strong_non_name_locator(fields: dict[str, str]) -> bool:
 
 
 def _build_place_query_candidates(fields: dict[str, str]) -> list[str]:
-    """
-    Strict candidates for venue/place matching.
-
-    Important:
-    - If a place NAME exists, every candidate must keep the name.
-    - Never degrade to country-only / city-only / country-centroid lookups.
-    """
     n = fields["name"]
     a = fields["address"]
     nb = fields["neighborhood"]
@@ -558,6 +733,7 @@ def _build_place_query_candidates(fields: dict[str, str]) -> list[str]:
             _dedupe_join([n, co]),
             _dedupe_join([n]),
             _dedupe_join([stripped_name, c, co]),
+            _dedupe_join([stripped_name, r, co]),
             _dedupe_join([stripped_name, co]),
             _dedupe_join([stripped_name]),
         ]
@@ -586,32 +762,36 @@ def _build_place_query_candidates(fields: dict[str, str]) -> list[str]:
 
 
 def _build_google_query_candidates(fields: dict[str, str]) -> list[str]:
-    """
-    Strict Google candidates.
-    Same rule: never degrade to country-only / city-only.
-    """
     n = fields["name"]
     a = fields["address"]
+    nb = fields["neighborhood"]
     c = fields["city"]
     r = fields["region"]
+    p = fields["postal_code"]
     co = fields["country"]
 
     stripped_name = _strip_generic_venue_suffix(n) if n else ""
 
     if n:
         candidates = [
+            _dedupe_join([n, a, c, r, p, co]),
+            _dedupe_join([n, a, c, co]),
+            _dedupe_join([n, nb, c, r, co]),
             _dedupe_join([n, c, r, co]),
             _dedupe_join([n, c, co]),
             _dedupe_join([n, r, co]),
             _dedupe_join([n, co]),
             _dedupe_join([n]),
+            _dedupe_join([stripped_name, c, r, co]),
             _dedupe_join([stripped_name, c, co]),
+            _dedupe_join([stripped_name, r, co]),
             _dedupe_join([stripped_name, co]),
             _dedupe_join([stripped_name]),
         ]
     else:
         candidates = [
-            _dedupe_join([a, c, r, co]),
+            _dedupe_join([a, nb, c, r, p, co]),
+            _dedupe_join([a, c, r, p, co]),
             _dedupe_join([a, c, co]),
             _dedupe_join([a, co]),
             _dedupe_join([a]),
@@ -642,9 +822,6 @@ def geocode_place_one(
     region: str = "",
     postal_code: str = "",
 ) -> dict | None:
-    """
-    Rich geocode result with optional Google metadata.
-    """
     fields = _prepare_fields(
         name=name,
         address=address,
@@ -658,9 +835,6 @@ def geocode_place_one(
     if not any(fields.values()):
         return None
 
-    # Hard stop for placeholder names unless we have a real locator.
-    # Prevents fake "success" like:
-    #   "Unnamed Hotel, Italy" -> Italy centroid
     if fields["name"] and _looks_placeholder_place_name(fields["name"]):
         if not _has_strong_non_name_locator(fields):
             logger.warning(
@@ -744,12 +918,6 @@ def geocode_one(
     region: str = "",
     postal_code: str = "",
 ) -> tuple[float, float] | None:
-    """
-    Backward-compatible geocoder.
-
-    Returns:
-      (lat, lng) or None
-    """
     result = geocode_place_one(
         name=name,
         city=city,
@@ -765,9 +933,6 @@ def geocode_one(
 
 
 def reverse_geocode_one(lat: float, lng: float) -> dict[str, str] | None:
-    """
-    Reverse geocode coords into locality fields.
-    """
     global _last_nominatim_call
 
     try:
