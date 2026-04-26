@@ -551,7 +551,7 @@ async function ensureGooglePlaces(): Promise<boolean> {
     const script = document.createElement('script');
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
       MAPS_KEY,
-    )}&libraries=places&v=weekly&loading=async`;
+    )}&libraries=places&v=weekly`;
     script.async = true;
     script.defer = true;
     script.onload = finish;
