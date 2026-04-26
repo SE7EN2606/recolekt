@@ -96,7 +96,8 @@ const fetchBackendAuthed = async (url: string) => {
       'Cache-Control': 'no-cache',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    credentials: 'omit',
+    credentials: 'include',
+    cache: 'no-store',
   });
 
   if (!res.ok) {
