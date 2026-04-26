@@ -66,3 +66,16 @@ export const fetchWithAuth = (
 };
 
 export default APIBASE;
+
+export const GOOGLE_MAPS_API_KEY =
+  import.meta.env.VITE_GOOGLE_MAPS_API_KEY ||
+  import.meta.env.VITE_GOOGLE_MAPS_KEY ||
+  import.meta.env.VITE_GOOGLE_API_KEY ||
+  '';
+
+
+export const FRONTEND_API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  import.meta.env.VITE_BACKEND_URL ||
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? 'http://localhost:5001' : '');

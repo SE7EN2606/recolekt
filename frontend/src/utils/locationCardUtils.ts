@@ -1,5 +1,6 @@
 import type React from 'react';
 import L from 'leaflet';
+import { FRONTEND_API_BASE, GOOGLE_MAPS_API_KEY } from './api';
 
 export interface LocationPlace {
   rank?: number | string | null;
@@ -63,26 +64,8 @@ export const BLUE_BORDER = '#bfdbfe';
 export const TEXT = '#111827';
 export const MUTED = '#6b7280';
 
-function envValue(...keys: string[]): string {
-  for (const key of keys) {
-    const value = ((import.meta as any).env?.[key] as string | undefined)?.trim();
-    if (value) return value;
-  }
-
-  return '';
-}
-
-const RAW_API_BASE =
-  envValue('VITE_API_BASE', 'VITE_API_URL', 'VITE_BACKEND_URL') ||
-  ((import.meta as any).env?.DEV ? 'http://localhost:5001' : '');
-
-const API_BASE = RAW_API_BASE.replace(/\/$/, '');
-
-const MAPS_KEY = envValue(
-  'VITE_GOOGLE_MAPS_API_KEY',
-  'VITE_GOOGLE_MAPS_KEY',
-  'VITE_GOOGLE_API_KEY',
-);
+const API_BASE = FRONTEND_API_BASE.replace(/\/$/, '');
+const MAPS_KEY = GOOGLE_MAPS_API_KEY.trim();
 
 export const hydrationInFlight = new Map<string, Promise<GeocodedPlace[] | null>>();
 export const hydrationDone = new Set<string>();
