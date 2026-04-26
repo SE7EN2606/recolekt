@@ -4,6 +4,18 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const googleMapsKey =
+  process.env.VITE_GOOGLE_MAPS_API_KEY ||
+  process.env.VITE_GOOGLE_MAPS_KEY ||
+  process.env.VITE_GOOGLE_API_KEY ||
+  '';
+
+if (process.env.NODE_ENV === 'production' && !googleMapsKey) {
+  throw new Error(
+    'Missing VITE_GOOGLE_MAPS_API_KEY. Set it on the Railway frontend service/build environment.',
+  );
+}
+
 export default defineConfig({
   plugins: [
     react(),
