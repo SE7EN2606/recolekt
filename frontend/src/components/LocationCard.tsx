@@ -124,6 +124,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [savedKeys, setSavedKeys] = useState<Set<string>>(new Set());
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
+  const [isEnrichingPlaces, setIsEnrichingPlaces] = useState(false);
 
   const rawPlaces = useMemo<LocationPlace[]>(() => {
     return extractPlaces(location);
@@ -217,24 +218,33 @@ export const LocationCard: React.FC<LocationCardProps> = ({
     );
 
     if (!needsGoogleDetails) {
+      setIsEnrichingPlaces(false);
       return () => {
         cancelled = true;
       };
     }
 
-    enrichPlacesWithGoogleDetails(places).then((enriched) => {
-      if (cancelled) return;
+    setIsEnrichingPlaces(true);
 
-      setPlaces((prev) => {
-        const { places: merged, changed } = mergeEnrichedPlaces(prev, enriched);
-        return changed ? merged : prev;
+    enrichPlacesWithGoogleDetails(places)
+      .then((enriched) => {
+        if (cancelled) return;
+
+        setPlaces((prev) => {
+          const { places: merged, changed } = mergeEnrichedPlaces(prev, enriched);
+          return changed ? merged : prev;
+        });
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsEnrichingPlaces(false);
+        }
       });
-    });
 
     return () => {
       cancelled = true;
     };
-  }, [googleEnrichmentSignature, places]);
+  }, [googleEnrichmentSignature]);
 
   const mappablePlaces = useMemo(() => {
     return places.filter((p) => p.coords);
@@ -244,8 +254,6 @@ export const LocationCard: React.FC<LocationCardProps> = ({
   const hasDisplayPlaces = places.length > 0;
   const hasMappablePlaces = mappablePlaces.length > 0;
 
-  const shouldShowMapPanel = !hasDisplayPlaces || hasMappablePlaces;
-
   const activePlace = useMemo(() => {
     if (activeIdx === null) return null;
     return places.find((place) => place._idx === activeIdx && place.coords) ?? null;
@@ -253,7 +261,7 @@ export const LocationCard: React.FC<LocationCardProps> = ({
 
   const defaultCenter = useMemo<[number, number]>(() => {
     const first = mappablePlaces[0]?.coords;
-    return first ? [first.lat, first.lng] : [47.5, 12.5];
+    return first ? [first.lat, first.lng] : [20, 0];
   }, [mappablePlaces]);
 
   const handleItemClick = useCallback((place: GeocodedPlace) => {
@@ -385,23 +393,6 @@ export const LocationCard: React.FC<LocationCardProps> = ({
             background: transparent;
             border: none;
           }
-
-          .recolekt-location-card .recolekt-map-active-card {
-            left: 50% !important;
-            right: auto !important;
-            bottom: 28px !important;
-            transform: translateX(-50%) !important;
-          }
-
-          @media (max-width: 520px) {
-            .recolekt-location-card .recolekt-map-active-card {
-              left: 50% !important;
-              right: auto !important;
-              bottom: 28px !important;
-              transform: translateX(-50%) !important;
-              width: min(455px, calc(100% - 56px)) !important;
-            }
-          }
         `}
       </style>
 
@@ -424,102 +415,113 @@ export const LocationCard: React.FC<LocationCardProps> = ({
           <span style={css.headerLabel}>{headerLabel}</span>
         </div>
 
-        {shouldShowMapPanel && (
-          <div style={css.mapWrap}>
-            {!hasDisplayPlaces ? (
-              <div style={css.emptyMap}>
-                {hasRawPlaces
-                  ? 'Exact map pins are unavailable because the reel does not reveal real place names.'
-                  : 'No exact places were found for this reel.'}
-              </div>
-            ) : (
-              <>
-                <MapContainer
-                  center={defaultCenter}
-                  zoom={6}
-                  minZoom={2}
-                  maxZoom={18}
-                  scrollWheelZoom={false}
-                  style={{ width: '100%', height: '100%' }}
-                >
-                  <TileLayer
-                    attribution="&copy; Google Maps"
-                    url="https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
-                    subdomains={['mt0', 'mt1', 'mt2', 'mt3']}
-                  />
+        <div style={css.mapWrap}>
+          {!hasDisplayPlaces ? (
+            <div style={css.emptyMap}>
+              {hasRawPlaces
+                ? 'Exact map pins are unavailable because the reel does not reveal real place names.'
+                : 'No exact places were found for this reel.'}
+            </div>
+          ) : (
+            <>
+              <MapContainer
+                center={defaultCenter}
+                zoom={hasMappablePlaces ? 6 : 2}
+                minZoom={2}
+                maxZoom={18}
+                scrollWheelZoom={false}
+                style={{ width: '100%', height: '100%' }}
+              >
+                <TileLayer
+                  attribution="&copy; Google Maps"
+                  url="https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+                  subdomains={['mt0', 'mt1', 'mt2', 'mt3']}
+                />
 
-                  <MapInvalidator />
-                  <BoundsFitter places={mappablePlaces} />
-                  <ActiveFlyer place={activePlace} />
+                <MapInvalidator />
 
-                  {mappablePlaces.map((place) => (
-                    <Marker
-                      key={`marker-${place._idx}`}
-                      position={[place.coords!.lat, place.coords!.lng]}
-                      icon={makeNumberedIcon(
-                        place.rank,
-                        activeIdx === place._idx,
-                      )}
-                      eventHandlers={{
-                        click: () => {
-                          setActiveIdx((prev) =>
-                            prev === place._idx ? null : place._idx,
-                          );
-                        },
-                      }}
-                    />
-                  ))}
-                </MapContainer>
+                {hasMappablePlaces && (
+                  <>
+                    <BoundsFitter places={mappablePlaces} />
+                    <ActiveFlyer place={activePlace} />
 
-                {activePlace && (
-                  <div className="recolekt-map-active-card" style={css.mapCard}>
-                    {activePlace.photo_url ? (
-                      <div style={css.mapCardPhotoWrap}>
-                        <img
-                          src={activePlace.photo_url}
-                          alt={displayName(activePlace)}
-                          style={css.mapCardPhoto}
-                          loading="lazy"
-                        />
-                      </div>
-                    ) : (
-                      <div style={css.mapCardRank}>{activePlace.rank}</div>
-                    )}
-
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={css.mapCardTitleRow}>
-                        <div style={css.mapCardTitle}>
-                          {displayName(activePlace)}
-                        </div>
-
-                        {activePlace.country && (
-                          <div style={css.mapCardCountry}>
-                            {activePlace.country}
-                          </div>
+                    {mappablePlaces.map((place) => (
+                      <Marker
+                        key={`marker-${place._idx}`}
+                        position={[place.coords!.lat, place.coords!.lng]}
+                        icon={makeNumberedIcon(
+                          place.rank,
+                          activeIdx === place._idx,
                         )}
+                        eventHandlers={{
+                          click: () => {
+                            setActiveIdx((prev) =>
+                              prev === place._idx ? null : place._idx,
+                            );
+                          },
+                        }}
+                      />
+                    ))}
+                  </>
+                )}
+              </MapContainer>
+
+              {!hasMappablePlaces && (
+                <div style={css.mapLoading}>
+                  {isEnrichingPlaces
+                    ? 'Locating map pins…'
+                    : 'Exact map pins are unavailable for these places.'}
+                </div>
+              )}
+
+              {activePlace && (
+                <div className="recolekt-map-active-card" style={css.mapCard}>
+                  {activePlace.photo_url ? (
+                    <div style={css.mapCardPhotoWrap}>
+                      <img
+                        src={activePlace.photo_url}
+                        alt={displayName(activePlace)}
+                        style={css.mapCardPhoto}
+                        loading="lazy"
+                      />
+                    </div>
+                  ) : (
+                    <div style={css.mapCardRank}>{activePlace.rank}</div>
+                  )}
+
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={css.mapCardTitleRow}>
+                      <div style={css.mapCardTitle}>
+                        {displayName(activePlace)}
                       </div>
 
-                      {ratingMeta(activePlace) && (
-                        <div style={css.mapCardMeta}>
-                          {ratingMeta(activePlace)}
+                      {activePlace.country && (
+                        <div style={css.mapCardCountry}>
+                          {activePlace.country}
                         </div>
                       )}
                     </div>
 
-                    <button
-                      type="button"
-                      style={css.mapCardClose}
-                      onClick={() => setActiveIdx(null)}
-                      aria-label="Close place card"
-                    >
-                      ×
-                    </button>
+                    {ratingMeta(activePlace) && (
+                      <div style={css.mapCardMeta}>
+                        {ratingMeta(activePlace)}
+                      </div>
+                    )}
                   </div>
-                )}
-              </>
-            )}
-          </div>
-        )}
+
+                  <button
+                    type="button"
+                    style={css.mapCardClose}
+                    onClick={() => setActiveIdx(null)}
+                    aria-label="Close place card"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
         {hasDisplayPlaces && (
           <div style={css.list}>

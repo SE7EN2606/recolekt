@@ -89,6 +89,7 @@ export const hydrationDone = new Set<string>();
 export const hydrationCache = new Map<string, GeocodedPlace[]>();
 
 const googleDetailsCache = new Map<string, Promise<Partial<LocationPlace> | null>>();
+let googleMapsLoadPromise: Promise<boolean> | null = null;
 
 function apiPath(path: string): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
@@ -484,66 +485,6 @@ function googlePlaceQuery(place: GeocodedPlace): string {
     .join(', ');
 }
 
-async function ensureGooglePlaces(): Promise<boolean> {
-  if (typeof window === 'undefined') return false;
-
-  const w = window as any;
-
-  if (w.google?.maps?.places) {
-    return true;
-  }
-
-  if (w.google?.maps?.importLibrary) {
-    try {
-      await w.google.maps.importLibrary('places');
-      return !!w.google?.maps?.places;
-    } catch {
-      return false;
-    }
-  }
-
-  if (!MAPS_KEY) {
-    return false;
-  }
-
-  const existing = document.querySelector<HTMLScriptElement>(
-    'script[src*="maps.googleapis.com/maps/api/js"]',
-  );
-
-  if (existing) {
-    await new Promise<void>((resolve) => {
-      const done = () => resolve();
-      existing.addEventListener('load', done, { once: true });
-      existing.addEventListener('error', done, { once: true });
-      window.setTimeout(done, 1200);
-    });
-
-    if (w.google?.maps?.importLibrary) {
-      try {
-        await w.google.maps.importLibrary('places');
-      } catch {
-        // continue to final check
-      }
-    }
-
-    return !!w.google?.maps?.places;
-  }
-
-  await new Promise<void>((resolve) => {
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
-      MAPS_KEY,
-    )}&libraries=places&v=weekly`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => resolve();
-    document.head.appendChild(script);
-  });
-
-  return !!w.google?.maps?.places;
-}
-
 function googleTypesToType(types?: string[] | null): string | null {
   if (!types?.length) return null;
 
@@ -571,6 +512,78 @@ function photoUrlFromPlace(place: any): string | null {
   }
 }
 
+async function ensureGooglePlaces(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  const w = window as any;
+
+  if (w.google?.maps?.places && w.google?.maps?.Geocoder) {
+    return true;
+  }
+
+  if (googleMapsLoadPromise) {
+    return googleMapsLoadPromise;
+  }
+
+  const loadPromise = new Promise<boolean>((resolve) => {
+    const finish = async () => {
+      try {
+        if (w.google?.maps?.importLibrary) {
+          await Promise.allSettled([
+            w.google.maps.importLibrary('places'),
+            w.google.maps.importLibrary('geocoding'),
+          ]);
+        }
+      } catch {
+        // Continue to final availability check.
+      }
+
+      resolve(!!w.google?.maps && (!!w.google.maps.places || !!w.google.maps.Geocoder));
+    };
+
+    if (w.google?.maps) {
+      finish();
+      return;
+    }
+
+    if (!MAPS_KEY) {
+      console.warn(
+        'Location map hydration skipped: missing VITE_GOOGLE_MAPS_API_KEY in frontend build.',
+      );
+      resolve(false);
+      return;
+    }
+
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src*="maps.googleapis.com/maps/api/js"]',
+    );
+
+    if (existing) {
+      existing.addEventListener('load', finish, { once: true });
+      existing.addEventListener('error', () => resolve(false), { once: true });
+      window.setTimeout(finish, 1800);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
+      MAPS_KEY,
+    )}&libraries=places&v=weekly`;
+    script.async = true;
+    script.defer = true;
+    script.onload = finish;
+    script.onerror = () => {
+      console.warn('Location map hydration skipped: Google Maps script failed to load.');
+      resolve(false);
+    };
+
+    document.head.appendChild(script);
+  });
+
+  googleMapsLoadPromise = loadPromise;
+  return loadPromise;
+}
+
 async function fetchGoogleDetailsForPlace(
   place: GeocodedPlace,
 ): Promise<Partial<LocationPlace> | null> {
@@ -579,8 +592,6 @@ async function fetchGoogleDetailsForPlace(
 
   const w = window as any;
   const google = w.google;
-  const div = document.createElement('div');
-  const service = new google.maps.places.PlacesService(div);
 
   const query = googlePlaceQuery(place);
   if (!query) return null;
@@ -595,9 +606,83 @@ async function fetchGoogleDetailsForPlace(
   if (cached) return cached;
 
   const promise = new Promise<Partial<LocationPlace> | null>((resolve) => {
-    const request: any = {
-      query,
+    const resolveFromPlaceLike = (source: any, fallback: any = null) => {
+      const lat =
+        source?.geometry?.location?.lat?.() ??
+        fallback?.geometry?.location?.lat?.() ??
+        null;
+
+      const lng =
+        source?.geometry?.location?.lng?.() ??
+        fallback?.geometry?.location?.lng?.() ??
+        null;
+
+      resolve({
+        google_name: source?.name || fallback?.name || null,
+        google_place_id: source?.place_id || fallback?.place_id || null,
+        maps_url:
+          source?.url ||
+          (source?.place_id
+            ? `https://www.google.com/maps/place/?q=place_id:${source.place_id}`
+            : null),
+        photo_url: photoUrlFromPlace(source) || photoUrlFromPlace(fallback),
+        rating: source?.rating ?? fallback?.rating ?? null,
+        google_rating: source?.rating ?? fallback?.rating ?? null,
+        user_ratings_total:
+          source?.user_ratings_total ?? fallback?.user_ratings_total ?? null,
+        review_count:
+          source?.user_ratings_total ?? fallback?.user_ratings_total ?? null,
+        type: place.type || googleTypesToType(source?.types || fallback?.types) || null,
+        lat: Number.isFinite(lat) ? lat : null,
+        lng: Number.isFinite(lng) ? lng : null,
+      });
     };
+
+    const fallbackToGeocoder = () => {
+      if (!google.maps.Geocoder) {
+        resolve(null);
+        return;
+      }
+
+      const geocoder = new google.maps.Geocoder();
+      const geocoderOk = google.maps.GeocoderStatus?.OK || 'OK';
+
+      geocoder.geocode({ address: query }, (results: any[], status: any) => {
+        if (
+          status !== geocoderOk ||
+          !Array.isArray(results) ||
+          !results.length
+        ) {
+          resolve(null);
+          return;
+        }
+
+        const best = results[0];
+        const lat = best?.geometry?.location?.lat?.();
+        const lng = best?.geometry?.location?.lng?.();
+
+        resolve({
+          google_name: best?.formatted_address || place.google_name || place.name,
+          google_place_id: best?.place_id || null,
+          maps_url: best?.place_id
+            ? `https://www.google.com/maps/place/?q=place_id:${best.place_id}`
+            : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
+          lat: Number.isFinite(lat) ? lat : null,
+          lng: Number.isFinite(lng) ? lng : null,
+          type: place.type || place.place_type || null,
+        });
+      });
+    };
+
+    if (!google.maps.places?.PlacesService) {
+      fallbackToGeocoder();
+      return;
+    }
+
+    const div = document.createElement('div');
+    const service = new google.maps.places.PlacesService(div);
+
+    const request: any = { query };
 
     if (place.coords) {
       request.location = new google.maps.LatLng(place.coords.lat, place.coords.lng);
@@ -610,27 +695,14 @@ async function fetchGoogleDetailsForPlace(
         !Array.isArray(results) ||
         !results.length
       ) {
-        resolve(null);
+        fallbackToGeocoder();
         return;
       }
 
       const best = results[0];
 
       if (!best?.place_id) {
-        const lat = best?.geometry?.location?.lat?.();
-        const lng = best?.geometry?.location?.lng?.();
-
-        resolve({
-          google_name: best?.name || null,
-          photo_url: photoUrlFromPlace(best),
-          rating: best?.rating ?? null,
-          google_rating: best?.rating ?? null,
-          user_ratings_total: best?.user_ratings_total ?? null,
-          review_count: best?.user_ratings_total ?? null,
-          type: place.type || googleTypesToType(best?.types) || null,
-          lat: Number.isFinite(lat) ? lat : null,
-          lng: Number.isFinite(lng) ? lng : null,
-        });
+        resolveFromPlaceLike(best);
         return;
       }
 
@@ -649,33 +721,15 @@ async function fetchGoogleDetailsForPlace(
           ],
         },
         (details: any, detailStatus: any) => {
-          const source =
-            detailStatus === google.maps.places.PlacesServiceStatus.OK && details
-              ? details
-              : best;
+          if (
+            detailStatus === google.maps.places.PlacesServiceStatus.OK &&
+            details
+          ) {
+            resolveFromPlaceLike(details, best);
+            return;
+          }
 
-          const lat = source?.geometry?.location?.lat?.() ?? best?.geometry?.location?.lat?.();
-          const lng = source?.geometry?.location?.lng?.() ?? best?.geometry?.location?.lng?.();
-
-          resolve({
-            google_name: source?.name || best?.name || null,
-            google_place_id: source?.place_id || best?.place_id || null,
-            maps_url:
-              source?.url ||
-              (source?.place_id
-                ? `https://www.google.com/maps/place/?q=place_id:${source.place_id}`
-                : null),
-            photo_url: photoUrlFromPlace(source) || photoUrlFromPlace(best),
-            rating: source?.rating ?? best?.rating ?? null,
-            google_rating: source?.rating ?? best?.rating ?? null,
-            user_ratings_total:
-              source?.user_ratings_total ?? best?.user_ratings_total ?? null,
-            review_count:
-              source?.user_ratings_total ?? best?.user_ratings_total ?? null,
-            type: place.type || googleTypesToType(source?.types || best?.types) || null,
-            lat: Number.isFinite(lat) ? lat : null,
-            lng: Number.isFinite(lng) ? lng : null,
-          });
+          resolveFromPlaceLike(best);
         },
       );
     });
