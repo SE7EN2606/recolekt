@@ -819,13 +819,16 @@ export function mergeEnrichedPlaces(
     const next = incomingByKey.get(`${place._idx}:${place.name.trim().toLowerCase()}`);
     if (!next) return place;
 
+    const nextCoords = coordsFromPlace(next);
+    const mergedCoords = next.coords || nextCoords || place.coords;
+
     const merged: GeocodedPlace = {
       ...place,
       ...next,
       name: place.name,
       rank: Number(place.rank) || Number(next.rank) || place._idx + 1,
-      coords: next.coords || place.coords,
-      status: next.coords || place.coords ? 'done' : next.status || place.status,
+      coords: mergedCoords,
+      status: mergedCoords ? 'done' : next.status || place.status,
       description: place.description || next.description || null,
       is_saved: place.is_saved ?? next.is_saved ?? false,
       isSaved: place.isSaved ?? next.isSaved ?? false,
