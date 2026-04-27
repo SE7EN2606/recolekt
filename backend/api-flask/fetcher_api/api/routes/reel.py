@@ -519,19 +519,34 @@ def _derive_gcs_artifacts(process_id: str, source_url: str, user_id: str):
 
 
 def _gcs_blob_name_from_public_url(url: str) -> str | None:
+    """
+    Convert a public GCS URL into a blob name.
+
+    Example:
+    https://storage.googleapis.com/recolekt-storage/media/IG_reels/x/y.json
+    -> media/IG_reels/x/y.json
+    """
     if not url or not isinstance(url, str):
         return None
 
+    cleaned = url.strip()
+    if not cleaned:
+        return None
+
     marker = "storage.googleapis.com/"
-    if marker not in url:
+    if marker not in cleaned:
         return None
 
     try:
-        after = url.split(marker, 1)[1]
-        parts = after.split("/", 1)
+        after_host = cleaned.split(marker, 1)[1]
+        parts = after_host.split("/", 1)
+
         if len(parts) != 2:
             return None
-        return parts[1].split("?", 1)[0]
+
+        blob_name = parts[1].split("?", 1)[0].strip()
+        return blob_name or None
+
     except Exception:
         return None
 
@@ -737,7 +752,7 @@ def _delete_reel(process_id):
                     platform_folder = platform_reels_folder(platform_code)
 
                     fallback_prefix = f"media/{platform_folder}/"
-                    folder_match = f"_{shortcode}_{user_id}/"
+                    folder_match = f"{shortcode}_{user_id}/"
 
                     blobs = list(bucket.list_blobs(prefix=fallback_prefix))
                     deleted = 0
@@ -875,7 +890,8 @@ def patch_reel_location(process_id):
 
                 logger.info(
                     "📍 PATCH /reel/%s/location — already geocoded, refreshed JSONB and %d reel_location rows",
-                    process_id, saved,
+                    process_id,
+                    saved,
                 )
                 return jsonify({
                     "status": "already_geocoded",
@@ -907,7 +923,15 @@ def patch_reel_location(process_id):
 
             logger.info(
                 "📍 PATCH /reel/%s/location geocode input #%d — name=%r address=%r neighborhood=%r city=%r region=%r postal_code=%r country=%r",
-                process_id, idx, name, address, neighborhood, city, region, postal_code, country,
+                process_id,
+                idx,
+                name,
+                address,
+                neighborhood,
+                city,
+                region,
+                postal_code,
+                country,
             )
 
             coords = geocode_one(
@@ -927,12 +951,18 @@ def patch_reel_location(process_id):
 
                 logger.info(
                     "📍 PATCH /reel/%s/location geocode success #%d — %r -> %.6f, %.6f",
-                    process_id, idx, name, merged["lat"], merged["lng"],
+                    process_id,
+                    idx,
+                    name,
+                    merged["lat"],
+                    merged["lng"],
                 )
             else:
                 logger.info(
                     "📍 PATCH /reel/%s/location geocode miss #%d — %r",
-                    process_id, idx, name,
+                    process_id,
+                    idx,
+                    name,
                 )
 
             enriched.append(_json_safe_value(merged))
@@ -973,7 +1003,11 @@ def patch_reel_location(process_id):
 
         logger.info(
             "✅ PATCH /reel/%s/location — %d places, %d/%d geocoded, %d reel_location rows saved",
-            process_id, len(enriched), incoming_with_coords, len(enriched), saved,
+            process_id,
+            len(enriched),
+            incoming_with_coords,
+            len(enriched),
+            saved,
         )
         return jsonify({
             "status": "ok",
