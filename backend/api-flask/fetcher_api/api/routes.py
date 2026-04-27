@@ -70,6 +70,56 @@ def _extract_shortcode_for_url(url: str, platform_id: str) -> str:
     return ""
 
 
+def _find_duplicate_reel(user_id: str, url: str, shortcode: str | None = None):
+    """
+    A reel must be unique per user.
+
+    Match by exact source_url first, then by shortcode embedded in the generated id.
+    This blocks duplicates even if the incoming URL has slightly different formatting.
+    """
+    url = (url or "").strip()
+    shortcode = (shortcode or "").strip()
+
+    try:
+        if shortcode:
+            return fetch_one(
+                """
+                SELECT id, status, gcs_urls, created_at
+                FROM reels
+                WHERE user_id = %s
+                  AND (
+                        source_url = %s
+                        OR id LIKE %s
+                  )
+                ORDER BY created_at DESC NULLS LAST
+                LIMIT 1
+                """,
+                (user_id, url, f"{shortcode}--%"),
+            )
+
+        return fetch_one(
+            """
+            SELECT id, status, gcs_urls, created_at
+            FROM reels
+            WHERE user_id = %s AND source_url = %s
+            ORDER BY created_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            (user_id, url),
+        )
+
+    except Exception as exc:
+        logger.warning(
+            "⚠️ Duplicate lookup failed for user=%s url=%s shortcode=%s: %s",
+            user_id,
+            url,
+            shortcode,
+            exc,
+        )
+
+    return None
+
+
 def _json_loads_maybe(value, default=None):
     if value is None:
         return default
@@ -260,7 +310,7 @@ def saved_reels():
             error_message
         FROM reels
         WHERE user_id = %s
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC NULLS LAST
         LIMIT %s OFFSET %s
         """,
         (user_id, per_page, offset),
@@ -291,6 +341,7 @@ def search_reels():
     tokens = re.findall(r"\w+", raw_q.lower())
     if not tokens:
         return jsonify([])
+
     tsquery = " & ".join(f"{t}:*" for t in tokens)
 
     sql = """
@@ -434,7 +485,7 @@ def import_share():
         (token_hash,),
     )
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if not data or not data.get("url"):
         return jsonify({"error": "Missing 'url' in request body"}), 400
 
@@ -444,13 +495,41 @@ def import_share():
 
     logger.info("📲 Import share from %s for user %s: %s (force=%s)", client, user_id, url, force)
 
-    from fetcher_api.services.db_insert import check_duplicate_reel
-    if not force and check_duplicate_reel(user_id, url):
+    platform_id = _detect_platform_code(url)
+    shortcode = _extract_shortcode_for_url(url, platform_id) or "unknown"
+    shortcode = shortcode.strip()
+
+    if not shortcode or shortcode.lower() == "unknown" or shortcode == "None":
+        shortcode = f"{platform_id.lower()}_{uuid.uuid4().hex[:10]}"
+        logger.info("🔄 Assigned dynamic shortcode: %s", shortcode)
+
+    existing_duplicate = _find_duplicate_reel(user_id, url, shortcode)
+
+    if existing_duplicate and not force:
+        logger.info(
+            "📌 Duplicate import_share blocked: user=%s existing=%s url=%s",
+            user_id,
+            existing_duplicate.get("id"),
+            url,
+        )
         return jsonify({
             "ok": False,
             "error": "duplicate",
+            "duplicate": True,
+            "reel_id": existing_duplicate.get("id"),
+            "process_id": existing_duplicate.get("id"),
             "message": "This video has already been saved.",
         }), 409
+
+    if existing_duplicate and force:
+        logger.info(
+            "⚠️ Force import_share requested; deleting existing duplicate first: %s",
+            existing_duplicate.get("id"),
+        )
+        execute(
+            "DELETE FROM reels WHERE id = %s AND user_id = %s",
+            (existing_duplicate.get("id"), user_id),
+        )
 
     tier = get_user_tier(user_id)
     current_count = count_user_reels(user_id)
@@ -469,17 +548,9 @@ def import_share():
     from fetcher_api.services.storage import generate_gcs_paths
     from fetcher_api.api.helpers.processing import background_process
 
-    platform_id = _detect_platform_code(url)
     is_facebook = platform_id == "FB"
 
-    shortcode = _extract_shortcode_for_url(url, platform_id) or "unknown"
-    shortcode = shortcode.strip()
-
-    if not shortcode or shortcode.lower() == "unknown" or shortcode == "None":
-        shortcode = f"{platform_id.lower()}_{uuid.uuid4().hex[:10]}"
-        logger.info("🔄 Assigned dynamic shortcode: %s", shortcode)
-
-    process_id = f"{shortcode}_{get_timestamp()}_{get_unique_id(url)}"
+    process_id = f"{shortcode}--{get_timestamp()}--{get_unique_id(url)}"
     temp_dir = tempfile.mkdtemp()
     video_path = os.path.join(temp_dir, f"{process_id}.mp4")
 
@@ -561,12 +632,13 @@ def import_share():
         return jsonify({
             "ok": True,
             "reel_id": process_id,
+            "process_id": process_id,
             "open_url": open_url,
             "message": "Processing started",
         })
 
     except Exception as e:
-        logger.error("❌ Import share error: %s", e)
+        logger.error("❌ Import share error: %s", e, exc_info=True)
         return jsonify({
             "ok": False,
             "error": "processing_error",
