@@ -1,12 +1,12 @@
 """
-Universal Content Extractor — orchestration only.
+Universal Content Extractor, orchestration only.
 
 All heavy logic lives in dedicated mixins:
-    extractor_http.py            → HttpMixin      (_call_ai, retry, model fallback)
-    extractor_call1.py           → Call1Mixin     (Call 1 parsing)
-    extractor_call2.py           → Call2Mixin     (Call 2 summary + Call 3 translation)
-    extractor_assembly.py        → AssemblyMixin  (final output assembly)
-    extractor_list_detection.py  → detection helpers
+    extractor_http.py            -> HttpMixin      (_call_ai, retry, model fallback)
+    extractor_call1.py           -> Call1Mixin     (Call 1 parsing)
+    extractor_call2.py           -> Call2Mixin     (Call 2 summary + Call 3 translation)
+    extractor_assembly.py        -> AssemblyMixin  (final output assembly)
+    extractor_list_detection.py  -> detection helpers
 
 Public content families:
     "recipe" | "workout" | "location" | "products" | "software" | "finance" | "general"
@@ -20,7 +20,7 @@ Structured subtype values on the legacy tools path:
     "software" | "lifestyle" | "gear" | "food" |
     "ranking" | "picks" | "verdict" | "grouped" | "places"
 
-⚠️ MODEL CHAIN NOTE:
+MODEL CHAIN NOTE:
     extractor_http.py owns the model policy.
     Current default policy is:
       - Call 1 / vision extraction: ['mistral-large-latest', 'mistral-small-latest']
@@ -34,7 +34,6 @@ import asyncio
 import logging
 import re
 from typing import Any, Dict, List, Optional
-
 
 from fetcher_api.adapters.meta_client import meta_client
 from fetcher_api.services.category_validator import validate_category
@@ -98,12 +97,9 @@ from fetcher_api.utils.ocr_utils import (
     should_extract_frames,
 )
 
-
 logger = logging.getLogger(__name__)
 
-
 EXTRACTOR_VERSION = "universal-v23"
-
 
 BOOKMARK_MESSAGES = {
     "en": "Bookmark saved. The creator did not provide a detailed caption or transcript for this video.",
@@ -112,7 +108,6 @@ BOOKMARK_MESSAGES = {
     "it": "Segnalibro salvato. Il creatore non ha fornito una didascalia o una trascrizione dettagliata per questo video.",
     "de": "Lesezeichen gespeichert. Der Ersteller hat keine detaillierte Bildunterschrift oder Transkript bereitgestellt.",
 }
-
 
 _CAPTION_MENTION_RE = re.compile(r"(?<![\w.])@([A-Za-z0-9._]{2,})")
 
@@ -237,7 +232,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         promised_count: int,
     ) -> List[str]:
         if not video_path:
-            logger.warning("⚠️ video_path is None — frames cannot be extracted")
+            logger.warning("⚠️ video_path is None, frames cannot be extracted")
             return []
 
         has_good_transcript = len(transcript.strip()) > 200
@@ -252,7 +247,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                 start_offset_seconds=0.0,
             )
             logger.info(
-                "📍 Location list — %d composite frames (12 raw stitched 3-per-composite, from 0s)",
+                "📍 Location list, %d composite frames (12 raw stitched 3-per-composite, from 0s)",
                 len(frame_images),
             )
             return frame_images
@@ -270,7 +265,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                     start_offset_seconds=0.0,
                 )
                 logger.info(
-                    "🎵 Silent list — %d composite frames (%d raw, promised=%d items)",
+                    "🎵 Silent list, %d composite frames (%d raw, promised=%d items)",
                     len(frame_images),
                     n_raw,
                     promised_count,
@@ -363,7 +358,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             if mention_verdicts >= 3:
                 is_location_list = False
                 logger.info(
-                    "📍 Location false-positive suppressed — %d @mention verdict entries detected",
+                    "📍 Location false-positive suppressed, %d @mention verdict entries detected",
                     mention_verdicts,
                 )
             elif (
@@ -372,14 +367,14 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             ):
                 is_location_list = False
                 logger.info(
-                    "📍 Location false-positive suppressed — repeated 'chez [Brand]' + fashion/product nouns"
+                    "📍 Location false-positive suppressed, repeated 'chez [Brand]' + fashion/product nouns"
                 )
             elif looks_ranked and (
                 signals.get("tool_kw", 0) >= 1 or promised_count >= 3
             ):
                 is_location_list = False
                 logger.info(
-                    "📍 Location false-positive suppressed — strong ranking signals with tool/product context"
+                    "📍 Location false-positive suppressed, strong ranking signals with tool/product context"
                 )
 
         requested_structured_product_family = (
@@ -416,11 +411,11 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             )
 
         public_content_type = _route_public_family(
-            requested_public_content_type=requested_public_content_type,
-            transcript=transcript,
-            caption=caption,
-            is_location_list=is_location_list,
-            is_tools=is_tools,
+            requested_public_content_type,
+            transcript,
+            caption,
+            is_location_list,
+            is_tools,
         )
 
         if requested_public_content_type in {"recipe", "workout"}:
@@ -445,17 +440,17 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         if is_tools:
             if looks_ranked:
                 subtype_hint = "places" if pre_subtype == "places" else "ranking"
-                logger.info("🔧 Structured-list — subtype forced to %r", subtype_hint)
+                logger.info("🔧 Structured-list, subtype forced to %r", subtype_hint)
             elif mention_verdicts >= 3:
                 subtype_hint = "verdict"
                 logger.info(
-                    "🔧 Structured-list — subtype forced to 'verdict' (%d @mention entries)",
+                    "🔧 Structured-list, subtype forced to 'verdict' (%d @mention entries)",
                     mention_verdicts,
                 )
             elif mention_items >= 3:
                 subtype_hint = pre_subtype or "picks"
                 logger.info(
-                    "🔧 Structured-list — subtype from plain mentions: %s (%d mentions)",
+                    "🔧 Structured-list, subtype from plain mentions: %s (%d mentions)",
                     subtype_hint,
                     mention_items,
                 )
@@ -471,14 +466,14 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                 else:
                     subtype_hint = pre_subtype or _default_subtype_for_family(public_content_type)
 
-                logger.info("🔧 Structured-list — subtype: %s", subtype_hint)
+                logger.info("🔧 Structured-list, subtype: %s", subtype_hint)
 
         elif is_location_list:
             n = count_numbered_caption_items(caption)
-            logger.info("📍 Location-list — %d numbered items in caption", n)
+            logger.info("📍 Location-list, %d numbered items in caption", n)
         elif looks_educational_explainer:
             logger.info(
-                "🧠 Numbered explainer detected — keeping out of structured-list mode despite promised count=%d",
+                "🧠 Numbered explainer detected, keeping out of structured-list mode despite promised count=%d",
                 promised_count,
             )
 
@@ -573,7 +568,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             after = sum(len(c.get("items", [])) for c in parsed["tools_categories"])
             if before != after:
                 logger.info(
-                    "🗑️ Stripped %d garbage transcript_recovery items (%d → %d)",
+                    "🗑️ Stripped %d garbage transcript_recovery items (%d -> %d)",
                     before - after,
                     before,
                     after,
@@ -591,7 +586,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
 
         if parsed.get("location"):
             final_content_type = "location"
-            logger.info("📍 public content_type confirmed → 'location' (location populated)")
+            logger.info("📍 public content_type confirmed -> 'location' (location populated)")
         elif parsed.get("tools_categories"):
             inferred_family = _call_classify_structured_family_safe(
                 transcript=transcript,
@@ -607,7 +602,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                 final_content_type = "products"
 
             logger.info(
-                "🧩 public content_type confirmed from structured list → %r",
+                "🧩 public content_type confirmed from structured list -> %r",
                 final_content_type,
             )
 
@@ -646,13 +641,13 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         else:
             if parsed.get("tools_categories"):
                 logger.info(
-                    "📞 CALL 2: Non-English structured tools path → %s...",
+                    "📞 CALL 2: Non-English structured tools path -> %s...",
                     effective_lang.upper(),
                 )
                 summary_result = self._call2_bilingual_structured(parsed, caption, effective_lang)
             else:
                 logger.info(
-                    "📞 CALL 2: Non-English summary path → %s...",
+                    "📞 CALL 2: Non-English summary path -> %s...",
                     effective_lang.upper(),
                 )
                 summary_result = self._call2_bilingual(parsed, caption, effective_lang, result_data)
@@ -662,7 +657,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             and parsed.get("tools_categories")
             and "tools_og" not in summary_result
         ):
-            logger.info("📞 CALL 3: Translating tools → %s...", effective_lang.upper())
+            logger.info("📞 CALL 3: Translating tools -> %s...", effective_lang.upper())
             translated_cats = self._call3_translate_structured(
                 categories=parsed["tools_categories"],
                 lang=effective_lang,
