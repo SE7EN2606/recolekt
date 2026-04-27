@@ -1,7 +1,6 @@
 """
 Meta client — handles both Instagram and Facebook public posts.
 
-
 Instagram:
   - Metadata via public unauthenticated oEmbed (no token)
   - Best-effort public profile lookup via instaloader, with HTML fallback
@@ -9,13 +8,11 @@ Instagram:
                     instaloader otherwise (local dev, works without cookies)
   - Set IG_COOKIES_CONTENT (Netscape format) env var for yt-dlp reliability
 
-
 Facebook:
   - Metadata + video download via yt-dlp
   - Set FB_COOKIES_CONTENT (Netscape format) env var for reliability
     with share links and login-gated content
 """
-
 
 import json
 import os
@@ -24,17 +21,13 @@ import logging
 import tempfile
 from typing import Any, Dict, Optional
 
-
 import instaloader
 import requests
 import yt_dlp
 
-
 logger = logging.getLogger("meta_client")
 
-
 INSTAGRAM_OEMBED_URL = "https://www.instagram.com/api/v1/oembed/"
-
 
 _FACEBOOK_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -42,9 +35,14 @@ _FACEBOOK_USER_AGENT = (
     "Chrome/124.0.0.0 Safari/537.36"
 )
 
+# Matches /reel/, /reels/, /p/, /tv/ with optional trailing slash and optional query string
+_IG_SHORTCODE_RE = re.compile(
+    r"/(?:reel|reels|p|tv)/([A-Za-z0-9_-]+)/?(?:\?|$)",
+    re.IGNORECASE,
+)
+
 
 class MetaClient:
-
 
     def __init__(self):
         self.loader = instaloader.Instaloader(
@@ -54,32 +52,27 @@ class MetaClient:
         )
         logger.info("ℹ️ MetaClient: instaloader ready (public mode, no login)")
 
-
     # ----------------------------------------------------------------
     # URL detection
     # ----------------------------------------------------------------
     def is_instagram_url(self, url: str) -> bool:
         return "instagram.com" in url.lower()
 
-
     def is_facebook_url(self, url: str) -> bool:
         url_lower = url.lower()
         return any(d in url_lower for d in ("facebook.com", "fb.watch", "fb.com"))
 
-
     def is_supported_url(self, url: str) -> bool:
         return self.is_instagram_url(url) or self.is_facebook_url(url)
-
 
     # ----------------------------------------------------------------
     # Shortcode / ID extraction
     # ----------------------------------------------------------------
     def extract_shortcode(self, url: str) -> Optional[str]:
         if self.is_instagram_url(url):
-            for pattern in [r"/reel/([^/]+)/", r"/reels/([^/]+)/", r"/p/([^/]+)/", r"/tv/([^/]+)/"]:
-                m = re.search(pattern, url)
-                if m:
-                    return m.group(1)
+            m = _IG_SHORTCODE_RE.search(url)
+            if m:
+                return m.group(1)
 
         elif self.is_facebook_url(url):
             m = re.search(r'/(?:reel|reels|video|v|posts|videos|watch)/(?:[A-Za-z0-9_-]+/)?([0-9]+)', url)
@@ -94,15 +87,13 @@ class MetaClient:
 
         return None
 
-
     def _extract_username_from_url(self, url: str) -> Optional[str]:
-        match = re.search(r'instagram\.com/([a-zA-Z0-9._]+)(?:/reel|/p|/tv|/reels)?/', url)
+        match = re.search(r'instagram\.com/([a-zA-Z0-9._]+)(?:/reel|/p|/tv|/reels)?/?', url)
         if match:
             candidate = match.group(1)
             if candidate not in ('reel', 'reels', 'p', 'tv', 'stories', 'explore'):
                 return candidate
         return None
-
 
     def _normalize_instagram_username(self, username: str) -> Optional[str]:
         if not username:
@@ -112,10 +103,8 @@ class MetaClient:
             return None
         return match.group(1).lstrip("@").strip().lower()
 
-
     def _instagram_profile_url(self, username: str) -> str:
         return f"https://www.instagram.com/{username}/"
-
 
     def _browser_headers(self) -> Dict[str, str]:
         return {
@@ -129,7 +118,6 @@ class MetaClient:
             "Referer": "https://www.instagram.com/",
         }
 
-
     def _first_non_empty(self, *values: Any) -> Optional[str]:
         for value in values:
             if value is None:
@@ -139,7 +127,6 @@ class MetaClient:
                 return text
         return None
 
-
     def _decode_json_string(self, raw_value: str) -> str:
         if raw_value is None:
             return ""
@@ -147,7 +134,6 @@ class MetaClient:
             return json.loads(f'"{raw_value}"')
         except Exception:
             return raw_value
-
 
     def _extract_json_string_field(self, html_text: str, field_name: str) -> str:
         if not html_text:
@@ -158,7 +144,6 @@ class MetaClient:
             return ""
         return self._decode_json_string(match.group(1))
 
-
     def _extract_bool_field(self, html_text: str, field_name: str) -> Optional[bool]:
         if not html_text:
             return None
@@ -167,27 +152,18 @@ class MetaClient:
             return None
         return match.group(1) == "true"
 
-
     def _extract_business_address_from_html(self, html_text: str) -> Dict[str, str]:
-        """
-        Best-effort extraction for business address payloads when Instagram embeds them.
-        This is optional and may often be empty.
-        """
         if not html_text:
             return {}
-
         raw = self._extract_json_string_field(html_text, "business_address_json")
         if not raw:
             return {}
-
         try:
             data = json.loads(raw)
         except Exception:
             return {}
-
         if not isinstance(data, dict):
             return {}
-
         address = self._first_non_empty(
             data.get("street_address"),
             data.get("address_street"),
@@ -214,7 +190,6 @@ class MetaClient:
             data.get("zip_code"),
             data.get("postal_code"),
         )
-
         return {
             "address": address or "",
             "city": city or "",
@@ -223,10 +198,8 @@ class MetaClient:
             "postal_code": postal_code or "",
         }
 
-
     def _scrape_instagram_profile_html(self, username: str) -> Optional[dict]:
         url = self._instagram_profile_url(username)
-
         try:
             resp = requests.get(
                 url,
@@ -273,7 +246,6 @@ class MetaClient:
         )
         return data if has_any_useful_data else None
 
-
     # ----------------------------------------------------------------
     # Instagram — oEmbed (public, no token)
     # ----------------------------------------------------------------
@@ -281,41 +253,19 @@ class MetaClient:
         try:
             resp = requests.get(INSTAGRAM_OEMBED_URL, params={"url": url}, timeout=10)
             if resp.status_code != 200:
-                logger.warning(f"⚠️ Instagram oEmbed {resp.status_code}: {resp.text[:200]}")
+                logger.warning("⚠️ Instagram oEmbed %s: %s", resp.status_code, resp.text[:200])
                 return None
             data = resp.json()
-            logger.info(f"✅ Instagram oEmbed success: author={data.get('author_name')}")
+            logger.info("✅ Instagram oEmbed success: author=%s", data.get("author_name"))
             return data
         except Exception as e:
-            logger.error(f"❌ Instagram oEmbed error: {e}")
+            logger.error("❌ Instagram oEmbed error: %s", e)
             return None
-
 
     # ----------------------------------------------------------------
     # Instagram — best-effort public profile metadata
     # ----------------------------------------------------------------
     def get_instagram_profile(self, username: str) -> Optional[dict]:
-        """
-        Best-effort public profile lookup.
-
-        Tries:
-          1. instaloader public profile lookup
-          2. raw profile HTML parsing fallback
-
-        Returns a dict shaped for instagram_bio_scraper.fetch_account(...):
-            {
-                "username": "...",
-                "full_name": "...",
-                "bio": "...",
-                "address": "...",
-                "city": "...",
-                "region": "...",
-                "country": "...",
-                "postal_code": "...",
-                "external_url": "...",
-                "source": "instagram_profile_*",
-            }
-        """
         username = self._normalize_instagram_username(username)
         if not username:
             return None
@@ -367,9 +317,7 @@ class MetaClient:
             profile_data.get(key)
             for key in ("full_name", "bio", "address", "city", "region", "country", "postal_code")
         )
-
         return profile_data if has_any_useful_data else None
-
 
     # ----------------------------------------------------------------
     # Cookies helper (for yt-dlp)
@@ -384,12 +332,11 @@ class MetaClient:
             )
             tmp.write(content)
             tmp.close()
-            logger.info(f"🍪 Wrote {env_var} cookies → {tmp.name}")
+            logger.info("🍪 Wrote %s cookies → %s", env_var, tmp.name)
             return tmp.name
         except Exception as e:
-            logger.warning(f"⚠️ Could not write cookies file: {e}")
+            logger.warning("⚠️ Could not write cookies file: %s", e)
             return None
-
 
     # ----------------------------------------------------------------
     # Facebook — yt-dlp metadata
@@ -427,7 +374,7 @@ class MetaClient:
                 if formats:
                     video_url = formats[-1].get("url")
 
-            logger.info(f"✅ Facebook yt-dlp metadata: author={username}, shortcode={shortcode}")
+            logger.info("✅ Facebook yt-dlp metadata: author=%s, shortcode=%s", username, shortcode)
             return {
                 "shortcode": shortcode,
                 "caption": caption,
@@ -439,7 +386,7 @@ class MetaClient:
             }
 
         except Exception as e:
-            logger.error(f"❌ Facebook yt-dlp error: {e}", exc_info=True)
+            logger.error("❌ Facebook yt-dlp error: %s", e, exc_info=True)
             return None
 
         finally:
@@ -448,7 +395,6 @@ class MetaClient:
                     os.unlink(cookies_path)
                 except Exception:
                     pass
-
 
     # ----------------------------------------------------------------
     # get_post_info — unified interface
@@ -496,9 +442,8 @@ class MetaClient:
                 "source": "facebook_ytdlp",
             }
 
-        logger.warning(f"❌ Unsupported URL: {url}")
+        logger.warning("❌ Unsupported URL: %s", url)
         return None
-
 
     # ----------------------------------------------------------------
     # Instagram — yt-dlp download
@@ -543,7 +488,7 @@ class MetaClient:
             if not os.path.exists(actual_path):
                 raise ValueError(f"yt-dlp finished but file missing at {output_path}")
 
-            logger.info(f"✅ Instagram video downloaded via yt-dlp: {actual_path}")
+            logger.info("✅ Instagram video downloaded via yt-dlp: %s", actual_path)
 
             thumbnail_path = None
             thumb_url = (
@@ -558,9 +503,9 @@ class MetaClient:
                         with open(thumb_out, "wb") as f:
                             f.write(r.content)
                         thumbnail_path = thumb_out
-                        logger.info(f"✅ Instagram yt-dlp thumbnail saved → {thumb_out}")
+                        logger.info("✅ Instagram yt-dlp thumbnail saved → %s", thumb_out)
                 except Exception as e:
-                    logger.warning(f"⚠️ Instagram thumbnail download failed: {e}")
+                    logger.warning("⚠️ Instagram thumbnail download failed: %s", e)
 
             meta = {
                 "username": info.get("uploader") or info.get("channel") or "",
@@ -586,7 +531,7 @@ class MetaClient:
             }
 
         except Exception as e:
-            logger.error(f"❌ Instagram yt-dlp download error: {e}")
+            logger.error("❌ Instagram yt-dlp download error: %s", e)
             return {"success": False, "error": str(e), "metadata": {}, "post": None, "thumbnail_path": None}
         finally:
             if cookies_path and os.path.exists(cookies_path):
@@ -594,7 +539,6 @@ class MetaClient:
                     os.unlink(cookies_path)
                 except Exception:
                     pass
-
 
     # ----------------------------------------------------------------
     # Instagram — instaloader download (local dev only)
@@ -606,6 +550,8 @@ class MetaClient:
             shortcode = self.extract_shortcode(url)
             if not shortcode:
                 raise ValueError(f"Could not extract shortcode from URL: {url}")
+
+            logger.info("📎 Extracted Instagram shortcode: %s", shortcode)
 
             post = instaloader.Post.from_shortcode(self.loader.context, shortcode)
 
@@ -642,7 +588,7 @@ class MetaClient:
                     if chunk:
                         f.write(chunk)
 
-            logger.info(f"✅ Instagram video saved via instaloader → {output_path}")
+            logger.info("✅ Instagram video saved via instaloader → %s", output_path)
 
             thumbnail_path = None
             thumb_url = getattr(post, "url", None)
@@ -654,9 +600,9 @@ class MetaClient:
                         with open(thumb_out, "wb") as f:
                             f.write(r.content)
                         thumbnail_path = thumb_out
-                        logger.info(f"✅ Instagram thumbnail saved → {thumb_out}")
+                        logger.info("✅ Instagram thumbnail saved → %s", thumb_out)
                 except Exception as e:
-                    logger.warning(f"⚠️ Instagram thumbnail download failed: {e}")
+                    logger.warning("⚠️ Instagram thumbnail download failed: %s", e)
 
             meta = {
                 "username": username,
@@ -675,9 +621,8 @@ class MetaClient:
             }
 
         except Exception as e:
-            logger.error(f"❌ Instagram instaloader download error: {e}")
+            logger.error("❌ Instagram instaloader download error: %s", e)
             return {"success": False, "error": str(e), "metadata": {}, "post": None, "thumbnail_path": None}
-
 
     # ----------------------------------------------------------------
     # download_video — routes by platform
@@ -691,10 +636,10 @@ class MetaClient:
         if self.is_instagram_url(url):
             use_ytdlp = os.environ.get("IG_USE_YTDLP_ONLY", "").lower() in ("true", "1", "yes")
             if use_ytdlp:
-                logger.info(f"⬇️ Instagram download via yt-dlp [IG_USE_YTDLP_ONLY]: {url}")
+                logger.info("⬇️ Instagram download via yt-dlp [IG_USE_YTDLP_ONLY]: %s", url)
                 return self._download_instagram_video_ytdlp(url, output_path)
             else:
-                logger.info(f"⬇️ Instagram download via instaloader [local]: {url}")
+                logger.info("⬇️ Instagram download via instaloader [local]: %s", url)
                 return self._download_instagram_video_instaloader(url, output_path)
 
         elif self.is_facebook_url(url):
@@ -727,12 +672,12 @@ class MetaClient:
                     ydl.download([url])
 
                 if os.path.exists(output_path):
-                    logger.info(f"✅ Facebook video saved to {output_path}")
+                    logger.info("✅ Facebook video saved to %s", output_path)
                     return {"success": True, "metadata": post_info, "thumbnail_path": None}
                 raise ValueError("Download finished but file missing")
 
             except Exception as e:
-                logger.error(f"❌ Facebook download error: {e}")
+                logger.error("❌ Facebook download error: %s", e)
                 return {"success": False, "error": str(e)}
 
             finally:

@@ -5,7 +5,7 @@ import logging
 import os
 import re
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 
@@ -49,7 +49,7 @@ class HttpMixin:
         )
 
         logger.info(
-            "🔑 Mistral HTTP ready (%s...) — extraction chain=%s summary chain=%s",
+            "🔑 Mistral HTTP ready (%s...) , extraction chain=%s summary chain=%s",
             api_key[:12],
             self._chain_extraction,
             self._chain_summary,
@@ -95,11 +95,9 @@ class HttpMixin:
                 name = (item.get("name") or "").strip()
                 if not name:
                     continue
-
                 meta = item.get("location_meta") or {}
                 if not meta and not item.get("rank"):
                     continue
-
                 promoted.append({
                     "name": name,
                     "rank": item.get("rank"),
@@ -118,6 +116,122 @@ class HttpMixin:
             logger.info("📍 _normalize_places_response: promoted %d places into location[]", len(promoted))
 
         return content
+
+    @staticmethod
+    def _extract_message_text(data: Any) -> str:
+        # Step 1: get the choices list regardless of top-level shape.
+        if isinstance(data, list):
+            choices = data
+        elif isinstance(data, dict):
+            choices = data.get("choices") or []
+        else:
+            raise ValueError(
+                f"Unexpected API response type: {type(data).__name__} — {str(data)[:200]}"
+            )
+
+        if not isinstance(choices, list) or not choices:
+            raise ValueError(f"Empty choices list in API response: {str(data)[:300]}")
+
+        # Step 2: unwrap the first choice.
+        #
+        # Normal Mistral/OpenAI-style shape:
+        # {
+        #   "choices": [
+        #     {
+        #       "index": 0,
+        #       "finish_reason": "stop",
+        #       "message": {
+        #         "role": "assistant",
+        #         "content": "..."
+        #       }
+        #     }
+        #   ]
+        # }
+        #
+        # Some SDK/provider wrappers may return nested single-item lists.
+        # If so, unwrap those safely.
+        candidate = choices[0]
+
+        unwrap_depth = 0
+        while isinstance(candidate, list):
+            if not candidate:
+                raise ValueError(
+                    f"Empty nested list while unwrapping choice at depth {unwrap_depth}: {str(data)[:300]}"
+                )
+
+            logger.info(
+                "🔧 Unwrapping list-wrapped choice at depth %d, inner type=%s, preview=%s",
+                unwrap_depth,
+                type(candidate).__name__,
+                str(candidate)[:80],
+            )
+
+            candidate = candidate[0]
+            unwrap_depth += 1
+
+            if unwrap_depth > 10:
+                raise ValueError(
+                    f"Aborting: choice nested more than 10 levels deep — {str(data)[:300]}"
+                )
+
+        first_choice = candidate
+
+        if not isinstance(first_choice, dict):
+            raise ValueError(
+                f"Choice element is not a dict after unwrapping {unwrap_depth} level(s): "
+                f"type={type(first_choice).__name__} value={str(first_choice)[:200]}"
+            )
+
+        # Step 3: extract message content.
+        message = first_choice.get("message") or {}
+        if not isinstance(message, dict):
+            raise ValueError(f"Invalid message object in choice: {str(message)[:200]}")
+
+        content = message.get("content")
+
+        if isinstance(content, str):
+            return content.strip()
+
+        if isinstance(content, list):
+            text_parts: List[str] = []
+
+            for part in content:
+                if isinstance(part, str):
+                    text_parts.append(part)
+                elif isinstance(part, dict):
+                    if isinstance(part.get("text"), str):
+                        text_parts.append(part["text"])
+                    elif part.get("type") == "text" and isinstance(part.get("content"), str):
+                        text_parts.append(part["content"])
+
+            joined = "".join(text_parts).strip()
+            if joined:
+                return joined
+
+        # Fallback for tool/function-style output.
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list):
+            for tool_call in tool_calls:
+                if not isinstance(tool_call, dict):
+                    continue
+
+                fn = tool_call.get("function")
+                if isinstance(fn, dict):
+                    args = fn.get("arguments")
+                    if isinstance(args, str) and args.strip():
+                        return args.strip()
+
+        # Fallback for APIs that return text directly on the choice.
+        text = first_choice.get("text")
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+
+        raise ValueError(
+            f"No extractable content in message: "
+            f"finish_reason={first_choice.get('finish_reason')!r} "
+            f"content_type={type(content).__name__} "
+            f"content={str(content)[:200]}"
+        )
 
     def _call_ai(
         self,
@@ -185,7 +299,7 @@ class HttpMixin:
 
                     if self._is_retryable_status(resp.status_code):
                         logger.warning(
-                            "⚠️ [%s] %s returned %s — retrying/rotating",
+                            "⚠️ [%s] %s returned %s , retrying/rotating",
                             call_type, model, resp.status_code,
                         )
                         last_error = f"retryable_status_{resp.status_code}"
@@ -195,7 +309,20 @@ class HttpMixin:
 
                     resp.raise_for_status()
 
-                    raw = resp.json()["choices"]["message"]["content"]
+                    response_json = resp.json()
+
+                    # ONE-TIME structural diagnostic — only fires until it succeeds.
+                    logger.info(
+                        "🔍 Raw API response: outer_type=%s %s",
+                        type(response_json).__name__,
+                        (
+                            f"top_keys={list(response_json.keys())}"
+                            if isinstance(response_json, dict)
+                            else f"len={len(response_json)} first_type={type(response_json[0]).__name__ if response_json else 'empty'}"
+                        ),
+                    )
+
+                    raw = self._extract_message_text(response_json)
                     last_raw = raw
                     raw = self._strip_code_fences(raw)
 
@@ -311,8 +438,10 @@ class HttpMixin:
 def _build_chain(primary: str, defaults: List[str]) -> List[str]:
     primary = (primary or "").strip()
     chain = [primary] if primary else []
+
     for m in defaults:
         m = (m or "").strip()
         if m and m not in chain:
             chain.append(m)
+
     return chain

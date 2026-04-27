@@ -410,6 +410,8 @@ def _normalize_row_for_api(row_dict: dict, include_prompt: bool = False) -> dict
     row_dict["gcs_urls"] = json_loads_maybe(row_dict.get("gcs_urls"), default={})
     row_dict["transcription"] = parse_transcription(row_dict.get("transcription"))
 
+    
+
     if include_prompt:
         row_dict["prompt"] = json_loads_maybe(row_dict.get("prompt"), default=row_dict.get("prompt"))
     else:

@@ -272,7 +272,7 @@ def insert_reel_into_db(reel_data):
                 workout           = EXCLUDED.workout,
                 detected_language = EXCLUDED.detected_language,
                 transcription     = EXCLUDED.transcription,
-                gcs_urls          = EXCLUDED.gcs_urls,
+                gcs_urls          = COALESCE(reels.gcs_urls, '{}'::jsonb) || COALESCE(EXCLUDED.gcs_urls, '{}'::jsonb),
                 tools_list        = EXCLUDED.tools_list,
                 location          = EXCLUDED.location,
                 prompt            = EXCLUDED.prompt,

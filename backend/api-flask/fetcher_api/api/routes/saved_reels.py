@@ -15,38 +15,58 @@ saved_reels_bp = Blueprint("saved_reels", __name__)
 def _json_loads_maybe(value, default=None):
     if value is None:
         return default
+
     if isinstance(value, (dict, list)):
         return value
+
     if isinstance(value, str):
         try:
             return json.loads(value)
         except Exception:
             return default if default is not None else value
+
     return default if default is not None else value
 
 
 def _json_safe(value):
     if isinstance(value, Decimal):
         return float(value)
+
     if isinstance(value, list):
         return [_json_safe(v) for v in value]
+
     if isinstance(value, dict):
         return {k: _json_safe(v) for k, v in value.items()}
+
     if hasattr(value, "isoformat"):
         return value.isoformat()
+
     return value
 
 
 def _normalize_content_type(raw: str | None) -> str:
     ct = (raw or "").strip().lower()
+
     if not ct or ct in {"generic", "summary"}:
         return "general"
+
     if ct == "tools":
         return "products"
+
     if ct == "places":
         return "location"
-    if ct in {"recipe", "workout", "location", "products", "software", "finance", "general"}:
+
+    if ct in {
+        "recipe",
+        "workout",
+        "location",
+        "products",
+        "software",
+        "finance",
+        "general",
+    }:
         return ct
+
     return "general"
 
 
@@ -93,6 +113,60 @@ def _build_summary(row_dict: dict) -> dict:
     }
 
 
+def _apply_media_aliases(payload: dict) -> dict:
+    gcs_urls = payload.get("gcs_urls")
+    if not isinstance(gcs_urls, dict):
+        gcs_urls = {}
+
+    thumb = (
+        gcs_urls.get("preview_thumbnail")
+        or gcs_urls.get("thumbnail")
+        or gcs_urls.get("thumbnail_url")
+        or gcs_urls.get("poster")
+        or gcs_urls.get("poster_url")
+    )
+
+    result_json = (
+        gcs_urls.get("result_json")
+        or gcs_urls.get("result_json_url")
+    )
+
+    video_url = (
+        gcs_urls.get("video")
+        or gcs_urls.get("video_url")
+    )
+
+    if thumb:
+        gcs_urls["preview_thumbnail"] = thumb
+        gcs_urls.setdefault("thumbnail", thumb)
+        gcs_urls.setdefault("thumbnail_url", thumb)
+
+    if result_json:
+        gcs_urls["result_json"] = result_json
+        gcs_urls.setdefault("result_json_url", result_json)
+
+    if video_url:
+        gcs_urls["video"] = video_url
+        gcs_urls.setdefault("video_url", video_url)
+
+    payload["gcs_urls"] = gcs_urls
+
+    payload["thumbnailUrl"] = thumb
+    payload["thumbnail_url"] = thumb
+    payload["posterUrl"] = thumb
+    payload["poster_url"] = thumb
+    payload["image_url"] = thumb
+    payload["cover_url"] = thumb
+
+    payload["result_json_url"] = result_json
+    payload["resultJsonUrl"] = result_json
+
+    payload["video_url"] = video_url
+    payload["videoUrl"] = video_url
+
+    return payload
+
+
 def _serialize_reel_row(row) -> dict:
     row_dict = dict(row) if hasattr(row, "keys") else row._asdict()
 
@@ -120,6 +194,8 @@ def _serialize_reel_row(row) -> dict:
     }
 
     payload["summary"] = _build_summary(row_dict)
+    payload = _apply_media_aliases(payload)
+
     return _json_safe(payload)
 
 
@@ -162,7 +238,7 @@ def saved_reels():
             error_message
         FROM reels
         WHERE user_id = %s
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC NULLS LAST
         LIMIT %s OFFSET %s
         """,
         (user_id, per_page, offset),

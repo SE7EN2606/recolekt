@@ -203,9 +203,16 @@ export const VideoDetail: React.FC = () => {
         return;
       }
 
-      const gcs = db.gcs_urls?.result_json
-        ? await fetchGcsJson(db.gcs_urls.result_json)
-        : null;
+      const resultJsonUrl =
+        db?.result_json_url ||
+        db?.resultJsonUrl ||
+        db?.gcs_result_json_url ||
+        db?.result_json ||
+        db?.gcs_urls?.result_json ||
+        db?.gcs_urls?.result_json_url ||
+        null;
+
+      const gcs = resultJsonUrl ? await fetchGcsJson(resultJsonUrl) : null;
 
       const merged = mergeVideoPayload(db, gcs, galleryThumbnail);
 
