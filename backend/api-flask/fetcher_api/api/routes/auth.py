@@ -712,38 +712,47 @@ def google_verify():
 # ─────────────────────────────────────────────
 @auth_bp.route("/user/stats", methods=["GET", "OPTIONS"])
 def get_user_stats():
-    if request.method == "OPTIONS": 
+    if request.method == "OPTIONS":
         return "", 200
-    
+
     try:
         user_id = get_user_id_from_request()
     except Exception:
         return jsonify({"success": False, "error": "Unauthorized"}), 401
 
-    # Fetch all video URLs for this user
-    rows = fetch_all("SELECT url FROM videos WHERE user_id = %s", (user_id,))
-    
+    rows = fetch_all("SELECT url FROM reels WHERE user_id = %s", (user_id,))
+
     stats = {
-        "total": len(rows) if rows else 0,
+        "total": 0,
         "instagram": 0,
         "youtube": 0,
         "tiktok": 0,
-        "facebook": 0
+        "facebook": 0,
     }
 
-    if rows:
-        for row in rows:
-            # Check if row is dictionary or tuple based on your fetch_all implementation
-            url = (row["url"] if isinstance(row, dict) else row[0]).lower()
-            
-            if "instagram.com" in url:
-                stats["instagram"] += 1
-            elif "youtube.com" in url or "youtu.be" in url:
-                stats["youtube"] += 1
-            elif "tiktok.com" in url:
-                stats["tiktok"] += 1
-            elif "facebook.com" in url or "fb.watch" in url:
-                stats["facebook"] += 1
+    if not rows:
+        return jsonify({"success": True, "stats": stats}), 200
+
+    for row in rows:
+        if isinstance(row, dict):
+            raw_url = row.get("url")
+        else:
+            raw_url = row[0] if row and len(row) > 0 else None
+
+        url = (raw_url or "").strip().lower()
+        if not url:
+            continue
+
+        stats["total"] += 1
+
+        if "instagram.com" in url:
+            stats["instagram"] += 1
+        elif "youtube.com" in url or "youtu.be" in url:
+            stats["youtube"] += 1
+        elif "tiktok.com" in url:
+            stats["tiktok"] += 1
+        elif "facebook.com" in url or "fb.watch" in url:
+            stats["facebook"] += 1
 
     return jsonify({"success": True, "stats": stats}), 200
 
