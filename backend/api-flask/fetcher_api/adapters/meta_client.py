@@ -1,6 +1,7 @@
 """
 Meta client — handles both Instagram and Facebook public posts.
 
+
 Instagram:
   - Metadata via public unauthenticated oEmbed (no token)
   - Best-effort public profile lookup via instaloader, with HTML fallback
@@ -8,9 +9,13 @@ Instagram:
                     instaloader otherwise (local dev, works without cookies)
   - Set IG_COOKIES_CONTENT (Netscape format) env var for yt-dlp reliability
 
+
 Facebook:
   - Metadata + video download via yt-dlp
+  - Set FB_COOKIES_CONTENT (Netscape format) env var for reliability
+    with share links and login-gated content
 """
+
 
 import json
 import os
@@ -19,16 +24,27 @@ import logging
 import tempfile
 from typing import Any, Dict, Optional
 
+
 import instaloader
 import requests
 import yt_dlp
 
+
 logger = logging.getLogger("meta_client")
+
 
 INSTAGRAM_OEMBED_URL = "https://www.instagram.com/api/v1/oembed/"
 
 
+_FACEBOOK_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+
+
 class MetaClient:
+
 
     def __init__(self):
         self.loader = instaloader.Instaloader(
@@ -38,18 +54,22 @@ class MetaClient:
         )
         logger.info("ℹ️ MetaClient: instaloader ready (public mode, no login)")
 
+
     # ----------------------------------------------------------------
     # URL detection
     # ----------------------------------------------------------------
     def is_instagram_url(self, url: str) -> bool:
         return "instagram.com" in url.lower()
 
+
     def is_facebook_url(self, url: str) -> bool:
         url_lower = url.lower()
         return any(d in url_lower for d in ("facebook.com", "fb.watch", "fb.com"))
 
+
     def is_supported_url(self, url: str) -> bool:
         return self.is_instagram_url(url) or self.is_facebook_url(url)
+
 
     # ----------------------------------------------------------------
     # Shortcode / ID extraction
@@ -74,6 +94,7 @@ class MetaClient:
 
         return None
 
+
     def _extract_username_from_url(self, url: str) -> Optional[str]:
         match = re.search(r'instagram\.com/([a-zA-Z0-9._]+)(?:/reel|/p|/tv|/reels)?/', url)
         if match:
@@ -81,6 +102,7 @@ class MetaClient:
             if candidate not in ('reel', 'reels', 'p', 'tv', 'stories', 'explore'):
                 return candidate
         return None
+
 
     def _normalize_instagram_username(self, username: str) -> Optional[str]:
         if not username:
@@ -90,8 +112,10 @@ class MetaClient:
             return None
         return match.group(1).lstrip("@").strip().lower()
 
+
     def _instagram_profile_url(self, username: str) -> str:
         return f"https://www.instagram.com/{username}/"
+
 
     def _browser_headers(self) -> Dict[str, str]:
         return {
@@ -105,6 +129,7 @@ class MetaClient:
             "Referer": "https://www.instagram.com/",
         }
 
+
     def _first_non_empty(self, *values: Any) -> Optional[str]:
         for value in values:
             if value is None:
@@ -114,6 +139,7 @@ class MetaClient:
                 return text
         return None
 
+
     def _decode_json_string(self, raw_value: str) -> str:
         if raw_value is None:
             return ""
@@ -121,6 +147,7 @@ class MetaClient:
             return json.loads(f'"{raw_value}"')
         except Exception:
             return raw_value
+
 
     def _extract_json_string_field(self, html_text: str, field_name: str) -> str:
         if not html_text:
@@ -131,6 +158,7 @@ class MetaClient:
             return ""
         return self._decode_json_string(match.group(1))
 
+
     def _extract_bool_field(self, html_text: str, field_name: str) -> Optional[bool]:
         if not html_text:
             return None
@@ -138,6 +166,7 @@ class MetaClient:
         if not match:
             return None
         return match.group(1) == "true"
+
 
     def _extract_business_address_from_html(self, html_text: str) -> Dict[str, str]:
         """
@@ -194,6 +223,7 @@ class MetaClient:
             "postal_code": postal_code or "",
         }
 
+
     def _scrape_instagram_profile_html(self, username: str) -> Optional[dict]:
         url = self._instagram_profile_url(username)
 
@@ -243,6 +273,7 @@ class MetaClient:
         )
         return data if has_any_useful_data else None
 
+
     # ----------------------------------------------------------------
     # Instagram — oEmbed (public, no token)
     # ----------------------------------------------------------------
@@ -258,6 +289,7 @@ class MetaClient:
         except Exception as e:
             logger.error(f"❌ Instagram oEmbed error: {e}")
             return None
+
 
     # ----------------------------------------------------------------
     # Instagram — best-effort public profile metadata
@@ -338,13 +370,50 @@ class MetaClient:
 
         return profile_data if has_any_useful_data else None
 
+
+    # ----------------------------------------------------------------
+    # Cookies helper (for yt-dlp)
+    # ----------------------------------------------------------------
+    def _write_cookies(self, env_var: str, suffix: str) -> Optional[str]:
+        content = os.environ.get(env_var, "").strip()
+        if not content:
+            return None
+        try:
+            tmp = tempfile.NamedTemporaryFile(
+                mode="w", suffix=f"_{suffix}", delete=False, encoding="utf-8"
+            )
+            tmp.write(content)
+            tmp.close()
+            logger.info(f"🍪 Wrote {env_var} cookies → {tmp.name}")
+            return tmp.name
+        except Exception as e:
+            logger.warning(f"⚠️ Could not write cookies file: {e}")
+            return None
+
+
     # ----------------------------------------------------------------
     # Facebook — yt-dlp metadata
     # ----------------------------------------------------------------
     def _get_facebook_info(self, url: str) -> Optional[dict]:
+        cookies_path = None
         try:
-            with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
+            ydl_opts = {
+                "quiet": True,
+                "no_warnings": False,
+                "http_headers": {
+                    "User-Agent": _FACEBOOK_USER_AGENT,
+                },
+            }
+
+            cookies_path = self._write_cookies("FB_COOKIES_CONTENT", "fb_cookies.txt")
+            if cookies_path:
+                ydl_opts["cookiefile"] = cookies_path
+            else:
+                logger.debug("ℹ️ FB_COOKIES_CONTENT not set — proceeding without cookies")
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
+
             if not info:
                 return None
 
@@ -368,9 +437,18 @@ class MetaClient:
                 "comments": info.get("comment_count", 0),
                 "timestamp": info.get("upload_date"),
             }
+
         except Exception as e:
             logger.error(f"❌ Facebook yt-dlp error: {e}", exc_info=True)
             return None
+
+        finally:
+            if cookies_path and os.path.exists(cookies_path):
+                try:
+                    os.unlink(cookies_path)
+                except Exception:
+                    pass
+
 
     # ----------------------------------------------------------------
     # get_post_info — unified interface
@@ -421,24 +499,6 @@ class MetaClient:
         logger.warning(f"❌ Unsupported URL: {url}")
         return None
 
-    # ----------------------------------------------------------------
-    # Cookies helper (for yt-dlp)
-    # ----------------------------------------------------------------
-    def _write_cookies(self, env_var: str, suffix: str) -> Optional[str]:
-        content = os.environ.get(env_var, "").strip()
-        if not content:
-            return None
-        try:
-            tmp = tempfile.NamedTemporaryFile(
-                mode="w", suffix=f"_{suffix}", delete=False, encoding="utf-8"
-            )
-            tmp.write(content)
-            tmp.close()
-            logger.info(f"🍪 Wrote {env_var} cookies → {tmp.name}")
-            return tmp.name
-        except Exception as e:
-            logger.warning(f"⚠️ Could not write cookies file: {e}")
-            return None
 
     # ----------------------------------------------------------------
     # Instagram — yt-dlp download
@@ -535,6 +595,7 @@ class MetaClient:
                 except Exception:
                     pass
 
+
     # ----------------------------------------------------------------
     # Instagram — instaloader download (local dev only)
     # ----------------------------------------------------------------
@@ -617,6 +678,7 @@ class MetaClient:
             logger.error(f"❌ Instagram instaloader download error: {e}")
             return {"success": False, "error": str(e), "metadata": {}, "post": None, "thumbnail_path": None}
 
+
     # ----------------------------------------------------------------
     # download_video — routes by platform
     #
@@ -636,6 +698,7 @@ class MetaClient:
                 return self._download_instagram_video_instaloader(url, output_path)
 
         elif self.is_facebook_url(url):
+            cookies_path = None
             try:
                 if not post_info:
                     post_info = self.get_post_info(url)
@@ -643,12 +706,23 @@ class MetaClient:
                     raise ValueError("No metadata available")
 
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
                 ydl_opts = {
                     "outtmpl": output_path,
                     "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                     "quiet": True,
                     "no_warnings": True,
+                    "http_headers": {
+                        "User-Agent": _FACEBOOK_USER_AGENT,
+                    },
                 }
+
+                cookies_path = self._write_cookies("FB_COOKIES_CONTENT", "fb_cookies.txt")
+                if cookies_path:
+                    ydl_opts["cookiefile"] = cookies_path
+                else:
+                    logger.debug("ℹ️ FB_COOKIES_CONTENT not set — downloading without cookies")
+
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([url])
 
@@ -660,6 +734,13 @@ class MetaClient:
             except Exception as e:
                 logger.error(f"❌ Facebook download error: {e}")
                 return {"success": False, "error": str(e)}
+
+            finally:
+                if cookies_path and os.path.exists(cookies_path):
+                    try:
+                        os.unlink(cookies_path)
+                    except Exception:
+                        pass
 
         return {"success": False, "reason": "unsupported_platform"}
 
