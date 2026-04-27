@@ -720,7 +720,7 @@ def get_user_stats():
     except Exception:
         return jsonify({"success": False, "error": "Unauthorized"}), 401
 
-    rows = fetch_all("SELECT url FROM reels WHERE user_id = %s", (user_id,))
+    rows = fetch_all("SELECT source_url AS url FROM reels WHERE user_id = %s", (user_id,))
 
     stats = {
         "total": 0,

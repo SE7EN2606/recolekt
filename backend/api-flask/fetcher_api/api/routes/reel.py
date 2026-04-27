@@ -17,7 +17,7 @@ from fetcher_api.api.helpers.formatters import (
     extract_english_preview_and_title,
 )
 from fetcher_api.api.helpers.recipe_formatters import normalize_recipe
-from fetcher_api.services.storage import generate_gcs_paths
+from fetcher_api.services.storage import generate_gcs_paths, platform_reels_folder
 from fetcher_api.utils.geocode import geocode_one, reverse_geocode_one
 
 logger = logging.getLogger("reels")
@@ -400,6 +400,60 @@ def _upsert_reel_locations_conn(conn, reel_id: str, user_id: str, location) -> i
     return len(rows)
 
 
+def _apply_media_aliases(row_dict: dict) -> dict:
+    gcs_urls = row_dict.get("gcs_urls")
+    if not isinstance(gcs_urls, dict):
+        gcs_urls = {}
+
+    thumb = (
+        gcs_urls.get("preview_thumbnail")
+        or gcs_urls.get("thumbnail")
+        or gcs_urls.get("thumbnail_url")
+        or gcs_urls.get("poster")
+        or gcs_urls.get("poster_url")
+    )
+
+    result_json = (
+        gcs_urls.get("result_json")
+        or gcs_urls.get("result_json_url")
+    )
+
+    video_url = (
+        gcs_urls.get("video")
+        or gcs_urls.get("video_url")
+    )
+
+    if thumb:
+        gcs_urls["preview_thumbnail"] = thumb
+        gcs_urls.setdefault("thumbnail", thumb)
+        gcs_urls.setdefault("thumbnail_url", thumb)
+
+    if result_json:
+        gcs_urls["result_json"] = result_json
+        gcs_urls.setdefault("result_json_url", result_json)
+
+    if video_url:
+        gcs_urls["video"] = video_url
+        gcs_urls.setdefault("video_url", video_url)
+
+    row_dict["gcs_urls"] = gcs_urls
+
+    row_dict["thumbnailUrl"] = thumb
+    row_dict["thumbnail_url"] = thumb
+    row_dict["posterUrl"] = thumb
+    row_dict["poster_url"] = thumb
+    row_dict["image_url"] = thumb
+    row_dict["cover_url"] = thumb
+
+    row_dict["result_json_url"] = result_json
+    row_dict["resultJsonUrl"] = result_json
+
+    row_dict["video_url"] = video_url
+    row_dict["videoUrl"] = video_url
+
+    return row_dict
+
+
 def _normalize_row_for_api(row_dict: dict, include_prompt: bool = False) -> dict:
     caption = row_dict.get("caption") or ""
 
@@ -407,10 +461,8 @@ def _normalize_row_for_api(row_dict: dict, include_prompt: bool = False) -> dict
     row_dict["workout"] = json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout"))
     row_dict["tools_list"] = json_loads_maybe(row_dict.get("tools_list"), default=row_dict.get("tools_list"))
     row_dict["location"] = json_loads_maybe(row_dict.get("location"), default=row_dict.get("location"))
-    row_dict["gcs_urls"] = json_loads_maybe(row_dict.get("gcs_urls"), default={})
+    row_dict["gcs_urls"] = json_loads_maybe(row_dict.get("gcs_urls"), default={}) or {}
     row_dict["transcription"] = parse_transcription(row_dict.get("transcription"))
-
-    
 
     if include_prompt:
         row_dict["prompt"] = json_loads_maybe(row_dict.get("prompt"), default=row_dict.get("prompt"))
@@ -440,7 +492,7 @@ def _normalize_row_for_api(row_dict: dict, include_prompt: bool = False) -> dict
     if created_at and hasattr(created_at, "isoformat"):
         row_dict["created_at"] = created_at.isoformat()
 
-    return row_dict
+    return _apply_media_aliases(row_dict)
 
 
 def _detect_platform_code(source_url: str) -> str:
@@ -464,6 +516,24 @@ def _derive_gcs_artifacts(process_id: str, source_url: str, user_id: str):
         for key, path in gcs_paths.items()
     }
     return bucket_name, gcs_paths, gcs_urls
+
+
+def _gcs_blob_name_from_public_url(url: str) -> str | None:
+    if not url or not isinstance(url, str):
+        return None
+
+    marker = "storage.googleapis.com/"
+    if marker not in url:
+        return None
+
+    try:
+        after = url.split(marker, 1)[1]
+        parts = after.split("/", 1)
+        if len(parts) != 2:
+            return None
+        return parts[1].split("?", 1)[0]
+    except Exception:
+        return None
 
 
 def _build_reel_payload_for_api(process_id: str, user_id: str, include_prompt: bool = True) -> dict | None:
@@ -492,21 +562,10 @@ def _build_reel_payload_for_api(process_id: str, user_id: str, include_prompt: b
     row_dict = _normalize_row_for_api(row_dict, include_prompt=include_prompt)
     row_dict = _merge_row_location_from_db(row_dict, process_id, user_id)
 
-    source_url = row_dict.get("source_url") or ""
-    _, gcs_paths, derived_urls = _derive_gcs_artifacts(process_id, source_url, user_id)
-
-    existing_urls = row_dict.get("gcs_urls")
-    if not isinstance(existing_urls, dict):
-        existing_urls = {}
-    for key, value in derived_urls.items():
-        existing_urls.setdefault(key, value)
-
-    row_dict["gcs_paths"] = gcs_paths
-    row_dict["gcs_urls"] = existing_urls
     row_dict["process_id"] = row_dict.get("id")
     row_dict["user_id"] = row_dict.get("user_id") or user_id
 
-    return _json_safe_value(row_dict)
+    return _json_safe_value(_apply_media_aliases(row_dict))
 
 
 def _refresh_result_json_in_gcs(process_id: str, user_id: str, include_prompt: bool = True) -> dict | None:
@@ -521,28 +580,35 @@ def _refresh_result_json_in_gcs(process_id: str, user_id: str, include_prompt: b
             logger.warning("GCS not available — skipping refreshed result_json upload")
             return payload
 
-        source_url = payload.get("source_url") or ""
-        bucket_name = getattr(gcs_client, "analysis_bucket_name", None) or os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
-        _, gcs_paths, gcs_urls = _derive_gcs_artifacts(process_id, source_url, user_id)
+        gcs_urls = payload.get("gcs_urls") or {}
+        result_json_url = (
+            gcs_urls.get("result_json")
+            or gcs_urls.get("result_json_url")
+            or payload.get("result_json_url")
+        )
 
-        payload["gcs_paths"] = gcs_paths
-        existing_urls = payload.get("gcs_urls")
-        if not isinstance(existing_urls, dict):
-            existing_urls = {}
-        for key, value in gcs_urls.items():
-            existing_urls.setdefault(key, value)
-        payload["gcs_urls"] = existing_urls
+        blob_name = _gcs_blob_name_from_public_url(result_json_url)
+        if not blob_name:
+            logger.warning(
+                "⚠️ PATCH /reel/%s/location — no stored result_json URL, skipping GCS refresh",
+                process_id,
+            )
+            return payload
 
+        bucket_name = (
+            getattr(gcs_client, "analysis_bucket_name", None)
+            or os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
+        )
         bucket = gcs_client.client.bucket(bucket_name)
-        blob = bucket.blob(gcs_paths["result_json"])
+        blob = bucket.blob(blob_name)
         blob.upload_from_string(
             _json_dumps_safe(payload),
             content_type="application/json",
         )
         logger.info(
-            "📄 PATCH /reel/%s/location — refreshed GCS result JSON -> %s",
+            "📄 PATCH /reel/%s/location — refreshed existing GCS result JSON -> %s",
             process_id,
-            gcs_paths["result_json"],
+            blob_name,
         )
 
     except Exception as exc:
@@ -593,7 +659,7 @@ def _delete_reel(process_id):
 
         row = fetch_one(
             """
-            SELECT id, source_url
+            SELECT id, source_url, gcs_urls
             FROM reels
             WHERE id = %s AND user_id = %s
             LIMIT 1
@@ -607,6 +673,7 @@ def _delete_reel(process_id):
 
         row_dict = dict(row) if hasattr(row, "keys") else row._asdict()
         source_url = row_dict.get("source_url") or ""
+        gcs_urls = json_loads_maybe(row_dict.get("gcs_urls"), default={}) or {}
 
         try:
             from fetcher_api.adapters.gcs_client import gcs_client
@@ -616,30 +683,83 @@ def _delete_reel(process_id):
                     getattr(gcs_client, "analysis_bucket_name", None)
                     or os.getenv("GCS_BUCKET_NAME", "recolekt-storage")
                 )
-                _, gcs_paths, _ = _derive_gcs_artifacts(process_id, source_url, user_id)
 
-                any_path = next(iter(gcs_paths.values()), "")
-                prefix = f"{any_path.rsplit('/', 1)[0]}/" if "/" in any_path else ""
+                bucket = gcs_client.client.bucket(bucket_name)
 
-                if prefix:
-                    logger.info("🔍 Attempting to clear GCS folder: %s", prefix)
-                    bucket = gcs_client.client.bucket(bucket_name)
-                    blobs = list(bucket.list_blobs(prefix=prefix))
+                blob_names = []
+                for value in gcs_urls.values():
+                    blob_name = _gcs_blob_name_from_public_url(value)
+                    if blob_name:
+                        blob_names.append(blob_name)
 
+                prefixes = set()
+                for blob_name in blob_names:
+                    if "/" in blob_name:
+                        prefixes.add(blob_name.rsplit("/", 1)[0] + "/")
+
+                if prefixes:
+                    total_deleted = 0
+
+                    for prefix in prefixes:
+                        logger.info("🔍 Attempting to clear actual GCS folder: %s", prefix)
+                        blobs = list(bucket.list_blobs(prefix=prefix))
+
+                        deleted = 0
+                        for blob in blobs:
+                            try:
+                                blob.delete()
+                                deleted += 1
+                            except Exception as blob_exc:
+                                logger.warning(
+                                    "⚠️ Failed deleting GCS blob %s for reel %s: %s",
+                                    blob.name,
+                                    process_id,
+                                    blob_exc,
+                                )
+
+                        total_deleted += deleted
+                        logger.info("✅ Deleted %d files from GCS: %s", deleted, prefix)
+
+                    logger.info(
+                        "✅ Deleted %d total GCS files for reel %s",
+                        total_deleted,
+                        process_id,
+                    )
+
+                else:
+                    logger.warning(
+                        "⚠️ No stored GCS URLs found for reel %s; falling back to shortcode/user prefix scan",
+                        process_id,
+                    )
+
+                    platform_code = _detect_platform_code(source_url)
+                    shortcode = process_id.split("--")[0] if "--" in process_id else process_id.split("_")[0]
+                    platform_folder = platform_reels_folder(platform_code)
+
+                    fallback_prefix = f"media/{platform_folder}/"
+                    folder_match = f"_{shortcode}_{user_id}/"
+
+                    blobs = list(bucket.list_blobs(prefix=fallback_prefix))
                     deleted = 0
-                    for blob in blobs:
-                        try:
-                            blob.delete()
-                            deleted += 1
-                        except Exception as blob_exc:
-                            logger.warning(
-                                "⚠️ Failed deleting GCS blob %s for reel %s: %s",
-                                blob.name,
-                                process_id,
-                                blob_exc,
-                            )
 
-                    logger.info("✅ Deleted %d files from GCS: %s", deleted, prefix)
+                    for blob in blobs:
+                        if folder_match in blob.name:
+                            try:
+                                blob.delete()
+                                deleted += 1
+                            except Exception as blob_exc:
+                                logger.warning(
+                                    "⚠️ Failed deleting GCS blob %s for reel %s: %s",
+                                    blob.name,
+                                    process_id,
+                                    blob_exc,
+                                )
+
+                    logger.info(
+                        "✅ Deleted %d files from GCS by fallback scan for reel %s",
+                        deleted,
+                        process_id,
+                    )
 
         except Exception as exc:
             logger.warning(
