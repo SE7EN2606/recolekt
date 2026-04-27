@@ -96,6 +96,14 @@ def _extract_title_from_ai_summary(ai_summary: dict) -> str:
     ).strip()
 
 
+def _base_from_result_json_path(gcs_paths: dict) -> tuple[str, str]:
+    result_json_path = gcs_paths["result_json"]
+    folder = result_json_path.rsplit("/", 1)[0]
+    filename = os.path.basename(result_json_path)
+    base = filename.replace("_result.json", "")
+    return folder, base
+
+
 def _save_content_payload(content_payload, process_id, gcs_paths, temp_dir, gcs_client):
     if not content_payload or not gcs_client.available:
         return
@@ -117,7 +125,9 @@ def _save_content_payload(content_payload, process_id, gcs_paths, temp_dir, gcs_
                 indent=2,
             )
 
-        payload_gcs_path = gcs_paths["result_json"].rsplit("/", 1)[0] + "/content_payload.json"
+        folder, base = _base_from_result_json_path(gcs_paths)
+        payload_gcs_path = f"{folder}/{base}_content_payload.json"
+
         blob = gcs_client.client.bucket(gcs_client.analysis_bucket_name).blob(payload_gcs_path)
         blob.upload_from_filename(payload_local_path, content_type="application/json")
 
@@ -151,13 +161,16 @@ def _save_input_payload(
             "ocr_text": ocr_text or "",
             "merged_text": merged_text or "",
         }
+
         filename = f"{process_id}_input_payload.json"
         local_path = os.path.join(temp_dir or _tempfile.gettempdir(), filename)
 
         with open(local_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
 
-        gcs_path = gcs_paths["result_json"].rsplit("/", 1)[0] + "/input_payload.json"
+        folder, base = _base_from_result_json_path(gcs_paths)
+        gcs_path = f"{folder}/{base}_input_payload.json"
+
         blob = gcs_client.client.bucket(gcs_client.analysis_bucket_name).blob(gcs_path)
         blob.upload_from_filename(local_path, content_type="application/json")
 

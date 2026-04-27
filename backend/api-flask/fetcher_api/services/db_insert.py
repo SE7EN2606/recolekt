@@ -51,12 +51,16 @@ def _to_jsonb_array(value) -> str:
 
 def check_duplicate_reel(user_id, source_url):
     try:
-        sql = "SELECT id FROM reels WHERE user_id = %s AND source_url = %s LIMIT 1;"
-        result = fetch_one(sql, (user_id, source_url))
-        return bool(result)
+        sql = """
+            SELECT id, status, gcs_urls, created_at
+            FROM reels
+            WHERE user_id = %s AND source_url = %s
+            LIMIT 1;
+        """
+        return fetch_one(sql, (user_id, source_url))
     except Exception as e:
         logger.error("Error checking duplicate: %s", e)
-        return False
+        return None
 
 
 def _upsert_reel_locations(conn, reel_id: str, user_id: str, location) -> int:

@@ -6,7 +6,6 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Any
 
-
 from fetcher_api.adapters.db import fetch_one
 from fetcher_api.adapters.gcs_client import gcs_client
 
@@ -75,13 +74,14 @@ def generate_gcs_paths(
     Canonical GCS object paths.
 
     Layout:
-    media/IG_reels/260427-154020_DXhdSULjSCP_c785c5bb/
-      thumbnail.webp
-      input_payload.json
-      result.json
-      content_payload.json
+    media/IG_reels/260427-154020_DMTJwYotfWw_b5b1a4ab/
+      DMTJwYotfWw_b5b1a4ab_thumbnail.webp
+      DMTJwYotfWw_b5b1a4ab_input_payload.json
+      DMTJwYotfWw_b5b1a4ab_result.json
+      DMTJwYotfWw_b5b1a4ab_content_payload.json
 
-    The folder is chronological. Filenames stay short.
+    Folder is chronological.
+    Filenames include shortcode + user_id for readability.
     """
     shortcode = (shortcode or "").strip()
     platform = (platform or "IG").strip().upper()
@@ -90,18 +90,19 @@ def generate_gcs_paths(
     final_user_id = user_id or _get_user_id_for_shortcode(clean_shortcode)
     final_stamp = stamp or _sortable_prefix()
 
-    folder_name = (
-        f"{final_stamp}_{clean_shortcode}_{final_user_id}"
+    identity = (
+        f"{clean_shortcode}_{final_user_id}"
         if final_user_id
-        else f"{final_stamp}_{clean_shortcode}"
+        else clean_shortcode
     )
 
+    folder_name = f"{final_stamp}_{identity}"
     base_path = f"media/{platform_reels_folder(platform)}/{folder_name}/"
 
     return {
-        "preview_thumbnail": f"{base_path}thumbnail.webp",
-        "video": f"{base_path}video.mp4",
-        "result_json": f"{base_path}result.json",
+        "preview_thumbnail": f"{base_path}{identity}_thumbnail.webp",
+        "video": f"{base_path}{identity}_video.mp4",
+        "result_json": f"{base_path}{identity}_result.json",
     }
 
 
