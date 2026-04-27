@@ -1,6 +1,8 @@
 import json
 import logging
+import re
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlparse
 
 import psycopg2.extras
 
@@ -49,15 +51,96 @@ def _to_jsonb_array(value) -> str:
     return "[]"
 
 
-def check_duplicate_reel(user_id, source_url):
+def canonicalize_source_url(source_url: str | None) -> str:
+    """
+    Normalize source URLs so each saved reel is unique per user.
+
+    Examples:
+      https://www.instagram.com/reel/ABC/?utm_source=x
+      https://instagram.com/reel/ABC
+    become:
+      https://www.instagram.com/reel/ABC/
+
+    This keeps uniqueness stable even if frontend/webhook sends slightly different URLs.
+    """
+    raw = (source_url or "").strip()
+    if not raw:
+        return ""
+
+    if not re.match(r"^https?://", raw, flags=re.IGNORECASE):
+        raw = "https://" + raw
+
     try:
+        parsed = urlparse(raw)
+        host = (parsed.netloc or "").lower()
+        host = host[4:] if host.startswith("www.") else host
+        path = parsed.path or ""
+
+        # Instagram canonical reel/post/tv URLs
+        if host in {"instagram.com", "m.instagram.com"}:
+            match = re.search(r"/(reel|reels|p|tv)/([^/?#]+)/?", path, flags=re.IGNORECASE)
+            if match:
+                kind = match.group(1).lower()
+                shortcode = match.group(2).strip()
+                if kind == "reels":
+                    kind = "reel"
+                return f"https://www.instagram.com/{kind}/{shortcode}/"
+
+            return "https://www.instagram.com" + path.rstrip("/") + "/"
+
+        # TikTok canonical video URLs
+        if host.endswith("tiktok.com"):
+            clean_path = path.rstrip("/")
+            return f"https://www.tiktok.com{clean_path}"
+
+        # YouTube canonical URLs
+        if host in {"youtu.be"}:
+            video_id = path.strip("/").split("/")[0]
+            if video_id:
+                return f"https://www.youtube.com/watch?v={video_id}"
+
+        if host in {"youtube.com", "m.youtube.com"}:
+            query = parse_qs(parsed.query or "")
+            video_id = (query.get("v") or [""])[0]
+            if video_id:
+                return f"https://www.youtube.com/watch?v={video_id}"
+
+            shorts_match = re.search(r"/shorts/([^/?#]+)/?", path, flags=re.IGNORECASE)
+            if shorts_match:
+                return f"https://www.youtube.com/shorts/{shorts_match.group(1)}"
+
+        # Facebook and generic fallback: remove query/fragment, normalize trailing slash.
+        scheme = "https"
+        clean_host = "www." + host if host and not host.startswith("www.") else host
+        clean_path = path.rstrip("/")
+        return f"{scheme}://{clean_host}{clean_path}"
+
+    except Exception:
+        logger.warning("⚠️ Failed canonicalizing source_url=%r; using stripped raw URL", source_url)
+        return raw.rstrip("/")
+
+
+def check_duplicate_reel(user_id, source_url):
+    """
+    Return an existing reel row for this user + canonical source URL, or None.
+
+    This intentionally returns the row, not just bool, so callers can reuse the
+    existing reel id instead of creating a second copy.
+    """
+    try:
+        canonical_url = canonicalize_source_url(source_url)
+        if not user_id or not canonical_url:
+            return None
+
         sql = """
             SELECT id, status, gcs_urls, created_at
             FROM reels
             WHERE user_id = %s AND source_url = %s
+            ORDER BY created_at DESC NULLS LAST
             LIMIT 1;
         """
-        return fetch_one(sql, (user_id, source_url))
+        return fetch_one(sql, (user_id, canonical_url))
+
     except Exception as e:
         logger.error("Error checking duplicate: %s", e)
         return None
@@ -155,7 +238,8 @@ def _upsert_reel_locations(conn, reel_id: str, user_id: str, location) -> int:
 
 
 def insert_reel_into_db(reel_data):
-    process_id = reel_data.get("process_id") or reel_data.get("id")
+    original_process_id = reel_data.get("process_id") or reel_data.get("id")
+    process_id = original_process_id
 
     try:
         user_id = reel_data.get("user_id")
@@ -168,6 +252,28 @@ def insert_reel_into_db(reel_data):
         if not user_id:
             logger.error("❌ [DB_INSERT] Skipping insert for %s: user_id is missing", process_id)
             return
+
+        source_url = canonicalize_source_url(reel_data.get("source_url"))
+
+        if not source_url:
+            logger.warning("⚠️ [DB_INSERT] Missing source_url for %s; duplicate prevention disabled", process_id)
+
+        existing_duplicate = check_duplicate_reel(user_id, source_url) if source_url else None
+        if existing_duplicate:
+            existing_id = existing_duplicate.get("id") if hasattr(existing_duplicate, "get") else existing_duplicate["id"]
+
+            if existing_id and existing_id != process_id:
+                logger.info(
+                    "♻️ [DB_INSERT] Duplicate reel detected for user=%s source_url=%s. "
+                    "Updating existing reel %s instead of creating %s",
+                    user_id,
+                    source_url,
+                    existing_id,
+                    process_id,
+                )
+                process_id = existing_id
+                reel_data["process_id"] = process_id
+                reel_data["id"] = process_id
 
         summary_struct = reel_data.get("summary")
         summary_en = summary_struct.get("english", {}) if isinstance(summary_struct, dict) else {}
@@ -260,37 +366,38 @@ def insert_reel_into_db(reel_data):
                 %(created_at)s, NOW()
             )
             ON CONFLICT (id) DO UPDATE SET
-                status            = EXCLUDED.status,
-                caption           = EXCLUDED.caption,
-                author_name       = EXCLUDED.author_name,
-                duration          = EXCLUDED.duration,
-                summary_title     = EXCLUDED.summary_title,
-                summary_text      = EXCLUDED.summary_text,
-                summary_category  = EXCLUDED.summary_category,
-                summary_topic     = EXCLUDED.summary_topic,
-                summary_bullets   = EXCLUDED.summary_bullets,
-                summary_hashtags  = EXCLUDED.summary_hashtags,
-                summary_emojis    = EXCLUDED.summary_emojis,
-                content_type      = EXCLUDED.content_type,
-                recipe            = EXCLUDED.recipe,
-                workout           = EXCLUDED.workout,
-                detected_language = EXCLUDED.detected_language,
-                transcription     = EXCLUDED.transcription,
-                gcs_urls          = COALESCE(reels.gcs_urls, '{}'::jsonb) || COALESCE(EXCLUDED.gcs_urls, '{}'::jsonb),
-                tools_list        = EXCLUDED.tools_list,
-                location          = EXCLUDED.location,
-                prompt            = EXCLUDED.prompt,
-                is_list           = EXCLUDED.is_list,
-                list_subtype      = EXCLUDED.list_subtype,
-                list_count        = EXCLUDED.list_count,
-                list_type         = EXCLUDED.list_type,
-                updated_at        = NOW();
+                source_url         = EXCLUDED.source_url,
+                status             = EXCLUDED.status,
+                caption            = EXCLUDED.caption,
+                author_name        = EXCLUDED.author_name,
+                duration           = EXCLUDED.duration,
+                summary_title      = EXCLUDED.summary_title,
+                summary_text       = EXCLUDED.summary_text,
+                summary_category   = EXCLUDED.summary_category,
+                summary_topic      = EXCLUDED.summary_topic,
+                summary_bullets    = EXCLUDED.summary_bullets,
+                summary_hashtags   = EXCLUDED.summary_hashtags,
+                summary_emojis     = EXCLUDED.summary_emojis,
+                content_type       = EXCLUDED.content_type,
+                recipe             = EXCLUDED.recipe,
+                workout            = EXCLUDED.workout,
+                detected_language  = EXCLUDED.detected_language,
+                transcription      = EXCLUDED.transcription,
+                gcs_urls           = COALESCE(reels.gcs_urls, '{}'::jsonb) || COALESCE(EXCLUDED.gcs_urls, '{}'::jsonb),
+                tools_list         = EXCLUDED.tools_list,
+                location           = EXCLUDED.location,
+                prompt             = EXCLUDED.prompt,
+                is_list            = EXCLUDED.is_list,
+                list_subtype       = EXCLUDED.list_subtype,
+                list_count         = EXCLUDED.list_count,
+                list_type          = EXCLUDED.list_type,
+                updated_at         = NOW();
         """
 
         params = {
             "id": process_id,
             "user_id": user_id,
-            "source_url": reel_data.get("source_url"),
+            "source_url": source_url,
             "status": final_status,
             "folder_id": reel_data.get("folder_id", "default"),
             "caption": reel_data.get("caption") or "",
@@ -324,6 +431,38 @@ def insert_reel_into_db(reel_data):
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, params)
+
+                # If /summarize already inserted a transient duplicate row with a new id,
+                # remove it after updating the canonical existing row.
+                if original_process_id and original_process_id != process_id:
+                    cur.execute(
+                        "DELETE FROM reel_locations WHERE reel_id = %s AND user_id = %s",
+                        (original_process_id, user_id),
+                    )
+
+                    try:
+                        cur.execute(
+                            "DELETE FROM saved_places WHERE video_id = %s AND user_id = %s",
+                            (original_process_id, user_id),
+                        )
+                    except Exception as saved_places_exc:
+                        logger.warning(
+                            "⚠️ [DB_INSERT] Failed deleting duplicate saved_places for %s: %s",
+                            original_process_id,
+                            saved_places_exc,
+                        )
+
+                    cur.execute(
+                        "DELETE FROM reels WHERE id = %s AND user_id = %s",
+                        (original_process_id, user_id),
+                    )
+
+                    if cur.rowcount:
+                        logger.info(
+                            "🧹 [DB_INSERT] Removed transient duplicate reel row %s after updating %s",
+                            original_process_id,
+                            process_id,
+                        )
 
             _upsert_reel_locations(
                 conn,
