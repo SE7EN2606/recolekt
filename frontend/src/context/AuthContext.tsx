@@ -2,6 +2,22 @@ import { API_BASE } from "../utils/api";
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+// 🚨 SYNCHRONOUS TOKEN EXTRACTION 
+// This runs the exact millisecond the JS is parsed, fixing the double-login race condition.
+// It grabs the token and cleans the URL before React Router even boots up.
+if (typeof window !== 'undefined') {
+  const params = new URLSearchParams(window.location.search);
+  const urlToken = params.get('token');
+  if (urlToken) {
+    localStorage.setItem('auth_token', urlToken);
+    localStorage.setItem('token', urlToken);
+    localStorage.setItem('last_auth_method', 'google');
+    
+    // Clean the URL so the user doesn't see the ugly token, without reloading the page
+    const cleanUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState({}, document.title, cleanUrl);
+  }
+}
 
 interface User {
   id: string;
@@ -10,7 +26,6 @@ interface User {
   picture?: string;
   language?: string;
 }
-
 
 interface AuthContextType {
   user: User | null;
@@ -24,9 +39,7 @@ interface AuthContextType {
   updateUserLanguage: (lang: string) => Promise<void>;
 }
 
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
 
 function joinUrl(base: string, path: string) {
   const b = String(base || '').replace(/\/+$/, '');
@@ -35,7 +48,6 @@ function joinUrl(base: string, path: string) {
   return `${b}/${p}`;
 }
 
-
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
   const headers: HeadersInit = { 'Content-Type': 'application/json' };
@@ -43,10 +55,8 @@ function getAuthHeaders(): HeadersInit {
   return headers;
 }
 
-
 const LS_USER_KEY = 'auth_user';
 const LS_USER_TS_KEY = 'auth_user_updated_at';
-
 
 function loadCachedUserUnsafeInstant(): User | null {
   try {
@@ -56,14 +66,12 @@ function loadCachedUserUnsafeInstant(): User | null {
   } catch { return null; }
 }
 
-
 function saveCachedUser(user: User) {
   try {
     localStorage.setItem(LS_USER_KEY, JSON.stringify(user));
     localStorage.setItem(LS_USER_TS_KEY, String(Date.now()));
   } catch {}
 }
-
 
 function clearCachedUser() {
   try {
@@ -72,19 +80,18 @@ function clearCachedUser() {
   } catch {}
 }
 
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { i18n } = useTranslation();
   const [user, setUser] = useState<User | null>(() => loadCachedUserUnsafeInstant());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
+  // Since the token was saved synchronously above, this will immediately find it!
   const [token, setToken] = useState(localStorage.getItem('auth_token') || localStorage.getItem('token'));
-
 
   const userRef = useRef(user);
   userRef.current = user;
-
 
   const clearAuthEverywhere = () => {
     localStorage.removeItem('auth_token');
@@ -97,13 +104,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(false);
   };
 
-
   const persistToken = (jwt: string) => {
     localStorage.setItem('auth_token', jwt);
     localStorage.setItem('token', jwt);
     setToken(jwt);
   };
-
 
   const fetchMe = async () => {
     const currentToken = localStorage.getItem('auth_token') || localStorage.getItem('token');
@@ -151,11 +156,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-
   const verifyGoogleToken = async (accessToken: string) => {
     setError(null);
 
-    // Add a timeout — Firefox Focus can silently hang on fetch
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
 
@@ -192,7 +195,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-
   const loginUser = async (email: string, password: string): Promise<User | null> => {
     try {
       const response = await fetch(joinUrl(API_BASE, '/api/auth/login'), {
@@ -223,7 +225,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-
   const registerUser = async (email: string, password: string, name: string): Promise<User | null> => {
     try {
       const response = await fetch(joinUrl(API_BASE, '/api/auth/register'), {
@@ -246,7 +247,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-
   const updateUserLanguage = async (lang: string) => {
     i18n.changeLanguage(lang);
     if (!user) return;
@@ -261,50 +261,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) { console.error(e); }
   };
 
-
   const signOut = async () => {
     clearAuthEverywhere();
     window.location.href = '/auth';
   };
 
-
   useEffect(() => {
-    // ──────────────────────────────────────────────────────
-    // Pick up ?token= from the Google OAuth redirect callback.
-    // This is the path Firefox Focus (and similar browsers) will
-    // actually use, because the popup flow gets blocked and we
-    // fall back to window.location.assign('/api/auth/google/login')
-    // which redirects back to /gallery?token=<jwt>.
-    // ──────────────────────────────────────────────────────
-    const params = new URLSearchParams(window.location.search);
-    const urlToken = params.get('token');
-    if (urlToken) {
-      persistToken(urlToken);
-      // Also record that Google was the method used
-      localStorage.setItem('last_auth_method', 'google');
-      // Clean URL without losing the path (handles /gallery?token=xxx)
-      const cleanUrl = window.location.pathname + window.location.hash;
-      window.history.replaceState({}, '', cleanUrl);
-    }
+    // Token extraction was moved to the very top of the file to run synchronously.
+    // All we need to do here is fetch the user's profile data on mount.
     fetchMe();
   }, []);
-
 
   const value = useMemo(() => ({
     user, loading, error, verifyGoogleToken, signOut,
     isAuthenticated, registerUser, loginUser, updateUserLanguage
   }), [user, loading, error, isAuthenticated]);
 
-
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
-
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) throw new Error('useAuth error');
   return context;
 };
-
 
 export { getAuthHeaders };

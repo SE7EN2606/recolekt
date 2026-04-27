@@ -1,6 +1,7 @@
 """
 AssemblyMixin — builds the final output dict from parsed Call 1 + Call 2 results.
 
+
 Output shape (result.json top-level keys):
   content_type, extractor_version, category, topic, title,
   summary, hashtags, emojis, prompt, items, tools_list,
@@ -8,14 +9,17 @@ Output shape (result.json top-level keys):
   is_list, list_count, list_type, list_subtype, list_summary,
   structure_analysis
 
+
 Phase 1 public semantics:
   Public content_type values are:
     "recipe" | "workout" | "location" | "products" | "software" | "finance" | "general"
+
 
 Internal compatibility:
   - The structured compatibility field remains tools_list
   - Call 1 / Call 2 / parsers may still use legacy internal "tools" concepts
   - But public final payload should no longer expose content_type="tools"
+
 
 v28:
   - Sanitizes merged/promoted location rows before final promotion.
@@ -27,12 +31,15 @@ v28:
     not say "Top 10" when only 9 real places were extracted.
 """
 
+
 from __future__ import annotations
+
 
 import asyncio
 import logging
 import re
 import unicodedata
+
 
 from fetcher_api.adapters.meta_client import meta_client
 from fetcher_api.services.extractor_list_detection import (
@@ -55,7 +62,9 @@ from fetcher_api.services.extractor_assembly_helpers import (
 from fetcher_api.services.instagram_bio_scraper import enrich_tools_with_instagram_locations
 from fetcher_api.services.summary_formatter import validate_and_repair_summary_paragraph
 
+
 logger = logging.getLogger(__name__)
+
 
 _PUBLIC_CONTENT_TYPES = (
     "recipe",
@@ -66,6 +75,7 @@ _PUBLIC_CONTENT_TYPES = (
     "finance",
     "general",
 )
+
 
 _EMPTY_STRUCTURE_ANALYSIS = {
     "mode": "bookmark",
@@ -79,6 +89,7 @@ _EMPTY_STRUCTURE_ANALYSIS = {
     "reason": "No tools list available",
 }
 
+
 _FAKE_REGION_TERMS = {
     "europe", "europa", "alps", "alpine", "dolomites", "mediterranean",
     "scandinavia", "middle east", "southeast asia", "asia", "africa",
@@ -86,6 +97,7 @@ _FAKE_REGION_TERMS = {
     "caribbean", "balkans", "nordics", "benelux", "central europe",
     "eastern europe", "western europe", "northern europe", "southern europe",
 }
+
 
 _COMMON_VENUE_SUFFIXES = (
     "family resort",
@@ -103,6 +115,7 @@ _COMMON_VENUE_SUFFIXES = (
     "spa",
 )
 
+
 _MARKETING_HINTS = (
     "seit",
     "since",
@@ -118,12 +131,14 @@ _MARKETING_HINTS = (
     "experience",
 )
 
+
 _ADDRESS_HINTS = (
     "street", "st", "st.", "road", "rd", "rd.", "avenue", "ave", "ave.",
     "boulevard", "blvd", "blvd.", "lane", "ln", "ln.", "drive", "dr", "dr.",
     "rue", "via", "platz", "plaza", "piazza", "straße", "strasse", "route",
     "weg", "allee", "quai", "cours", "promenade",
 )
+
 
 _PLACE_COUNT_NOUN_PATTERN = (
     r"(?:"
@@ -727,23 +742,30 @@ def _infer_public_content_type(
     structure_type = ((structure_analysis or {}).get("structure_type") or "").strip().lower()
     list_subtype = ((structure_analysis or {}).get("list_subtype") or "").strip().lower()
 
+
     if has_location:
         return "location"
+
 
     if requested == "recipe" or parsed.get("recipe"):
         return "recipe"
 
+
     if requested == "workout" or parsed.get("workout"):
         return "workout"
+
 
     if requested in {"software", "products", "finance"}:
         return requested
 
+
     if requested == "location":
         return "location"
 
+
     if structure_type == "places" or list_subtype == "places":
         return "location"
+
 
     if tools_list:
         family = _call_classify_structured_family(
@@ -753,20 +775,26 @@ def _infer_public_content_type(
             topic=topic,
         )
 
+
         if family == "places":
             return "location"
         if family in {"software", "finance"}:
             return family
 
+
         if _looks_like_finance_text(category, topic, title, brief_description):
             return "finance"
 
+
         return "products"
+
 
     if requested in _PUBLIC_CONTENT_TYPES:
         return requested
 
+
     return "general"
+
 
 
 def _extract_item_names_from_cats(tools_cats_en: list[dict] | None, limit: int = 8) -> list[str]:
@@ -781,8 +809,10 @@ def _extract_item_names_from_cats(tools_cats_en: list[dict] | None, limit: int =
     return names
 
 
+
 class AssemblyMixin:
     """Assembles the final output dictionary for UniversalExtractor.extract()."""
+
 
     def _assemble_output(
         self,
@@ -797,18 +827,23 @@ class AssemblyMixin:
         lang = repair_language_if_obviously_wrong(lang, prompt_trace)
         is_english_content = (lang or "").lower().startswith("en")
 
+
         title_en = parsed["title"]
         title_og = summary_result.get("title_original") or ""
+
 
         summary_en = summary_result.get("summary_en", "")
         summary_og = summary_result.get("summary_original", "")
 
+
         hashtags = dedupe_preserve_order(parsed.get("hashtags", []))
         emojis = dedupe_preserve_order(parsed.get("emojis", []))
+
 
         tools_cats_en = parsed.get("tools_categories") or (
             (parsed.get("tools") or {}).get("categories")
         )
+
 
         tools_og_data = summary_result.get("tools_og")
         tools_cats_og = None
@@ -817,10 +852,12 @@ class AssemblyMixin:
         elif isinstance(tools_og_data, list):
             tools_cats_og = tools_og_data
 
+
         if not tools_cats_og:
             translated = summary_result.get("translated_categories")
             if isinstance(translated, list):
                 tools_cats_og = translated
+
 
         tools_list = build_tools_list(
             tools_categories_en=tools_cats_en,
@@ -829,8 +866,10 @@ class AssemblyMixin:
             is_english_content=is_english_content,
         )
 
+
         if tools_list:
             logger.info("🔧 Assembled tools_list with %d EN categories", len(tools_cats_en or []))
+
 
         if tools_list:
             tools_list = restore_tiers(
@@ -853,19 +892,24 @@ class AssemblyMixin:
                     "pass call1_raw_tools= to _assemble_output() to fix this"
                 )
 
+
         if tools_list:
             tools_list = normalize_nonsoftware_tool_fields(tools_list, parsed)
+
 
         raw_location_data = parsed.get("location")
         if raw_location_data:
             sanitized_existing_locations = _sanitize_location_rows(raw_location_data)
             parsed["location"] = sanitized_existing_locations or None
 
+
         has_location = _is_credible_location_payload(parsed.get("location"), tools_cats_en)
+
 
         if parsed.get("location") and not has_location:
             logger.info("📍 Dropping non-credible location payload before final assembly")
             parsed["location"] = None
+
 
         if not has_location and tools_list and tools_cats_en:
             caption_text = (prompt_trace or {}).get("caption", "")
@@ -885,6 +929,7 @@ class AssemblyMixin:
                         asyncio.set_event_loop(None)
                         loop.close()
 
+
                     if ig_locations:
                         base_locations = _tool_items_to_location_rows(tools_cats_en)
                         merged_locations = _merge_tool_rows_with_enriched_locations(
@@ -893,10 +938,12 @@ class AssemblyMixin:
                         )
                         merged_locations = _sanitize_location_rows(merged_locations)
 
+
                         merged_is_credible = _is_credible_location_payload(
                             merged_locations,
                             tools_cats_en,
                         )
+
 
                         if merged_is_credible and len(merged_locations) >= len(base_locations):
                             parsed["location"] = merged_locations
@@ -914,6 +961,7 @@ class AssemblyMixin:
                 except Exception as _ig_err:
                     logger.warning("📍 IG bio enrichment failed (non-fatal): %s", _ig_err)
 
+
         promoted = False
         if not tools_list and parsed.get("items") and not has_location:
             tools_list = promote_items_to_tools_list(parsed["items"])
@@ -927,12 +975,15 @@ class AssemblyMixin:
                     len(tools_cats_en),
                 )
 
+
         structure_analysis = _EMPTY_STRUCTURE_ANALYSIS.copy()
         list_subtype = ""
         is_ranked = False
 
+
         if tools_list:
             prior = parsed.get("structure_analysis")
+
 
             if prior and not promoted:
                 structure_analysis = prior
@@ -945,6 +996,7 @@ class AssemblyMixin:
             else:
                 active_cats = tools_cats_en or (tools_list.get("en") or {}).get("categories", [])
                 pre_hint = (prompt_trace or {}).get("pre_detected_subtype", "")
+
 
                 structure_analysis = analyze_structure(
                     tools_categories=active_cats,
@@ -960,11 +1012,14 @@ class AssemblyMixin:
                     structure_analysis.get("list_subtype"),
                 )
 
+
             list_subtype = structure_analysis.get("list_subtype", "")
             is_ranked = bool(structure_analysis.get("is_ranked"))
 
+
             tools_list["list_subtype"] = list_subtype
             tools_list["is_ranked"] = is_ranked
+
 
             logger.info(
                 "🔧 structure mode=%s type=%s subtype=%s is_ranked=%s conf=%.2f",
@@ -975,14 +1030,17 @@ class AssemblyMixin:
                 structure_analysis.get("confidence", 0.0),
             )
 
+
         structure_mode = structure_analysis.get("mode")
         structure_type = structure_analysis.get("structure_type")
+
 
         structured_tools_mode = (
             bool(tools_list)
             and structure_mode == "structured"
             and structure_type in {"verdict", "ranking", "tier", "grouped", "places"}
         )
+
 
         if structured_tools_mode:
             headlines_en = []
@@ -992,20 +1050,24 @@ class AssemblyMixin:
             headlines_en = summary_result.get("headlines_en") or parsed.get("highlights", [])
             headlines_og = summary_result.get("headlines_og") or []
 
+
         is_list = False
         list_count = 0
         list_type = ""
         list_summary = ""
 
+
         if tools_list and structure_mode == "structured" and not has_location:
             en_cats_active = (tools_list.get("en") or {}).get("categories", [])
             actual_count = count_valid_items(en_cats_active)
+
 
             if actual_count >= 2:
                 is_list = True
                 brief_description = parsed.get("brief_description", "")
                 caption = (prompt_trace or {}).get("caption", "")
                 list_summary = summary_en or brief_description or title_en
+
 
                 if structure_type == "verdict":
                     list_count = actual_count
@@ -1016,6 +1078,7 @@ class AssemblyMixin:
                         list_summary,
                     )
 
+
                 elif structure_type in {"tier", "grouped", "ranking", "places"}:
                     list_count = actual_count
                     list_type = structure_type
@@ -1025,6 +1088,7 @@ class AssemblyMixin:
                         list_count,
                         list_summary,
                     )
+
 
                 else:
                     list_count, list_type = extract_list_count_and_type(
@@ -1042,7 +1106,9 @@ class AssemblyMixin:
                         list_type,
                     )
 
+
         named_item_count: int | None = None
+
 
         if not is_list:
             _location_count = (
@@ -1055,8 +1121,10 @@ class AssemblyMixin:
                 _promised if _promised is not None else (_location_count if _location_count > 0 else None)
             )
 
+
             headlines_en = sanitize_highlights(headlines_en, named_item_count)
             headlines_og = sanitize_highlights(headlines_og, named_item_count)
+
 
             if named_item_count:
                 logger.debug(
@@ -1066,10 +1134,13 @@ class AssemblyMixin:
                     len(headlines_og),
                 )
 
+
         headlines_en = filter_placeholder_headlines(headlines_en)
         headlines_og = filter_placeholder_headlines(headlines_og)
 
+
         max_headlines: int | None = None
+
 
         promised_count = (prompt_trace or {}).get("caption_promised_count")
         if not is_list:
@@ -1078,8 +1149,10 @@ class AssemblyMixin:
             elif named_item_count is not None and named_item_count >= 4:
                 max_headlines = min(named_item_count, 6)
 
+
         transcript_preview = (prompt_trace or {}).get("transcript_preview", "")
         caption_text = (prompt_trace or {}).get("caption", "")
+
 
         public_content_type = _infer_public_content_type(
             requested_content_type=content_type,
@@ -1091,9 +1164,11 @@ class AssemblyMixin:
             caption=caption_text,
         )
 
+
         if has_location:
             public_content_type = "location"
             parsed["location"] = _sanitize_location_rows(parsed.get("location"))
+
 
             location_count = _count_locations(parsed.get("location"))
             if location_count:
@@ -1104,6 +1179,7 @@ class AssemblyMixin:
                 headlines_en = _repair_location_count_claims_in_highlights(headlines_en, location_count)
                 headlines_og = _repair_location_count_claims_in_highlights(headlines_og, location_count)
 
+
             is_list = False
             list_count = 0
             list_type = ""
@@ -1112,8 +1188,10 @@ class AssemblyMixin:
             structure_analysis = None
             logger.info("📍 Credible location present, forcing location-first render semantics")
 
+
         if public_content_type not in _PUBLIC_CONTENT_TYPES:
             public_content_type = "general"
+
 
         summary = make_summary_block(
             title_en=title_en,
@@ -1129,7 +1207,9 @@ class AssemblyMixin:
             detected_language=lang,
         )
 
+
         item_names = _extract_item_names_from_cats(tools_cats_en)
+
 
         for lang_key in ("english", "original"):
             block = summary.get(lang_key)
@@ -1153,9 +1233,31 @@ class AssemblyMixin:
                 )
                 block["summary"] = repaired
 
+
         final_list_subtype = None
         if not has_location and is_list:
             final_list_subtype = (structure_analysis or {}).get("list_subtype") or None
+
+
+        summary.setdefault("english", {})
+        summary.setdefault("original", {})
+
+
+        english_summary = str(summary.get("english", {}).get("summary") or "").strip()
+        if not english_summary:
+            fallback = validate_and_repair_summary_paragraph(
+                paragraph=str(title_en or parsed.get("brief_description") or "Saved content"),
+                title=title_en,
+                content_type=public_content_type,
+                item_names=_extract_item_names_from_cats(tools_cats_en),
+            )
+            summary["english"]["summary"] = fallback
+
+
+        original_summary = str(summary.get("original", {}).get("summary") or "").strip()
+        if not original_summary:
+            summary["original"]["summary"] = summary["english"]["summary"]
+
 
         return {
             "content_type": public_content_type,

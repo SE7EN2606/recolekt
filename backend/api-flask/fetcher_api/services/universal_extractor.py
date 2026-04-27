@@ -28,10 +28,13 @@ Structured subtype values on the legacy tools path:
     Do NOT include 'open-mistral-nemo'. Nemo is weaker and fails tier-list instructions.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
 from typing import Any, Dict, List, Optional
+
 
 from fetcher_api.adapters.meta_client import meta_client
 from fetcher_api.services.category_validator import validate_category
@@ -45,7 +48,7 @@ from fetcher_api.services.extractor_helpers import (
     safe_list,
     safe_str,
 )
-from fetcher_api.services.extractor_http import HttpMixin
+from fetcher_api.services.extractor_http import HttpMixin, AIRequestExhaustedError
 from fetcher_api.services.extractor_list_detection import (
     analyze_structure,
     classify_structured_family,
@@ -95,9 +98,12 @@ from fetcher_api.utils.ocr_utils import (
     should_extract_frames,
 )
 
+
 logger = logging.getLogger(__name__)
 
+
 EXTRACTOR_VERSION = "universal-v23"
+
 
 BOOKMARK_MESSAGES = {
     "en": "Bookmark saved. The creator did not provide a detailed caption or transcript for this video.",
@@ -106,6 +112,7 @@ BOOKMARK_MESSAGES = {
     "it": "Segnalibro salvato. Il creatore non ha fornito una didascalia o una trascrizione dettagliata per questo video.",
     "de": "Lesezeichen gespeichert. Der Ersteller hat keine detaillierte Bildunterschrift oder Transkript bereitgestellt.",
 }
+
 
 _CAPTION_MENTION_RE = re.compile(r"(?<![\w.])@([A-Za-z0-9._]{2,})")
 
@@ -176,15 +183,6 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         classification: Dict[str, Any],
         caption: str = "",
     ) -> None:
-        """
-        Best-effort location enrichment with remote IG profile lookup.
-
-        This path now:
-          - collects account/profile objects already present in payloads
-          - also extracts @mentions from the caption
-          - enriches missing accounts through meta_client.get_instagram_profile()
-          - merges bio-derived address/city/country into location entries
-        """
         location_payload = parsed.get("location")
         if not location_payload:
             return
@@ -418,7 +416,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             )
 
         public_content_type = _route_public_family(
-            requested_content_type=requested_public_content_type,
+            requested_public_content_type=requested_public_content_type,
             transcript=transcript,
             caption=caption,
             is_location_list=is_location_list,
@@ -540,12 +538,17 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         }
 
         logger.info("📞 CALL 1: Extracting structured data...")
-        result_data = self._call_ai(
-            call1_prompt,
-            images=frame_images,
-            call_type="extraction",
-            subtype_hint=subtype_hint if is_tools else "",
-        )
+        try:
+            result_data = self._call_ai(
+                call1_prompt,
+                images=frame_images,
+                call_type="extraction",
+                subtype_hint=subtype_hint if is_tools else "",
+            )
+        except AIRequestExhaustedError as exc:
+            logger.error("❌ CALL 1 exhausted retries, using fallback extractor: %s", exc, exc_info=True)
+            return self.fallback(caption, classification)
+
         prompt_trace["call1_response_keys"] = (
             list(result_data.keys()) if isinstance(result_data, dict) else []
         )
@@ -684,10 +687,14 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
 
     def _bookmark_mode(self, caption: str, effective_lang: str) -> Dict:
         logger.info("⚠️ Bookmark mode activated.")
-        result_data = self._call_ai(
-            build_bookmark_prompt(caption, effective_lang),
-            call_type="extraction",
-        )
+        try:
+            result_data = self._call_ai(
+                build_bookmark_prompt(caption, effective_lang),
+                call_type="extraction",
+            )
+        except AIRequestExhaustedError as exc:
+            logger.error("❌ Bookmark mode exhausted retries, using fallback: %s", exc, exc_info=True)
+            result_data = {}
 
         category = validate_category(safe_str(result_data.get("category", "")), "general")
         topic = safe_str(result_data.get("topic", "")).strip()
@@ -804,6 +811,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             "items": None,
             "tools_list": None,
             "recipe": None,
+            "location": None,
             "workout": None,
             "detected_language": "unknown",
             "_content_payload": [],
