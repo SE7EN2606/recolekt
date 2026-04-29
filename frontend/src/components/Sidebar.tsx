@@ -244,7 +244,7 @@ export const Sidebar: React.FC = () => {
             <div className="space-y-1">
               {customFolders.map((folder: any) => {
                 const hasSubs = !!(folder.subFolders && folder.subFolders.length > 0);
-                const folderPath = `/gallery/${folder.slug ?? folder.id}`;
+                const folderPath = `/gallery/${folder.id}`;
 
                 return (
                   <div key={folder.id} className="mb-1">
@@ -273,7 +273,7 @@ export const Sidebar: React.FC = () => {
                     {hasSubs && (
                       <div className="space-y-1 mt-1">
                         {folder.subFolders.map((sub: any) => {
-                          const subPath = `/gallery/${sub.slug ?? sub.id}`;
+                          const subPath = `/gallery/${sub.id}`;
                           return (
                             <div
                               key={sub.id}
