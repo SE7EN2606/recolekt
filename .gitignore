@@ -32,3 +32,5 @@ backend/api-flask/output/
 saved_places_backend.txt
 **/__pycache__/
 *.pyc
+__pycache__/
+*.pyc
