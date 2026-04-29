@@ -6,6 +6,7 @@ import logging
 import threading
 import re
 import uuid
+
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 
@@ -42,6 +43,7 @@ def is_supported_url(url: str) -> bool:
     """Check if URL is from a supported platform."""
     if not url:
         return False
+
     url_lower = url.lower()
     return any(domain in url_lower for domain in SUPPORTED_DOMAINS)
 
@@ -50,15 +52,21 @@ def detect_platform(url: str) -> str:
     """Return platform code: IG, FB, YT, TT or UNKNOWN."""
     if not url:
         return "UNKNOWN"
+
     url_lower = url.lower()
+
     if "instagram.com" in url_lower:
         return "IG"
+
     if "facebook.com" in url_lower or "fb.watch" in url_lower or "fb.com" in url_lower:
         return "FB"
+
     if "youtube.com" in url_lower or "youtu.be" in url_lower:
         return "YT"
+
     if "tiktok.com" in url_lower:
         return "TT"
+
     return "UNKNOWN"
 
 
@@ -66,16 +74,21 @@ def _coerce_bool(value, default: bool = False) -> bool:
     """Accept real booleans and common string forms."""
     if value is None:
         return default
+
     if isinstance(value, bool):
         return value
+
     if isinstance(value, (int, float)):
         return bool(value)
 
     s = str(value).strip().lower()
+
     if s in {"true", "1", "yes", "y", "on"}:
         return True
+
     if s in {"false", "0", "no", "n", "off", ""}:
         return False
+
     return default
 
 
@@ -88,6 +101,7 @@ def _get_request_json() -> dict:
                 return data
     except Exception as e:
         logger.warning(f"❌ JSON parse failed: {e}")
+
     return {}
 
 
@@ -119,9 +133,10 @@ def _extract_url_from_request():
     try:
         raw_data = request.get_data(as_text=True)
         logger.info(f"🔍 Raw body (first 300 chars): {raw_data[:300]}")
+
         match = re.search(
             r'(https?://(?:www\.)?(?:instagram|facebook|fb|youtube|youtu\.be|tiktok|vm\.tiktok|vt\.tiktok)\.[^\s"\'<>]+)',
-            raw_data
+            raw_data,
         )
         if match:
             found = match.group(1)
@@ -139,11 +154,85 @@ def _extract_shortcode(url: str, platform: str) -> str:
     if platform == "YT":
         from fetcher_api.api.helpers.normalizers import extract_youtube_id
         return extract_youtube_id(url) or "unknown"
+
     if platform == "TT":
-        match = re.search(r"/video/(\d+)", url)
+        match = re.search(r"/video/(\d+)", url or "")
         return match.group(1) if match else "unknown"
-    # IG and FB use meta_client
+
     return meta_client.extract_shortcode(url) or "unknown"
+
+
+def _find_existing_reel(user_id: str, url: str | None, shortcode: str | None = None):
+    """
+    A reel must be unique per user.
+
+    Match by exact source_url first, then by shortcode embedded in the generated id.
+    This prevents duplicates when URL formatting changes but the platform shortcode is the same.
+    """
+    if not user_id:
+        return None
+
+    shortcode = (shortcode or "").strip()
+    url = (url or "").strip()
+
+    try:
+        if shortcode:
+            return fetch_one(
+                """
+                SELECT id, status, gcs_urls, created_at
+                FROM reels
+                WHERE user_id = %s
+                  AND (
+                        source_url = %s
+                        OR id LIKE %s
+                  )
+                ORDER BY created_at DESC NULLS LAST
+                LIMIT 1
+                """,
+                (user_id, url, f"{shortcode}--%"),
+            )
+
+        if url:
+            return fetch_one(
+                """
+                SELECT id, status, gcs_urls, created_at
+                FROM reels
+                WHERE user_id = %s AND source_url = %s
+                ORDER BY created_at DESC NULLS LAST
+                LIMIT 1
+                """,
+                (user_id, url),
+            )
+
+    except Exception as exc:
+        logger.warning("⚠️ Duplicate lookup failed for user=%s url=%s shortcode=%s: %s", user_id, url, shortcode, exc)
+
+    return None
+
+
+def _preview_url_from_reel(row) -> str | None:
+    if not row:
+        return None
+
+    row_dict = dict(row) if hasattr(row, "keys") else row._asdict()
+
+    gcs_urls = row_dict.get("gcs_urls") or {}
+    if isinstance(gcs_urls, str):
+        try:
+            gcs_urls = json.loads(gcs_urls)
+        except Exception:
+            gcs_urls = {}
+
+    if not isinstance(gcs_urls, dict):
+        return None
+
+    return (
+        gcs_urls.get("preview_thumbnail")
+        or gcs_urls.get("thumbnail")
+        or gcs_urls.get("thumbnail_url")
+        or gcs_urls.get("poster")
+        or gcs_urls.get("poster_url")
+    )
 
 
 @video_bp.route("/summarize", methods=["POST"])
@@ -161,6 +250,7 @@ def summarize():
 
     save_to_gcs = True
     force_retry = False
+
     try:
         if request_json:
             save_to_gcs = _coerce_bool(request_json.get("save_to_gcs"), True)
@@ -185,36 +275,49 @@ def summarize():
         logger.warning(f"❌ Unsupported URL: {url}")
         return jsonify({
             "error": "unsupported_platform",
-            "message": "Only Instagram, Facebook, YouTube, and TikTok URLs are supported."
+            "message": "Only Instagram, Facebook, YouTube, and TikTok URLs are supported.",
         }), 422
+
+    platform_id = "IG"
+    shortcode = "unknown"
 
     if url:
         url = str(url).strip()
-        existing_reel = fetch_one(
-            """
-            SELECT id, status, (gcs_urls::jsonb->>'preview_thumbnail') as preview_url
-            FROM reels
-            WHERE user_id = %s AND source_url = %s
-            """,
-            (user_id, url),
-        )
+        platform_id = detect_platform(url)
+        shortcode = _extract_shortcode(url, platform_id)
+        shortcode = (shortcode or "unknown").rstrip("-").strip()
+
+        if not shortcode or shortcode in {"unknown", "None"}:
+            shortcode = f"{platform_id.lower()}_{uuid.uuid4().hex[:10]}"
+            logger.info(f"🔄 Assigned dynamic shortcode: {shortcode}")
+
+        existing_reel = _find_existing_reel(user_id, url, shortcode)
 
         if existing_reel:
-            logger.info(f"📌 Reel already exists: {existing_reel['id']}")
+            existing_id = existing_reel.get("id")
+            existing_status = existing_reel.get("status") or "processing"
 
-            if existing_reel.get("status") == "error" or force_retry:
-                logger.info("⚠️ Reprocessing requested! Deleting old record...")
-                execute("DELETE FROM reels WHERE id = %s", (existing_reel["id"],))
+            logger.info("📌 Duplicate reel blocked before processing: existing=%s user=%s url=%s", existing_id, user_id, url)
+
+            if existing_status == "error" or force_retry:
+                logger.info("⚠️ Reprocessing requested for existing reel %s; deleting old DB row before retry", existing_id)
+                execute(
+                    "DELETE FROM reels WHERE id = %s AND user_id = %s",
+                    (existing_id, user_id),
+                )
             else:
                 return jsonify({
-                    "reel_id": existing_reel["id"],
-                    "status": existing_reel.get("status", "processing"),
-                    "message": "This reel already exists in your collection",
-                    "preview_url": existing_reel.get("preview_url"),
+                    "status": existing_status,
+                    "duplicate": True,
+                    "reel_id": existing_id,
+                    "process_id": existing_id,
+                    "message": "This reel already exists in your collection.",
+                    "preview_url": _preview_url_from_reel(existing_reel),
                 }), 200
 
     temp_dir = tempfile.mkdtemp(dir=TEMP_DIR_BASE)
     video_path = None
+
     result = {
         "process_id": "",
         "summary": {},
@@ -222,9 +325,6 @@ def summarize():
     }
 
     try:
-        platform_id = "IG"
-        shortcode = "unknown"
-
         if file and file.filename:
             filename = secure_filename(file.filename)
             video_path = save_uploaded_file(file, temp_dir)
@@ -232,22 +332,14 @@ def summarize():
             result["process_id"] = f"{shortcode}--{get_timestamp()}--{get_unique_id(url or filename)}"
             logger.info(f"📁 File upload: {result['process_id']}")
         else:
-            platform_id = detect_platform(url)
-            shortcode = _extract_shortcode(url, platform_id)
             logger.info(f"🔗 Processing {platform_id} URL: {url}")
-
-            shortcode = shortcode.rstrip("-")
-
-            if not shortcode or shortcode in ("unknown", "None"):
-                shortcode = f"{platform_id.lower()}_{uuid.uuid4().hex[:10]}"
-                logger.info(f"🔄 Assigned dynamic shortcode: {shortcode}")
 
             result["process_id"] = f"{shortcode}--{get_timestamp()}--{get_unique_id(url)}"
             video_path = os.path.join(temp_dir, f"{result['process_id']}.mp4")
+
             logger.info(f"🆔 Process ID: {result['process_id']}")
             logger.info("⏭️ Skipping metadata fetch - will be done in background")
 
-        # Prefer user-scoped GCS paths if supported by generate_gcs_paths()
         try:
             gcs_paths = generate_gcs_paths(shortcode, platform_id, user_id=user_id)
         except TypeError:
@@ -262,6 +354,7 @@ def summarize():
             "video": None,
             "result_json": None,
         }
+
         gcs_urls_json = json.dumps(result["gcs_urls"])
 
         logger.info("💾 Inserting into database...")
@@ -276,6 +369,7 @@ def summarize():
             """,
             (result["process_id"], user_id, url, gcs_urls_json),
         )
+
         logger.info("✅ Database record created (caption/author will be added by background)")
 
     except Exception as e:
@@ -295,6 +389,8 @@ def summarize():
 
     return jsonify({
         "status": "processing",
+        "duplicate": False,
         "reel_id": result["process_id"],
+        "process_id": result["process_id"],
         "preview_url": None,
     })

@@ -12,7 +12,7 @@ import { MoveCollectionModal } from '../components/MoveCollectionModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ReportModal } from '../components/ReportModal';
 import { EditableTitle, EditableBullets } from '../components/VideoDetailComponents';
-import { RecipeDetailsCard } from '../components/RecipeDetailsCard';
+import { RecipeDetailsCard, ShoppingListItem } from '../components/RecipeDetailsCard';
 import { WorkoutCard } from '../components/WorkoutCard';
 import { ToolsListCard } from '../components/ToolsListCard';
 import { LocationCard } from '../components/LocationCard';
@@ -63,18 +63,14 @@ const getAuthToken = (): string => {
     for (let i = 0; i < localStorage.length; i += 1) {
       const key = localStorage.key(i);
       if (!key) continue;
-
       const value = localStorage.getItem(key);
       if (!value) continue;
-
       const lowerKey = key.toLowerCase();
       const looksRelevant =
         lowerKey.includes('token') ||
         lowerKey.includes('jwt') ||
         lowerKey.includes('auth');
-
       const looksLikeJwt = value.split('.').length === 3;
-
       if (looksRelevant && looksLikeJwt) {
         return value.replace(/^Bearer\s+/i, '').trim();
       }
@@ -88,7 +84,6 @@ const getAuthToken = (): string => {
 
 const fetchBackendAuthed = async (url: string) => {
   const token = getAuthToken();
-
   const res = await fetch(url, {
     method: 'GET',
     headers: {
@@ -99,41 +94,18 @@ const fetchBackendAuthed = async (url: string) => {
     credentials: 'include',
     cache: 'no-store',
   });
-
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
-  }
-
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 };
 
 const extractLocationPlaces = (location: any): any[] => {
   if (!location) return [];
-
-  if (Array.isArray(location)) {
-    return location;
-  }
-
-  if (Array.isArray(location.places)) {
-    return location.places;
-  }
-
-  if (Array.isArray(location.items)) {
-    return location.items;
-  }
-
-  if (Array.isArray(location.location)) {
-    return location.location;
-  }
-
-  if (location.location && typeof location.location === 'object') {
-    return [location.location];
-  }
-
-  if (location.name) {
-    return [location];
-  }
-
+  if (Array.isArray(location)) return location;
+  if (Array.isArray(location.places)) return location.places;
+  if (Array.isArray(location.items)) return location.items;
+  if (Array.isArray(location.location)) return location.location;
+  if (location.location && typeof location.location === 'object') return [location.location];
+  if (location.name) return [location];
   return [];
 };
 
@@ -141,13 +113,9 @@ const cachedLocationNeedsHydration = (candidate: any, thumb?: string) => {
   try {
     const vm = buildViewModel(candidate, false, thumb);
     const places = extractLocationPlaces(vm?.location);
-
     if (!places.length) return false;
-
-    return places.some((p: any) =>
-      p?.lat == null ||
-      p?.lng == null ||
-      (!p?.city && !p?.region && !p?.country),
+    return places.some(
+      (p: any) => p?.lat == null || p?.lng == null || (!p?.city && !p?.region && !p?.country),
     );
   } catch {
     return false;
@@ -166,6 +134,7 @@ export const VideoDetail: React.FC = () => {
     toggleFavorite,
     updateVideo,
     getVideoById,
+    addToGroceryList, // ← DataContext must expose this; see note below
   } = useData();
 
   const { showOriginal, toggleLanguage } = useLanguage();
@@ -187,21 +156,32 @@ export const VideoDetail: React.FC = () => {
     isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen,
   );
 
+  // Reset state whenever the user navigates to a different video
+  useEffect(() => {
+    setServingScale(1);
+    setIsEditing(false);
+  }, [id]);
+
+  // Push ingredients into the shared GroceryList via DataContext
+  const handleAddToShoppingList = useCallback(
+    (items: ShoppingListItem[]) => {
+      if (typeof addToGroceryList === 'function') {
+        addToGroceryList(items);
+      }
+    },
+    [addToGroceryList],
+  );
+
   const enrichVideo = useCallback(async () => {
     if (!id || !navigator.onLine) {
       setLoading(false);
       return;
     }
-
     try {
       const db = await fetchBackendAuthed(
         apiUrl(`api/reel/${encodeURIComponent(id)}?ts=${Date.now()}`),
       );
-
-      if (!db) {
-        setLoading(false);
-        return;
-      }
+      if (!db) { setLoading(false); return; }
 
       const resultJsonUrl =
         db?.result_json_url ||
@@ -213,7 +193,6 @@ export const VideoDetail: React.FC = () => {
         null;
 
       const gcs = resultJsonUrl ? await fetchGcsJson(resultJsonUrl) : null;
-
       const merged = mergeVideoPayload(db, gcs, galleryThumbnail);
 
       setVideo((prev: any) => ({
@@ -231,35 +210,27 @@ export const VideoDetail: React.FC = () => {
 
   useEffect(() => {
     if (!id) return;
-
     const cached =
       (getVideoById(id) as any) ||
       videos.find((v: any) => v.id === id || v.process_id === id);
 
-    if (!cached) {
-      setLoading(true);
-      return;
-    }
+    if (!cached) { setLoading(true); return; }
 
     const thumb = cached.thumbnailUrl || cached.gcs_urls?.preview_thumbnail;
     if (thumb) setGalleryThumbnail(thumb);
 
-    const hydratedCached = {
+    setVideo({
       ...cached,
       id: cached.id || cached.process_id,
       process_id: cached.process_id || cached.id,
-    };
-
-    setVideo(hydratedCached);
+    });
 
     const needsHydration =
-      navigator.onLine && cachedLocationNeedsHydration(hydratedCached, thumb);
-
+      navigator.onLine && cachedLocationNeedsHydration(cached, thumb);
     setLoading(needsHydration);
   }, [id, videos, getVideoById]);
 
   const fetchedId = useRef<string | null>(null);
-
   useEffect(() => {
     if (id && fetchedId.current !== id) {
       fetchedId.current = id;
@@ -276,46 +247,18 @@ export const VideoDetail: React.FC = () => {
   const handleEditField = (field: string, value: any) => {
     setEditedVideo((prev: any) => {
       if (!prev) return prev;
-
       const next = { ...prev };
       const summary = parseSummaryObject(next.summary);
-      const langKey = showOriginal && summary.english && summary.original
-        ? 'original'
-        : 'english';
-
+      const langKey =
+        showOriginal && summary.english && summary.original ? 'original' : 'english';
       summary[langKey] = { ...(summary[langKey] || {}) };
 
-      if (field === 'title') {
-        next.title = value;
-        next.summary_title = value;
-        summary[langKey].title = value;
-      }
-
-      if (field === 'summary') {
-        next.summary_text = value;
-        summary[langKey].summary = value;
-      }
-
-      if (field === 'bullets') {
-        next.bullets = value;
-        summary[langKey].headlines = value;
-      }
-
-      if (field === 'category') {
-        next.category = value;
-        next.summary_category = value;
-      }
-
-      if (field === 'topic') {
-        next.topic = value;
-        next.summary_topic = value;
-        next.subCategory = value;
-      }
-
-      if (field === 'tags') {
-        next.tags = value;
-        summary[langKey].hashtags = value;
-      }
+      if (field === 'title')   { next.title = value; next.summary_title = value; summary[langKey].title = value; }
+      if (field === 'summary') { next.summary_text = value; summary[langKey].summary = value; }
+      if (field === 'bullets') { next.bullets = value; summary[langKey].headlines = value; }
+      if (field === 'category') { next.category = value; next.summary_category = value; }
+      if (field === 'topic')   { next.topic = value; next.summary_topic = value; next.subCategory = value; }
+      if (field === 'tags')    { next.tags = value; summary[langKey].hashtags = value; }
 
       next.summary = summary;
       return next;
@@ -328,8 +271,7 @@ export const VideoDetail: React.FC = () => {
   );
 
   const handleToggleFavorite = () => {
-    if (!currentVideoId) return;
-    toggleFavorite(currentVideoId);
+    if (currentVideoId) toggleFavorite(currentVideoId);
   };
 
   const handleArchive = () => {
@@ -340,15 +282,8 @@ export const VideoDetail: React.FC = () => {
 
   const handleDelete = async () => {
     if (!currentVideoId) return;
-
-    try {
-      await deleteVideos([currentVideoId]);
-    } catch (err) {
-      console.error('Delete failed', err);
-    } finally {
-      setIsDeleteConfirmOpen(false);
-      navigate('/gallery', { replace: true });
-    }
+    try { await deleteVideos([currentVideoId]); } catch (err) { console.error('Delete failed', err); }
+    finally { setIsDeleteConfirmOpen(false); navigate('/gallery', { replace: true }); }
   };
 
   const handleSaveEdit = () => {
@@ -361,12 +296,7 @@ export const VideoDetail: React.FC = () => {
 
   const handleShare = async () => {
     if (navigator.share) {
-      try {
-        await navigator.share({
-          title: video?.title || 'Rekolekt',
-          url: window.location.href,
-        });
-      } catch {}
+      try { await navigator.share({ title: video?.title || 'Rekolekt', url: window.location.href }); } catch {}
     } else {
       await navigator.clipboard.writeText(window.location.href);
       alert(t('videoDetail:linkCopied', 'Link copied!'));
@@ -399,24 +329,18 @@ export const VideoDetail: React.FC = () => {
   if (loading || !viewModel) return <Skeleton />;
 
   const toolsCategories = getToolsCategoriesForLanguage(viewModel.toolsList, showOriginal);
-
   const hasToolsList =
     Array.isArray(toolsCategories) &&
     toolsCategories.some((cat: any) => Array.isArray(cat?.items) && cat.items.length > 0);
-
   const hasBullets = Array.isArray(viewModel.bullets) && viewModel.bullets.length > 0;
-
   const structuredBadgeSubtype = isBadgeToolsSubtype(viewModel.structuredType)
     ? viewModel.structuredType
     : undefined;
-
   const derivedSubtype = deriveToolsSubtype(viewModel.toolsList);
   const safeDerivedSubtype = isBadgeToolsSubtype(derivedSubtype) ? derivedSubtype : 'picks';
-
   const toolsSubtype = isToolsContentType(viewModel.contentType)
     ? structuredBadgeSubtype ?? safeDerivedSubtype
     : undefined;
-
   const showTypeBadge = viewModel.contentType !== 'general';
 
   const normalizedLocations: any[] = extractLocationPlaces(viewModel.location).map(
@@ -429,7 +353,6 @@ export const VideoDetail: React.FC = () => {
 
   const hasLocations = normalizedLocations.length > 0;
   const isLocationContent = viewModel.contentType === 'location' || hasLocations;
-
   const showToolsListCard =
     !isLocationContent &&
     hasToolsList &&
@@ -441,9 +364,7 @@ export const VideoDetail: React.FC = () => {
         { icon: <Pencil />, label: t('videoDetail:editReel', 'Edit details'), onClick: () => setIsEditing(true) },
         {
           icon: <Heart />,
-          label: video.isFavorite
-            ? t('videoDetail:removeFromFavorites')
-            : t('videoDetail:addToFavorites'),
+          label: video.isFavorite ? t('videoDetail:removeFromFavorites') : t('videoDetail:addToFavorites'),
           onClick: handleToggleFavorite,
           variant: video.isFavorite ? 'default' : 'primary',
         },
@@ -473,6 +394,8 @@ export const VideoDetail: React.FC = () => {
 
       <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-6 items-start">
         <div className="min-w-0 w-full flex flex-col">
+
+          {/* Thumbnail */}
           <div className="relative z-0 w-full aspect-9/8 bg-black rounded-2xl overflow-hidden shadow-sm mb-5 group mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0">
             {viewModel.thumbnailUrl && (
               <img
@@ -491,7 +414,6 @@ export const VideoDetail: React.FC = () => {
               >
                 <ArrowLeft size={20} />
               </button>
-
               <div className="flex gap-2">
                 {isEditing ? (
                   <>
@@ -530,21 +452,15 @@ export const VideoDetail: React.FC = () => {
                   </div>
                 )}
               </div>
-
               <div className="flex flex-col items-end gap-1.5">
                 {viewModel.duration && viewModel.duration !== '0:00' && (
                   <div className="bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-medium text-white">
                     {viewModel.duration}
                   </div>
                 )}
-
                 {showTypeBadge && (
-                  <ContentTypeBadge
-                    type={viewModel.contentType as any}
-                    toolsSubtype={toolsSubtype}
-                  />
+                  <ContentTypeBadge type={viewModel.contentType as any} toolsSubtype={toolsSubtype} />
                 )}
-
                 {hasLocations && !isLocationContent && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-teal-50/90 text-teal-700 border-teal-200/80 backdrop-blur-sm">
                     <MapPin size={10} strokeWidth={2.5} aria-hidden="true" />
@@ -555,6 +471,7 @@ export const VideoDetail: React.FC = () => {
             </div>
           </div>
 
+          {/* Title */}
           <div className="mb-3">
             <EditableTitle
               title={viewModel.title}
@@ -564,6 +481,7 @@ export const VideoDetail: React.FC = () => {
             />
           </div>
 
+          {/* Author + date */}
           <div className="mb-6 flex items-center justify-between">
             <a
               href={viewModel.originalUrl}
@@ -576,7 +494,6 @@ export const VideoDetail: React.FC = () => {
                 {viewModel.author.replace('@', '')}
               </span>
             </a>
-
             {viewModel.savedAt && (
               <div className="flex items-center gap-1.5 text-xs text-gray-400">
                 <span>{viewModel.savedAt}</span>
@@ -584,6 +501,7 @@ export const VideoDetail: React.FC = () => {
             )}
           </div>
 
+          {/* Metadata (mobile) */}
           <MetadataPanel
             variant="mobile"
             category={viewModel.category}
@@ -595,19 +513,15 @@ export const VideoDetail: React.FC = () => {
             onEditStart={() => setIsEditing(true)}
           />
 
+          {/* AI Summary */}
           <div className="bg-primary-50 rounded-2xl p-5 md:p-6 mb-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-primary-700 font-bold text-sm uppercase tracking-wide">
                 {t('videoDetail:aiSummary', 'AI Summary')}
               </h3>
-
               {viewModel.hasTranslation && !isEditing && (
                 <button
-                  onClick={(e: React.MouseEvent) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    toggleLanguage();
-                  }}
+                  onClick={(e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); toggleLanguage(); }}
                   className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm bg-primary-600 hover:bg-primary-700 text-white transition-colors"
                 >
                   <Globe size={14} />
@@ -634,10 +548,7 @@ export const VideoDetail: React.FC = () => {
 
             {showToolsListCard ? (
               <div className="mt-4 pt-4 border-t border-primary-100/50">
-                <ToolsListCard
-                  toolsList={viewModel.toolsList ?? undefined}
-                  showOriginal={showOriginal}
-                />
+                <ToolsListCard toolsList={viewModel.toolsList ?? undefined} showOriginal={showOriginal} />
               </div>
             ) : hasBullets ? (
               <div className="space-y-3 mt-4 pt-4 border-t border-primary-100/50">
@@ -652,9 +563,7 @@ export const VideoDetail: React.FC = () => {
                   viewModel.bullets.map((bullet: any, idx: number) => (
                     <div key={idx} className="flex items-start gap-3 text-gray-600 text-sm">
                       {bullet.emoji && (
-                        <span className="text-base leading-none mt-0.5 shrink-0">
-                          {bullet.emoji}
-                        </span>
+                        <span className="text-base leading-none mt-0.5 shrink-0">{bullet.emoji}</span>
                       )}
                       <span className="leading-relaxed">
                         {bullet.headline && (
@@ -669,14 +578,18 @@ export const VideoDetail: React.FC = () => {
             ) : null}
           </div>
 
+          {/* Recipe card */}
           {viewModel.recipe && !viewModel.recipe.is_compilation && (
             <div className="mb-5">
               <RecipeDetailsCard
                 recipe={viewModel.recipe}
+                recipeId={currentVideoId}
+                recipeName={viewModel.title ?? 'Recipe'}
                 servingScale={servingScale}
                 onServingScaleChange={setServingScale}
                 useMetric={useMetric}
                 onToggleMetric={setUseMetric}
+                onAddToShoppingList={handleAddToShoppingList}
               />
             </div>
           )}
@@ -687,10 +600,7 @@ export const VideoDetail: React.FC = () => {
 
           {isLocationContent && normalizedLocations.length > 0 && (
             <div className="relative z-0 mb-5">
-              <LocationCard
-                location={normalizedLocations}
-                processId={currentVideoId}
-              />
+              <LocationCard location={normalizedLocations} processId={currentVideoId} />
             </div>
           )}
 
@@ -742,6 +652,7 @@ export const VideoDetail: React.FC = () => {
           )}
         </div>
 
+        {/* Desktop right column */}
         <div className="hidden md:flex flex-col w-full gap-5 mt-0">
           <MetadataPanel
             variant="desktop"

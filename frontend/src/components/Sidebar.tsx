@@ -4,7 +4,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutGrid, Heart, Archive, Share2,
   Download, SquarePen, FolderPlus, CornerDownRight, FolderClosed, Inbox,
-  FolderOpen, MapPin,
+  FolderOpen, MapPin, ShoppingCart,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { Button } from './Button';
@@ -24,7 +24,7 @@ const isSystemOrAllVideos = (folder: any) => {
 
 
 export const Sidebar: React.FC = () => {
-  const { folders, addFolder, videos, moveVideos } = useData();
+  const { folders, addFolder, videos, moveVideos, groceryList } = useData();
   const [isInputModalOpen, setIsInputModalOpen] = React.useState(false);
   const [isManageModalOpen, setIsManageModalOpen] = React.useState(false);
   const [isVideoModalOpen, setIsVideoModalOpen] = React.useState(false);
@@ -45,6 +45,9 @@ export const Sidebar: React.FC = () => {
 
   const getFavoritesCount = () => (videos || []).filter((v: any) => v.isFavorite).length;
 
+  // Items still to buy (not marked as "have it")
+  const getGroceryCount = () => (groceryList || []).filter((i: any) => !i.have).length;
+
   const linkClass = (active: boolean) =>
     `flex items-center justify-between pl-3 pr-3.5 py-3 rounded-xl transition-all duration-200 group border ${
       active
@@ -59,12 +62,18 @@ export const Sidebar: React.FC = () => {
         : 'text-gray-600 hover:bg-red-50 hover:text-red-600 border-transparent'
     }`;
 
-  // Teal class for Saved Places — matches LocationCard and the Places badge in VideoDetail
   const placesLinkClass = (active: boolean) =>
     `flex items-center justify-between pl-3 pr-3.5 py-3 rounded-xl transition-all duration-200 group border ${
       active
         ? 'bg-teal-50 text-teal-700 shadow-sm border-teal-100/50'
         : 'text-gray-600 hover:bg-teal-50 hover:text-teal-700 border-transparent'
+    }`;
+
+  const groceryLinkClass = (active: boolean) =>
+    `flex items-center justify-between pl-3 pr-3.5 py-3 rounded-xl transition-all duration-200 group border ${
+      active
+        ? 'bg-green-50 text-green-700 shadow-sm border-green-100/50'
+        : 'text-gray-600 hover:bg-green-50 hover:text-green-700 border-transparent'
     }`;
 
   const handleAddFolderSubmit = async (name: string, pid?: string) => {
@@ -184,7 +193,30 @@ export const Sidebar: React.FC = () => {
                 )}
               </NavLink>
 
-              {/* ── Saved Places — teal color to match LocationCard and Places badge */}
+              {/* Grocery List */}
+              <NavLink to="/grocery-list" className={({ isActive }) => groceryLinkClass(isActive)}>
+                {({ isActive }) => (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <ShoppingCart
+                        size={20}
+                        strokeWidth={isActive ? 2.5 : 2}
+                        className={isActive ? 'text-green-600' : 'text-gray-400 group-hover:text-green-600'}
+                      />
+                      <span className="text-[15px] font-semibold">
+                        {t('sidebar:groceryList', 'Grocery List')}
+                      </span>
+                    </div>
+                    {getGroceryCount() > 0 && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-green-50 text-green-700 border border-green-100/50">
+                        {getGroceryCount()}
+                      </span>
+                    )}
+                  </>
+                )}
+              </NavLink>
+
+              {/* Saved Places */}
               <NavLink to="/places" className={({ isActive }) => placesLinkClass(isActive)}>
                 {({ isActive }) => (
                   <div className="flex items-center gap-3">

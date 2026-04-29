@@ -24,6 +24,7 @@ const Features        = lazy(() => import('./pages/Features').then(m => ({ defau
 const Auth            = lazy(() => import('./pages/Auth').then(m => ({ default: m.Auth })));
 const SavedPlaces     = lazy(() => import('./pages/SavedPlaces').then(m => ({ default: m.SavedPlaces })));
 const AdminPanel      = lazy(() => import('./pages/AdminPanel').then(m => ({ default: m.AdminPanel })));
+const GroceryList     = lazy(() => import('./pages/GroceryList').then(m => ({ default: m.GroceryList })));
 const MobileBottomNav = lazy(() => import('./components/MobileBottomNav').then(m => ({ default: m.MobileBottomNav })));
 const AddVideoModal   = lazy(() => import('./components/AddVideoModal').then(m => ({ default: m.AddVideoModal })));
 
@@ -132,6 +133,7 @@ function App() {
                   <Route path="/settings" element={<AccountSettings />} />
                   <Route path="/profile" element={<ProfileSettings />} />
                   <Route path="/places" element={<SavedPlaces />} />
+                  <Route path="/grocery-list" element={<GroceryList />} />
                   <Route path="/admin" element={<AdminPanel />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
