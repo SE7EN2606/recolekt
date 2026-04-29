@@ -9,5 +9,8 @@
   "archive": "Archive",
   "travelIdeas": "e.g. Travel Ideas",
   "organizer": "Organizer",
-  "unsorted": "Unsorted"
+  "unsorted": "Unsorted",
+  "groceryList": "Grocery List",
+  "savedPlaces": "Saved Places",
+  "others": "Others"
 }
