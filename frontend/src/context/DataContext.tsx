@@ -39,6 +39,18 @@ export interface LocationPlace {
   _idx?: number;
 }
 
+// Grocery list item — matches what GroceryList.tsx and RecipeDetailsCard expect
+export interface GroceryItem {
+  id: string;
+  name: string;
+  quantity?: string;
+  unit?: string;
+  emoji?: string;
+  recipeTitle?: string;
+  checked: boolean;
+  have?: boolean; // true = user already has this at home (pantry exclusion)
+}
+
 export type AddVideoResult = {
   clientTempId: string;
   processId: string;
@@ -65,6 +77,13 @@ interface DataContextType {
   refreshVideos: () => Promise<void>;
   refreshFolders: () => Promise<void>;
   getVideoById: (id: string) => Video | undefined;
+  // Grocery list
+  groceryList: GroceryItem[];
+  addToGroceryList: (items: GroceryItem[]) => void;
+  toggleGroceryItem: (id: string) => void;
+  toggleGroceryHave: (id: string) => void;
+  clearGroceryList: () => void;
+  removeFromGroceryList: (ids: string[]) => void;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -91,6 +110,10 @@ function makeCacheKey(user: any) {
 
 function makeSavedPlacesCacheKey(userId: string | number | null | undefined) {
   return userId ? `saved_places_cache_${userId}` : null;
+}
+
+function makeGroceryCacheKey(userId: string | number | null | undefined) {
+  return userId ? `grocery_list_${userId}` : null;
 }
 
 function normalizeContentType(raw: unknown): string {
@@ -284,6 +307,71 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const [isLoading, setIsLoading] = useState(false);
   const [savedPlaces, setSavedPlaces] = useState<LocationPlace[]>([]);
+
+  // ── Grocery list state (persisted to localStorage per user) ──────────────
+  const [groceryList, setGroceryList] = useState<GroceryItem[]>(() => {
+    if (user?.id) {
+      try {
+        const raw = localStorage.getItem(`grocery_list_${user.id}`);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+    }
+    return [];
+  });
+
+  // Persist grocery list whenever it changes
+  useEffect(() => {
+    if (!userId) return;
+    try {
+      localStorage.setItem(`grocery_list_${userId}`, JSON.stringify(groceryList));
+    } catch {}
+  }, [groceryList, userId]);
+
+  // Load grocery list from localStorage when the user changes
+  useEffect(() => {
+    if (!userId) {
+      setGroceryList([]);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(`grocery_list_${userId}`);
+      setGroceryList(raw ? JSON.parse(raw) : []);
+    } catch {
+      setGroceryList([]);
+    }
+  }, [userId]);
+
+  const addToGroceryList = useCallback((items: GroceryItem[]) => {
+    setGroceryList((prev) => {
+      const existingIds = new Set(prev.map((i) => i.id));
+      const fresh = items.filter((i) => !existingIds.has(i.id));
+      return [...prev, ...fresh];
+    });
+  }, []);
+
+  const removeFromGroceryList = useCallback((ids: string[]) => {
+    const toRemove = new Set(ids);
+    setGroceryList(prev => prev.filter(i => !toRemove.has(i.id)));
+  }, []);
+
+  const toggleGroceryItem = useCallback((id: string) => {
+    setGroceryList((prev) =>
+      prev.map((i) => (i.id === id ? { ...i, checked: !i.checked } : i)),
+    );
+  }, []);
+
+  const toggleGroceryHave = useCallback((id: string) => {
+    setGroceryList((prev) =>
+      prev.map((i) =>
+        i.id === id ? { ...i, have: !i.have, checked: false } : i,
+      ),
+    );
+  }, []);
+
+  const clearGroceryList = useCallback(() => {
+    setGroceryList([]);
+  }, []);
+  // ────────────────────────────────────────────────────────────────────────
 
   const savedPlacesLoadedRef = useRef(false);
   const savedPlacesUserRef = useRef<string | null>(null);
@@ -566,7 +654,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsLoading(true);
 
     try {
-      const url = joinUrl(API_BASE, `${SAVED_REELS_PATH}?page=1&per_page=100&view=list&t=${now}`);
+      const url = joinUrl(API_BASE, `${SAVED_REELS_PATH}?page=1&per_page=500&view=list&t=${now}`);
 
       const response = await fetch(url, {
         credentials: 'include',
@@ -1088,6 +1176,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       refreshVideos,
       refreshFolders,
       getVideoById,
+      // Grocery list
+      groceryList,
+      addToGroceryList,
+      toggleGroceryItem,
+      toggleGroceryHave,
+      clearGroceryList,
+      removeFromGroceryList,
     }),
     [
       _videos,
@@ -1106,6 +1201,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       refreshVideos,
       refreshFolders,
       getVideoById,
+      groceryList,
+      addToGroceryList,
+      toggleGroceryItem,
+      toggleGroceryHave,
+      clearGroceryList,
     ],
   );
 
