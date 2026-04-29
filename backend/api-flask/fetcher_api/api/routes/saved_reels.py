@@ -210,7 +210,7 @@ def saved_reels():
         return jsonify({"error": "Authentication required"}), 401
 
     page = max(int(request.args.get("page", 1) or 1), 1)
-    per_page = min(max(int(request.args.get("per_page", 100) or 100), 1), 200)
+    per_page = min(max(int(request.args.get("per_page", 100) or 100), 1), 1000)
     offset = (page - 1) * per_page
 
     rows = fetch_all(
