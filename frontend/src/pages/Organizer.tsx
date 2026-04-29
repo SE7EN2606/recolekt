@@ -75,7 +75,7 @@ const CustomDropdown = ({
   useEffect(() => {
     if (!isOpen) return;
     const handleScroll = () => setIsOpen(false);
-    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('scroll', handleScroll, true); // ← capture:true catches ALL scrolls
     return () => window.removeEventListener('scroll', handleScroll, true);
   }, [isOpen]);
 
