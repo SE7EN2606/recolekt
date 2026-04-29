@@ -60,11 +60,15 @@
   "deleteReelTitle": "Delete this reel?",
   "deleteReelMessage": "This action cannot be undone.",
   "listSubtype": {
-    "software":  "Tools & Apps",
+    "software": "Tools & Apps",
     "lifestyle": "Lifestyle Picks",
-    "gear":      "Gear & Equipment",
-    "food":      "Food & Drink",
-    "ranking":   "Ranked List",
-    "picks":     "Favorites"
-  }
+    "gear": "Gear & Equipment",
+    "food": "Food & Drink",
+    "ranking": "Ranked List",
+    "picks": "Favorites"
+  },
+  "imperial": "Imperial",
+  "metric": "Metric",
+  "addToList": "Add to list",
+  "added": "Added"
 }

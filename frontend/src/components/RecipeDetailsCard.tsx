@@ -388,7 +388,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
             onClick={() => onToggleMetric(!useMetric)}
             className="px-3 py-1.5 bg-white/60 backdrop-blur-md border border-white/60 text-gray-700 rounded-xl text-xs font-bold shadow-sm hover:bg-white/90 hover:shadow transition-all"
           >
-            {useMetric ? 'Imperial' : 'Metric'}
+            {useMetric ? t('videoDetail:imperial') : t('videoDetail:metric')}
           </button>
         )}
       </div>
@@ -459,12 +459,12 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               {added ? (
                 <>
                   <Check size={13} strokeWidth={2.5} />
-                  Added
+                  {t('videoDetail:added')}
                 </>
               ) : (
                 <>
                   <ShoppingCart size={13} strokeWidth={2} />
-                  Add to list
+                  {t('videoDetail:addToList')}
                 </>
               )}
             </button>
