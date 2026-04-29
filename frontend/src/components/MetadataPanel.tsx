@@ -45,6 +45,7 @@ export const MetadataPanel: React.FC<Props> = ({
   onEditStart,
   variant,
 }) => {
+  const { t } = useTranslation('videoDetail');
   if (variant === 'mobile') {
     return (
       <div className="md:hidden mb-6 bg-violet-50 border border-violet-200 rounded-xl overflow-hidden p-4">
