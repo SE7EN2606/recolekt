@@ -74,7 +74,7 @@ const CustomDropdown = ({
   // ✅ Close on scroll so dropdown doesn't float away from trigger
   useEffect(() => {
     if (!isOpen) return;
-    const handleScroll = () => setIsOpen(false);
+    const handleScroll = (e: Event) => { if (dropdownRef.current && dropdownRef.current.contains(e.target as Node)) return; setIsOpen(false); };
     window.addEventListener('scroll', handleScroll, true); // ← capture:true catches ALL scrolls
     return () => window.removeEventListener('scroll', handleScroll, true);
   }, [isOpen]);
