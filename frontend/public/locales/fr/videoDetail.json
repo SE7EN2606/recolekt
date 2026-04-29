@@ -58,13 +58,17 @@
   "method": "Méthode",
   "originalLink": "Lien original",
   "deleteReelTitle": "Supprimer ce clip ?",
-  "deleteReelMessage": "Cette action est irréversible."
+  "deleteReelMessage": "Cette action est irréversible.",
   "listSubtype": {
-    "software":  "Outils & Apps",
+    "software": "Outils & Apps",
     "lifestyle": "Sélection Lifestyle",
-    "gear":      "Équipement & Matériel",
-    "food":      "Food & Boissons",
-    "ranking":   "Classement",
-    "picks":     "Favoris"
-  }
+    "gear": "Équipement & Matériel",
+    "food": "Food & Boissons",
+    "ranking": "Classement",
+    "picks": "Favoris"
+  },
+  "imperial": "Impérial",
+  "metric": "Métrique",
+  "addToList": "Ajouter à la liste",
+  "added": "Ajouté"
 }

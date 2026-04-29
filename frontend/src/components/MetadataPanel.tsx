@@ -2,6 +2,7 @@
 // Mobile violet card + desktop right-column category/topic/hashtags panel
 import React from 'react';
 import { Pencil } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import {
   CategoryIcon, TopicIcon, HashtagsIcon,
 } from '../components/CustomIcons';
@@ -45,6 +46,8 @@ export const MetadataPanel: React.FC<Props> = ({
   onEditStart,
   variant,
 }) => {
+  const { t } = useTranslation('videoDetail');
+
   if (variant === 'mobile') {
     return (
       <div className="md:hidden mb-6 bg-violet-50 border border-violet-200 rounded-xl overflow-hidden p-4">
@@ -91,7 +94,7 @@ export const MetadataPanel: React.FC<Props> = ({
           <div className="p-1.5 bg-violet-50 text-violet-600 rounded-md">
             <CategoryIcon size={16} />
           </div>
-          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Category</span>
+          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{ t('category', 'Category') }</span>
         </div>
         {isEditing ? (
           <input
@@ -111,7 +114,7 @@ export const MetadataPanel: React.FC<Props> = ({
             <div className="p-1.5 bg-pink-50 text-pink-600 rounded-md">
               <TopicIcon size={16} />
             </div>
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Topic</span>
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{ t('topic', 'Topic') }</span>
           </div>
           {isEditing ? (
             <input
@@ -131,7 +134,7 @@ export const MetadataPanel: React.FC<Props> = ({
           <div className="p-1.5 bg-cyan-50 text-cyan-600 rounded-md">
             <HashtagsIcon size={16} />
           </div>
-          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Hashtags</span>
+          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{ t('hashtags', 'Hashtags') }</span>
         </div>
         <div className="hashtag-links flex flex-wrap gap-2 pl-1">
           {tags?.length > 0 ? (
@@ -149,7 +152,7 @@ export const MetadataPanel: React.FC<Props> = ({
               );
             })
           ) : (
-            <span className="text-gray-400 text-xs italic">No tags</span>
+            <span className="text-gray-400 text-xs italic">{ t('noTags', 'No tags') }</span>
           )}
         </div>
       </div>
