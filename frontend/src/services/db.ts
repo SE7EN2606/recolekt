@@ -34,11 +34,18 @@ export interface Video {
   is_favorite?: boolean;
 }
 
+export interface FolderChild {
+  id: string;
+  name: string;
+  emoji?: string;
+  itemCount?: number;
+}
+
 export interface Folder {
   id: string;
   name: string;
   emoji?: string; // Optional emoji icon
-  subFolders?: Folder[]; // Nested folders
+  subFolders?: FolderChild[]; // Nested folders
   itemCount?: number; // Virtual count (not stored)
 }
 

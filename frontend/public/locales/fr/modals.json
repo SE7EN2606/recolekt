@@ -29,6 +29,7 @@
   "chooseCollection": "Choisir une collection...",
   "moveMultipleVideos": "Déplacer {{count}} vidéos",
   "moveSingleVideo": "Déplacer 1 vidéo",
+  "moveButton": "Déplacer",
   "reportTitle": "Signaler un problème",
   "reportStep1Title": "Quel type de contenu est-ce ?",
   "reportStep1Desc": "Sélectionnez la catégorie qui décrit le mieux ce reel",
@@ -63,8 +64,8 @@
   "alertProvideDetails": "Veuillez fournir quelques détails",
   "alertProvideUrl": "Veuillez fournir une URL",
   "alertSuccess": "Signalement soumis avec succès ! Merci pour votre retour.",
-  "errorUnsupportedPlatform": "Seuls les liens Instagram, Facebook, YouTube et TikTok sont acceptés.",
-  "supportedPlatforms": "Instagram · Facebook · YouTube · TikTok",
+  "errorUnsupportedPlatform": "Seuls les liens Instagram, Facebook, YouTube sont acceptés.",
+  "supportedPlatforms": "Instagram · Facebook · YouTube",
   "cancel": "Annuler",
   "save": "Enregistrer",
   "back": "Retour",
@@ -86,5 +87,5 @@
   "confirmMoveDesc": "Déplacer \"{{name}}\" changera sa position dans votre bibliothèque. Toutes les vidéos à l'intérieur resteront intactes.",
   "deleteCollection": "Supprimer la collection",
   "deleteQuestion": "Supprimer",
-  "deleteWarning": "Vos vidéos ne seront pas supprimées — elles seront déplacées vers votre bibliothèque principale.",
+  "deleteWarning": "Vos vidéos ne seront pas supprimées — elles seront déplacées vers votre bibliothèque principale."
 }

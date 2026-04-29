@@ -12,22 +12,26 @@ import { Home } from './pages/Home';
 import { useAuth } from './context/AuthContext';
 import LogoWhite from './assets/recolekt_logo_white.png';
 import { InstallPrompt } from './components/InstallPrompt';
+import { ProfileSettings } from './pages/AdminDashboard';
 
-const Gallery = lazy(() => import('./pages/Gallery').then(m => ({ default: m.Gallery })));
-const VideoDetail = lazy(() => import('./pages/VideoDetail').then(m => ({ default: m.VideoDetail })));
-const Organizer = lazy(() => import('./pages/Organizer').then(m => ({ default: m.Organizer })));
-const AppSettings = lazy(() => import('./pages/AppSettings').then(m => ({ default: m.AppSettings })));
+const Gallery         = lazy(() => import('./pages/Gallery').then(m => ({ default: m.Gallery })));
+const VideoDetail     = lazy(() => import('./pages/VideoDetail').then(m => ({ default: m.VideoDetail })));
+const Organizer       = lazy(() => import('./pages/Organizer').then(m => ({ default: m.Organizer })));
 const AccountSettings = lazy(() => import('./pages/AccountSettings').then(m => ({ default: m.AccountSettings })));
-const BillingPage = lazy(() => import('./pages/BillingPage').then(m => ({ default: m.BillingPage })));
-const SubscribePage = lazy(() => import('./pages/SubscribePage').then(m => ({ default: m.SubscribePage })));
-const Features = lazy(() => import('./pages/Features').then(m => ({ default: m.Features })));
-const Auth = lazy(() => import('./pages/Auth').then(m => ({ default: m.Auth })));
+const BillingPage     = lazy(() => import('./pages/BillingPage').then(m => ({ default: m.BillingPage })));
+const SubscribePage   = lazy(() => import('./pages/SubscribePage').then(m => ({ default: m.SubscribePage })));
+const Features        = lazy(() => import('./pages/Features').then(m => ({ default: m.Features })));
+const Auth            = lazy(() => import('./pages/Auth').then(m => ({ default: m.Auth })));
+const SavedPlaces     = lazy(() => import('./pages/SavedPlaces').then(m => ({ default: m.SavedPlaces })));
+const AdminPanel      = lazy(() => import('./pages/AdminPanel').then(m => ({ default: m.AdminPanel })));
+const GroceryList     = lazy(() => import('./pages/GroceryList').then(m => ({ default: m.GroceryList })));
 const MobileBottomNav = lazy(() => import('./components/MobileBottomNav').then(m => ({ default: m.MobileBottomNav })));
-const AddVideoModal = lazy(() => import('./components/AddVideoModal').then(m => ({ default: m.AddVideoModal })));
+const AddVideoModal   = lazy(() => import('./components/AddVideoModal').then(m => ({ default: m.AddVideoModal })));
+
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
   const { t } = useTranslation(['common']);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
@@ -41,9 +45,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     <div className="min-h-screen flex flex-col font-sans text-gray-900 selection:bg-primary-100">
       {!isAuthPage && <Header />}
 
-      <main className={`flex-1 w-full mx-auto ${isAuthPage ? 'pt-0' : `max-w-[1280px] px-4 md:px-8 ${mainBottomPadding} md:pb-0 pt-[80px] md:pt-[110px]`}`}>
+      <main className={`flex-1 w-full mx-auto ${isAuthPage ? 'pt-0' : `max-w-7xl px-4 md:px-8 ${mainBottomPadding} md:pb-0 pt-20 md:pt-27.5`}`}>
         <div className="flex gap-6 items-start">
-           {showSidebar && <Sidebar />}
+          {showSidebar && <Sidebar />}
           <div className="flex-1 w-full min-w-0 animate-fade-in">{children}</div>
         </div>
       </main>
@@ -59,7 +63,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
       {showFooter && (
         <footer className="bg-gray-900 text-white pt-16 pb-24 md:pb-8 border-t border-gray-800 mt-auto relative z-30 w-full">
-          <div className="max-w-[1280px] mx-auto px-6 md:px-8">
+          <div className="max-w-7xl mx-auto px-6 md:px-8">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-10 mb-12">
               <div className="col-span-2 md:col-span-1">
                 <img alt="recolekt logo" className="h-8 mb-4 object-contain" src={LogoWhite} />
@@ -108,6 +112,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   );
 };
 
+
 function App() {
   return (
     <I18nextProvider i18n={i18n}>
@@ -125,8 +130,11 @@ function App() {
                   <Route path="/gallery" element={<Gallery />} />
                   <Route path="/gallery/:folderId" element={<Gallery />} />
                   <Route path="/video/:id" element={<VideoDetail />} />
-                  <Route path="/settings/app" element={<AppSettings />} />
-                  <Route path="/settings/account" element={<AccountSettings />} />
+                  <Route path="/settings" element={<AccountSettings />} />
+                  <Route path="/profile" element={<ProfileSettings />} />
+                  <Route path="/places" element={<SavedPlaces />} />
+                  <Route path="/grocery-list" element={<GroceryList />} />
+                  <Route path="/admin" element={<AdminPanel />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </Layout>

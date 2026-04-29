@@ -455,7 +455,7 @@ export const Features: React.FC = () => {
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                     <Button 
                         onClick={() => navigate('/auth')}
-                        size="xl"
+                        size="lg"
                         className="gap-2 shadow-xl shadow-primary-600/20 bg-white text-primary-900 hover:bg-gray-50 font-black rounded-xl"
                     >
                         {t('features:launchApp')} <ArrowRight size={20} />

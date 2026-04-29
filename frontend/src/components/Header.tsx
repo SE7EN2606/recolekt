@@ -131,8 +131,7 @@ export const Header: React.FC = () => {
                   <>
                     <NavPill to="/gallery" label={t('gallery:gallery')} />
                     <NavPill to="/gallery/favorites" label={t('gallery:favorites')} />
-                    <NavPill to="/settings/app" label={t('header:settings')} />
-                    {/* Desktop Search Button */}
+                    <NavPill to="/settings" label={t('header:settings')} />
                     <button 
                       onClick={() => setIsSearchOpen(true)}
                       aria-label={t('gallery:search', 'Search')}
@@ -154,7 +153,7 @@ export const Header: React.FC = () => {
 
               <div className="flex items-center gap-4">
                 {showAuthedUI ? (
-                  <Link to="/settings/account" className="relative group" aria-label="Account Settings">
+                  <Link to="/profile" className="relative group" aria-label="Account Settings">
                     <div className="w-11 h-11 rounded-full p-[2px] bg-gradient-to-br from-white/50 to-white/20 backdrop-blur-md border border-white/40 group-hover:border-primary-300 transition-colors shadow-sm overflow-hidden">
                       <div className="w-full h-full bg-white/80 rounded-full flex items-center justify-center overflow-hidden">
                         {displayPicture ? (

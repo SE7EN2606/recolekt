@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export interface ActionItem {
-  icon: React.ElementType;
+  icon: React.ReactNode;
   label: string;
   onClick: () => void;
   variant?: 'default' | 'danger' | 'primary';
@@ -69,7 +69,6 @@ export const ActionSheet: React.FC<ActionSheetProps> = ({ isOpen, onClose, title
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pb-2">
           <div className="bg-gray-50/80 rounded-3xl overflow-hidden border border-gray-100/50">
             {(actions ?? []).map((action, index) => {
-              const Icon = action.icon;
               const isDanger  = action.variant === 'danger';
               const isPrimary = action.variant === 'primary';
               return (
@@ -81,7 +80,7 @@ export const ActionSheet: React.FC<ActionSheetProps> = ({ isOpen, onClose, title
                 >
                   <div className={`p-2 rounded-xl transition-transform group-hover:scale-110 shadow-sm
                     ${isDanger ? 'bg-red-50 text-red-600' : isPrimary ? 'bg-primary-50 text-primary-600' : 'bg-white text-gray-500'}`}>
-                    <Icon size={20} />
+                    {action.icon}
                   </div>
                   <div className="flex-1">
                     <div className="font-bold text-sm">{action.label}</div>

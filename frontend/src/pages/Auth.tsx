@@ -1,7 +1,7 @@
 import { API_BASE } from "../utils/api";
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock, User, AlertCircle, KeyRound, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, User, AlertCircle, KeyRound, Eye, EyeOff, Instagram } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -37,6 +37,7 @@ export const Auth: React.FC = () => {
   const [view, setView] = useState<ViewState>('login');
   const [emailLoading, setEmailLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [instagramLoading, setInstagramLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const { t, i18n } = useTranslation(['auth', 'common']);
 
@@ -46,6 +47,7 @@ export const Auth: React.FC = () => {
   const [resendCooldown, setResendCooldown] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(false);
 
   const navigate = useNavigate();
   const { user, verifyGoogleToken, loginUser, registerUser } = useAuth();
@@ -55,7 +57,12 @@ export const Auth: React.FC = () => {
   const browserInfo = detectBrowserInfo();
 
   useEffect(() => {
-    if (user) navigate('/gallery', { replace: true });
+    const params = new URLSearchParams(window.location.search);
+    const adminMode = params.get('admin') === 'true';
+    setIsAdminMode(adminMode);
+    if (user && !adminMode) {
+      navigate('/gallery', { replace: true });
+    }
   }, [user, navigate]);
 
   useEffect(() => {
@@ -117,6 +124,12 @@ export const Auth: React.FC = () => {
       if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
       doRedirectLogin();
     }
+  };
+
+  const handleInstagramSetup = () => {
+    setInstagramLoading(true);
+    setErrorMsg('');
+    window.location.assign(joinUrl(API_BASE, '/api/auth/instagram/login'));
   };
 
   const handleResendCode = async () => {
@@ -243,12 +256,13 @@ export const Auth: React.FC = () => {
         </div>
 
         {/* Right Panel */}
-        <div className="w-full md:w-1/2 flex flex-col justify-start items-center h-full relative pl-0 md:pl-16 pt-32 md:pt-28">
+        <div className="w-full md:w-1/2 flex flex-col justify-start items-center h-full relative pl-0 md:pl-16 pt-16 md:pt-28">
 
-          <div className="absolute top-8 right-0">
+          {/* Back to Home — fixed position, not absolute */}
+          <div className="w-full flex justify-end mb-6">
             <Link to="/"
-              className="inline-flex items-center gap-1.5 text-xs font-black text-gray-400 hover:text-gray-700 transition-colors uppercase tracking-widest">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-400 hover:text-gray-700 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M19 12H5M12 5l-7 7 7 7" />
               </svg>
               {t('auth:backToHome')}
@@ -275,7 +289,7 @@ export const Auth: React.FC = () => {
                 )}
                 <form onSubmit={handleSubmit} className="space-y-3">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:verifyAccount')}</label>
+                    <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wider ml-1">{t('auth:verifyAccount')}</label>
                     <div className="relative">
                       <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                       <input type="text" name="code" placeholder="123456" required maxLength={6}
@@ -285,7 +299,7 @@ export const Auth: React.FC = () => {
                   <button
                     type="submit"
                     disabled={emailLoading}
-                    className="w-full mt-2 px-8 py-4 text-lg font-black text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-xl shadow-primary-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full mt-2 px-8 py-4 text-base font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {emailLoading ? t('common:processing') : t('auth:verifyEmail')}
                   </button>
@@ -323,7 +337,7 @@ export const Auth: React.FC = () => {
                 )}
                 <form onSubmit={handleSubmit} className="space-y-3">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:verifyAccount')}</label>
+                    <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wider ml-1">{t('auth:verifyAccount')}</label>
                     <div className="relative">
                       <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                       <input type="text" name="code" placeholder="123456" required maxLength={6}
@@ -331,7 +345,7 @@ export const Auth: React.FC = () => {
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:newPassword')}</label>
+                    <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wider ml-1">{t('auth:newPassword')}</label>
                     <div className="relative">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                       <input type={showNewPassword ? 'text' : 'password'} name="password" placeholder="••••••••" required
@@ -346,7 +360,7 @@ export const Auth: React.FC = () => {
                   <button
                     type="submit"
                     disabled={emailLoading}
-                    className="w-full mt-2 px-8 py-4 text-lg font-black text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-xl shadow-primary-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full mt-2 px-8 py-4 text-base font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {emailLoading ? t('common:processing') : t('auth:resetPassword')}
                   </button>
@@ -371,7 +385,7 @@ export const Auth: React.FC = () => {
                 )}
                 <form onSubmit={handleSubmit} className="space-y-3">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:emailAddress')}</label>
+                    <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wider ml-1">{t('auth:emailAddress')}</label>
                     <div className="relative">
                       <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                       <input type="email" name="email" placeholder={t('auth:emailPlaceholder')} required
@@ -381,7 +395,7 @@ export const Auth: React.FC = () => {
                   <button
                     type="submit"
                     disabled={emailLoading}
-                    className="w-full mt-2 px-8 py-4 text-lg font-black text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-xl shadow-primary-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full mt-2 px-8 py-4 text-base font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {emailLoading ? t('common:processing') : t('auth:sendResetCode')}
                   </button>
@@ -395,7 +409,7 @@ export const Auth: React.FC = () => {
             {/* Login / Register */}
             {(view === 'login' || view === 'register') && (
               <>
-                <div className="text-center mb-8 -mt-6 md:mt-0 md:mb-6">
+                <div className="text-center mb-8 md:mb-6">
                   <h2 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">
                     {view === 'login' ? t('auth:welcome') : t('auth:createAccount')}
                   </h2>
@@ -407,15 +421,15 @@ export const Auth: React.FC = () => {
                   </div>
                 )}
 
-                <div className="relative mb-4 mt-3">
+                <div className="space-y-3 mb-4 mt-3">
                   <button
                     type="button"
                     onClick={handleGoogleLogin}
-                    disabled={googleLoading || emailLoading}
-                    className="w-full flex items-center justify-center gap-3 p-4 bg-white/40 hover:bg-white/80 text-gray-800 font-bold rounded-xl transition-all border border-gray-200 shadow-sm hover:shadow-lg hover:-translate-y-1 disabled:opacity-50 text-base"
+                    disabled={googleLoading || emailLoading || instagramLoading}
+                    className="w-full flex items-center justify-center gap-3 p-4 bg-white hover:bg-gray-50 text-gray-800 font-medium rounded-xl transition-all border border-gray-200 shadow-sm hover:shadow-md disabled:opacity-50 text-sm"
                   >
                     {googleLoading ? (
-                      <svg className="animate-spin w-5 h-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <svg className="animate-spin w-5 h-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                       </svg>
@@ -425,11 +439,24 @@ export const Auth: React.FC = () => {
                     <span>{googleLoading ? t('common:processing') : t('auth:googleContinue')}</span>
                   </button>
 
-                  {lastAuthMethod === 'google' && !googleLoading && (
-                    <span className="absolute -top-3.5 -right-1 translate-x-1 inline-flex items-center gap-1 bg-gray-900 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shadow-md pointer-events-none">
-                      <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
-                      {t('auth:lastUsed')}
-                    </span>
+                  {/* Instagram button — only visible in admin mode for Meta App Review */}
+                  {isAdminMode && (
+                    <button
+                      type="button"
+                      onClick={handleInstagramSetup}
+                      disabled={googleLoading || emailLoading || instagramLoading}
+                      className="w-full flex items-center justify-center gap-3 p-4 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 text-white font-medium rounded-xl transition-all shadow-md hover:shadow-xl disabled:opacity-50 text-sm"
+                    >
+                      {instagramLoading ? (
+                        <svg className="animate-spin w-5 h-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                        </svg>
+                      ) : (
+                        <Instagram size={20} />
+                      )}
+                      <span>Connect Instagram Business Account</span>
+                    </button>
                   )}
                 </div>
 
@@ -438,14 +465,14 @@ export const Auth: React.FC = () => {
                     <div className="w-full border-t border-gray-100" />
                   </div>
                   <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-white px-4 text-gray-400 font-black tracking-widest">{t('auth:emailContinue')}</span>
+                    <span className="bg-white px-4 text-gray-400 font-medium tracking-widest">{t('auth:emailContinue')}</span>
                   </div>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-3">
                   {view === 'register' && (
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:fullName')}</label>
+                      <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wider ml-1">{t('auth:fullName')}</label>
                       <div className="relative">
                         <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                         <input type="text" name="name" placeholder={t('auth:namePlaceholder')} required
@@ -455,7 +482,7 @@ export const Auth: React.FC = () => {
                   )}
 
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:emailAddress')}</label>
+                    <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wider ml-1">{t('auth:emailAddress')}</label>
                     <div className="relative">
                       <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                       <input type="email" name="email" placeholder={t('auth:emailPlaceholder')} required
@@ -464,7 +491,7 @@ export const Auth: React.FC = () => {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">{t('auth:password')}</label>
+                    <label className="text-[10px] font-medium text-gray-400 uppercase tracking-wider ml-1">{t('auth:password')}</label>
                     <div className="relative">
                       <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                       <input type={showPassword ? 'text' : 'password'} name="password" placeholder="••••••••" required
@@ -486,8 +513,8 @@ export const Auth: React.FC = () => {
 
                   <button
                     type="submit"
-                    disabled={emailLoading || googleLoading}
-                    className="w-full mt-4 px-8 py-4 text-lg font-black text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-xl shadow-primary-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={emailLoading || googleLoading || instagramLoading}
+                    className="w-full mt-4 px-8 py-4 text-base font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {emailLoading ? t('common:processing') : (view === 'login' ? t('common:signIn') : t('auth:createAccount'))}
                   </button>
@@ -495,7 +522,7 @@ export const Auth: React.FC = () => {
 
                 <div className="mt-5 text-center">
                   <button onClick={() => setView(view === 'login' ? 'register' : 'login')} type="button"
-                    className="text-base font-black hover:underline text-primary-600">
+                    className="text-sm font-medium hover:underline text-primary-600">
                     {view === 'login' ? t('auth:noAccount') : t('auth:backTo')}
                   </button>
                 </div>

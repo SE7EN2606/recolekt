@@ -1,253 +1,249 @@
-# fetcher_api/utils/ocr_utils.py
 """
-Video frame extraction for Mistral Vision OCR.
-
-Instead of a separate OCR step, we extract key frames from the video
-and send them as base64 images alongside the text prompt in Call 1.
-Mistral Small has vision capabilities and can read on-screen text
-(ingredient quantities, titles, instructions) directly from frames.
-
-Also retains the legacy maybe_ocr_and_merge_text for backward compat.
+OCR / frame extraction utilities.
 """
-
-import os
-import re
+from __future__ import annotations
 import base64
-import tempfile
-import subprocess
 import logging
-from typing import Optional, Tuple, Dict, List
+import math
+import os
+import subprocess
+import tempfile
+from typing import List, Optional
 
 logger = logging.getLogger("ocr_utils")
 
-MIN_TRANSCRIPT_CHARS_DEFAULT = 80
-MIN_CAPTION_SUBSTANCE_WORDS_DEFAULT = 18
 
-# Frame extraction settings
-MAX_FRAMES = 5
-FRAME_QUALITY = 60          # JPEG quality (lower = smaller, 60 is fine for text OCR)
-FRAME_MAX_WIDTH = 720       # Downscale to this width (saves tokens)
-FRAME_FORMAT = "jpg"
+# ── maybe_ocr_and_merge_text ──────────────────────────────────────────────────
+
+def maybe_ocr_and_merge_text(
+    transcript: str,
+    video_path: Optional[str] = None,
+    caption: str = "",
+    duration_seconds: int = None,
+    max_frames: int = 3,
+    min_transcript_chars: int = 80,
+) -> str:
+    """
+    If the transcript is too short to be useful, extract frames from the video
+    and attempt a basic OCR pass by returning the transcript unchanged but
+    augmented with any caption text.
+
+    This is a lightweight helper — full AI-based OCR happens inside the
+    extractor via frame images sent to the vision model. This function only
+    handles the pre-extraction merge step in processing.py.
+
+    Returns the best available text string for downstream processing.
+    """
+    transcript = (transcript or "").strip()
+    caption    = (caption or "").strip()
+
+    # Already have enough transcript — nothing to do
+    if len(transcript) >= min_transcript_chars:
+        return transcript
+
+    # Merge caption into transcript if transcript is thin
+    if caption and caption not in transcript:
+        merged = f"{transcript}\n{caption}".strip() if transcript else caption
+        logger.info(
+            "maybe_ocr_and_merge_text: transcript short (%d chars) — merged caption (%d chars)",
+            len(transcript), len(caption),
+        )
+        return merged
+
+    return transcript
 
 
-# ══════════════════════════════════════════════════════════════
-# FRAME EXTRACTION (NEW — for Mistral Vision)
-# ══════════════════════════════════════════════════════════════
+# ── Single frame extractor ────────────────────────────────────────────────────
 
 def extract_video_frames_base64(
     video_path: str,
-    duration_seconds: Optional[int] = None,
-    max_frames: int = MAX_FRAMES,
+    duration_seconds: int = None,
+    max_frames: int = 4,
+    is_silent: bool = False,
+    start_offset_seconds: float = 0.0,
 ) -> List[str]:
     """
-    Extract evenly-spaced frames from a video and return as base64 JPEG strings.
-    
-    Args:
-        video_path: Path to the video file
-        duration_seconds: Video duration (if known). If None, we probe it.
-        max_frames: Maximum number of frames to extract (default 5)
-    
-    Returns:
-        List of base64-encoded JPEG strings (ready for Mistral vision API)
+    Extract evenly-spaced frames as base64 JPEGs.
+    Frame 1 is always at start_offset + 2s to capture opening title cards.
     """
     if not video_path or not os.path.exists(video_path):
-        logger.warning("⚠️ Video not found for frame extraction: %s", video_path)
+        logger.warning("extract_video_frames_base64: video not found: %s", video_path)
         return []
 
     try:
-        # Get duration if not provided
         if not duration_seconds:
-            duration_seconds = _probe_duration(video_path)
-        
-        if not duration_seconds or duration_seconds <= 0:
-            logger.warning("⚠️ Could not determine video duration")
-            return []
+            probe = subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    video_path,
+                ],
+                capture_output=True, text=True, timeout=10,
+            )
+            duration_seconds = max(1, int(float(probe.stdout.strip() or "30")))
 
-        # Calculate frame timestamps — evenly spaced, skip first/last 10%
-        start = max(0.5, duration_seconds * 0.1)
-        end = max(start + 1, duration_seconds * 0.9)
-        
-        if duration_seconds <= 10:
-            # Short video: just grab 3 frames
-            timestamps = [
-                duration_seconds * 0.2,
-                duration_seconds * 0.5,
-                duration_seconds * 0.8,
-            ]
-            max_frames = min(max_frames, 3)
-        else:
-            # Normal video: evenly space frames
-            step = (end - start) / max(1, max_frames - 1)
-            timestamps = [start + (step * i) for i in range(max_frames)]
+        usable_duration = max(1, duration_seconds - start_offset_seconds)
+        first_ts  = start_offset_seconds + 2.0
+        remaining = max_frames - 1
+        interval  = (usable_duration - 2.0) / (remaining + 1) if remaining > 0 else usable_duration
+        timestamps = [first_ts] + [first_ts + interval * i for i in range(1, remaining + 1)]
 
-        # Extract frames with FFmpeg
-        frames_b64 = []
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            for i, ts in enumerate(timestamps[:max_frames]):
-                frame_path = os.path.join(tmp_dir, f"frame_{i}.{FRAME_FORMAT}")
-                
-                cmd = [
-                    "ffmpeg",
-                    "-hide_banner",
-                    "-loglevel", "error",
-                    "-ss", str(round(ts, 2)),
+        frames = []
+        for ts in timestamps:
+            ts = min(ts, duration_seconds - 0.5)
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                tmp_path = tmp.name
+            result = subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-ss", str(ts),
                     "-i", video_path,
-                    "-frames:v", "1",
-                    "-vf", f"scale={FRAME_MAX_WIDTH}:-2",  # Scale width, keep aspect ratio
-                    "-q:v", str(FRAME_QUALITY),
-                    "-y",
-                    frame_path,
-                ]
-                
-                result = subprocess.run(cmd, capture_output=True, timeout=10)
-                
-                if result.returncode == 0 and os.path.exists(frame_path):
-                    file_size = os.path.getsize(frame_path)
-                    if file_size > 500:  # Skip blank/corrupt frames
-                        with open(frame_path, "rb") as f:
-                            b64 = base64.b64encode(f.read()).decode("utf-8")
-                        frames_b64.append(b64)
+                    "-vframes", "1",
+                    "-q:v", "3",
+                    "-vf", "scale=960:-1",
+                    tmp_path,
+                ],
+                capture_output=True, timeout=15,
+            )
+            if result.returncode == 0 and os.path.exists(tmp_path):
+                with open(tmp_path, "rb") as f:
+                    frames.append(base64.b64encode(f.read()).decode())
+                os.unlink(tmp_path)
 
         logger.info(
-            "🎞️ Extracted %d/%d frames from video (%ds)",
-            len(frames_b64), max_frames, duration_seconds
+            "extract_video_frames_base64: %d/%d frames at %s",
+            len(frames), max_frames,
+            [f"{t:.1f}s" for t in timestamps[:len(frames)]],
         )
-        return frames_b64
+        return frames
 
-    except subprocess.TimeoutExpired:
-        logger.error("❌ FFmpeg timeout during frame extraction")
-        return []
-    except Exception as e:
-        logger.error("❌ Frame extraction failed: %s", e)
+    except Exception as exc:
+        logger.warning("extract_video_frames_base64: failed: %s", exc)
         return []
 
 
-def _probe_duration(video_path: str) -> Optional[int]:
-    """Get video duration in seconds using ffprobe."""
+# ── Frame stitching ───────────────────────────────────────────────────────────
+
+def stitch_frames_into_composites(
+    frames: List[str],
+    frames_per_composite: int = 3,
+    target_height: int = 270,
+) -> List[str]:
+    """
+    Stitch base64 frames horizontally into composite images.
+
+    Example: 12 frames + frames_per_composite=3 → 4 composite images.
+    Each composite shows `frames_per_composite` time-consecutive frames side by side.
+    This lets you stay within the 4-image API limit while giving the model
+    visual coverage of 12 time points in the video.
+
+    Requires: Pillow (pip install Pillow)
+    Falls back to returning the first 4 raw frames if Pillow is not installed.
+    """
     try:
-        result = subprocess.run(
-            [
-                "ffprobe",
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                video_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return int(float(result.stdout.strip()))
-    except Exception:
-        pass
-    return None
+        from PIL import Image
+        import io
+    except ImportError:
+        logger.warning("stitch_frames: Pillow not installed — falling back to first 4 raw frames")
+        return frames[:4]
 
+    if not frames:
+        return []
+
+    composites: List[str] = []
+    n_groups = math.ceil(len(frames) / frames_per_composite)
+
+    for g in range(n_groups):
+        group = frames[g * frames_per_composite : (g + 1) * frames_per_composite]
+        pil_imgs = []
+        for b64 in group:
+            try:
+                img = Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
+                pil_imgs.append(img)
+            except Exception as exc:
+                logger.warning("stitch_frames: could not decode frame: %s", exc)
+
+        if not pil_imgs:
+            continue
+
+        resized = []
+        for img in pil_imgs:
+            ratio = target_height / img.height
+            new_w = max(1, int(img.width * ratio))
+            resized.append(img.resize((new_w, target_height), Image.LANCZOS))
+
+        total_w   = sum(img.width for img in resized)
+        composite = Image.new("RGB", (total_w, target_height), (30, 30, 30))
+        x = 0
+        for img in resized:
+            composite.paste(img, (x, 0))
+            x += img.width
+
+        buf = io.BytesIO()
+        composite.save(buf, format="JPEG", quality=85)
+        composites.append(base64.b64encode(buf.getvalue()).decode())
+        logger.info(
+            "stitch_frames: composite %d/%d — %d frames → %dx%d JPEG",
+            g + 1, n_groups, len(resized), total_w, target_height,
+        )
+
+    return composites
+
+
+# ── Convenience: extract + stitch in one call ─────────────────────────────────
+
+def extract_and_stitch_frames(
+    video_path: str,
+    duration_seconds: int = None,
+    n_raw_frames: int = 12,
+    n_composites: int = 4,
+    is_silent: bool = False,
+    start_offset_seconds: float = 0.0,
+) -> List[str]:
+    """
+    Extract `n_raw_frames` frames then stitch them into `n_composites` composites.
+
+    Example: n_raw_frames=12, n_composites=4 → 4 composites of 3 frames each.
+    Send the returned list directly to the AI — same 4-image limit, 3x the coverage.
+    """
+    frames_per_composite = math.ceil(n_raw_frames / n_composites)
+    raw = extract_video_frames_base64(
+        video_path,
+        duration_seconds=duration_seconds,
+        max_frames=n_raw_frames,
+        is_silent=is_silent,
+        start_offset_seconds=start_offset_seconds,
+    )
+    if not raw:
+        return []
+
+    composites = stitch_frames_into_composites(
+        raw, frames_per_composite=frames_per_composite
+    )
+    logger.info(
+        "extract_and_stitch: %d raw frames → %d composites (%d frames each)",
+        len(raw), len(composites), frames_per_composite,
+    )
+    return composites
+
+
+# ── Helpers used by the extractor ────────────────────────────────────────────
 
 def should_extract_frames(
-    transcript_text: str,
-    caption_text: str,
-    content_type: str = "general",
+    transcript: str,
+    caption: str,
+    content_type: str,
+    transcription_status: str = "",
 ) -> bool:
-    """
-    Decide whether to extract video frames for vision OCR.
-    
-    We extract frames when:
-    - Transcript is short/empty (no speech = text is on screen)
-    - OR content is a recipe (quantities might be on screen even with speech)
-    - OR caption is low-signal (not much text context available)
-    
-    We skip when:
-    - Both transcript and caption are rich (enough text context already)
-    """
-    transcript = (transcript_text or "").strip()
-    caption = (caption_text or "").strip()
-    
-    transcript_short = len(transcript) < MIN_TRANSCRIPT_CHARS_DEFAULT
-    caption_low = caption_is_low_signal(caption)
-    
-    # Always extract for recipes — quantities are often only on screen
-    if content_type == "recipe":
+    if transcription_status == "music_only":
         return True
-    
-    # Extract if transcript is empty/short
-    if transcript_short:
+    if content_type in ("recipe", "workout"):
         return True
-    
-    # Extract if caption is low-signal (even with transcript, screen text helps)
-    if caption_low and len(transcript) < 300:
+    if len(transcript.strip()) < 100 and len(caption.strip()) < 50:
         return True
-    
     return False
 
 
-# ══════════════════════════════════════════════════════════════
-# LEGACY HELPERS (kept for backward compat)
-# ══════════════════════════════════════════════════════════════
-
-def _strip_caption_noise(text: str) -> str:
-    if not text:
-        return ""
-    t = text
-    t = re.sub(r"https?://\S+", " ", t)
-    t = re.sub(r"@\w+", " ", t)
-    t = re.sub(r"#\w+", " ", t)
-    t = re.sub(r"(\.\s*){2,}", " ", t)
-    t = re.sub(r"[_*~`]+", " ", t)
-    t = re.sub(r"\s+", " ", t).strip()
-    return t
-
-
-def _caption_substance_words(caption_text: str) -> List[str]:
-    cleaned = _strip_caption_noise(caption_text).lower()
-    cleaned = re.sub(r"[^a-z0-9\s]+", " ", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    if not cleaned:
-        return []
-    return [w for w in cleaned.split() if len(w) >= 3]
-
-
-def caption_is_low_signal(
-    caption_text: str,
-    min_substance_words: int = MIN_CAPTION_SUBSTANCE_WORDS_DEFAULT,
-) -> bool:
-    words = _caption_substance_words(caption_text or "")
-    return len(words) < min_substance_words
-
-
-def should_try_ocr(
-    transcript_text: str,
-    caption_text: str,
-    min_transcript_chars: int = MIN_TRANSCRIPT_CHARS_DEFAULT,
-    min_caption_substance_words: int = MIN_CAPTION_SUBSTANCE_WORDS_DEFAULT,
-) -> bool:
-    t = (transcript_text or "").strip()
-    c = (caption_text or "").strip()
-    transcript_short = len(t) < min_transcript_chars
-    caption_low = caption_is_low_signal(c, min_substance_words=min_caption_substance_words)
-    return transcript_short and caption_low
-
-
-def maybe_ocr_and_merge_text(
-    transcript_text: str,
-    caption_text: str,
-    thumbnail_bytes: Optional[bytes] = None,
-    thumbnail_uri: Optional[str] = None,
-    ocr_mode: str = "document",
-    min_transcript_chars: int = MIN_TRANSCRIPT_CHARS_DEFAULT,
-    min_caption_substance_words: int = MIN_CAPTION_SUBSTANCE_WORDS_DEFAULT,
-) -> Tuple[str, Dict]:
-    """
-    Legacy OCR merge function — kept for backward compat.
-    Now primarily used as a passthrough since vision OCR is handled
-    in the Mistral call directly.
-    """
-    transcript_text = transcript_text or ""
-    caption_text = caption_text or ""
-
-    dbg: Dict = {
-        "did_ocr": False,
-        "reason": "Vision OCR now handled in Mistral call",
-    }
-
-    return transcript_text, dbg
+def is_silent_video(video_path: str, transcript: str) -> bool:
+    return len(transcript.strip()) < 20

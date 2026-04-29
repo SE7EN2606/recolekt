@@ -1,7 +1,20 @@
+import path from "path";
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+const googleMapsKey =
+  process.env.VITE_GOOGLE_MAPS_API_KEY ||
+  process.env.VITE_GOOGLE_MAPS_KEY ||
+  process.env.VITE_GOOGLE_API_KEY ||
+  '';
+
+if (process.env.NODE_ENV === 'production' && !googleMapsKey) {
+  throw new Error(
+    'Missing VITE_GOOGLE_MAPS_API_KEY. Set it on the Railway frontend service/build environment.',
+  );
+}
 
 export default defineConfig({
   plugins: [
@@ -11,18 +24,26 @@ export default defineConfig({
       registerType: 'autoUpdate',
       devOptions: { enabled: true },
       includeAssets: [
-        'favicon.ico', 
-        'apple-touch-icon.png', 
+        'favicon.ico',
+        'apple-touch-icon.png',
         'favicon-96x96.png'
       ],
       workbox: {
         cleanupOutdatedCaches: true,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg,json}'],
+        // Exclude large images from precache — only cache app shell
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
+        globIgnores: [
+          '**/assets/recolekt_logo_black*',
+          '**/assets/rekolekt_logo_white*',
+          '**/assets/recolekt_logo_white*',
+          '**/*.webp',
+        ],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3MB cap per file
         navigateFallback: '/index.html',
-        navigateFallbackAllowlist: [/^\/(?!legal).*/],  // ✅ exclude /legal from SW intercept
+        navigateFallbackAllowlist: [/^\/(?!legal).*/],
       },
       manifest: {
-        id: '/?v=26',
+        id: '/?v=27',
         name: 'Recolekt',
         short_name: 'Recolekt',
         description: 'Your personal video organizer',
@@ -47,6 +68,28 @@ export default defineConfig({
       }
     })
   ],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React core
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          // Maps (heavy)
+          'vendor-leaflet': ['leaflet', 'react-leaflet'],
+          // i18n
+          'vendor-i18n': ['i18next', 'react-i18next'],
+          // UI icons
+          'vendor-icons': ['lucide-react'],
+        },
+      },
+    },
+  },
   server: {
     port: 3000,
     proxy: {

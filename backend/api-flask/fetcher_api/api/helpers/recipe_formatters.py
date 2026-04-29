@@ -29,7 +29,7 @@ We support BOTH:
    Caption:
        Ingrédients :
        Îles flottantes :
-       4 blancs d’œuf
+       4 blancs d'œuf
        60 g de sucre en poudre
        Sauce mangue passion :
        ...
@@ -199,12 +199,12 @@ def _normalize_ingredient_groups(groups: Any) -> List[Dict[str, Any]]:
 
 def _extract_caption_sections(caption: Optional[str]) -> List[Tuple[str, int]]:
     """
-    From a caption string, detect ingredient section headings and counts:
+    From a caption string, detect ingredient section headings and counts.
 
     Example caption:
         Ingrédients :
         Îles flottantes :
-        4 blancs d’œuf
+        4 blancs d'œuf
         60 g de sucre en poudre
         Sauce mangue passion :
         ...
@@ -372,8 +372,9 @@ def normalize_recipe(recipe_obj: Any, caption: Optional[str] = None) -> Any:
                 continue
 
             if len(ings) < total_lines:
-                # Caption claims more lines than we have ingredients => unsafe
-                logger.info(
+                # Caption claims more lines than we have ingredients — expected
+                # for non-recipe content, not a real error. Log at DEBUG only.
+                logger.debug(
                     f"[recipe] Caption sections ({total_lines} lines) "
                     f"exceed ingredient count ({len(ings)}) for '{lang}', skipping grouping."
                 )

@@ -6,37 +6,75 @@
     <title>Recolekt Admin</title>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
+        :root {
+            --bg:#0a0a0a;
+            --panel:#141414;
+            --panel-2:#171717;
+            --border:#222;
+            --border-2:#2c2c2c;
+            --text:#e5e5e5;
+            --muted:#7a7a7a;
+            --muted-2:#555;
+            --green:#4ade80;
+            --green-bg:#16a34a22;
+            --blue:#60a5fa;
+            --blue-bg:#1d4ed822;
+            --purple:#a78bfa;
+            --purple-bg:#7c3aed22;
+            --yellow:#fbbf24;
+            --yellow-bg:#d9770622;
+            --red:#f87171;
+            --red-bg:#dc262622;
+            --orange:#fb923c;
+            --orange-bg:#ea580c22;
+            --shadow: 0 18px 60px rgba(0,0,0,0.45);
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #0a0a0a;
-            color: #e5e5e5;
+            background: var(--bg);
+            color: var(--text);
             min-height: 100vh;
             padding: 32px 24px;
         }
         .header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 8px;
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            margin-bottom:8px;
+            gap:16px;
+            flex-wrap:wrap;
         }
         .header h1 { font-size:22px; font-weight:700; color:white; }
+        .header-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
         .badge-green {
-            background:#16a34a22; color:#4ade80;
+            background:var(--green-bg); color:var(--green);
             border:1px solid #16a34a44;
             padding:4px 12px; border-radius:999px;
             font-size:12px; font-weight:600;
         }
         .badge-blue {
             display:inline-block; padding:2px 8px;
-            border-radius:4px; font-size:11px; font-weight:700;
-            background:#1d4ed822; color:#60a5fa;
+            border-radius:999px; font-size:11px; font-weight:700;
+            background:var(--blue-bg); color:var(--blue);
             border:1px solid #1d4ed844;
         }
-        .timestamp { font-size:12px; color:#555; margin-bottom:32px; }
+        .badge-pro {
+            display:inline-block; padding:3px 8px;
+            border-radius:999px; font-size:11px; font-weight:700;
+            background:var(--purple-bg); color:var(--purple);
+            border:1px solid #7c3aed44;
+        }
+        .badge-free {
+            display:inline-block; padding:3px 8px;
+            border-radius:999px; font-size:11px; font-weight:700;
+            background:#222; color:#aaa;
+            border:1px solid #333;
+        }
+        .timestamp { font-size:12px; color:var(--muted-2); margin-bottom:32px; }
         .section-title {
             font-size:11px; font-weight:700;
             text-transform:uppercase; letter-spacing:0.1em;
-            color:#555; margin-bottom:12px; margin-top:32px;
+            color:var(--muted-2); margin-bottom:12px; margin-top:32px;
         }
         .grid {
             display:grid;
@@ -44,55 +82,268 @@
             gap:12px;
         }
         .card {
-            background:#141414; border:1px solid #222;
-            border-radius:12px; padding:20px;
+            background:var(--panel); border:1px solid var(--border);
+            border-radius:16px; padding:20px;
         }
         .card .label {
-            font-size:11px; color:#555; font-weight:600;
+            font-size:11px; color:var(--muted-2); font-weight:600;
             text-transform:uppercase; letter-spacing:0.08em;
             margin-bottom:8px;
         }
         .card .value { font-size:28px; font-weight:800; color:white; }
-        .card .sub { font-size:12px; color:#555; margin-top:4px; }
+        .card .sub { font-size:12px; color:var(--muted-2); margin-top:4px; }
         .card.green { border-color:#16a34a33; }
-        .card.green .value { color:#4ade80; }
+        .card.green .value { color:var(--green); }
         .card.purple { border-color:#7c3aed33; }
-        .card.purple .value { color:#a78bfa; }
+        .card.purple .value { color:var(--purple); }
         .card.blue { border-color:#1d4ed833; }
-        .card.blue .value { color:#60a5fa; }
+        .card.blue .value { color:var(--blue); }
         .card.yellow { border-color:#d9770633; }
-        .card.yellow .value { color:#fbbf24; }
+        .card.yellow .value { color:var(--yellow); }
         .card.red { border-color:#dc262633; }
-        .card.red .value { color:#f87171; }
+        .card.red .value { color:var(--red); }
         .card.orange { border-color:#ea580c33; }
-        .card.orange .value { color:#fb923c; }
+        .card.orange .value { color:var(--orange); }
         .card.wide { grid-column: span 2; }
+        .refresh-btn,
+        .btn-delete,
+        .btn-tier,
+        .modal-btn {
+            border:none;
+            cursor:pointer;
+            border-radius:12px;
+            transition: transform .15s ease, opacity .15s ease, background .15s ease;
+        }
+        .refresh-btn:hover,
+        .btn-delete:hover,
+        .btn-tier:hover,
+        .modal-btn:hover { transform: translateY(-1px); }
+        .refresh-btn {
+            background:#1a1a1a; color:#ddd;
+            border:1px solid #333; padding:8px 16px;
+            font-size:13px;
+        }
+        .refresh-btn:hover { background:#222; color:white; }
+        .error-text { color:var(--red); font-size:12px; margin-top:4px; }
+        .users-toolbar {
+            display:flex;
+            gap:12px;
+            flex-wrap:wrap;
+            align-items:center;
+            margin-bottom:12px;
+        }
+        .users-toolbar label {
+            font-size:12px;
+            color:#aaa;
+            display:flex;
+            gap:8px;
+            align-items:center;
+        }
+        .users-toolbar select {
+            background:#111;
+            color:#e5e5e5;
+            border:1px solid #2a2a2a;
+            border-radius:10px;
+            padding:8px 10px;
+            font-size:12px;
+        }
+        .users-meta {
+            font-size:12px;
+            color:#666;
+            margin-bottom:8px;
+        }
         .users-table { width:100%; border-collapse:collapse; margin-top:4px; }
         .users-table th {
             text-align:left; font-size:11px; color:#555;
             font-weight:600; text-transform:uppercase;
-            letter-spacing:0.08em; padding:8px 12px;
+            letter-spacing:0.08em; padding:10px 12px;
             border-bottom:1px solid #222;
         }
         .users-table td {
-            padding:10px 12px; font-size:13px; color:#ccc;
+            padding:12px; font-size:13px; color:#ccc;
             border-bottom:1px solid #1a1a1a;
+            vertical-align:middle;
         }
         .users-table tr:last-child td { border-bottom:none; }
-        .refresh-btn {
-            background:#1a1a1a; color:#aaa;
-            border:1px solid #333; padding:8px 16px;
-            border-radius:8px; font-size:13px; cursor:pointer;
+        .btn-tier {
+            font-size:11px; font-weight:700;
+            padding:7px 10px;
+            min-width:74px;
         }
-        .refresh-btn:hover { background:#222; color:white; }
-        .error-text { color:#f87171; font-size:12px; margin-top:4px; }
+        .btn-tier.is-free {
+            background:var(--purple-bg); color:var(--purple); border:1px solid #7c3aed44;
+        }
+        .btn-tier.is-pro {
+            background:#242424; color:#ddd; border:1px solid #3a3a3a;
+        }
+        .btn-delete {
+            font-size:11px; font-weight:700;
+            padding:7px 10px;
+            border:1px solid #dc262633;
+            background:#dc262611; color:var(--red);
+        }
+        .mini-grid {
+            display:grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap:12px;
+        }
+        .mini-card {
+            background:var(--panel-2);
+            border:1px solid var(--border-2);
+            border-radius:16px;
+            padding:18px 16px;
+            min-height:120px;
+            display:flex;
+            flex-direction:column;
+            justify-content:space-between;
+            gap:12px;
+        }
+        .mini-card-head {
+            display:flex;
+            align-items:center;
+            gap:12px;
+        }
+        .mini-icon {
+            width:42px;
+            height:42px;
+            border-radius:12px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:18px;
+            flex-shrink:0;
+        }
+        .mini-icon svg {
+            width:22px;
+            height:22px;
+            display:block;
+        }
+        .mini-title {
+            font-size:13px;
+            font-weight:700;
+            color:#f0f0f0;
+            line-height:1.2;
+        }
+        .mini-count {
+            font-size:30px;
+            font-weight:800;
+            color:white;
+        }
+        .mini-sub {
+            font-size:11px;
+            color:#666;
+            text-transform:uppercase;
+            letter-spacing:0.08em;
+        }
+        .mistral-note {
+            margin-top:10px;
+            background:#151515;
+            border:1px solid #2a2a2a;
+            color:#bdbdbd;
+            font-size:12px;
+            padding:12px 14px;
+            border-radius:12px;
+        }
+        .mistral-note.error {
+            border-color:#dc262633;
+            background:#dc262611;
+            color:#f5b5b5;
+        }
+        .toast-wrap {
+            position:fixed;
+            right:20px;
+            bottom:20px;
+            display:flex;
+            flex-direction:column;
+            gap:10px;
+            z-index:1000;
+        }
+        .toast {
+            min-width:260px;
+            max-width:360px;
+            background:#161616;
+            border:1px solid #2a2a2a;
+            color:#f0f0f0;
+            border-radius:14px;
+            padding:14px 16px;
+            box-shadow:var(--shadow);
+            animation:toastIn .18s ease;
+        }
+        .toast.success { border-color:#16a34a33; }
+        .toast.error { border-color:#dc262633; }
+        .toast-title { font-size:13px; font-weight:700; margin-bottom:4px; }
+        .toast-text { font-size:12px; color:#b5b5b5; line-height:1.45; }
+        @keyframes toastIn {
+            from { opacity:0; transform:translateY(8px); }
+            to { opacity:1; transform:translateY(0); }
+        }
+        .modal-backdrop {
+            position:fixed;
+            inset:0;
+            background:rgba(0,0,0,0.6);
+            display:none;
+            align-items:center;
+            justify-content:center;
+            padding:24px;
+            z-index:999;
+        }
+        .modal-backdrop.show { display:flex; }
+        .modal {
+            width:min(100%, 460px);
+            background:#111;
+            border:1px solid #2b2b2b;
+            border-radius:22px;
+            box-shadow:var(--shadow);
+            overflow:hidden;
+        }
+        .modal-header {
+            padding:20px 22px 10px;
+            font-size:18px;
+            font-weight:700;
+            color:#fff;
+        }
+        .modal-body {
+            padding:0 22px 22px;
+            font-size:14px;
+            line-height:1.55;
+            color:#bdbdbd;
+        }
+        .modal-actions {
+            display:flex;
+            justify-content:flex-end;
+            gap:10px;
+            padding:0 22px 22px;
+        }
+        .modal-btn {
+            padding:10px 16px;
+            font-size:13px;
+            font-weight:700;
+        }
+        .modal-btn.secondary {
+            background:#1f1f1f;
+            color:#ddd;
+            border:1px solid #333;
+        }
+        .modal-btn.primary {
+            background:#2563eb;
+            color:white;
+            border:1px solid #2e6aeb;
+        }
+        @media (max-width: 860px) {
+            body { padding:20px 14px; }
+            .card.wide { grid-column:span 1; }
+            .mini-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 520px) {
+            .mini-grid { grid-template-columns: 1fr 1fr; }
+            .modal { border-radius:18px; }
+        }
     </style>
 </head>
 <body>
-
     <div class="header">
         <div><h1>⚡ Recolekt Admin</h1></div>
-        <div style="display:flex;gap:8px;align-items:center;">
+        <div class="header-actions">
             <span class="badge-blue" id="env-badge">...</span>
             <span class="badge-green" id="status-badge">● online</span>
             <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
@@ -100,7 +351,6 @@
     </div>
     <div class="timestamp" id="timestamp">Loading...</div>
 
-    <!-- USERS -->
     <div class="section-title">👥 Users</div>
     <div class="grid">
         <div class="card green">
@@ -113,7 +363,6 @@
         </div>
     </div>
 
-    <!-- REELS -->
     <div class="section-title">🎬 Reels</div>
     <div class="grid">
         <div class="card purple">
@@ -130,30 +379,31 @@
         </div>
     </div>
 
-    <!-- MISTRAL -->
     <div class="section-title">🤖 Mistral AI</div>
     <div class="grid">
         <div class="card yellow">
-            <div class="label">Calls Today</div>
-            <div class="value" id="mistral-calls">—</div>
-            <div class="sub" id="mistral-remaining">— remaining</div>
+            <div class="label">Status</div>
+            <div class="value" id="mistral-status" style="font-size:22px;">—</div>
+            <div class="sub" id="mistral-key-prefix">—</div>
         </div>
         <div class="card blue">
-            <div class="label">Tokens Today (est.)</div>
-            <div class="value" id="mistral-tokens">—</div>
+            <div class="label">Calls Today</div>
+            <div class="value" id="mistral-calls">—</div>
+            <div class="sub">Usage stats placeholder</div>
         </div>
         <div class="card green">
-            <div class="label">Tokens This Month</div>
-            <div class="value" id="mistral-month">—</div>
+            <div class="label">Tokens Today (est.)</div>
+            <div class="value" id="mistral-tokens">—</div>
+            <div class="sub">Not available from this admin check</div>
         </div>
         <div class="card red">
             <div class="label">Errors Today</div>
             <div class="value" id="mistral-errors">—</div>
+            <div class="sub" id="mistral-last-call">Last call: —</div>
         </div>
     </div>
-    <div style="margin-top:8px;font-size:12px;color:#555;" id="mistral-last-call">Last call: —</div>
+    <div class="mistral-note" id="mistral-note">Checking Mistral connection...</div>
 
-    <!-- DEEPGRAM -->
     <div class="section-title">🎙️ Deepgram</div>
     <div class="grid">
         <div class="card green">
@@ -176,7 +426,6 @@
         </div>
     </div>
 
-    <!-- GCS -->
     <div class="section-title">☁️ Google Cloud Storage</div>
     <div class="grid">
         <div class="card blue">
@@ -207,7 +456,20 @@
         </div>
     </div>
 
-    <!-- NEWEST USERS -->
+    <div class="section-title">📱 Reels by Platform</div>
+    <div class="card">
+        <div class="mini-grid" id="platform-grid">
+            <div class="mini-card"><div class="mini-title">Loading...</div></div>
+        </div>
+    </div>
+
+    <div class="section-title">🗂️ Reels by Content Type</div>
+    <div class="card">
+        <div class="mini-grid" id="type-grid">
+            <div class="mini-card"><div class="mini-title">Loading...</div></div>
+        </div>
+    </div>
+
     <div class="section-title">🆕 Newest Users</div>
     <div class="card">
         <table class="users-table">
@@ -220,7 +482,49 @@
         </table>
     </div>
 
-    <!-- SERVER -->
+    <div class="section-title">👤 Users Summary</div>
+    <div class="card">
+        <div class="users-toolbar">
+            <label>Filter tier
+                <select id="users-filter-tier">
+                    <option value="">All</option>
+                    <option value="free">Free</option>
+                    <option value="pro">Pro</option>
+                </select>
+            </label>
+            <label>Sort by
+                <select id="users-sort-by">
+                    <option value="last_saved_at_desc">Last saved desc</option>
+                    <option value="created_at_desc">Created desc</option>
+                    <option value="saved_count_desc">Saved count desc</option>
+                    <option value="done_count_desc">Done count desc</option>
+                </select>
+            </label>
+        </div>
+        <div class="users-meta" id="users-summary-status">Loading...</div>
+        <div style="overflow-x:auto;">
+            <table class="users-table" id="users-summary-table">
+                <thead>
+                    <tr>
+                        <th>User ID</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Tier</th>
+                        <th>Saved</th>
+                        <th>Done</th>
+                        <th>Created</th>
+                        <th>Last Active</th>
+                        <th>Last Saved</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="10" style="color:#555;">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <div class="section-title">🖥️ Server</div>
     <div class="grid">
         <div class="card">
@@ -237,8 +541,23 @@
         Recolekt Admin · Auto-refreshes every 30s
     </div>
 
+    <div class="toast-wrap" id="toast-wrap"></div>
+
+    <div class="modal-backdrop" id="confirm-modal">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+            <div class="modal-header" id="confirm-title">Please confirm</div>
+            <div class="modal-body" id="confirm-message">Are you sure?</div>
+            <div class="modal-actions">
+                <button class="modal-btn secondary" id="confirm-cancel">Cancel</button>
+                <button class="modal-btn primary" id="confirm-ok">Confirm</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const KEY = "{{admin_key}}";
+        let usersSummary = [];
+        let usersSummaryGeneratedAt = null;
 
         function fmt(n) {
             if (n === null || n === undefined || n === "n/a") return "—";
@@ -248,7 +567,9 @@
 
         function fmtDate(iso) {
             if (!iso) return "—";
-            return new Date(iso).toLocaleString();
+            const d = new Date(iso);
+            if (Number.isNaN(d.getTime())) return "—";
+            return d.toLocaleString();
         }
 
         function fmtMb(mb) {
@@ -256,11 +577,236 @@
             return mb >= 1000 ? (mb / 1024).toFixed(2) + " GB" : mb.toFixed(1) + " MB";
         }
 
+        function showToast(title, text, type = "success") {
+            const wrap = document.getElementById("toast-wrap");
+            const el = document.createElement("div");
+            el.className = `toast ${type}`;
+            el.innerHTML = `<div class="toast-title">${title}</div><div class="toast-text">${text}</div>`;
+            wrap.appendChild(el);
+            setTimeout(() => {
+                el.style.opacity = "0";
+                el.style.transform = "translateY(6px)";
+                setTimeout(() => el.remove(), 180);
+            }, 3200);
+        }
+
+        function confirmDialog(message, title = "Please confirm") {
+            return new Promise((resolve) => {
+                const modal = document.getElementById("confirm-modal");
+                const titleEl = document.getElementById("confirm-title");
+                const msgEl = document.getElementById("confirm-message");
+                const okBtn = document.getElementById("confirm-ok");
+                const cancelBtn = document.getElementById("confirm-cancel");
+
+                const close = (value) => {
+                    modal.classList.remove("show");
+                    okBtn.onclick = null;
+                    cancelBtn.onclick = null;
+                    modal.onclick = null;
+                    document.onkeydown = null;
+                    resolve(value);
+                };
+
+                titleEl.textContent = title;
+                msgEl.textContent = message;
+                modal.classList.add("show");
+
+                okBtn.onclick = () => close(true);
+                cancelBtn.onclick = () => close(false);
+                modal.onclick = (e) => {
+                    if (e.target === modal) close(false);
+                };
+                document.onkeydown = (e) => {
+                    if (e.key === "Escape") close(false);
+                };
+            });
+        }
+
+        function iconPlatform(name) {
+            const icons = {
+                Facebook: {
+                    bg: "#1877f222",
+                    color: "#60a5fa",
+                    svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 22v-8h2.7l.4-3h-3.1V9.1c0-.9.3-1.6 1.6-1.6H16.7V4.8c-.3 0-1.4-.1-2.6-.1-2.6 0-4.3 1.6-4.3 4.5V11H7v3h2.8v8h3.7Z"/></svg>'
+                },
+                Instagram: {
+                    bg: "#fb923c22",
+                    color: "#fb923c",
+                    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>'
+                },
+                YouTube: {
+                    bg: "#ef444422",
+                    color: "#f87171",
+                    svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.6 7.2a2.9 2.9 0 0 0-2-2C17.9 4.7 12 4.7 12 4.7s-5.9 0-7.6.5a2.9 2.9 0 0 0-2 2A30.8 30.8 0 0 0 2 12a30.8 30.8 0 0 0 .4 4.8 2.9 2.9 0 0 0 2 2c1.7.5 7.6.5 7.6.5s5.9 0 7.6-.5a2.9 2.9 0 0 0 2-2A30.8 30.8 0 0 0 22 12a30.8 30.8 0 0 0-.4-4.8ZM10 15.5v-7l6 3.5-6 3.5Z"/></svg>'
+                },
+                TikTok: {
+                    bg: "#a855f722",
+                    color: "#c084fc",
+                    svg: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.5 3c.3 2 1.5 3.6 3.4 4.5.9.4 1.8.6 2.8.7v3.1c-1.7-.1-3.4-.6-4.9-1.5v6.1a5.9 5.9 0 1 1-5.9-5.9c.4 0 .8 0 1.2.1v3.2a2.8 2.8 0 1 0 1.6 2.6V3h2.8Z"/></svg>'
+                },
+                Other: {
+                    bg: "#333333",
+                    color: "#bcbcbc",
+                    svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18"/><path d="M12 3a15 15 0 0 0 0 18"/></svg>'
+                }
+            };
+            return icons[name] || icons.Other;
+        }
+
+        function iconType(name) {
+            const icons = {
+                "General": { bg:"#2a2a2a", color:"#d4d4d4", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M8 9h8"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>' },
+                "Recipe": { bg:"#16a34a22", color:"#4ade80", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11h16"/><path d="M6 11a6 6 0 1 0 12 0"/><path d="M8 6V4"/><path d="M12 6V3"/><path d="M16 6V4"/></svg>' },
+                "Products": { bg:"#ea580c22", color:"#fb923c", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 7 12 4l6 3"/><path d="M6 7v10l6 3 6-3V7"/><path d="M12 20V10"/></svg>' },
+                "Workout": { bg:"#3b82f622", color:"#60a5fa", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10v4"/><path d="M7 7v10"/><path d="M17 7v10"/><path d="M21 10v4"/><path d="M7 12h10"/><path d="M3 12h4"/><path d="M17 12h4"/></svg>' },
+                "List / Ranking": { bg:"#a855f722", color:"#c084fc", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h12"/><path d="M8 12h12"/><path d="M8 18h12"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>' },
+                "Places": { bg:"#f59e0b22", color:"#fbbf24", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-6-4.35-6-10a6 6 0 1 1 12 0c0 5.65-6 10-6 10Z"/><circle cx="12" cy="11" r="2.5"/></svg>' },
+                "Software / Tools": { bg:"#06b6d422", color:"#22d3ee", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14.7 6.3 3 3"/><path d="M4 20l4.5-1 9.2-9.2a2.1 2.1 0 0 0-3-3L5.5 16 4 20Z"/></svg>' },
+                "Finance": { bg:"#22c55e22", color:"#86efac", svg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14.5a3.5 3.5 0 0 1 0 7H6"/></svg>' }
+            };
+            return icons[name] || icons["General"];
+        }
+
+        function renderSquareGrid(containerId, rows, labelKey, countKey, iconResolver, subtitle) {
+            const el = document.getElementById(containerId);
+            if (!el) return;
+            if (!rows || !rows.length) {
+                el.innerHTML = '<div class="mini-card"><div class="mini-title">No data</div></div>';
+                return;
+            }
+            el.innerHTML = rows.map(row => {
+                const label = row[labelKey] || "Unknown";
+                const count = row[countKey] || 0;
+                const icon = iconResolver(label);
+                return `
+                    <div class="mini-card">
+                        <div class="mini-card-head">
+                            <div class="mini-icon" style="background:${icon.bg};color:${icon.color};">${icon.svg}</div>
+                            <div class="mini-title">${label}</div>
+                        </div>
+                        <div>
+                            <div class="mini-count">${count}</div>
+                            <div class="mini-sub">${subtitle}</div>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
+
+        function sortUsers(list) {
+            const tierFilter = document.getElementById("users-filter-tier")?.value || "";
+            const sortBy = document.getElementById("users-sort-by")?.value || "last_saved_at_desc";
+            let users = list.slice();
+            if (tierFilter) users = users.filter(u => (u.tier || "").toLowerCase() === tierFilter);
+
+            const toTime = (s) => {
+                if (!s) return 0;
+                const d = new Date(s);
+                return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+            };
+
+            users.sort((a, b) => {
+                if (sortBy === "created_at_desc") return toTime(b.created_at) - toTime(a.created_at);
+                if (sortBy === "saved_count_desc") return (b.saved_count || 0) - (a.saved_count || 0);
+                if (sortBy === "done_count_desc") return (b.done_count || 0) - (a.done_count || 0);
+                const aTime = toTime(a.last_saved_at) || toTime(a.last_active) || toTime(a.created_at);
+                const bTime = toTime(b.last_saved_at) || toTime(b.last_active) || toTime(b.created_at);
+                return bTime - aTime;
+            });
+            return users;
+        }
+
+        function renderUsersSummary() {
+            const tbody = document.querySelector("#users-summary-table tbody");
+            const users = sortUsers(usersSummary);
+            if (!tbody) return;
+            if (!users.length) {
+                tbody.innerHTML = '<tr><td colspan="10" style="color:#555;">No users found</td></tr>';
+            } else {
+                tbody.innerHTML = users.map(u => {
+                    const tier = (u.tier || "free").toLowerCase();
+                    const isPro = tier === "pro";
+                    const tierBtnClass = isPro ? "btn-tier is-pro" : "btn-tier is-free";
+                    const tierBtnLabel = isPro ? "→ free" : "→ pro";
+                    const tierBadge = isPro ? '<span class="badge-pro">PRO</span>' : '<span class="badge-free">free</span>';
+                    return `
+                        <tr>
+                            <td style="white-space:nowrap;font-size:11px;color:#666;">${u.user_id || ""}</td>
+                            <td>${u.name || ""}</td>
+                            <td>${u.email || ""}</td>
+                            <td>${tierBadge}</td>
+                            <td style="text-align:right;">${fmt(u.saved_count || 0)}</td>
+                            <td style="text-align:right;">${fmt(u.done_count || 0)}</td>
+                            <td style="white-space:nowrap;">${fmtDate(u.created_at)}</td>
+                            <td style="white-space:nowrap;">${fmtDate(u.last_active)}</td>
+                            <td style="white-space:nowrap;">${fmtDate(u.last_saved_at)}</td>
+                            <td style="white-space:nowrap;display:flex;gap:6px;">
+                                <button class="${tierBtnClass}" onclick="toggleTier('${u.user_id}','${tier}','${(u.email || '').replace(/'/g, "&#39;")}')">${tierBtnLabel}</button>
+                                <button class="btn-delete" onclick="deleteUser('${u.user_id}','${(u.email || '').replace(/'/g, "&#39;")}')">Delete</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join("");
+            }
+            const total = usersSummary.length;
+            const shown = users.length;
+            const ts = usersSummaryGeneratedAt ? fmtDate(usersSummaryGeneratedAt) : "—";
+            const el = document.getElementById("users-summary-status");
+            if (el) el.textContent = `Showing ${shown} of ${total} users. Snapshot: ${ts}`;
+        }
+
+        async function toggleTier(userId, currentTier, email) {
+            const newTier = currentTier === "pro" ? "free" : "pro";
+            const ok = await confirmDialog(`Switch ${email || userId} from ${currentTier} to ${newTier}?`, "Change tier");
+            if (!ok) return;
+            try {
+                const res = await fetch(`/api/admin/users/${userId}/tier?key=${encodeURIComponent(KEY)}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ tier: newTier }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    showToast("Update failed", data.error || `HTTP ${res.status}`, "error");
+                    return;
+                }
+                const u = usersSummary.find(x => x.user_id === userId);
+                if (u) u.tier = newTier;
+                renderUsersSummary();
+                showToast("Tier updated", `${email || userId} is now ${newTier}.`, "success");
+            } catch (e) {
+                showToast("Update failed", e.message, "error");
+            }
+        }
+
+        async function deleteUser(userId, email) {
+            const ok = await confirmDialog(`Delete ${email || userId} and all their reels? This cannot be undone.`, "Delete user");
+            if (!ok) return;
+            try {
+                const res = await fetch(`/api/admin/users/${userId}?key=${encodeURIComponent(KEY)}`, {
+                    method: "DELETE",
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    showToast("Delete failed", data.error || `HTTP ${res.status}`, "error");
+                    return;
+                }
+                usersSummary = usersSummary.filter(x => x.user_id !== userId);
+                renderUsersSummary();
+                const totalEl = document.getElementById("users-total");
+                const currentTotal = parseInt(totalEl.textContent, 10);
+                if (!Number.isNaN(currentTotal)) totalEl.textContent = String(Math.max(0, currentTotal - 1));
+                showToast("User deleted", `${email || userId} removed, ${data.deleted_reels} reels deleted.`, "success");
+            } catch (e) {
+                showToast("Delete failed", e.message, "error");
+            }
+        }
+
         async function loadData() {
             try {
-                const res = await fetch(`/api/admin/dashboard?key=${KEY}`);
+                const res = await fetch(`/api/admin/dashboard?key=${encodeURIComponent(KEY)}`);
                 if (!res.ok) {
-                    document.getElementById("timestamp").textContent = `❌ HTTP ${res.status} — ${res.statusText}`;
+                    document.getElementById("timestamp").textContent = `❌ HTTP ${res.status}, ${res.statusText}`;
                     return;
                 }
                 const d = await res.json();
@@ -268,26 +814,24 @@
                 document.getElementById("timestamp").textContent = "Last updated: " + fmtDate(d.timestamp);
                 document.getElementById("env-badge").textContent = d.environment || "—";
 
-                // Users
                 document.getElementById("users-total").textContent = fmt(d.users?.total);
                 document.getElementById("users-active").textContent = fmt(d.users?.active_today);
 
-                // Reels
                 document.getElementById("reels-total").textContent = fmt(d.reels?.total);
                 document.getElementById("reels-today").textContent = fmt(d.reels?.processed_today);
                 document.getElementById("reels-last").textContent = fmtDate(d.reels?.last_processed_at);
 
-                // Mistral
-                document.getElementById("mistral-calls").textContent = fmt(d.mistral?.calls_today);
-                document.getElementById("mistral-remaining").textContent = fmt(d.mistral?.estimated_remaining) + " remaining";
-                const tok = d.mistral?.tokens_estimated_today;
-                document.getElementById("mistral-tokens").textContent = tok ? (tok / 1000).toFixed(1) + "k" : "—";
-                const month = d.mistral?.remaining_tokens_month;
-                document.getElementById("mistral-month").textContent = month ? (parseInt(month) / 1000000).toFixed(2) + "M" : "—";
-                document.getElementById("mistral-errors").textContent = fmt(d.mistral?.errors_today);
-                document.getElementById("mistral-last-call").textContent = "Last call: " + fmtDate(d.mistral?.last_call_at);
+                const m = d.mistral || {};
+                document.getElementById("mistral-status").textContent = m.label || "—";
+                document.getElementById("mistral-key-prefix").textContent = m.api_key_prefix || "—";
+                document.getElementById("mistral-calls").textContent = fmt(m.calls_today || 0);
+                document.getElementById("mistral-tokens").textContent = fmt(m.tokens_estimated_today || 0);
+                document.getElementById("mistral-errors").textContent = fmt(m.errors_today || 0);
+                document.getElementById("mistral-last-call").textContent = "Last call: " + fmtDate(m.last_call_at);
+                const mistralNote = document.getElementById("mistral-note");
+                mistralNote.textContent = m.note || "No additional note.";
+                mistralNote.className = "mistral-note" + (m.error ? " error" : "");
 
-                // Deepgram
                 const dg = d.deepgram || {};
                 if (dg.error) {
                     document.getElementById("deepgram-balance").textContent = "—";
@@ -304,12 +848,11 @@
                     document.getElementById("deepgram-period").textContent = dg.period || "";
                 }
 
-                // GCS
                 const gcs = d.gcs || {};
                 if (gcs.error) {
                     document.getElementById("gcs-total").textContent = "—";
                     document.getElementById("gcs-size").textContent = "Error";
-                    document.getElementById("gcs-size-gb").textContent = gcs.error.substring(0, 60) + "...";
+                    document.getElementById("gcs-size-gb").textContent = (gcs.error || "").substring(0, 60) + "...";
                     document.getElementById("gcs-size-gb").classList.add("error-text");
                 } else {
                     document.getElementById("gcs-total").textContent = fmt(gcs.total_files);
@@ -322,28 +865,38 @@
                     document.getElementById("gcs-sampled").textContent = gcs.sampled ? "⚠️ Sampled (>2000 files)" : "Full scan";
                 }
 
-                // Newest users
-                const tbody = document.getElementById("users-table-body");
-                const users = d.users?.newest || [];
-                if (users.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="2" style="color:#555;">No users yet</td></tr>';
+                renderSquareGrid("platform-grid", d.reel_platform_breakdown || [], "platform", "count", iconPlatform, "saved reels");
+                renderSquareGrid("type-grid", d.reel_type_breakdown || [], "type", "count", iconType, "saved reels");
+
+                const newestBody = document.getElementById("users-table-body");
+                const newestUsers = d.users?.newest || [];
+                if (!newestUsers.length) {
+                    newestBody.innerHTML = '<tr><td colspan="2" style="color:#555;">No users yet</td></tr>';
                 } else {
-                    tbody.innerHTML = users.map(u => `
+                    newestBody.innerHTML = newestUsers.map(u => `
                         <tr>
-                            <td>${u.email}</td>
+                            <td>${u.email || ""}</td>
                             <td style="color:#555;">${fmtDate(u.joined)}</td>
                         </tr>
                     `).join("");
                 }
 
-                // Server
                 document.getElementById("server-extractor").textContent = d.server?.extractor_version || "—";
                 document.getElementById("server-python").textContent = d.server?.python_version || "—";
 
-            } catch(e) {
+                usersSummary = Array.isArray(d.users_summary) ? d.users_summary : [];
+                usersSummaryGeneratedAt = d.generated_at || null;
+                renderUsersSummary();
+            } catch (e) {
                 document.getElementById("timestamp").textContent = "❌ Error: " + e.message;
             }
         }
+
+        document.addEventListener("change", (e) => {
+            if (e.target && (e.target.id === "users-filter-tier" || e.target.id === "users-sort-by")) {
+                renderUsersSummary();
+            }
+        });
 
         loadData();
         setInterval(loadData, 30000);

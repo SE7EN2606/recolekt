@@ -59,4 +59,12 @@
   "originalLink": "Lien original",
   "deleteReelTitle": "Supprimer ce clip ?",
   "deleteReelMessage": "Cette action est irréversible."
+  "listSubtype": {
+    "software":  "Outils & Apps",
+    "lifestyle": "Sélection Lifestyle",
+    "gear":      "Équipement & Matériel",
+    "food":      "Food & Boissons",
+    "ranking":   "Classement",
+    "picks":     "Favoris"
+  }
 }

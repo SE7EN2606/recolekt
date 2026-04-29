@@ -1,12 +1,12 @@
 import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Globe, Crown, Video, LogOut, HelpCircle, Info, Moon, Sun, Check, Zap, Infinity, ChartPie, Activity, AlertTriangle, BarChart3 } from 'lucide-react';
+import { Globe, Video, LogOut, HelpCircle, Info, Moon, Sun, Check, Zap, Infinity, ChartPie, Activity, AlertTriangle, BarChart3, Instagram, CheckCircle, Loader2, Unlink, Youtube, Smartphone, Facebook } from 'lucide-react';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { useData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
-import { useLanguage } from '../context/LanguageContext'; // If you use a custom context for language
+import { InstagramLink } from '../components/InstagramLink'; 
 
 interface MistralLimits {
   status: string;
@@ -17,9 +17,17 @@ interface MistralLimits {
   error?: string;
 }
 
+interface PlatformStats {
+  total: number;
+  instagram: number;
+  youtube: number;
+  tiktok: number;
+  facebook: number;
+}
+
 export const AccountSettings: React.FC = () => {
   const navigate = useNavigate();
-  const { logout, user } = useData();
+  const { user, signOut } = useAuth();
   const { t, i18n } = useTranslation(['settings', 'common']);
   const [darkMode, setDarkMode] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -27,31 +35,68 @@ export const AccountSettings: React.FC = () => {
   const [loadingLimits, setLoadingLimits] = useState(true);
 
   const lang = i18n.language.toUpperCase().startsWith('FR') ? 'FR' : 'EN';
-  
-  const isPro = user?.isPro || false;
-  const clipsUsed = 4;
-  const clipsLimit = 5;
 
-  // ✅ Fetch Mistral rate limits
+  // ─── INSTAGRAM DROP BOX STATE ───
+  const [igLinked, setIgLinked] = useState(false);
+  const [igUnlinking, setIgUnlinking] = useState(false);
+
+  // ─── DYNAMIC USAGE & PLAN STATE ───
+  const isPro = false;
+  const clipsLimit = 500;
+  
+  // Real dynamic stats state
+  const [platformStats, setPlatformStats] = useState<PlatformStats>({
+    total: 0, instagram: 0, youtube: 0, tiktok: 0, facebook: 0
+  });
+
+  // Fetch actual video stats from backend
+  useEffect(() => {
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    if (!token) return;
+
+    // 🔥 FIXED: URL changed to /api/auth/user/stats
+    fetch(`${API_BASE}/api/auth/user/stats`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.stats) {
+          setPlatformStats(data.stats);
+        }
+      })
+      .catch(err => console.error("Failed to fetch stats:", err));
+  }, []);
+
   useEffect(() => {
     fetch('/api/rate-limits')
       .then(res => res.json())
-      .then((data: MistralLimits) => {
-        setMistralLimits(data);
-        setLoadingLimits(false);
-      })
-      .catch(err => {
-        console.error('Failed to load Mistral limits:', err);
-        setLoadingLimits(false);
-      });
+      .then((data: MistralLimits) => { setMistralLimits(data); setLoadingLimits(false); })
+      .catch(() => setLoadingLimits(false));
   }, []);
 
+  useEffect(() => { window.scrollTo(0, 0); }, []);
+
+  // Fetch initial IG Link Status
   useEffect(() => {
-    window.scrollTo(0, 0);
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    if (!token) return;
+    fetch(`${API_BASE}/api/auth/instagram/link-status`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (d.linked) { setIgLinked(true); } })
+      .catch(() => {});
   }, []);
 
-  const handleLogout = () => {
-    logout();
+  // ─── ACTIONS ───
+  const unlinkInstagram = async () => {
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    setIgUnlinking(true);
+    try {
+      await fetch(`${API_BASE}/api/auth/instagram/unlink`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      setIgLinked(false);
+    } catch {}
+    setIgUnlinking(false);
+  };
+
+  const handleLogout = async () => {
+    await signOut();
     navigate('/');
   };
 
@@ -79,7 +124,6 @@ export const AccountSettings: React.FC = () => {
     </button>
   );
 
-  // ✅ Mistral Status Badge
   const MistralStatus = () => {
     if (loadingLimits) return <div className="w-5 h-5 bg-gray-200 rounded-full animate-spin" />;
     
@@ -128,7 +172,6 @@ export const AccountSettings: React.FC = () => {
         </div>
       </div>
 
-      {/* Single Column Layout */}
       <div className="space-y-6">
         {/* Profile Card */}
         <div className="bg-white rounded-3xl shadow-sm p-6 md:p-8 border border-gray-100">
@@ -138,29 +181,19 @@ export const AccountSettings: React.FC = () => {
             </div>
             <div className="flex-1">
               <h2 className="text-xl md:text-2xl font-black text-gray-900 tracking-tight">{user?.name || 'User'}</h2>
+              <p className="text-gray-500 text-sm mt-0.5">{user?.email || ''}</p>
               <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mt-1">{t('settings:personalAccount', 'Personal Account')}</p>
             </div>
           </div>
-          
-          <Button 
-            variant="outline" 
-            fullWidth 
-            className="rounded-full py-3 border-gray-200 text-gray-900 font-bold text-sm bg-white hover:bg-gray-50 mt-6"
-            onClick={() => navigate('/account-settings')}
-          >
-            <User size={16} className="mr-2" /> {t('settings:editProfile', 'Edit Profile')}
-          </Button>
         </div>
 
-        {/* Current Plan & Usage Card */}
+        {/* Current Plan & Usage Card (NOW REAL DATA) */}
         <div className="bg-white rounded-3xl shadow-sm p-6 md:p-8 border border-gray-100">
           <div className="flex items-start justify-between mb-6">
             <h3 className="text-xl font-black text-gray-900">{t('settings:currentPlan', 'Current Plan')}</h3>
             <span 
               className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest text-white shadow-lg ${
-                isPro 
-                  ? 'bg-[#8b5cf6] shadow-purple-500/20' 
-                  : 'bg-[#f43f5e] shadow-rose-500/20'
+                isPro ? 'bg-[#8b5cf6] shadow-purple-500/20' : 'bg-[#f43f5e] shadow-rose-500/20'
               }`}
             >
               {isPro ? t('settings:pro', 'PRO') : t('settings:free', 'FREE')}
@@ -171,7 +204,7 @@ export const AccountSettings: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{t('settings:usageLimit', 'Usage Limit')}</span>
               <span className="text-[#f43f5e] text-xs font-bold">
-                {t('settings:clipsLeft', 'Only {{count}} clips left', { count: clipsLimit - clipsUsed })}
+                {clipsLimit - platformStats.total} clips left
               </span>
             </div>
           )}
@@ -180,20 +213,18 @@ export const AccountSettings: React.FC = () => {
             <div className="relative h-3 w-full bg-gray-100 rounded-full overflow-hidden mb-6">
               <div 
                 className="h-full bg-[#f43f5e] transition-all duration-700" 
-                style={{ width: `${(clipsUsed / clipsLimit) * 100}%` }}
+                style={{ width: `${(platformStats.total / clipsLimit) * 100}%` }}
               />
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            {/* Clips Saved */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-center">
               <Video size={20} className="mx-auto mb-2 text-gray-900" />
-              <div className="text-xl font-black text-gray-900">{clipsUsed}</div>
+              <div className="text-xl font-black text-gray-900">{platformStats.total}</div>
               <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{t('settings:clipsSaved', 'Clips Saved')}</div>
             </div>
 
-            {/* Limit - Always shows pie chart icon */}
             <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-center">
               <ChartPie size={20} className="mx-auto mb-2 text-gray-900" />
               {isPro ? (
@@ -211,101 +242,88 @@ export const AccountSettings: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* REAL Platform Breakdown Stats */}
+          <div className="pt-6 border-t border-gray-50">
+            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Sources Breakdown</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-pink-50 text-pink-600 rounded-lg"><Instagram size={18} /></div>
+                <div>
+                  <p className="text-sm font-bold text-gray-900">{platformStats.instagram}</p>
+                  <p className="text-[10px] text-gray-500 uppercase font-bold">Instagram</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-50 text-red-600 rounded-lg"><Youtube size={18} /></div>
+                <div>
+                  <p className="text-sm font-bold text-gray-900">{platformStats.youtube}</p>
+                  <p className="text-[10px] text-gray-500 uppercase font-bold">YouTube</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gray-100 text-gray-900 rounded-lg"><Smartphone size={18} /></div>
+                <div>
+                  <p className="text-sm font-bold text-gray-900">{platformStats.tiktok}</p>
+                  <p className="text-[10px] text-gray-500 uppercase font-bold">TikTok</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Facebook size={18} /></div>
+                <div>
+                  <p className="text-sm font-bold text-gray-900">{platformStats.facebook}</p>
+                  <p className="text-[10px] text-gray-500 uppercase font-bold">Facebook</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* ✅ NEW: Mistral AI Control Panel Card */}
-        <div className="bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 rounded-3xl shadow-sm p-6 md:p-8 border border-indigo-100">
-          <div className="flex items-start justify-between mb-6">
+        {/* Instagram Drop Box */}
+        <div className="bg-white rounded-3xl shadow-sm p-6 md:p-8 border border-gray-100">
+          <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-                <BarChart3 size={20} className="text-white" />
+              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 rounded-2xl flex items-center justify-center shadow-lg">
+                <Instagram size={20} className="text-white" />
               </div>
               <div>
-                <h3 className="text-xl font-black text-gray-900">{t('settings:aiProcessing', 'AI Processing')}</h3>
-                <p className="text-sm text-gray-500">{t('settings:mistralLimits', 'Mistral API rate limits')}</p>
+                <h3 className="text-xl font-black text-gray-900">Instagram Drop Box</h3>
+                <p className="text-sm text-gray-400">Save reels by DMing @recolekt</p>
               </div>
             </div>
-            <MistralStatus />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="p-4 bg-white/70 backdrop-blur-sm rounded-2xl border border-gray-100 text-center">
-              <Activity size={24} className="mx-auto mb-2 text-indigo-600" />
-              <div className="text-lg font-black text-gray-900">{mistralLimits?.remaining_requests || '—'}</div>
-              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{t('settings:remaining', 'Remaining')}</div>
-            </div>
-            <div className="p-4 bg-white/70 backdrop-blur-sm rounded-2xl border border-gray-100 text-center">
-              <BarChart3 size={24} className="mx-auto mb-2 text-purple-600" />
-              <div className="text-lg font-black text-gray-900">{mistralLimits?.total_limit || '—'}</div>
-              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{t('settings:totalLimit', 'Total Limit')}</div>
-            </div>
-            <div className="p-4 bg-white/70 backdrop-blur-sm rounded-2xl border border-gray-100 text-center">
-              <Activity size={24} className="mx-auto mb-2 text-pink-600" />
-              <div className="text-lg font-black text-gray-900">{mistralLimits?.reset_seconds || '—'}s</div>
-              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{t('settings:reset', 'Reset')}</div>
-            </div>
-          </div>
-
-          <div className="text-center">
-            <Button 
-              variant="outline" 
-              className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold"
-              onClick={() => window.open('https://console.mistral.ai/', '_blank')}
-            >
-              {t('settings:openMistralConsole', 'Open Mistral Console')}
-            </Button>
-          </div>
-        </div>
-
-        {/* Dark Promo Card - Only show for FREE users */}
-        {!isPro && (
-          <div className="bg-dark-900 rounded-3xl shadow-xl shadow-dark-900/20 p-6 md:p-8 text-white relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-600/20 blur-[80px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
             
-            <div className="relative z-10">
-              <h3 className="text-2xl md:text-3xl font-black mb-6">{t('settings:unlockUnlimited', 'Unlock Unlimited Clips')}</h3>
-              
-              <div className="space-y-3 mb-8">
-                <div className="flex items-center gap-3 text-sm text-gray-300">
-                  <Check size={16} className="text-green-400 flex-shrink-0" />
-                  <span>{t('settings:featureUnlimited', 'Unlimited videos & collections')}</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-gray-300">
-                  <Check size={16} className="text-green-400 flex-shrink-0" />
-                  <span>{t('settings:featureAi', 'AI-powered auto-categorization')}</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-gray-300">
-                  <Check size={16} className="text-green-400 flex-shrink-0" />
-                  <span>{t('settings:featureSearch', 'Advanced search & filters')}</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-gray-300">
-                  <Check size={16} className="text-green-400 flex-shrink-0" />
-                  <span>{t('settings:featureSupport', 'Priority support')}</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-gray-300">
-                  <Check size={16} className="text-green-400 flex-shrink-0" />
-                  <span>{t('settings:featureExport', 'Export your collection anytime')}</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-gray-300">
-                  <Check size={16} className="text-green-400 flex-shrink-0" />
-                  <span>{t('settings:featureEarlyAccess', 'Early access to new features')}</span>
-                </div>
-              </div>
-
-              <Button 
-                fullWidth
-                className="bg-white text-dark-900 hover:bg-[#8b5cf6] hover:text-white font-black border-transparent shadow-lg shadow-white/10 py-4 text-base transition-all"
-                onClick={() => navigate('/billing')}
+            {igLinked && (
+              <button
+                onClick={unlinkInstagram}
+                disabled={igUnlinking}
+                className="flex items-center gap-2 px-4 py-2 border border-red-200 text-red-500 hover:bg-red-50 font-bold rounded-xl text-sm transition-colors disabled:opacity-50"
               >
-                <Zap size={18} className="text-yellow-500 fill-current mr-2" /> {t('settings:upgradePro', 'Upgrade to Pro')}
-              </Button>
-            </div>
+                {igUnlinking ? <Loader2 size={16} className="animate-spin" /> : <Unlink size={16} />}
+                {igUnlinking ? 'Disconnecting...' : 'Disconnect'}
+              </button>
+            )}
           </div>
-        )}
+
+          {igLinked ? (
+            <div className="flex items-start gap-3 p-4 bg-green-50 rounded-2xl border border-green-100">
+              <CheckCircle size={18} className="text-green-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-green-800">Instagram linked!</p>
+                <p className="text-xs text-green-600 mt-0.5">DM any reel URL to <strong className="font-bold">@recolekt</strong> to save it instantly.</p>
+              </div>
+            </div>
+          ) : (
+            <div className="border border-gray-100 rounded-2xl overflow-hidden">
+              <InstagramLink 
+                authToken={localStorage.getItem('auth_token') || localStorage.getItem('token') || ''} 
+                onLinked={() => setIgLinked(true)} 
+              />
+            </div>
+          )}
+        </div>
 
         {/* Two Columns at Bottom: Preferences (60%) + Resources (40%) */}
         <div className="grid md:grid-cols-[1.5fr_1fr] gap-6">
-          {/* App Preferences - 60% */}
           <section>
             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-2 mb-3">{t('settings:preferences', 'Preferences')}</h3>
             <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm p-1">
@@ -322,13 +340,13 @@ export const AccountSettings: React.FC = () => {
                     onClick={() => i18n.changeLanguage('en')}
                     className={`px-3 py-1.5 rounded-md text-xs font-black transition-all ${lang === 'EN' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'}`}
                   >
-                    {t('settings:english', 'English')}
+                    English
                   </button>
                   <button
                     onClick={() => i18n.changeLanguage('fr')}
                     className={`px-3 py-1.5 rounded-md text-xs font-black transition-all ${lang === 'FR' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'}`}
                   >
-                    {t('settings:french', 'Français')}
+                    Français
                   </button>
                 </div>
               </div>
@@ -349,7 +367,6 @@ export const AccountSettings: React.FC = () => {
                 </button>
               </div>
 
-              {/* Sign Out Button - Desktop only */}
               <div className="hidden md:block p-5">
                 <button
                   onClick={() => setShowLogoutConfirm(true)}
@@ -361,7 +378,6 @@ export const AccountSettings: React.FC = () => {
             </div>
           </section>
 
-          {/* Resources - 40% */}
           <section>
             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-2 mb-3">{t('settings:resources', 'Resources')}</h3>
             <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm p-1">
@@ -371,7 +387,6 @@ export const AccountSettings: React.FC = () => {
           </section>
         </div>
 
-        {/* Sign Out Button - Mobile only, outside at bottom */}
         <div className="md:hidden">
           <button
             onClick={() => setShowLogoutConfirm(true)}
