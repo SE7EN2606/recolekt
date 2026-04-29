@@ -1018,3 +1018,62 @@ def patch_reel_location(process_id):
     except Exception as e:
         logger.error(f"❌ Error patching location for {process_id}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+@reel_bp.route("/update/<process_id>", methods=["PUT", "PATCH", "OPTIONS"])
+def update_reel(process_id):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        if not _reel_exists(process_id, user_id):
+            return jsonify({"error": "Reel not found"}), 404
+
+        data = request.get_json(silent=True) or {}
+
+        allowed = {
+            "folder_id":        "folder_id",
+            "is_favorite":      "is_favorite",
+            "summary_title":    "summary_title",
+            "summary_category": "summary_category",
+            "content_type":     "content_type",
+            "summary_topic":    "summary_topic",
+            "summary_text":     "summary_text",
+            "caption":          "caption",
+        }
+
+        set_clauses = []
+        values = []
+
+        for frontend_key, db_col in allowed.items():
+            if frontend_key in data:
+                val = data[frontend_key]
+                if db_col == "content_type":
+                    val = _normalize_content_type(val)
+                if db_col in ("summary_text",) and isinstance(val, (dict, list)):
+                    import json as _json
+                    val = _json.dumps(val, ensure_ascii=False)
+                set_clauses.append(f"{db_col} = %s")
+                values.append(val)
+
+        if not set_clauses:
+            return jsonify({"status": "no_op"}), 200
+
+        set_clauses.append("updated_at = NOW()")
+        values.extend([process_id, user_id])
+
+        execute(
+            f"UPDATE reels SET {', '.join(set_clauses)} WHERE id = %s AND user_id = %s",
+            tuple(values),
+        )
+
+        logger.info("✅ PUT /update/%s — updated: %s", process_id, list(data.keys()))
+        return jsonify({"status": "ok", "id": process_id}), 200
+
+    except Exception as e:
+        logger.error("❌ Error updating reel %s: %s", process_id, e, exc_info=True)
+        return jsonify({"error": "Internal error"}), 500
