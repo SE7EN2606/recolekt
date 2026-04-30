@@ -234,7 +234,7 @@ def saved_reels():
             recipe,
             workout,
             NULL::jsonb AS tools_list,
-            location,
+            NULL::jsonb AS location,
             gcs_urls,
             summary_title,
             summary_text,
