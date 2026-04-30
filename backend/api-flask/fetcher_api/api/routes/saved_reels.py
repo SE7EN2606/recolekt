@@ -208,16 +208,15 @@ def saved_reels():
         return "", 200
 
     try:
-        try:
-            user_id = get_user_id_from_request()
-        except ValueError:
-            return jsonify({"error": "Authentication required"}), 401
+        user_id = get_user_id_from_request()
+    except ValueError:
+        return jsonify({"error": "Authentication required"}), 401
 
-        page = max(int(request.args.get("page", 1) or 1), 1)
-        per_page = min(max(int(request.args.get("per_page", 100) or 100), 1), 1000)
-        offset = (page - 1) * per_page
+    page = max(int(request.args.get("page", 1) or 1), 1)
+    per_page = min(max(int(request.args.get("per_page", 100) or 100), 1), 1000)
+    offset = (page - 1) * per_page
 
-        rows = fetch_all(
+    rows = fetch_all(
         """
         SELECT
             id,
@@ -262,16 +261,9 @@ def saved_reels():
 
             logger.exception("Failed to serialize saved reel row id=%s", bad_id)
 
-        return jsonify({
-            "reels": reels,
-            "page": page,
-            "per_page": per_page,
-            "count": len(reels),
-        })
-    except Exception as e:
-        logger.exception("saved_reels endpoint failed")
-        return jsonify({
-            "error": "saved_reels_failed",
-            "message": str(e),
-            "type": type(e).__name__,
-        }), 500
+    return jsonify({
+        "reels": reels,
+        "page": page,
+        "per_page": per_page,
+        "count": len(reels),
+    })
