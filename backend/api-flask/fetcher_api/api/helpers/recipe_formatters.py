@@ -75,18 +75,37 @@ def _ensure_list(value: Any) -> List[Any]:
     return [value]
 
 
-def _normalize_instruction_list(instructions: Any) -> List[str]:
+def _normalize_instruction_list(instructions: Any) -> List[Any]:
     """
-    Ensure instructions is a list of clean strings.
+    Ensure instructions/tips/notes are clean.
+
+    Preserve dict objects so Sprint 1 trust metadata is not destroyed:
+    {"instruction": "...", "source": "...", "confidence": "..."}
     """
     items = _ensure_list(instructions)
-    out: List[str] = []
+    out: List[Any] = []
+
     for it in items:
         if it is None:
             continue
+
+        if isinstance(it, dict):
+            cleaned = dict(it)
+
+            for key in ("instruction", "text", "source", "confidence"):
+                if key in cleaned and cleaned[key] is not None:
+                    cleaned[key] = str(cleaned[key]).strip()
+
+            main_text = cleaned.get("instruction") or cleaned.get("text")
+            if main_text:
+                out.append(cleaned)
+
+            continue
+
         s = str(it).strip()
         if s:
             out.append(s)
+
     return out
 
 
@@ -117,8 +136,8 @@ def _normalize_ingredient(ing: Any) -> Dict[str, Any]:
         }
 
     emoji = _normalize_string_or_empty(ing.get("emoji"))
-    quantity = _normalize_string_or_empty(ing.get("quantity"))
-    unit = _normalize_string_or_empty(ing.get("unit"))
+    quantity = None if ing.get("quantity") is None else _normalize_string_or_empty(ing.get("quantity"))
+    unit = None if ing.get("unit") is None else _normalize_string_or_empty(ing.get("unit"))
 
     # Prefer "name" if provided, otherwise "item"
     raw_name = ing.get("name")
@@ -138,13 +157,22 @@ def _normalize_ingredient(ing: Any) -> Dict[str, Any]:
             notes_parts.append(note_from_paren)
     notes = "; ".join(notes_parts) if notes_parts else ""
 
-    return {
+    # Preserve Sprint 1 trust metadata and any future ingredient fields.
+    # Do not let normalization strip source/confidence/needs_review/quantityRange.
+    out = dict(ing)
+
+    out.update({
         "emoji": emoji,
         "quantity": quantity,
         "unit": unit,
         "name": base_name,
         "notes": notes,
-    }
+    })
+
+    # Keep item for backward compatibility if it existed; otherwise mirror name.
+    out.setdefault("item", base_name)
+
+    return out
 
 
 def _normalize_ingredient_list(ingredients: Any) -> List[Dict[str, Any]]:

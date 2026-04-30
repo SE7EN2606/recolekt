@@ -54,5 +54,19 @@
   "saveChanges": "Enregistrer les modifications",
   "next": "Suivant",
   "delete": "Supprimer",
-  "back": "Retour"
+  "back": "Retour",
+  "badge_general": "Général",
+  "badge_recipe": "Recette",
+  "badge_workout": "Gym",
+  "badge_places": "Lieux",
+  "badge_software": "Logiciel",
+  "badge_finance": "Finance",
+  "badge_lifestyle": "Lifestyle",
+  "badge_gear": "Équipement",
+  "badge_food": "Alimentation",
+  "badge_ranking": "Classement",
+  "badge_tier": "Niveau",
+  "badge_verdict": "Verdict",
+  "badge_list": "Liste",
+  "badge_picks": "Sélection"
 }

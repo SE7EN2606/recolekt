@@ -97,8 +97,10 @@ class Call2Mixin:
             f"CATEGORY: {parsed.get('category', 'general')}\n\n"
             f"CONTENT TO TRANSLATE / REWRITE:\n\n"
             f'"headlines_input": {headline_json}\n\n'
-            f"Return translated original-language headlines in this exact JSON shape:\n"
-            f'  "headlines": [{{"headline": "translated headline", "description": "translated description"}}]\n\n'
+            + (f'"workout_en": {__import__("json").dumps(parsed.get("workout"), ensure_ascii=False)}\n\nTranslate this workout into the SAME language as your summary_original. Return it as "translated_workout" with identical structure — translate group titles, item names, item info, tips. Keep duration, equipment names, and numeric values unchanged.\n\n' if parsed.get("workout") else "")
+            + (f'"recipe_en": {__import__("json").dumps(parsed.get("recipe"), ensure_ascii=False)}\n\nTranslate this recipe into the SAME language as your summary_original. Return it as "translated_recipe" with identical structure — translate title, ingredients (item/name fields), instructions, tips, notes, group titles. Keep quantities, units, and numeric values unchanged.\n\n' if parsed.get("recipe") else "")
+            + f"Return translated original-language headlines in this exact JSON shape:\n"
+            + f'  "headlines": [{{"headline": "translated headline", "description": "translated description"}}]\n\n'
             f"REQUIREMENTS:\n"
             f"- summary_original must be natural {lang}\n"
             f"- summary_en must be natural English\n"
@@ -145,13 +147,21 @@ class Call2Mixin:
             headlines_og = copy_emojis_to_headlines(highlights, headlines_og)
 
 
-        return {
+        workout_og = result_data.get("translated_workout") if isinstance(result_data.get("translated_workout"), dict) else None
+        recipe_og = result_data.get("translated_recipe") if isinstance(result_data.get("translated_recipe"), dict) else None
+
+        out = {
             "summary_en": summary_en or summary_og,
             "summary_original": summary_og or summary_en,
             "title_original": title_og,
             "headlines_en": list(highlights),
             "headlines_og": headlines_og,
         }
+        if workout_og:
+            out["workout_og"] = workout_og
+        if recipe_og:
+            out["recipe_og"] = recipe_og
+        return out
 
 
 

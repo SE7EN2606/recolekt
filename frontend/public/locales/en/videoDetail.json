@@ -70,5 +70,12 @@
   "imperial": "Imperial",
   "metric": "Metric",
   "addToList": "Add to list",
-  "added": "Added"
+  "added": "Added",
+  "workoutDetails": "Workout Plan",
+  "time": "Duration",
+  "format": "Format",
+  "level": "Level",
+  "equipment": "Equipment",
+  "exercises": "Exercises",
+  "trainerTips": "Coach Tips"
 }

@@ -48,6 +48,7 @@ from fetcher_api.services.extractor_call1_helpers import (
     enrich_ranks_from_transcript,
     add_missing_transcript_items,
     sanitize_location,
+    normalize_recipe_trust_layer,
 )
 
 logger = logging.getLogger(__name__)
@@ -469,6 +470,7 @@ class Call1Mixin:
             ai_prompt = raw_prompt.strip()
 
         recipe = result_data.get("recipe") if isinstance(result_data.get("recipe"), dict) else None
+        recipe = normalize_recipe_trust_layer(recipe, caption=caption, transcript=transcript)
         workout = result_data.get("workout") if isinstance(result_data.get("workout"), dict) else None
 
         raw_items = result_data.get("items")

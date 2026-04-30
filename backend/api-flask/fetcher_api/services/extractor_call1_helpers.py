@@ -1197,6 +1197,465 @@ def sanitize_location(location: dict | None) -> dict | None:
     return {**out, "what_to_try": cleaned}
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RECIPE TRUST LAYER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_RECIPE_LIQUID_INGREDIENT_RE = re.compile(
+    r"\b(water|broth|stock|bouillon|poultry broth|chicken broth|cooking liquid|liquid|eau|fond)\b",
+    re.IGNORECASE,
+)
+
+_RECIPE_EXPLICIT_LIQUID_LEVEL_RE = re.compile(
+    r"\b(to cover|until covered|barely cover|just cover|enough to cover|cover with|covered with|à hauteur|a hauteur|jusqu'à hauteur|jusqu’à hauteur|recouvrir|recouvrez|couvrir de)\b",
+    re.IGNORECASE,
+)
+
+_RECIPE_INVENTED_TO_COVER_RE = re.compile(
+    r"\s*(?:,?\s*)(?:to cover|until covered|enough to cover|barely cover|just cover)(?=,|\.|$)",
+    re.IGNORECASE,
+)
+
+
+def _recipe_slug(text: str, fallback: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", safe_str(text).lower()).strip("_")
+    return slug or fallback
+
+
+def _recipe_source_has_explicit_liquid_level(caption: str, transcript: str) -> bool:
+    source = f"{caption or ''}\n{transcript or ''}"
+    return bool(_RECIPE_EXPLICIT_LIQUID_LEVEL_RE.search(source))
+
+
+def _clean_recipe_invented_liquid_level_instruction(instruction: str) -> str:
+    text = safe_str(instruction).strip()
+    cleaned = _RECIPE_INVENTED_TO_COVER_RE.sub("", text)
+    cleaned = re.sub(r"\s+,", ",", cleaned)
+    cleaned = re.sub(r",\s*,", ",", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned
+
+
+def _recipe_add_missing_info_once(recipe: dict, item: dict) -> None:
+    missing = recipe.get("missingInfo")
+    if not isinstance(missing, list):
+        missing = []
+        recipe["missingInfo"] = missing
+
+    field = item.get("field")
+    if field and any(isinstance(x, dict) and x.get("field") == field for x in missing):
+        return
+
+    missing.append(item)
+
+
+
+_RECIPE_QUANTITY_RANGE_RE = re.compile(
+    r"(?P<min>\d+(?:[,.]\d+)?)\s*(?:-|–|—|to|à|a)\s*"
+    r"(?P<max>\d+(?:[,.]\d+)?)\s*"
+    r"(?P<unit>g|gr|gram|grams|gramme|grammes|kg|kilo|kilos|ml|cl|l|litre|litres|liter|liters|oz|lb|lbs|cup|cups|tbsp|tsp)\b",
+    re.IGNORECASE,
+)
+
+_RECIPE_APPROX_RE = re.compile(
+    r"\b(about|approx|approximately|around|roughly|environ|à peu près|a peu pres)\b",
+    re.IGNORECASE,
+)
+
+
+def _recipe_parse_number(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(str(value).replace(",", ".").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _recipe_clean_number(value: float):
+    return int(value) if float(value).is_integer() else value
+
+
+def _recipe_normalize_unit(unit: str | None) -> str | None:
+    u = safe_str(unit).strip().lower()
+    if not u:
+        return None
+
+    aliases = {
+        "gr": "g",
+        "gram": "g",
+        "grams": "g",
+        "gramme": "g",
+        "grammes": "g",
+        "kilo": "kg",
+        "kilos": "kg",
+        "litre": "l",
+        "litres": "l",
+        "liter": "l",
+        "liters": "l",
+        "lbs": "lb",
+    }
+    return aliases.get(u, u)
+
+
+def _extract_recipe_quantity_ranges(caption: str, transcript: str) -> list[dict]:
+    source = f"{caption or ''}\n{transcript or ''}"
+    ranges: list[dict] = []
+
+    for match in _RECIPE_QUANTITY_RANGE_RE.finditer(source):
+        low = _recipe_parse_number(match.group("min"))
+        high = _recipe_parse_number(match.group("max"))
+        unit = _recipe_normalize_unit(match.group("unit"))
+
+        if low is None or high is None or unit is None:
+            continue
+
+        if high < low:
+            low, high = high, low
+
+        start = max(0, match.start() - 90)
+        end = min(len(source), match.end() + 90)
+        context = source[start:end]
+
+        ranges.append({
+            "min": _recipe_clean_number(low),
+            "max": _recipe_clean_number(high),
+            "unit": unit,
+            "approximate": bool(_RECIPE_APPROX_RE.search(context)),
+            "context": context,
+        })
+
+    return ranges
+
+
+def _find_matching_recipe_quantity_range(
+    item_name: str,
+    quantity,
+    unit,
+    caption: str,
+    transcript: str,
+) -> dict | None:
+    q = _recipe_parse_number(quantity)
+    u = _recipe_normalize_unit(unit)
+
+    if q is None or u is None:
+        return None
+
+    candidates = []
+    for r in _extract_recipe_quantity_ranges(caption, transcript):
+        if r["unit"] != u:
+            continue
+
+        low = float(r["min"])
+        high = float(r["max"])
+
+        # Handles LLM collapsing "320-350g" to 320g or 350g.
+        if abs(q - low) < 0.0001 or abs(q - high) < 0.0001:
+            candidates.append(r)
+
+    if not candidates:
+        return None
+
+    # Prefer contextual match when ingredient words appear near the range.
+    tokens = [
+        t for t in re.findall(r"[a-zA-ZÀ-ÖØ-öø-ÿ]+", safe_str(item_name).lower())
+        if len(t) >= 4
+    ]
+
+    contextual = [
+        r for r in candidates
+        if any(t in safe_str(r.get("context", "")).lower() for t in tokens)
+    ]
+
+    chosen = contextual[0] if len(contextual) == 1 else candidates[0] if len(candidates) == 1 else None
+
+    if not chosen:
+        return None
+
+    return {
+        "min": chosen["min"],
+        "max": chosen["max"],
+        "unit": chosen["unit"],
+    }
+
+
+
+_RECIPE_HOUR_RE = re.compile(
+    r"\b(?:for|pendant|pour)?\s*(?:une|un|one|1)\s+(?:hour|heure)\b",
+    re.IGNORECASE,
+)
+
+_RECIPE_24H_RE = re.compile(
+    r"\b(24\s*(?:h|hours?|heures?)|overnight|toute une nuit|une nuit)\b",
+    re.IGNORECASE,
+)
+
+
+def _recipe_has_prep_time_source(caption: str, transcript: str) -> bool:
+    source = f"{caption or ''}\n{transcript or ''}".lower()
+    return bool(re.search(r"\b(prep|préparation|preparation)\b", source))
+
+
+def _recipe_detect_cook_minutes(caption: str, transcript: str) -> int | None:
+    source = f"{caption or ''}\n{transcript or ''}"
+    one_hour_mentions = len(_RECIPE_HOUR_RE.findall(source))
+
+    if one_hour_mentions >= 2:
+        return 120
+    if one_hour_mentions == 1:
+        return 60
+
+    return None
+
+
+def _recipe_detect_rest_minutes(caption: str, transcript: str) -> int | None:
+    source = f"{caption or ''}\n{transcript or ''}"
+    if _RECIPE_24H_RE.search(source):
+        return 1440
+    return None
+
+
+def _recipe_num(value) -> int | None:
+    try:
+        if value is None or safe_str(value).strip() == "":
+            return None
+        return int(round(float(str(value).replace(",", "."))))
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_recipe_times(recipe: dict, caption: str, transcript: str) -> None:
+    prep = _recipe_num(recipe.get("prep_time"))
+    cook = _recipe_num(recipe.get("cook_time"))
+    total = _recipe_num(recipe.get("total_time"))
+
+    detected_cook = _recipe_detect_cook_minutes(caption, transcript)
+    detected_rest = _recipe_detect_rest_minutes(caption, transcript)
+
+    if prep is not None:
+        recipe.setdefault("prep_time_meta", {
+            "source": "caption_transcript" if _recipe_has_prep_time_source(caption, transcript) else "ai_estimated",
+            "confidence": "high" if _recipe_has_prep_time_source(caption, transcript) else "medium",
+        })
+
+    if detected_cook is not None:
+        recipe["cook_time"] = detected_cook
+        recipe["cook_time_meta"] = {
+            "source": "caption_transcript",
+            "confidence": "high",
+        }
+        cook = detected_cook
+    elif cook is not None:
+        recipe.setdefault("cook_time_meta", {
+            "source": "ai_estimated",
+            "confidence": "medium",
+        })
+
+    if detected_rest is not None:
+        recipe["rest_time"] = detected_rest
+        recipe["rest_time_meta"] = {
+            "source": "caption_transcript",
+            "confidence": "high",
+        }
+
+    if prep is not None and cook is not None:
+        computed_total = prep + cook + (detected_rest or 0)
+        if total != computed_total:
+            recipe["total_time"] = computed_total
+            recipe["total_time_meta"] = {
+                "source": "computed",
+                "confidence": "medium" if detected_rest else "high",
+            }
+
+
+
+
+_FOOD_BLOG_PHRASES_RE = re.compile(
+    r"\b(captures the essence|perfect for|beautifully pairs|rustic simplicity|"
+    r"melt-in-your-mouth|indulgent bite|minimal effort|classic dish pairs)\b",
+    re.IGNORECASE,
+)
+
+
+def _recipe_text_list(values, limit: int = 4) -> list[str]:
+    out: list[str] = []
+    if not isinstance(values, list):
+        return out
+
+    for value in values:
+        if isinstance(value, str):
+            text = safe_str(value).strip()
+        elif isinstance(value, dict):
+            text = safe_str(value.get("item") or value.get("name") or value.get("instruction") or value.get("text")).strip()
+        else:
+            text = ""
+
+        if text:
+            out.append(text)
+
+        if len(out) >= limit:
+            break
+
+    return out
+
+
+def _build_practical_recipe_summary(recipe: dict) -> dict | None:
+    if isinstance(recipe.get("practical_summary"), dict):
+        return None
+
+    ingredients = _recipe_text_list(recipe.get("ingredients"), limit=5)
+    instructions = _recipe_text_list(recipe.get("instructions"), limit=6)
+    tips = _recipe_text_list(recipe.get("tips"), limit=5)
+
+    if not ingredients and not instructions:
+        return None
+
+    main_ingredients = ", ".join(ingredients[:4])
+    what_it_is = (
+        f"Recipe made with {main_ingredients}."
+        if main_ingredients
+        else "Structured recipe extracted from the source reel."
+    )
+
+    technique_bits = []
+    for step in instructions:
+        lower = step.lower()
+        if any(word in lower for word in ["simmer", "reduce", "grill", "bake", "fry", "mix", "chill", "refrigerate", "mijoter", "réduire"]):
+            technique_bits.append(step)
+
+    key_technique = " ".join(technique_bits[:2]) if technique_bits else (instructions[0] if instructions else "")
+
+    important_notes = tips[:3]
+    if not important_notes:
+        important_notes = instructions[-2:] if len(instructions) >= 2 else instructions[:1]
+
+    return {
+        "what_it_is": what_it_is,
+        "key_technique": key_technique,
+        "important_notes": important_notes,
+        "source": "ai_generated",
+        "confidence": "medium",
+    }
+
+
+def _normalize_practical_recipe_summary(recipe: dict) -> None:
+    summary = recipe.get("practical_summary")
+
+    if isinstance(summary, dict):
+        for key in ("what_it_is", "key_technique"):
+            value = safe_str(summary.get(key, "")).strip()
+            if value and _FOOD_BLOG_PHRASES_RE.search(value):
+                summary[key] = re.sub(_FOOD_BLOG_PHRASES_RE, "", value).strip(" .,")
+
+        summary.setdefault("source", "ai_generated")
+        summary.setdefault("confidence", "medium")
+        return
+
+    fallback = _build_practical_recipe_summary(recipe)
+    if fallback:
+        recipe["practical_summary"] = fallback
+
+
+
+def normalize_recipe_trust_layer(
+    recipe: dict | None,
+    caption: str = "",
+    transcript: str = "",
+) -> dict | None:
+    if not isinstance(recipe, dict):
+        return recipe
+
+    recipe = dict(recipe)
+    ingredients = recipe.get("ingredients")
+    if not isinstance(ingredients, list):
+        ingredients = []
+
+    has_missing_liquid_quantity = False
+    next_ingredients = []
+
+    for idx, ingredient in enumerate(ingredients):
+        if not isinstance(ingredient, dict):
+            next_ingredients.append(ingredient)
+            continue
+
+        ing = dict(ingredient)
+        item_name = safe_str(ing.get("item") or ing.get("name") or "").strip()
+        quantity = ing.get("quantity")
+        unit = safe_str(ing.get("unit", "")).strip()
+
+        if unit == "":
+            ing["unit"] = None
+
+        quantity_range = _find_matching_recipe_quantity_range(
+            item_name=item_name,
+            quantity=quantity,
+            unit=ing.get("unit"),
+            caption=caption,
+            transcript=transcript,
+        )
+        if quantity_range and "quantityRange" not in ing:
+            ing["quantityRange"] = quantity_range
+            ing["approximate"] = True
+            ing.setdefault("source", "caption_transcript")
+            ing.setdefault("confidence", "high")
+
+        if item_name:
+            ing.setdefault("source", "caption_transcript")
+
+        is_liquid = bool(_RECIPE_LIQUID_INGREDIENT_RE.search(item_name))
+        quantity_missing = quantity is None or safe_str(quantity).strip() == ""
+
+        if ing.get("missing_reason") == "quantity_not_specified" or ing.get("needs_review") is True:
+            # Trust rule: if quantity is explicitly marked missing, never preserve
+            # an invented placeholder like 1 piece / 1 unit.
+            ing["quantity"] = None
+            ing["unit"] = None
+            ing["confidence"] = "medium"
+            ing["needs_review"] = True
+            ing["missing_reason"] = "quantity_not_specified"
+            quantity_missing = True
+
+        if is_liquid and quantity_missing:
+            has_missing_liquid_quantity = True
+            ing["quantity"] = None
+            ing["unit"] = None
+            ing["confidence"] = "medium"
+            ing["needs_review"] = True
+            ing["missing_reason"] = "quantity_not_specified"
+
+            slug = _recipe_slug(item_name, f"ingredient_{idx}")
+            _recipe_add_missing_info_once(recipe, {
+                "field": f"ingredients.{slug}.quantity",
+                "message": f"The recipe mentions {item_name.lower()} but does not specify the quantity.",
+                "severity": "medium",
+                "suggestion": "Review the source or choose an amount based on your pot size and desired texture.",
+            })
+        elif item_name:
+            ing.setdefault("confidence", "high" if not quantity_missing else "medium")
+
+        next_ingredients.append(ing)
+
+    recipe["ingredients"] = next_ingredients
+
+    _normalize_recipe_times(recipe, caption=caption, transcript=transcript)
+
+    if has_missing_liquid_quantity and not _recipe_source_has_explicit_liquid_level(caption, transcript):
+        instructions = recipe.get("instructions")
+        if isinstance(instructions, list):
+            recipe["instructions"] = [
+                _clean_recipe_invented_liquid_level_instruction(step)
+                if isinstance(step, str)
+                else step
+                for step in instructions
+            ]
+
+    _normalize_practical_recipe_summary(recipe)
+
+    recipe["trust_version"] = "recipe-trust-v1"
+    return recipe
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # CORE TOOLS PARSER
 # ═══════════════════════════════════════════════════════════════════════════════

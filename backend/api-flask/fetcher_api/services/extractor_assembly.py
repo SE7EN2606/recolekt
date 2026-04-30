@@ -1272,8 +1272,16 @@ class AssemblyMixin:
             "debug": prompt_trace or {},
             "items": parsed.get("items"),
             "tools_list": tools_list,
-            "recipe": parsed.get("recipe"),
-            "workout": parsed.get("workout"),
+            "recipe": (
+                {"english": parsed.get("recipe"), "original": summary_result.get("recipe_og")}
+                if parsed.get("recipe") and summary_result.get("recipe_og")
+                else parsed.get("recipe")
+            ),
+            "workout": (
+                {"english": parsed.get("workout"), "original": summary_result.get("workout_og")}
+                if parsed.get("workout") and summary_result.get("workout_og")
+                else parsed.get("workout")
+            ),
             "location": parsed.get("location"),
             "detected_language": lang,
             "is_list": False if has_location else is_list,

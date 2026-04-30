@@ -125,9 +125,25 @@ def _looks_clearly_english(text: str) -> bool:
         return False
 
     hits = sum(1 for marker in _ENGLISH_PROSE_MARKERS if marker in t)
-    ascii_ratio = sum(1 for ch in t if ord(ch) < 128) / max(1, len(t))
 
-    return hits >= 4 and ascii_ratio >= 0.97
+    letters = [ch for ch in t if ch.isalpha()]
+    if not letters:
+        return False
+
+    ascii_letters = sum(1 for ch in letters if ord(ch) < 128)
+    ascii_letter_ratio = ascii_letters / max(1, len(letters))
+
+    english_word_hits = len(re.findall(
+        r"\b(?:the|and|with|for|from|when|keep|please|recipe|simple|perfect|cooking|scallops|butter|lime|garlic|salt|pepper)\b",
+        t,
+        flags=re.IGNORECASE,
+    ))
+
+    return (
+        hits >= 4 and ascii_letter_ratio >= 0.60
+    ) or (
+        english_word_hits >= 8 and ascii_letter_ratio >= 0.50
+    )
 
 
 def _resolve_effective_language(
@@ -166,7 +182,7 @@ def _resolve_effective_language(
         return "unknown"
 
     try:
-        detected = (detect_caption_language(text) or "").strip().lower()
+        detected = (detect_caption_language(text.lower()) or "").strip().lower()
     except Exception:
         logger.warning("⚠️ detect_caption_language() failed", exc_info=True)
         return "unknown"

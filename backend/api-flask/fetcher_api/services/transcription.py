@@ -356,7 +356,7 @@ def _select_transcript(
         return TranscriptionResult(
             status="ok",
             transcript=vx.transcript,
-            detected_language=vx.language or dg.language,
+            detected_language=(vx.language if vx.language and vx.language != "unknown" else None) or dg.language,
             transcription_source="merged",
             deepgram=dg,
             voxtral=vx,

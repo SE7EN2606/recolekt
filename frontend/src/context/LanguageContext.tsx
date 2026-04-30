@@ -34,16 +34,20 @@ const extractText = (v: any): string => {
   return '';
 };
 
+const STORAGE_KEY = 'recolekt_showOriginal';
+
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { i18n } = useTranslation();
 
-  // ✅ showOriginal is fully independent — always starts as false (show English summary)
-  const [showOriginal, setShowOriginal] = useState(false);
+  // Read from localStorage first, fall back to i18n language detection
+  const [showOriginal, setShowOriginal] = useState<boolean>(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored !== null) return stored === 'true';
+    return i18n.language?.startsWith('fr') ?? false;
+  });
 
-  // ✅ languageCode tracks the detected content language (set per-video by VideoDetail)
   const [languageCode, setLanguageCode] = useState('EN');
 
-  // ✅ Only log i18n changes — do NOT touch showOriginal
   useEffect(() => {
     console.log('🌍 App UI language changed to:', i18n.language);
   }, [i18n.language]);
@@ -51,6 +55,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const toggleLanguage = useCallback(() => {
     setShowOriginal(prev => {
       const next = !prev;
+      localStorage.setItem(STORAGE_KEY, String(next));
       console.log('🔁 Content language toggled:', next ? 'Original' : 'English');
       return next;
     });

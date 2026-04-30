@@ -1,5 +1,6 @@
 // src/components/ContentTypeBadge.tsx
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ChefHat,
   Dumbbell,
@@ -12,6 +13,7 @@ import {
   Heart,
   Layers3,
   Landmark,
+  BookOpen,
 } from 'lucide-react';
 
 export type ContentType =
@@ -21,6 +23,7 @@ export type ContentType =
   | 'finance'
   | 'workout'
   | 'location'
+  | 'places'
   | 'general';
 
 export type ToolsSubtype =
@@ -89,17 +92,7 @@ export function deriveToolsSubtype(toolsList: any): ToolsSubtype {
   ).toLowerCase() as ToolsSubtype;
 
   if (
-    [
-      'software',
-      'lifestyle',
-      'gear',
-      'food',
-      'ranking',
-      'tier',
-      'verdict',
-      'grouped',
-      'picks',
-    ].includes(stored)
+    ['software', 'lifestyle', 'gear', 'food', 'ranking', 'tier', 'verdict', 'grouped', 'picks'].includes(stored)
   ) {
     return stored;
   }
@@ -145,16 +138,16 @@ export function deriveToolsSubtype(toolsList: any): ToolsSubtype {
   return 'picks';
 }
 
-const STRUCTURED_META: Record<ToolsSubtype, { icon: React.ReactElement; label: string }> = {
-  software: { icon: <Wrench size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Software' },
-  lifestyle: { icon: <Sparkles size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Lifestyle' },
-  gear: { icon: <Backpack size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Gear' },
-  food: { icon: <UtensilsCrossed size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Food' },
-  ranking: { icon: <Trophy size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Ranking' },
-  tier: { icon: <Layers3 size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Tier' },
-  verdict: { icon: <Layers3 size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Verdict' },
-  grouped: { icon: <Layers3 size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'List' },
-  picks: { icon: <Heart size={11} strokeWidth={2.5} aria-hidden="true" />, label: 'Picks' },
+const STRUCTURED_META: Record<ToolsSubtype, { icon: React.ReactElement; labelKey: string; fallback: string }> = {
+  software:  { icon: <Wrench size={11} strokeWidth={2.5} aria-hidden="true" />,         labelKey: 'badge_software',  fallback: 'Software' },
+  lifestyle: { icon: <Sparkles size={11} strokeWidth={2.5} aria-hidden="true" />,       labelKey: 'badge_lifestyle', fallback: 'Lifestyle' },
+  gear:      { icon: <Backpack size={11} strokeWidth={2.5} aria-hidden="true" />,       labelKey: 'badge_gear',      fallback: 'Gear' },
+  food:      { icon: <UtensilsCrossed size={11} strokeWidth={2.5} aria-hidden="true" />,labelKey: 'badge_food',      fallback: 'Food' },
+  ranking:   { icon: <Trophy size={11} strokeWidth={2.5} aria-hidden="true" />,         labelKey: 'badge_ranking',   fallback: 'Ranking' },
+  tier:      { icon: <Layers3 size={11} strokeWidth={2.5} aria-hidden="true" />,        labelKey: 'badge_tier',      fallback: 'Tier' },
+  verdict:   { icon: <Layers3 size={11} strokeWidth={2.5} aria-hidden="true" />,        labelKey: 'badge_verdict',   fallback: 'Verdict' },
+  grouped:   { icon: <Layers3 size={11} strokeWidth={2.5} aria-hidden="true" />,        labelKey: 'badge_list',      fallback: 'List' },
+  picks:     { icon: <Heart size={11} strokeWidth={2.5} aria-hidden="true" />,          labelKey: 'badge_picks',     fallback: 'Picks' },
 };
 
 interface ContentTypeBadgeProps {
@@ -163,13 +156,22 @@ interface ContentTypeBadgeProps {
 }
 
 export const ContentTypeBadge: React.FC<ContentTypeBadgeProps> = ({ type, toolsSubtype }) => {
-  if (type === 'general') return null;
+  const { t } = useTranslation(['common']);
+
+  if (type === 'general') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-gray-100 text-gray-500 border-gray-200">
+        <BookOpen size={11} strokeWidth={2.5} aria-hidden="true" />
+        {t('common:badge_general', 'General')}
+      </span>
+    );
+  }
 
   if (type === 'recipe') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-orange-50 text-orange-600 border-orange-200">
         <ChefHat size={11} strokeWidth={2.5} aria-hidden="true" />
-        Recipe
+        {t('common:badge_recipe', 'Recipe')}
       </span>
     );
   }
@@ -178,16 +180,16 @@ export const ContentTypeBadge: React.FC<ContentTypeBadgeProps> = ({ type, toolsS
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-emerald-50 text-emerald-700 border-emerald-200">
         <Dumbbell size={11} strokeWidth={2.5} aria-hidden="true" />
-        Workout
+        {t('common:badge_workout', 'Workout')}
       </span>
     );
   }
 
-  if (type === 'location') {
+  if (type === 'location' || type === 'places') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-sky-50 text-sky-700 border-sky-200">
         <MapPin size={11} strokeWidth={2.5} aria-hidden="true" />
-        Places
+        {t('common:badge_places', 'Places')}
       </span>
     );
   }
@@ -196,7 +198,7 @@ export const ContentTypeBadge: React.FC<ContentTypeBadgeProps> = ({ type, toolsS
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-primary-50 text-primary-700 border-primary-200">
         <Wrench size={11} strokeWidth={2.5} aria-hidden="true" />
-        Software
+        {t('common:badge_software', 'Software')}
       </span>
     );
   }
@@ -205,17 +207,17 @@ export const ContentTypeBadge: React.FC<ContentTypeBadgeProps> = ({ type, toolsS
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-amber-50 text-amber-700 border-amber-200">
         <Landmark size={11} strokeWidth={2.5} aria-hidden="true" />
-        Finance
+        {t('common:badge_finance', 'Finance')}
       </span>
     );
   }
 
   if (type === 'products') {
-    const { icon, label } = STRUCTURED_META[toolsSubtype ?? 'picks'];
+    const { icon, labelKey, fallback } = STRUCTURED_META[toolsSubtype ?? 'picks'];
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-violet-50 text-violet-700 border-violet-200">
         {icon}
-        {label}
+        {t(`common:${labelKey}`, fallback)}
       </span>
     );
   }

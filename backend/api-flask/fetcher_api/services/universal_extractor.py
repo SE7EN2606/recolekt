@@ -354,6 +354,13 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
 
         is_location_list = is_location_list_content(transcript, caption)
 
+        if requested_public_content_type in {"recipe", "workout"} and is_location_list:
+            is_location_list = False
+            logger.info(
+                "📍 Location-list detection suppressed because requested family is %s",
+                requested_public_content_type,
+            )
+
         if is_location_list:
             if mention_verdicts >= 3:
                 is_location_list = False

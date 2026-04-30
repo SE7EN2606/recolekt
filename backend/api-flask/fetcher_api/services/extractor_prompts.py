@@ -777,12 +777,28 @@ def _build_recipe_block() -> str:
      - "headline": Name of the specific dish.
      - "text": ACTIONABLE mini-recipe. You MUST include EXACT quantities, measurements, and ingredients if provided (e.g., 'Mix 40g flour, 2 eggs, and 10ml milk'). DO NOT write vague, generic descriptions like 'A delicious waffle with cheese'. Make it a mini-tutorial.
      - "emoji": One emoji representing that specific dish.
-   - **servings**: (For single recipes) Number of portions.
+   - **servings**: (For single recipes) Number of portions. If unknown, null.
    - **prep_time**: Time to prepare/assemble ingredients.
    - **cook_time**: Active cooking/heating time.
-   - **total_time**: Total duration from start to finish.
+   - **rest_time**: Number of rest/chill/marinade/proof minutes if explicitly required. Otherwise null.
+   - **total_time**: Total duration from start to finish, including rest/chill time when required.
+   - Add time metadata when possible:
+     "prep_time_meta": {"source": "caption|transcript|caption_transcript|ai_estimated", "confidence": "high|medium|low"}
+     "cook_time_meta": {"source": "caption|transcript|caption_transcript|ai_estimated", "confidence": "high|medium|low"}
+     "rest_time_meta": {"source": "caption|transcript|caption_transcript|ai_estimated", "confidence": "high|medium|low"}
+     "total_time_meta": {"source": "computed|ai_estimated", "confidence": "high|medium|low"}
    - **ingredients**: (For single recipes) ARRAY OF OBJECTS. Each must have: "item", "quantity", "unit", "emoji".
-   - **instructions**: (For single recipes) Detailed, actionable steps.
+   - If quantity is not specified, set "quantity": null. Do not invent a quantity.
+   - If the source gives a range such as "320-350g" or "2-3 tbsp", preserve it as "quantityRange": {"min": 320, "max": 350, "unit": "g"} and use the lower bound as the default "quantity".
+   - If the source says "about", "around", "roughly", "environ", or similar, set "approximate": true.
+   - LIQUID QUANTITY RULE: If water, broth, stock, wine, milk, cream, oil, or any liquid is mentioned without exact amount or explicit level, keep quantity null. Do NOT invent "to cover" or "enough to cover".
+   - If an ingredient quantity is missing, add "needs_review": true and "missing_reason": "quantity_not_specified".
+   - **instructions**: (For single recipes) Detailed, actionable steps. Prefer ARRAY OF OBJECTS:
+     [{"instruction": "Step text", "source": "caption|transcript|caption_transcript|ai_inferred", "confidence": "high|medium|low"}]
+   - **practical_summary**: Object with:
+     {"what_it_is": "...", "key_technique": "...", "important_notes": ["..."], "source": "ai_generated", "confidence": "high|medium|low"}
+   - practical_summary must be specific and useful for cooking. Avoid food-blog language.
+   - Do NOT invent optional pairings, substitutions, wine additions, serving suggestions, or chef tips unless the source explicitly mentions them.
    - **tips**: Extract specific chef secrets or nuances.
    - **notes**: Important context.
 
@@ -823,9 +839,34 @@ def _build_general_block() -> str:
    - **servings**: Number of portions.
    - **prep_time**: ESTIMATE based on complexity.
    - **cook_time**: ESTIMATE based on the dish type.
-   - **total_time**: ESTIMATE as prep + cook.
+   - **total_time**: ESTIMATE as prep + cook + rest/chill time when rest/chill time is part of the recipe.
+   - **rest_time**: Number of rest/chill minutes if the source mentions chilling, resting, marinating, proofing, refrigerating, or overnight waiting. Otherwise null.
+   - Add time metadata when possible:
+     "prep_time_meta": {"source": "caption|transcript|caption_transcript|ai_estimated", "confidence": "high|medium|low"}
+     "cook_time_meta": {"source": "caption|transcript|caption_transcript|ai_estimated", "confidence": "high|medium|low"}
+     "rest_time_meta": {"source": "caption|transcript|caption_transcript|ai_estimated", "confidence": "high|medium|low"}
+     "total_time_meta": {"source": "computed|ai_estimated", "confidence": "high|medium|low"}
+   - If prep time is not explicitly stated, estimate it but mark prep_time_meta.source as "ai_estimated".
    - **ingredients**: ARRAY OF OBJECTS with "item", "quantity", "unit", "emoji".
-   - **instructions**: Detailed, actionable steps.
+   - For any ingredient where quantity is not specified, set "quantity": null. Do not invent a quantity.
+   - If the source gives a quantity range such as "320-350g", "2-3 tbsp", or "10–12 minutes", preserve the range using "quantityRange": {"min": 320, "max": 350, "unit": "g"} and set "quantity" to the lower bound only as the default display value.
+   - If the source says "about", "around", "roughly", "environ", or similar, set "approximate": true.
+   - LIQUID QUANTITY RULE: If water, broth, stock, wine, milk, cream, oil, or any other liquid is mentioned without an exact amount or explicit level, keep quantity null. Do NOT write "to cover", "until covered", "enough to cover", or similar unless the source explicitly says that.
+   - If an ingredient quantity is missing, add metadata when possible: "needs_review": true and "missing_reason": "quantity_not_specified".
+   - **instructions**: Detailed, actionable steps. Prefer ARRAY OF OBJECTS:
+     [{"instruction": "Step text", "source": "caption|transcript|caption_transcript|ai_inferred", "confidence": "high|medium|low"}]
+     Backward-compatible string arrays are allowed only if metadata is unavailable.
+     Do not hide missing quantities inside the step text.
+   - **practical_summary**: Object with:
+     {
+       "what_it_is": "Plain explanation of the dish, no food-blog language",
+       "key_technique": "The most important cooking method or transformation",
+       "important_notes": ["Critical notes the user must not miss"],
+       "source": "ai_generated",
+       "confidence": "high|medium|low"
+     }
+   - practical_summary must be specific and useful for cooking. Avoid generic marketing phrases like "captures the essence", "perfect for", "beautifully pairs", "rustic simplicity", or similar food-blog wording.
+   - Do NOT invent optional pairings, substitutions, wine additions, serving suggestions, or chef tips unless the source explicitly mentions them.
    - **tips**: Extract any cooking tips mentioned.
    - **notes**: Any relevant context.
 

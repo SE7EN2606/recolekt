@@ -526,7 +526,7 @@ export const VideoDetail: React.FC = () => {
                 >
                   <Globe size={14} />
                   <span className="text-[11px] font-bold uppercase">
-                    {showOriginal ? viewModel.languageCode : 'EN'}
+                    {showOriginal ? 'EN' : viewModel.languageCode}
                   </span>
                 </button>
               )}
@@ -590,6 +590,8 @@ export const VideoDetail: React.FC = () => {
                 useMetric={useMetric}
                 onToggleMetric={setUseMetric}
                 onAddToShoppingList={handleAddToShoppingList}
+                caption={viewModel.caption}
+                transcript={viewModel.transcript}
               />
             </div>
           )}

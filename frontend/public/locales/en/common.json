@@ -52,5 +52,19 @@
   "installStep2": "Select \"Add to Home Screen\"",
   "saveChanges": "Save Changes",
   "back": "Back",
-  "next": "Next"
+  "next": "Next",
+  "badge_general": "General",
+  "badge_recipe": "Recipe",
+  "badge_workout": "Workout",
+  "badge_places": "Places",
+  "badge_software": "Software",
+  "badge_finance": "Finance",
+  "badge_lifestyle": "Lifestyle",
+  "badge_gear": "Gear",
+  "badge_food": "Food",
+  "badge_ranking": "Ranking",
+  "badge_tier": "Tier",
+  "badge_verdict": "Verdict",
+  "badge_list": "List",
+  "badge_picks": "Picks"
 }
