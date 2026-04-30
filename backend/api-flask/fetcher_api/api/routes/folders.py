@@ -11,6 +11,18 @@ from fetcher_api.adapters.db import execute, fetch_all, fetch_one
 logger = logging.getLogger(__name__)
 folders_bp = Blueprint("folders", __name__, url_prefix="/api/folders")
 
+def normalize_folder_name(name: str) -> str:
+    name = str(name or "").strip()
+    name = re.sub(r"[^A-Za-z0-9À-ÖØ-öø-ÿ -]", "", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    name = re.sub(r"-+", "-", name).strip("- ").strip()
+
+    if not name:
+        raise ValueError("Folder name cannot be empty")
+
+    return name[:1].upper() + name[1:]
+
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -119,11 +131,11 @@ def create_folder():
             return err
 
         data      = request.get_json(silent=True) or {}
-        name      = (data.get("name") or "").strip()
+        try:
+            name = normalize_folder_name(data.get("name"))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         parent_id = data.get("parent_id")
-
-        if not name:
-            return jsonify({"error": "Folder name is required"}), 400
 
         if parent_id:
             parent = fetch_one(
@@ -189,10 +201,10 @@ def update_folder(folder_id):
             return err
 
         data = request.get_json(silent=True) or {}
-        name = (data.get("name") or "").strip()
-
-        if not name:
-            return jsonify({"error": "Name cannot be empty"}), 400
+        try:
+            name = normalize_folder_name(data.get("name"))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
 
         current = fetch_one(
             "SELECT id, parent_id FROM folders WHERE id = %s AND user_id = %s LIMIT 1",
