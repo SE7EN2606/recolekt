@@ -590,8 +590,6 @@ export const VideoDetail: React.FC = () => {
                 useMetric={useMetric}
                 onToggleMetric={setUseMetric}
                 onAddToShoppingList={handleAddToShoppingList}
-                caption={viewModel.caption}
-                transcript={viewModel.transcript}
               />
             </div>
           )}
