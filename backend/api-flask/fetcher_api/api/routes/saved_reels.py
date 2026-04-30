@@ -32,11 +32,14 @@ def _json_safe(value):
     if isinstance(value, Decimal):
         return float(value)
 
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+
     if isinstance(value, list):
         return [_json_safe(v) for v in value]
 
     if isinstance(value, dict):
-        return {k: _json_safe(v) for k, v in value.items()}
+        return {str(k): _json_safe(v) for k, v in value.items()}
 
     if hasattr(value, "isoformat"):
         return value.isoformat()
@@ -244,7 +247,19 @@ def saved_reels():
         (user_id, per_page, offset),
     )
 
-    reels = [_serialize_reel_row(r) for r in rows]
+    reels = []
+
+    for r in rows:
+        try:
+            reels.append(_serialize_reel_row(r))
+        except Exception:
+            try:
+                row_dict = dict(r) if hasattr(r, "keys") else {}
+                bad_id = row_dict.get("id")
+            except Exception:
+                bad_id = None
+
+            logger.exception("Failed to serialize saved reel row id=%s", bad_id)
 
     return jsonify({
         "reels": reels,
