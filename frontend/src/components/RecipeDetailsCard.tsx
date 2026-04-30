@@ -11,7 +11,14 @@ import { useTranslation } from 'react-i18next';
 
 type RawInstruction =
   | string
-  | { instruction: string; source?: string; confidence?: string };
+  | {
+      instruction?: string | null;
+      text?: string | null;
+      source?: string | null;
+      confidence?: string | null;
+      needs_review?: boolean | null;
+      userEdited?: boolean | null;
+    };
 
 type RawIngredient =
   | string
@@ -455,7 +462,13 @@ const TimeCell: React.FC<{ icon: React.ReactNode; label: string; value: string |
   if (!value) return null;
   return (
     <div className="flex flex-col items-center justify-center gap-1 py-4 px-2 text-center">
-      <div className={accent ? `text-${accent}` : 'text-gray-400'}>{icon}</div>
+      <div className={
+        accent === 'tertiary-500' ? 'text-tertiary-500' :
+        accent === 'amber-500' ? 'text-amber-500' :
+        accent === 'purple-500' ? 'text-purple-500' :
+        accent === 'gray-400' ? 'text-gray-400' :
+        'text-gray-400'
+      }>{icon}</div>
       <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{label}</span>
       <span className="text-[13px] font-black text-gray-900 leading-tight">{value}</span>
     </div>
@@ -607,7 +620,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  let globalIdx = 0;
 
   return (
     <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
@@ -707,7 +719,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
             {hasGroups
               ? groups.map((group, gi) => (
                   <div key={gi}>
-                    {group.title && (
+                    {(group.title || group.group) && (
                       <div className="px-5 pt-3 pb-1.5">
                         <h5 className="text-[11px] font-black text-gray-400 uppercase tracking-widest">
                           {group.title || group.group}
@@ -717,7 +729,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                     <ul>
                       {(group.items ?? []).map((item, ii) => {
                         const id = `g${gi}-i${ii}`;
-                        globalIdx++;
                         return (
                           <IngredientRow
                             key={id} id={id} raw={item}
