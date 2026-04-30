@@ -7,7 +7,6 @@ from contextlib import contextmanager
 from dotenv import load_dotenv
 from pathlib import Path
 
-import os
 from urllib.parse import urlparse
 
 DATABASE_URL_DEBUG_ONCE = False
@@ -32,12 +31,29 @@ def _get_database_url():
     return url
 
 
+def _log_database_url_once(url: str):
+    global DATABASE_URL_DEBUG_ONCE
+
+    if DATABASE_URL_DEBUG_ONCE:
+        return
+
+    DATABASE_URL_DEBUG_ONCE = True
+    parsed = urlparse(url)
+    logger.warning(
+        "DATABASE_URL host=%s database=%s user=%s",
+        parsed.hostname,
+        parsed.path.lstrip("/"),
+        parsed.username,
+    )
+
+
 def _connect_with_retry(max_attempts: int = 5):
     """
     Connect to NeonDB with exponential backoff.
     Handles auto-suspend wakeup (cold start can take 2-5s).
     """
     url = _get_database_url()
+    _log_database_url_once(url)
     last_err = None
 
     for attempt in range(max_attempts):
