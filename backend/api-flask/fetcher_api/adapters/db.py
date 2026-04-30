@@ -49,7 +49,6 @@ def _connect_with_retry(max_attempts: int = 5):
     Handles auto-suspend wakeup (cold start can take 2-5s).
     """
     url = _get_database_url()
-    _log_database_url_once(url)
     last_err = None
 
     for attempt in range(max_attempts):
