@@ -233,7 +233,7 @@ def saved_reels():
             transcription,
             recipe,
             workout,
-            tools_list,
+            NULL::jsonb AS tools_list,
             location,
             gcs_urls,
             summary_title,
