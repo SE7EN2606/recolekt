@@ -1,5 +1,6 @@
 // src/components/MetadataPanel.tsx
 // Mobile violet card + desktop right-column category/topic/hashtags panel
+import { useTranslation } from 'react-i18next';
 import React from 'react';
 import { Pencil } from 'lucide-react';
 import {
