@@ -85,8 +85,6 @@ else:
         "https://recolekt.app",
         "https://www.recolekt.app",
         "https://staging.recolekt.app",
-        "https://recolekt.app",
-        "https://www.recolekt.app",
         "https://recolekt-staging.up.railway.app",
     ]
     env_frontend = _norm_origin(os.getenv("FRONTEND_BASE_URL", ""))
