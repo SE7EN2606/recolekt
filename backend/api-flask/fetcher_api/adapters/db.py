@@ -7,6 +7,11 @@ from contextlib import contextmanager
 from dotenv import load_dotenv
 from pathlib import Path
 
+import os
+from urllib.parse import urlparse
+
+DATABASE_URL_DEBUG_ONCE = False
+
 logger = logging.getLogger("db")
 
 ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
