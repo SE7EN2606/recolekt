@@ -51,12 +51,14 @@ const nutriColors: Record<string, string> = {
 
 function NutriScoreVisual({ letter }: { letter: "A" | "B" | "C" | "D" | "E" }) {
   const grades = [
-    { letter: "A", color: "#038141" },
-    { letter: "B", color: "#85BB2F" },
-    { letter: "C", color: "#FECB02" },
-    { letter: "D", color: "#EE8100" },
-    { letter: "E", color: "#E63E11" },
+    { l: "A", x: 0,   w: 58, color: "#038141" },
+    { l: "B", x: 56,  w: 52, color: "#85BB2F" },
+    { l: "C", x: 106, w: 52, color: "#FECB02" },
+    { l: "D", x: 156, w: 52, color: "#EE8100" },
+    { l: "E", x: 206, w: 58, color: "#E63E11" },
   ] as const;
+
+  const active = grades.find((g) => g.l === letter) ?? grades[0];
 
   return (
     <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
@@ -65,34 +67,79 @@ function NutriScoreVisual({ letter }: { letter: "A" | "B" | "C" | "D" | "E" }) {
         <p className="text-[10px] font-bold text-gray-400">per 100g</p>
       </div>
 
-      <div className="flex items-center gap-1">
-        <div className="flex h-10 min-w-[92px] items-center justify-center rounded-l-full rounded-r-md bg-gray-950 px-3 text-[13px] font-black text-white">
-          Nutri-Score
-        </div>
+      <div className="mx-auto w-full max-w-[280px]">
+        <svg viewBox="0 0 280 98" role="img" aria-label={`Estimated Nutri-Score ${letter}`} className="block h-auto w-full">
+          <text
+            x="0"
+            y="22"
+            fill="#7a7a7a"
+            fontSize="20"
+            fontWeight="900"
+            letterSpacing="-0.7"
+            fontFamily="Arial, Helvetica, sans-serif"
+          >
+            NUTRI-SCORE
+          </text>
 
-        <div className="flex flex-1 items-center gap-1">
-          {grades.map((grade) => {
-            const active = grade.letter === letter;
+          <g transform="translate(0 34)">
+            {grades.map((g, i) => (
+              <rect
+                key={g.l}
+                x={g.x}
+                y="6"
+                width={g.w}
+                height="42"
+                rx={i === 0 || i === grades.length - 1 ? 18 : 0}
+                fill={g.color}
+              />
+            ))}
 
-            return (
-              <div
-                key={grade.letter}
-                className={`relative flex h-10 flex-1 items-center justify-center rounded-md text-[18px] font-black text-white ${
-                  active ? "z-10 scale-[1.16] shadow-lg" : ""
-                }`}
-                style={{ backgroundColor: grade.color }}
+            {grades.map((g) => (
+              <text
+                key={g.l}
+                x={g.x + g.w / 2}
+                y="36"
+                textAnchor="middle"
+                fill={g.l === letter ? "white" : "rgba(255,255,255,0.52)"}
+                fontSize={g.l === letter ? "30" : "26"}
+                fontWeight="900"
+                fontFamily="Arial, Helvetica, sans-serif"
               >
-                {active ? (
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full border-[3px] border-white bg-white/10 text-white shadow-inner">
-                    {grade.letter}
-                  </div>
-                ) : (
-                  grade.letter
-                )}
-              </div>
-            );
-          })}
-        </div>
+                {g.l}
+              </text>
+            ))}
+
+            <rect
+              x={active.x - 5}
+              y="0"
+              width={active.w + 10}
+              height="54"
+              rx="20"
+              fill={active.color}
+              stroke="white"
+              strokeWidth="7"
+              filter="url(#shadow)"
+            />
+
+            <text
+              x={active.x + active.w / 2}
+              y="38"
+              textAnchor="middle"
+              fill="white"
+              fontSize="34"
+              fontWeight="900"
+              fontFamily="Arial, Helvetica, sans-serif"
+            >
+              {letter}
+            </text>
+          </g>
+
+          <defs>
+            <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+              <feDropShadow dx="0" dy="4" stdDeviation="4" floodOpacity="0.18" />
+            </filter>
+          </defs>
+        </svg>
       </div>
     </div>
   );

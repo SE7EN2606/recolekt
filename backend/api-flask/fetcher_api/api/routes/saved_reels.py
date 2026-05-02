@@ -267,3 +267,102 @@ def saved_reels():
         "per_page": per_page,
         "count": len(reels),
     })
+
+@saved_reels_bp.route("/search", methods=["GET", "OPTIONS"])
+def search_saved_reels():
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        user_id = get_user_id_from_request()
+    except ValueError:
+        return jsonify({"error": "Authentication required"}), 401
+
+    raw_q = (request.args.get("q") or "").strip()
+    folder_id = (request.args.get("folder_id") or "").strip() or None
+
+    if not raw_q:
+        return jsonify([])
+
+    # Keep v1 intentionally simple and robust:
+    # - works even if search_vector is missing/stale
+    # - searches recipe JSON text, caption, title, transcript, author
+    # - returns the same serialized shape as /saved_reels for Gallery cards
+    like = f"%{raw_q.lower()}%"
+
+    sql = """
+        SELECT
+            id,
+            user_id,
+            source_url,
+            folder_id,
+            is_favorite,
+            status,
+            content_type,
+            created_at,
+            caption,
+            author_name,
+            duration,
+            transcription,
+            recipe,
+            workout,
+            NULL::jsonb AS tools_list,
+            NULL::jsonb AS location,
+            gcs_urls,
+            summary_title,
+            summary_text,
+            error_message,
+            CASE
+                WHEN LOWER(COALESCE(content_type, '')) = 'recipe'
+                     AND LOWER(COALESCE(recipe::text, '')) LIKE %s THEN 4
+                WHEN LOWER(COALESCE(summary_title, '')) LIKE %s THEN 3
+                WHEN LOWER(COALESCE(caption, '')) LIKE %s THEN 2
+                ELSE 1
+            END AS search_rank
+        FROM reels
+        WHERE user_id = %s
+          AND (
+            LOWER(COALESCE(summary_title, '')) LIKE %s
+            OR LOWER(COALESCE(caption, '')) LIKE %s
+            OR LOWER(COALESCE(author_name, '')) LIKE %s
+            OR LOWER(COALESCE(recipe::text, '')) LIKE %s
+            OR LOWER(COALESCE(workout::text, '')) LIKE %s
+            OR LOWER(COALESCE(transcription::text, '')) LIKE %s
+            OR LOWER(COALESCE(summary_text::text, '')) LIKE %s
+          )
+    """
+
+    params = [
+        like, like, like,
+        user_id,
+        like, like, like, like, like, like, like,
+    ]
+
+    if folder_id and folder_id != "all":
+        if folder_id == "favorites":
+            sql += " AND is_favorite = TRUE"
+        elif folder_id == "unsorted":
+            sql += " AND (folder_id IS NULL OR folder_id = 'unsorted')"
+        else:
+            sql += " AND folder_id = %s"
+            params.append(folder_id)
+
+    sql += " ORDER BY search_rank DESC, created_at DESC NULLS LAST LIMIT 100"
+
+    rows = fetch_all(sql, tuple(params))
+
+    results = []
+    for r in rows:
+        try:
+            results.append(_serialize_reel_row(r))
+        except Exception:
+            try:
+                row_dict = dict(r) if hasattr(r, "keys") else {}
+                bad_id = row_dict.get("id")
+            except Exception:
+                bad_id = None
+
+            logger.exception("Failed to serialize search reel row id=%s", bad_id)
+
+    return jsonify(results)
+

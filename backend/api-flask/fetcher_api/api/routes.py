@@ -365,7 +365,21 @@ def search_reels():
     sql += " ORDER BY rank DESC LIMIT 100"
 
     rows = fetch_all(sql, tuple(params))
-    return jsonify([_json_safe(dict(r)) for r in rows])
+
+    results = []
+    for r in rows:
+        try:
+            results.append(_serialize_reel_row(r))
+        except Exception:
+            try:
+                row_dict = dict(r) if hasattr(r, "keys") else {}
+                bad_id = row_dict.get("id")
+            except Exception:
+                bad_id = None
+
+            logger.exception("Failed to serialize search reel row id=%s", bad_id)
+
+    return jsonify(results)
 
 
 @api_bp.route("/api_token/generate", methods=["POST"])

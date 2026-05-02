@@ -16,7 +16,7 @@
   "selectedCount": "{{count}} sélectionné(s)",
   "moveToFolder": "Déplacer vers...",
   "createFolder": "Créer le dossier",
-  "mainLevel": "Niveau principal (Aucun parent)",
+  "topLevel": "Niveau principal",
   "insideFolder": "Dans \"{{name}}\"",
   "folderNamePlaceholder": "Nom du dossier...",
   "subfolders": "Sous-dossiers",

@@ -16,7 +16,7 @@
   "selectedCount": "{{count}} selected",
   "moveToFolder": "Move to folder...",
   "createFolder": "Create Folder",
-  "mainLevel": "Main Level (No Parent)",
+  "topLevel": "Top level",
   "insideFolder": "Inside \"{{name}}\"",
   "folderNamePlaceholder": "Folder Name...",
   "subfolders": "Subfolders",
@@ -25,5 +25,7 @@
   "errorFolderExists": "A folder with this name already exists.",
   "errorGeneric": "An error occurred.",
   "settings": "Settings",
-  "subtitle": "Create collections and sort your library"
+  "subtitle": "Create collections and sort your library",
+  "createAndMove": "Create folder and move selected",
+  "createAndMoveBtn": "Create & Move"
 }

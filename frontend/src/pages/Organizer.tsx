@@ -20,7 +20,8 @@ import {
   LayoutGrid,
   Heart,
   Folders,
-  FolderOpen
+  FolderOpen,
+  FolderPlus,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -31,6 +32,7 @@ interface DropdownOption {
   isSub?: boolean;
   divider?: boolean;
   disabled?: boolean;
+  isAction?: boolean;
 }
 
 const safeStr = (v: any): string => {
@@ -38,6 +40,8 @@ const safeStr = (v: any): string => {
   if (v == null) return '';
   return String(v);
 };
+
+const CREATE_NEW_FOLDER_VALUE = '__create_new__';
 
 // ✅ Portal-based dropdown — escapes sticky/z-index stacking contexts completely
 const CustomDropdown = ({ 
@@ -71,11 +75,10 @@ const CustomDropdown = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // ✅ Close on scroll so dropdown doesn't float away from trigger
   useEffect(() => {
     if (!isOpen) return;
     const handleScroll = (e: Event) => { if (dropdownRef.current && dropdownRef.current.contains(e.target as Node)) return; setIsOpen(false); };
-    window.addEventListener('scroll', handleScroll, true); // ← capture:true catches ALL scrolls
+    window.addEventListener('scroll', handleScroll, true);
     return () => window.removeEventListener('scroll', handleScroll, true);
   }, [isOpen]);
 
@@ -112,6 +115,19 @@ const CustomDropdown = ({
         >
           {options.map((opt, i) => {
             if (opt.divider) return <div key={`div-${i}`} className="h-px bg-gray-100 my-1.5 mx-2" />;
+            if (opt.isAction) {
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => { onChange(opt.value); setIsOpen(false); }}
+                  className="w-full text-left flex items-center gap-2.5 px-3 py-2 text-sm font-bold text-primary-600 hover:bg-primary-50 transition-colors"
+                >
+                  <div className="shrink-0">{opt.icon}</div>
+                  <span className="truncate">{opt.label}</span>
+                </button>
+              );
+            }
             return (
               <button
                 key={opt.value}
@@ -150,8 +166,15 @@ export const Organizer: React.FC = () => {
   
   const [isCreating, setIsCreating] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
-  const [creationParentId, setCreationParentId] = useState<string>(''); 
+  const [creationParentId, setCreationParentId] = useState<string>('');
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // ✅ Inline "create & move" state — triggered from the move dropdown
+  const [isInlineFolderCreate, setIsInlineFolderCreate] = useState(false);
+  const [inlineFolderName, setInlineFolderName] = useState('');
+  const [inlineFolderParentId, setInlineFolderParentId] = useState('');
+  const [inlineFolderError, setInlineFolderError] = useState<string | null>(null);
+  const inlineInputRef = useRef<HTMLInputElement>(null);
 
   const [lastAction, setLastAction] = useState<{ type: 'move', videoIds: string[], fromFolderId: string, toFolderId: string } | null>(null);
 
@@ -168,6 +191,12 @@ export const Organizer: React.FC = () => {
     window.addEventListener('app-video-moved', handleVideoMoved);
     return () => window.removeEventListener('app-video-moved', handleVideoMoved);
   }, []);
+
+  useEffect(() => {
+    if (isInlineFolderCreate) {
+      setTimeout(() => inlineInputRef.current?.focus(), 50);
+    }
+  }, [isInlineFolderCreate]);
 
   const selectedFolder = folders.find(f => f.id === selectedFolderId) || 
                          folders.flatMap(f => f.subFolders || []).find(f => f.id === selectedFolderId);
@@ -228,6 +257,26 @@ export const Organizer: React.FC = () => {
     }
   };
 
+  // ✅ Create folder from inline move panel then immediately move selected videos into it
+  const handleInlineFolderCreateAndMove = async () => {
+    if (!inlineFolderName.trim()) return;
+    setInlineFolderError(null);
+    try {
+      await addFolder(inlineFolderName.trim(), inlineFolderParentId || null);
+      // Find the newly created folder by name after it's added
+      const newFolder = folders.find(f => f.name === inlineFolderName.trim()) ??
+        folders.flatMap(f => f.subFolders || []).find(f => f.name === inlineFolderName.trim());
+      if (newFolder?.id) {
+        handleMoveSelected(newFolder.id);
+      }
+      setIsInlineFolderCreate(false);
+      setInlineFolderName('');
+      setInlineFolderParentId('');
+    } catch (err: any) {
+      setInlineFolderError(err.message || t('organizer:errorFolderExists'));
+    }
+  };
+
   const handleRename = async () => {
     if (renameValue.trim() && selectedFolderId) {
       setActionError(null);
@@ -248,6 +297,10 @@ export const Organizer: React.FC = () => {
   };
 
   const handleMoveSelected = (targetId: string) => {
+    if (targetId === CREATE_NEW_FOLDER_VALUE) {
+      setIsInlineFolderCreate(true);
+      return;
+    }
     const ids = Array.from(selectedVideoIds);
     moveVideos(ids, targetId);
     setLastAction({ type: 'move', videoIds: ids, fromFolderId: selectedFolderId, toFolderId: targetId });
@@ -284,11 +337,19 @@ export const Organizer: React.FC = () => {
       ...(f.subFolders || []).map(sub => ({
         value: sub.id, label: sub.name, icon: <CornerDownRight size={14} strokeWidth={2.5} className="text-gray-400 group-hover:text-primary-500" />, isSub: true
       }))
-    ])
+    ]),
+    { divider: true, value: 'div_create', label: '' },
+    // ✅ "New folder" action at bottom of move dropdown
+    {
+      value: CREATE_NEW_FOLDER_VALUE,
+      label: t('organizer:newFolder', 'New folder'),
+      icon: <FolderPlus size={16} className="text-primary-600" />,
+      isAction: true,
+    },
   ];
 
   const parentCreationOptions: DropdownOption[] = [
-    { value: '', label: t('organizer:mainLevel'), icon: <LayoutGrid size={16} /> },
+    { value: '', label: t('organizer:topLevel', 'Top level'), icon: <LayoutGrid size={16} /> },
     { divider: true, value: 'div1', label: '' },
     ...folders.filter(f => !['all', 'favorites', 'archive', 'unsorted'].includes(f.id) && !f.isSystem).map(f => (
       { value: f.id, label: t('organizer:insideFolder', { name: f.name }), icon: <Folders size={16} /> }
@@ -444,7 +505,62 @@ export const Organizer: React.FC = () => {
           </div>
         </div>
 
-        {/* 3. NEW FOLDER INLINE CREATION */}
+        {/* ✅ INLINE CREATE-AND-MOVE panel — appears below action bar when triggered from move dropdown */}
+        {isInlineFolderCreate && (
+          <div className="px-4 md:px-6 py-4 bg-primary-50/80 border-b border-primary-100 flex flex-col gap-3 animate-fade-in">
+            <div className="text-xs font-bold text-primary-700 uppercase tracking-wider flex items-center gap-2">
+              <FolderPlus size={14} />
+              {t('organizer:createAndMove', 'Create folder and move selected')}
+            </div>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 w-full">
+              <div className="w-full sm:w-48 flex-shrink-0">
+                <CustomDropdown 
+                  value={inlineFolderParentId}
+                  onChange={(val) => { setInlineFolderParentId(val); setInlineFolderError(null); }}
+                  options={parentCreationOptions}
+                  placeholder={t('organizer:placeholderSelectFolder')}
+                  triggerClassName="flex items-center justify-between w-full bg-white border border-primary-200 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:border-primary-300 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-sm"
+                />
+              </div>
+              <div className="flex items-center gap-2 w-full flex-1 min-w-0">
+                <input 
+                  ref={inlineInputRef}
+                  placeholder={t('organizer:folderNamePlaceholder')}
+                  value={inlineFolderName}
+                  onChange={e => { setInlineFolderName(e.target.value); setInlineFolderError(null); }}
+                  onKeyDown={e => e.key === 'Enter' && handleInlineFolderCreateAndMove()}
+                  className={`flex-1 min-w-0 bg-white border rounded-lg px-3 py-2 text-sm outline-none transition-all shadow-sm ${inlineFolderError ? 'border-red-400 focus:ring-2 focus:ring-red-500' : 'border-gray-200 focus:ring-2 focus:ring-primary-500'}`}
+                />
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button 
+                    type="button" 
+                    onClick={handleInlineFolderCreateAndMove}
+                    disabled={!inlineFolderName.trim()}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-primary-600 text-white rounded-lg shadow-sm hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-xs font-bold whitespace-nowrap"
+                  >
+                    <Check size={14} />
+                    {t('organizer:createAndMoveBtn', 'Create & Move')}
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => { setIsInlineFolderCreate(false); setInlineFolderName(''); setInlineFolderError(null); }} 
+                    className="p-2 text-gray-400 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition-colors flex-shrink-0"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+            </div>
+            {inlineFolderError && (
+              <div className="flex items-center gap-1 text-red-500 text-xs font-bold animate-fade-in">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>{inlineFolderError}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 3. NEW FOLDER INLINE CREATION (from top bar button) */}
         {isCreating && (
           <div className="px-4 md:px-6 py-4 bg-primary-50/80 border-b border-primary-100 flex flex-col gap-3 animate-fade-in">
             <div className="text-xs font-bold text-primary-700 uppercase tracking-wider flex items-center gap-2">
