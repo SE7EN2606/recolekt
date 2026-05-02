@@ -568,9 +568,9 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-rose-100 bg-rose-50/70">
         <div className="flex items-center gap-2.5">
-          <ChefHat size={18} className="text-tertiary-500" />
+          <ChefHat size={18} className="text-rose-500" />
           <h3 className="font-bold text-gray-900 text-base tracking-tight">
             {t('videoDetail:recipeDetails', 'Recipe Details')}
           </h3>
@@ -578,7 +578,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         {onToggleMetric && (
           <button
             onClick={() => onToggleMetric(!useMetric)}
-            className="px-3 py-1.5 bg-gray-50 border border-gray-200 text-gray-600 rounded-xl text-[11px] font-bold hover:bg-gray-100 transition-colors"
+            className="px-3 py-1.5 bg-white/90 border border-rose-100 text-gray-700 rounded-xl text-[11px] font-bold shadow-sm hover:bg-white transition-colors"
           >
             {useMetric ? 'Imperial' : 'Metric'}
           </button>
@@ -600,26 +600,29 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
       )}
 
       {/* Tabs */}
-      <div className="border-t border-gray-50">
-        <div className="grid grid-cols-3 px-5 pt-4 text-center">
+      <div className="border-t border-gray-100 bg-gray-50 px-3 pt-3">
+        <div className="flex items-end gap-1">
           {[
             { key: 'ingredients', label: 'Ingredients' },
             { key: 'steps', label: 'Recipe Steps' },
             { key: 'nutrition', label: 'Nutrition Value' },
-          ].map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setActiveRecipeTab(tab.key as 'ingredients' | 'steps' | 'nutrition')}
-              className={`pb-3 text-sm font-bold transition-colors ${
-                activeRecipeTab === tab.key
-                  ? 'border-b-2 border-rose-500 text-rose-600'
-                  : 'border-b-2 border-transparent text-gray-400'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+          ].map((tab) => {
+            const active = activeRecipeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveRecipeTab(tab.key as 'ingredients' | 'steps' | 'nutrition')}
+                className={`flex-1 rounded-t-2xl border px-2 py-3 text-[12px] font-black transition-all ${
+                  active
+                    ? 'relative -mb-px border-gray-200 border-b-white bg-white text-rose-600 shadow-sm'
+                    : 'border-transparent bg-gray-100/80 text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -633,9 +636,9 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
               {hasServings && onServingScaleChange && (
                 <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 rounded-xl px-2 py-1">
-                  <button type="button" onClick={() => handleServingsDelta(-1)} className="w-5 h-5 rounded-full bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-[11px] font-bold hover:bg-gray-100 transition">−</button>
-                  <span className="text-[12px] font-extrabold text-gray-800 tabular-nums min-w-[16px] text-center">{currentServings}</span>
-                  <button type="button" onClick={() => handleServingsDelta(1)} className="w-5 h-5 rounded-full bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-[11px] font-bold hover:bg-gray-100 transition">+</button>
+                  <button type="button" onClick={() => handleServingsDelta(-1)} className="w-5 h-5 rounded-full bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center text-[11px] font-black hover:bg-rose-100 transition">−</button>
+                  <span className="text-[13px] font-black text-rose-600 tabular-nums min-w-[16px] text-center">{currentServings}</span>
+                  <button type="button" onClick={() => handleServingsDelta(1)} className="w-5 h-5 rounded-full bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center text-[11px] font-black hover:bg-rose-100 transition">+</button>
                   <span className="text-[10px] text-gray-400 font-medium ml-0.5">serv.</span>
                 </div>
               )}

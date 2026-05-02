@@ -41,13 +41,48 @@ const traffic = (kind: string, value: number) => {
   return { label: "", cls: "bg-gray-100 text-gray-700" };
 };
 
-const scoreColor: Record<string, string> = {
-  A: "bg-green-600",
-  B: "bg-lime-500",
-  C: "bg-yellow-400",
-  D: "bg-orange-500",
-  E: "bg-red-600"
+const nutriColors: Record<string, string> = {
+  A: "#038141",
+  B: "#85BB2F",
+  C: "#FECB02",
+  D: "#EE8100",
+  E: "#E63E11"
 };
+
+function NutriScoreVisual({ letter }: { letter: "A" | "B" | "C" | "D" | "E" }) {
+  return (
+    <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Estimated Nutri-Score</p>
+        <p className="text-[10px] font-bold text-gray-400">per 100g</p>
+      </div>
+
+      <div className="flex items-center">
+        <div className="mr-2 rounded-l-full bg-gray-950 px-3 py-2 text-[11px] font-black uppercase tracking-tight text-white">
+          Nutri
+        </div>
+
+        {(["A", "B", "C", "D", "E"] as const).map((item) => {
+          const active = item === letter;
+          return (
+            <div
+              key={item}
+              className={`relative flex h-9 flex-1 items-center justify-center text-sm font-black text-white transition-all ${
+                active ? "z-10 h-12 scale-110 rounded-md border-[3px] border-white shadow-lg" : ""
+              }`}
+              style={{
+                backgroundColor: nutriColors[item],
+                clipPath: active ? undefined : "polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)",
+              }}
+            >
+              {item}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function ValueTable({ values, label }: { values: NutritionTotals; label: string }) {
   const rows = [
@@ -62,7 +97,7 @@ function ValueTable({ values, label }: { values: NutritionTotals; label: string 
 
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200">
-      <div className="bg-gray-50 px-4 py-2 text-xs font-black uppercase tracking-widest text-gray-400">
+      <div className="bg-rose-50 px-4 py-2 text-xs font-black uppercase tracking-widest text-rose-500">
         {label}
       </div>
       {rows.map(([name, value]) => (
@@ -98,30 +133,12 @@ export default function NutritionCard({ ingredients, servings = 1 }: NutritionCa
 
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Estimated</p>
-          <h3 className="text-lg font-semibold text-gray-950">Nutrition values</h3>
-          <p className="mt-1 text-xs text-gray-500">
-            {nutrition.matchedCount} of {nutrition.totalCount} ingredients calculated · {nutrition.confidence} confidence.
-          </p>
-        </div>
-
-        <div className="text-right">
-          <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-gray-400">Nutri-Score</p>
-          <div className="flex items-center gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1">
-            {(["A", "B", "C", "D", "E"] as const).map((letter) => (
-              <div
-                key={letter}
-                className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-black text-white ${
-                  nutrition.nutriScore.letter === letter ? scoreColor[letter] + " scale-110 shadow-sm ring-2 ring-rose-200" : "bg-gray-300"
-                }`}
-              >
-                {letter}
-              </div>
-            ))}
-          </div>
-        </div>
+      <div className="mb-4">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Estimated</p>
+        <h3 className="text-lg font-semibold text-gray-950">Nutrition values</h3>
+        <p className="mt-1 text-xs text-gray-500">
+          {nutrition.matchedCount} of {nutrition.totalCount} ingredients calculated · {nutrition.confidence} confidence.
+        </p>
       </div>
 
       <div className="mb-4 grid grid-cols-3 rounded-2xl bg-gray-100 p-1 text-xs font-bold">
@@ -134,7 +151,7 @@ export default function NutritionCard({ ingredients, servings = 1 }: NutritionCa
             key={item.key}
             type="button"
             onClick={() => setMode(item.key as ViewMode)}
-            className={`rounded-xl px-2 py-2 transition ${mode === item.key ? "bg-white text-gray-950 shadow-sm" : "text-gray-500"}`}
+            className={`rounded-xl px-2 py-2 transition ${mode === item.key ? "bg-white text-rose-600 shadow-sm" : "text-gray-500"}`}
           >
             {item.label}
           </button>
@@ -158,8 +175,10 @@ export default function NutritionCard({ ingredients, servings = 1 }: NutritionCa
         })}
       </div>
 
+      <NutriScoreVisual letter={nutrition.nutriScore.letter} />
+
       <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
-        Nutri-Score is estimated from calculated per-100g values. Fruit/veg/pulse/nut percentage and fiber are not yet inferred, so this is a demo-grade score, not a regulatory label.
+        Estimated from calculated per-100g values. Fruit/veg/pulse/nut percentage and fiber are not yet inferred, so this is demo-grade, not a regulatory label.
       </p>
     </section>
   );
