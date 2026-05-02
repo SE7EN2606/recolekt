@@ -50,39 +50,54 @@ const nutriColors: Record<string, string> = {
 };
 
 function NutriScoreVisual({ letter }: { letter: "A" | "B" | "C" | "D" | "E" }) {
+  const grades = [
+    { letter: "A", color: "#038141" },
+    { letter: "B", color: "#85BB2F" },
+    { letter: "C", color: "#FECB02" },
+    { letter: "D", color: "#EE8100" },
+    { letter: "E", color: "#E63E11" },
+  ] as const;
+
   return (
-    <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-3">
-      <div className="mb-2 flex items-center justify-between">
+    <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+      <div className="mb-3 flex items-center justify-between">
         <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Estimated Nutri-Score</p>
         <p className="text-[10px] font-bold text-gray-400">per 100g</p>
       </div>
 
-      <div className="flex items-center">
-        <div className="mr-2 rounded-l-full bg-gray-950 px-3 py-2 text-[11px] font-black uppercase tracking-tight text-white">
-          Nutri
+      <div className="flex items-center gap-1">
+        <div className="flex h-10 min-w-[92px] items-center justify-center rounded-l-full rounded-r-md bg-gray-950 px-3 text-[13px] font-black text-white">
+          Nutri-Score
         </div>
 
-        {(["A", "B", "C", "D", "E"] as const).map((item) => {
-          const active = item === letter;
-          return (
-            <div
-              key={item}
-              className={`relative flex h-9 flex-1 items-center justify-center text-sm font-black text-white transition-all ${
-                active ? "z-10 h-12 scale-110 rounded-md border-[3px] border-white shadow-lg" : ""
-              }`}
-              style={{
-                backgroundColor: nutriColors[item],
-                clipPath: active ? undefined : "polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)",
-              }}
-            >
-              {item}
-            </div>
-          );
-        })}
+        <div className="flex flex-1 items-center gap-1">
+          {grades.map((grade) => {
+            const active = grade.letter === letter;
+
+            return (
+              <div
+                key={grade.letter}
+                className={`relative flex h-10 flex-1 items-center justify-center rounded-md text-[18px] font-black text-white ${
+                  active ? "z-10 scale-[1.16] shadow-lg" : ""
+                }`}
+                style={{ backgroundColor: grade.color }}
+              >
+                {active ? (
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full border-[3px] border-white bg-white/10 text-white shadow-inner">
+                    {grade.letter}
+                  </div>
+                ) : (
+                  grade.letter
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 }
+
 
 function ValueTable({ values, label }: { values: NutritionTotals; label: string }) {
   const rows = [
