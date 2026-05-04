@@ -884,7 +884,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         result = await response.json();
       } catch {}
 
-      if (!response.ok) throw new Error(result?.error || 'Failed to import video.');
+      if (!response.ok) {
+        const message =
+          result?.message ||
+          (result?.error === 'extraction_limit_reached'
+            ? "Lots of people are using Recolekt right now. Please try again in a few hours."
+            : null) ||
+          (result?.error === 'unsupported_platform'
+            ? 'Only Instagram, Facebook, YouTube, and TikTok URLs are supported.'
+            : null) ||
+          'Failed to import video.';
+
+        throw new Error(message);
+      }
 
       if (
         result?.status === 'done' ||

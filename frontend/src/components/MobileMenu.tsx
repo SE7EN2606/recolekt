@@ -114,9 +114,9 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                         <span className="text-[10px] font-black bg-primary-100/80 text-primary-700 px-2 py-1 rounded-md tracking-wider">{videos.length}</span>
                       </button>
 
-                      <button onClick={() => handleNav('/organizer')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
+                      <button onClick={() => handleNav('/grocery-list')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
                         <FolderOpen size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('sidebar:organizer', 'Organizer')}</span>
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('sidebar:groceryList', 'Grocery List')}</span>
                         <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
                       </button>
 

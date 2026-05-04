@@ -35,4 +35,4 @@ USER app
 EXPOSE 8080
 
 # Commande de démarrage
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--threads", "4", "--timeout", "120", "--chdir", "/app/api-flask", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "4", "--timeout", "180", "--chdir", "/app/api-flask", "app:app"]

@@ -859,16 +859,23 @@ class AssemblyMixin:
                 tools_cats_og = translated
 
 
-        tools_list = build_tools_list(
-            tools_categories_en=tools_cats_en,
-            tools_categories_og=tools_cats_og,
-            lang=lang,
-            is_english_content=is_english_content,
-        )
+        if content_type == "recipe":
+            tools_list = None
+            tools_cats_en = None
+            tools_cats_og = None
+            parsed["list_subtype"] = None
+            parsed["is_ranked"] = False
+            logger.info("🧹 Recipe content: suppressing tools_list assembly")
+        else:
+            tools_list = build_tools_list(
+                tools_categories_en=tools_cats_en,
+                tools_categories_og=tools_cats_og,
+                lang=lang,
+                is_english_content=is_english_content,
+            )
 
-
-        if tools_list:
-            logger.info("🔧 Assembled tools_list with %d EN categories", len(tools_cats_en or []))
+            if tools_list:
+                logger.info("🔧 Assembled tools_list with %d EN categories", len(tools_cats_en or []))
 
 
         if tools_list:
@@ -1042,7 +1049,7 @@ class AssemblyMixin:
         )
 
 
-        if structured_tools_mode:
+        if structured_tools_mode and content_type != "recipe":
             headlines_en = []
             headlines_og = []
             logger.info("🧹 Structured list detected, suppressing summary headlines")

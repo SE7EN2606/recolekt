@@ -25,12 +25,57 @@ logger = logging.getLogger(__name__)
 
 
 
+def _recipe_ingredient_names_for_summary(parsed: dict) -> list[str]:
+    recipe = parsed.get("recipe")
+    if isinstance(recipe, dict) and isinstance(recipe.get("english"), dict):
+        recipe = recipe.get("english")
+    if not isinstance(recipe, dict):
+        return []
+
+    ingredients = recipe.get("ingredients")
+    if not isinstance(ingredients, list):
+        return []
+
+    names: list[str] = []
+    seen: set[str] = set()
+    for ingredient in ingredients:
+        if not isinstance(ingredient, dict):
+            continue
+        name = safe_str(ingredient.get("item") or ingredient.get("name") or "").strip()
+        key = name.lower()
+        if name and key not in seen:
+            seen.add(key)
+            names.append(name)
+    return names
+
+
+def _recipe_summary_guard(parsed: dict) -> str:
+    recipe = parsed.get("recipe")
+    if isinstance(recipe, dict) and isinstance(recipe.get("english"), dict):
+        recipe = recipe.get("english")
+
+    if not isinstance(recipe, dict):
+        return ""
+
+    ingredients = _recipe_ingredient_names_for_summary(parsed)
+    ingredient_line = ", ".join(ingredients) if ingredients else "not reliably specified"
+
+    return (
+        "RECIPE SOURCE FACTS:\\n"
+        f"- Extracted ingredients: {ingredient_line}\\n"
+        "- Do NOT mention ingredients unless they appear in the extracted ingredients, title, brief, caption, or transcript.\\n"
+        "- Do NOT invent common recipe ingredients such as garlic, onion, butter, cream, or spices.\\n"
+        "- If a quantity or serving count is missing, keep the summary qualitative rather than precise.\\n\\n"
+    )
+
+
 class Call2Mixin:
     def _call2_english(self, parsed: dict, caption: str) -> dict:
         highlights = parsed.get("highlights", [])
         tools_categories = parsed.get("tools_categories") or []
         has_location = has_location_payload(parsed)
         parsed_title = safe_str(parsed.get("title", "")).strip()
+        summary_guard = _recipe_summary_guard(parsed)
 
 
         if tools_categories and is_structured_mode(parsed) and not has_location:
@@ -47,7 +92,8 @@ class Call2Mixin:
             f"Write a summary for this content.\n\n"
             f"TITLE: {parsed_title}\n"
             f"BRIEF: {parsed.get('brief_description', '')}\n"
-            f"CATEGORY: {parsed.get('category', 'general')}\n\n"
+            f"CATEGORY: {parsed.get('category', 'general')}\n"
+            f"{summary_guard}"
             f"REQUIREMENTS FOR SUMMARY:\n"
             f"- Length: STRICTLY 200-400 characters.\n"
             f"- Format: EXACTLY 2 short paragraphs.\n"
@@ -86,6 +132,7 @@ class Call2Mixin:
         highlights = parsed.get("highlights", [])
         headline_json = build_headlines_json(highlights)
         parsed_title = safe_str(parsed.get("title", "")).strip()
+        summary_guard = _recipe_summary_guard(parsed)
 
 
         prompt = (
@@ -94,7 +141,8 @@ class Call2Mixin:
             f"WORKING TITLE: {parsed_title}\n"
             f"TITLE NOTE: The working title may already be in the original language. Do NOT assume it is English.\n"
             f"BRIEF DESCRIPTION: {parsed.get('brief_description', '')}\n"
-            f"CATEGORY: {parsed.get('category', 'general')}\n\n"
+            f"CATEGORY: {parsed.get('category', 'general')}\n"
+            f"{summary_guard}"
             f"CONTENT TO TRANSLATE / REWRITE:\n\n"
             f'"headlines_input": {headline_json}\n\n'
             + (f'"workout_en": {__import__("json").dumps(parsed.get("workout"), ensure_ascii=False)}\n\nTranslate this workout into the SAME language as your summary_original. Return it as "translated_workout" with identical structure — translate group titles, item names, item info, tips. Keep duration, equipment names, and numeric values unchanged.\n\n' if parsed.get("workout") else "")

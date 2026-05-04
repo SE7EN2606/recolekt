@@ -8,6 +8,7 @@ export type NutritionTotals = {
   saturates_g: number;
   sugars_g: number;
   salt_g: number;
+  fiber_g: number;
 };
 
 export type NutriScoreResult = {
@@ -15,6 +16,7 @@ export type NutriScoreResult = {
   score: number;
   negativePoints: number;
   positivePoints: number;
+  fruitVegPct: number;
 };
 
 export type NutritionResult = {
@@ -26,6 +28,9 @@ export type NutritionResult = {
   totalCount: number;
   confidence: "high" | "medium" | "low";
   nutriScore: NutriScoreResult;
+  effectiveServings: number;
+  servingSizeG: number | null;
+  servingEstimateReason: "source" | "sauce_portion" | "weight_portion" | "fallback";
 };
 
 const zeroTotals = (): NutritionTotals => ({
@@ -35,37 +40,77 @@ const zeroTotals = (): NutritionTotals => ({
   fat_g: 0,
   saturates_g: 0,
   sugars_g: 0,
-  salt_g: 0
+  salt_g: 0,
+  fiber_g: 0,
 });
 
 const aliases: Record<string, string> = {
+  // FR core
+  "poulet": "chicken thigh",
   "cuisse de poulet": "chicken thigh",
   "cuisses de poulet": "chicken thigh",
-  "poulet": "chicken thigh",
-  "tete d ail": "garlic",
+  "blanc de poulet": "chicken breast",
+  "ail": "garlic",
   "tete ail": "garlic",
-  "brin de thym": "thyme",
-  "brins de thym": "thyme",
-  "feuille de laurier": "bay leaf",
-  "feuilles de laurier": "bay leaf",
+  "tete d ail": "garlic",
+  "gousse ail": "garlic",
+  "oignon": "onion",
+  "tomate": "tomato",
+  "pomme de terre": "potato",
+  "pommes de terre": "potato",
+  "carotte": "carrot",
+  "riz": "rice",
+  "pates": "pasta",
+  "pate": "pasta",
+  "farine": "flour",
+  "oeuf": "egg",
+  "oeufs": "egg",
+  "lait": "milk",
+  "creme": "cream",
+  "beurre": "butter",
+  "huile olive": "olive oil",
+  "huile d olive": "olive oil",
   "gras de canard": "duck fat",
   "fond de volaille": "chicken stock",
-  "skyr": "skyr",
+  "bouillon de volaille": "chicken stock",
+  "sel": "salt",
+  "poivre": "pepper",
+  "thym": "thyme",
+  "brins de thym": "thyme",
+  "laurier": "bay leaf",
+  "feuille de laurier": "bay leaf",
+  "feuilles de laurier": "bay leaf",
+  "saumon": "salmon",
+  "crevette": "shrimp",
+  "crevettes": "shrimp",
+  "boeuf hache": "beef mince",
+  "parmesan": "parmesan",
+  "mozzarella": "mozzarella",
   "yaourt": "nonfat yogurt",
   "yaourt non gras": "nonfat yogurt",
+  "skyr": "skyr",
   "moutarde": "dijon mustard",
   "moutarde de dijon": "dijon mustard",
   "miel": "honey",
-  "ail": "garlic",
-  "gousse ail": "garlic",
   "sauce worcestershire": "worcestershire sauce",
   "paprika": "paprika",
   "paprika fume": "paprika",
   "vinaigre": "apple cider vinegar",
   "vinaigre de cidre": "apple cider vinegar",
   "vinaigre de cidre de pomme": "apple cider vinegar",
-  "sel": "salt",
-  "poivre": "pepper"
+
+  // EN normalization
+  "chicken thighs": "chicken thigh",
+  "chicken breast fillet": "chicken breast",
+  "cuisses poulet": "chicken thigh",
+  "cuisse poulet": "chicken thigh",
+  "gras canard": "duck fat",
+  "brins thym": "thyme",
+  "feuilles laurier": "bay leaf",
+  "fond volaille": "chicken stock",
+  "ground beef": "beef mince",
+  "minced beef": "beef mince",
+  "olive oil": "olive oil",
 };
 
 const unitToGrams: Record<string, number> = {
@@ -87,11 +132,18 @@ const unitToGrams: Record<string, number> = {
   lb: 453.59,
 
   "cuillere a cafe": 5,
-  "c. a cafe": 5,
   "c a cafe": 5,
+  "c. a cafe": 5,
   "cuillere a soupe": 15,
+  "c a soupe": 15,
   "gousse": 5,
-  "gousses": 5
+  "gousses": 5,
+  "tete": 50,
+  "tetes": 50,
+  "brin": 1,
+  "brins": 1,
+  "feuille": 0.2,
+  "feuilles": 0.2,
 };
 
 const stripAccents = (s: string) =>
@@ -100,8 +152,9 @@ const stripAccents = (s: string) =>
 const normalizeName = (name = "") =>
   stripAccents(name)
     .toLowerCase()
+    .replace(/[’']/g, " ")
     .replace(/[^\w\s-]/g, " ")
-    .replace(/\b(fresh|dried|chopped|sliced|minced|large|small|medium|frais|seche|hach[eé]|tranche|grand|petit|moyen|ou)\b/g, " ")
+    .replace(/\b(fresh|dried|chopped|sliced|minced|large|small|medium|frais|fraiche|seche|sechee|hache|hachee|tranche|grand|petit|moyen|ou|de|du|des|d|la|le|les)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/s$/, "");
@@ -109,111 +162,267 @@ const normalizeName = (name = "") =>
 const normalizeUnit = (unit = "") =>
   stripAccents(unit)
     .toLowerCase()
+    .replace(/[’']/g, " ")
     .replace(/[^\w\s.]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-const parseQuantity = (value: unknown): number => {
-  if (typeof value === "number") return value;
-  if (typeof value !== "string") return 1;
+const parseQuantity = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === "") return null;
 
-  const clean = value.trim().replace(",", ".");
-  const fraction = clean.match(/^(\d+)\/(\d+)$/);
-  if (fraction) return Number(fraction[1]) / Number(fraction[2]);
-
-  const mixed = clean.match(/^(\d+)\s+(\d+)\/(\d+)$/);
-  if (mixed) return Number(mixed[1]) + Number(mixed[2]) / Number(mixed[3]);
-
-  const decimal = clean.match(/[\d.]+/);
-  return decimal ? Number(decimal[0]) : 1;
-};
-
-const ingredientToGrams = (ingredient: any): number => {
-  if (ingredient.quantityRange?.min && ingredient.quantityRange?.max) {
-    const avg = (Number(ingredient.quantityRange.min) + Number(ingredient.quantityRange.max)) / 2;
-    const rangeUnit = normalizeUnit(String(ingredient.quantityRange.unit ?? "g"));
-    return avg * (unitToGrams[rangeUnit] ?? 1);
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
   }
 
-  const quantity = parseQuantity(ingredient.quantity ?? ingredient.amount ?? ingredient.qty);
-  const rawUnit = String(ingredient.unit ?? "");
-  const unit = normalizeUnit(rawUnit);
-  return quantity * (unitToGrams[unit] ?? 100);
+  const text = String(value).trim().toLowerCase();
+
+  if (
+    !text ||
+    text === "to taste" ||
+    text === "as needed" ||
+    text === "a/r" ||
+    text === "q.s." ||
+    text === "qs"
+  ) {
+    return null;
+  }
+
+  const mixedFractionMatch = text.match(/^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+  if (mixedFractionMatch) {
+    const whole = Number(mixedFractionMatch[1]);
+    const numerator = Number(mixedFractionMatch[2]);
+    const denominator = Number(mixedFractionMatch[3]);
+    if (denominator > 0) return whole + numerator / denominator;
+  }
+
+  const fractionMatch = text.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+  if (fractionMatch) {
+    const numerator = Number(fractionMatch[1]);
+    const denominator = Number(fractionMatch[2]);
+    if (denominator > 0) return numerator / denominator;
+  }
+
+  const rangeMatch = text.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)/);
+  if (rangeMatch) {
+    return Number(rangeMatch[1]);
+  }
+
+  const numberMatch = text.match(/(\d+(?:\.\d+)?)/);
+  if (numberMatch) return Number(numberMatch[1]);
+
+  return null;
 };
 
-const findNutrition = (rawName: string): NutritionPer100g | undefined => {
-  const name = normalizeName(rawName);
-  const aliased = aliases[name] ?? Object.entries(aliases).find(([key]) => {
-    const normalizedKey = normalizeName(key);
-    return name.includes(normalizedKey) || normalizedKey.includes(name);
-  })?.[1];
-  const lookup = aliased ?? name;
+const estimateUnitlessCountGrams = (ingredient: any, quantity: number): number | null => {
+  const name = String(
+    ingredient.displayName ??
+    ingredient.name ??
+    ingredient.ingredient ??
+    ingredient.rawText ??
+    ""
+  ).toLowerCase();
 
-  return (
-    nutritionTable[lookup] ??
-    nutritionTable[name] ??
-    Object.entries(nutritionTable).find(([key]) => lookup.includes(key) || key.includes(lookup))?.[1]
+  const unitText = String(
+    ingredient.unit ??
+    ingredient.measurementUnit ??
+    ingredient.rawText ??
+    ""
+  ).toLowerCase();
+
+  if (!Number.isFinite(quantity) || quantity <= 0) return null;
+
+  if (name.includes("garlic") && (unitText.includes("clove") || quantity <= 12)) return quantity * 3;
+  if (name.includes("egg")) return quantity * 50;
+  if (name.includes("lime")) return quantity * 67;
+  if (name.includes("lemon")) return quantity * 58;
+  if (name.includes("onion")) return quantity * 110;
+  if (name.includes("shallot")) return quantity * 35;
+  if (name.includes("tomato")) return quantity * 120;
+  if (name.includes("potato")) return quantity * 170;
+  if (name.includes("carrot")) return quantity * 60;
+  if (name.includes("scallop")) return quantity * 25;
+
+  return null;
+};
+
+const ingredientToGrams = (ingredient: any): number | null => {
+  const quantity = parseQuantity(
+    ingredient.quantity ??
+    ingredient.amount ??
+    ingredient.qty ??
+    ingredient.rawQuantity ??
+    ingredient.quantityRange?.min
   );
+
+  if (quantity === null) return null;
+
+  const rawUnit =
+    ingredient.unit ??
+    ingredient.measurementUnit ??
+    ingredient.quantityRange?.unit;
+
+  const unit = normalizeUnit(String(rawUnit ?? ""));
+
+  if (!unit) {
+    return estimateUnitlessCountGrams(ingredient, quantity);
+  }
+
+  const factor = unitToGrams[unit];
+  if (!factor) return null;
+
+  return quantity * factor;
 };
 
-
-const pointsAbove = (value: number, thresholds: number[]) =>
-  thresholds.reduce((points, threshold) => points + (value > threshold ? 1 : 0), 0);
-
-const pointsAtLeast = (value: number, thresholds: number[]) =>
-  thresholds.reduce((points, threshold) => points + (value >= threshold ? 1 : 0), 0);
-
-const calculateNutriScore = (per100g: NutritionTotals): NutriScoreResult => {
-  const sodiumMg = per100g.salt_g * 400;
-
-  const negativePoints =
-    pointsAbove(per100g.calories, [335, 670, 1005, 1340, 1675, 2010, 2345, 2680, 3015, 3350]) +
-    pointsAbove(per100g.sugars_g, [4.5, 9, 13.5, 18, 22.5, 27, 31, 36, 40, 45]) +
-    pointsAbove(per100g.saturates_g, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) +
-    pointsAbove(sodiumMg, [90, 180, 270, 360, 450, 540, 630, 720, 810, 900]);
-
-  // Demo v1: fruit/veg/pulse/nut % and fiber are not inferred yet.
-  const fruitVegPoints = 0;
-  const fiberPoints = 0;
-  const proteinPoints = pointsAtLeast(per100g.protein_g, [1.6, 3.2, 4.8, 6.4, 8]);
-
-  const positivePoints = fruitVegPoints + fiberPoints + proteinPoints;
-  const score = negativePoints - positivePoints;
-
-  const letter =
-    score <= -1 ? "A" :
-    score <= 2 ? "B" :
-    score <= 10 ? "C" :
-    score <= 18 ? "D" : "E";
-
-  return { letter, score, negativePoints, positivePoints };
-};
 
 const roundTotals = (totals: NutritionTotals): NutritionTotals => ({
   calories: Math.round(totals.calories),
-  protein_g: Math.round(totals.protein_g),
-  carbs_g: Math.round(totals.carbs_g),
-  fat_g: Math.round(totals.fat_g),
-  saturates_g: Math.round(totals.saturates_g),
-  sugars_g: Math.round(totals.sugars_g),
-  salt_g: Math.round(totals.salt_g * 10) / 10
+  protein_g: Math.round(totals.protein_g * 10) / 10,
+  carbs_g: Math.round(totals.carbs_g * 10) / 10,
+  fat_g: Math.round(totals.fat_g * 10) / 10,
+  saturates_g: Math.round(totals.saturates_g * 10) / 10,
+  sugars_g: Math.round(totals.sugars_g * 10) / 10,
+  salt_g: Math.round(totals.salt_g * 100) / 100,
+  fiber_g: Math.round(totals.fiber_g * 10) / 10,
 });
 
-export const calculateNutrition = (ingredients: any[] = [], servings = 1): NutritionResult => {
+const calculateNutriScore = (
+  per100g: NutritionTotals,
+  fruitVegPct = 0
+): NutriScoreResult => {
+  // Soft estimate only. This is not an official certified Nutri-Score implementation.
+  let negativePoints = 0;
+  let positivePoints = 0;
+
+  // Negative factors
+  if (per100g.calories > 335) negativePoints += 1;
+  if (per100g.calories > 670) negativePoints += 1;
+  if (per100g.calories > 1005) negativePoints += 1;
+  if (per100g.calories > 1340) negativePoints += 1;
+
+  if (per100g.sugars_g > 4.5) negativePoints += 1;
+  if (per100g.sugars_g > 9) negativePoints += 1;
+  if (per100g.sugars_g > 13.5) negativePoints += 1;
+  if (per100g.sugars_g > 18) negativePoints += 1;
+
+  if (per100g.saturates_g > 1) negativePoints += 1;
+  if (per100g.saturates_g > 2) negativePoints += 1;
+  if (per100g.saturates_g > 3) negativePoints += 1;
+  if (per100g.saturates_g > 4) negativePoints += 1;
+
+  if (per100g.salt_g > 0.225) negativePoints += 1;
+  if (per100g.salt_g > 0.45) negativePoints += 1;
+  if (per100g.salt_g > 0.9) negativePoints += 1;
+  if (per100g.salt_g > 1.35) negativePoints += 1;
+
+  // Positive factors
+  if (per100g.protein_g > 1.6) positivePoints += 1;
+  if (per100g.protein_g > 3.2) positivePoints += 1;
+  if (per100g.protein_g > 4.8) positivePoints += 1;
+  if (per100g.protein_g > 6.4) positivePoints += 1;
+
+  if (per100g.fiber_g > 0.9) positivePoints += 1;
+  if (per100g.fiber_g > 1.9) positivePoints += 1;
+  if (per100g.fiber_g > 2.8) positivePoints += 1;
+  if (per100g.fiber_g > 3.7) positivePoints += 1;
+
+  if (fruitVegPct >= 40) positivePoints += 1;
+  if (fruitVegPct >= 60) positivePoints += 1;
+  if (fruitVegPct >= 80) positivePoints += 2;
+
+  const score = negativePoints - positivePoints;
+
+  let letter: NutriScoreResult["letter"] = "C";
+  if (score <= -1) letter = "A";
+  else if (score <= 2) letter = "B";
+  else if (score <= 10) letter = "C";
+  else if (score <= 18) letter = "D";
+  else letter = "E";
+
+  return {
+    letter,
+    score,
+    negativePoints,
+    positivePoints,
+    fruitVegPct: Math.round(fruitVegPct),
+  };
+};
+
+const findNutrition = (input: any): NutritionPer100g | null => {
+  const rawName = typeof input === "string"
+    ? input
+    : String(
+        input?.displayName ??
+        input?.name ??
+        input?.ingredient ??
+        input?.item ??
+        input?.text ??
+        input?.rawText ??
+        ""
+      );
+
+  const normalizedName = normalizeName(rawName);
+  if (!normalizedName) return null;
+
+  const normalizedAliases = Object.fromEntries(
+    Object.entries(aliases).map(([key, value]) => [normalizeName(key), value])
+  );
+
+  const aliasedName = normalizedAliases[normalizedName] ?? aliases[normalizedName] ?? normalizedName;
+
+  const entries = Object.entries(nutritionTable ?? {});
+
+  // 1) Direct normalized key match
+  for (const [key, value] of entries) {
+    const normalizedKey = normalizeName(key);
+    if (normalizedKey === aliasedName) return value;
+  }
+
+  // 2) Alias points to table key
+  for (const [key, value] of entries) {
+    const normalizedKey = normalizeName(key);
+    if (normalizedKey === normalizeName(aliases[aliasedName] ?? "")) return value;
+  }
+
+  // 3) Ingredient contains nutrition table key
+  for (const [key, value] of entries) {
+    const normalizedKey = normalizeName(key);
+    if (normalizedKey && aliasedName.includes(normalizedKey)) return value;
+  }
+
+  // 4) Nutrition table key contains ingredient name
+  for (const [key, value] of entries) {
+    const normalizedKey = normalizeName(key);
+    if (aliasedName && normalizedKey.includes(aliasedName)) return value;
+  }
+
+  return null;
+};
+
+export const calculateNutrition = (
+  ingredients: any[] = [],
+  servings?: number | null,
+  options: { recipeName?: string } = {}
+): NutritionResult => {
   const totalRecipe = zeroTotals();
   let matchedCount = 0;
   let totalWeightG = 0;
+  let fruitVegWeightG = 0;
 
   ingredients.forEach((ingredient) => {
-    const name = ingredient.name ?? ingredient.item ?? ingredient.ingredient ?? ingredient.text ?? "";
-    const nutrition = findNutrition(name);
-
+    const nutrition = findNutrition(ingredient);
     if (!nutrition) return;
 
-    matchedCount += 1;
     const grams = ingredientToGrams(ingredient);
-    totalWeightG += grams;
+    if (grams === null || grams <= 0) return;
+
+    matchedCount += 1;
+
     const factor = grams / 100;
+    totalWeightG += grams;
+
+    if (nutrition.isFruitVegNutPulseOil) {
+      fruitVegWeightG += grams;
+    }
 
     totalRecipe.calories += nutrition.calories * factor;
     totalRecipe.protein_g += nutrition.protein_g * factor;
@@ -222,9 +431,36 @@ export const calculateNutrition = (ingredients: any[] = [], servings = 1): Nutri
     totalRecipe.saturates_g += (nutrition.saturates_g ?? 0) * factor;
     totalRecipe.sugars_g += (nutrition.sugars_g ?? 0) * factor;
     totalRecipe.salt_g += (nutrition.salt_g ?? 0) * factor;
+    totalRecipe.fiber_g += (nutrition.fiber_g ?? 0) * factor;
   });
 
-  const safeServings = Math.max(Number(servings) || 1, 1);
+  const explicitServings = Number(servings);
+  const hasExplicitServings = Number.isFinite(explicitServings) && explicitServings > 0;
+
+  const recipeHint = normalizeName(options.recipeName ?? "");
+  const sauceLike =
+    /\b(mayo|mayonnaise|hollandaise|sauce|dip|spread|dressing|pesto|aioli|vinaigrette|salsa|chutney|jam|jar)\b/.test(recipeHint);
+
+  const servingSizeG =
+    hasExplicitServings ? null :
+    sauceLike ? 20 :
+    totalWeightG >= 300 ? 150 :
+    totalWeightG >= 120 ? 100 :
+    null;
+
+  const estimatedServings =
+    hasExplicitServings ? explicitServings :
+    servingSizeG && totalWeightG > 0 ? Math.max(1, totalWeightG / servingSizeG) :
+    1;
+
+  const safeServings = Math.max(estimatedServings, 1);
+
+  const servingEstimateReason =
+    hasExplicitServings ? "source" :
+    sauceLike ? "sauce_portion" :
+    servingSizeG ? "weight_portion" :
+    "fallback";
+
   const perServing = Object.fromEntries(
     Object.entries(totalRecipe).map(([key, value]) => [key, value / safeServings])
   ) as NutritionTotals;
@@ -234,6 +470,7 @@ export const calculateNutrition = (ingredients: any[] = [], servings = 1): Nutri
   ) as NutritionTotals;
 
   const roundedPer100g = roundTotals(per100g);
+  const fruitVegPct = totalWeightG > 0 ? (fruitVegWeightG / totalWeightG) * 100 : 0;
   const ratio = ingredients.length ? matchedCount / ingredients.length : 0;
 
   return {
@@ -244,6 +481,9 @@ export const calculateNutrition = (ingredients: any[] = [], servings = 1): Nutri
     matchedCount,
     totalCount: ingredients.length,
     confidence: ratio >= 0.8 ? "high" : ratio >= 0.5 ? "medium" : "low",
-    nutriScore: calculateNutriScore(roundedPer100g)
+    nutriScore: calculateNutriScore(roundedPer100g, fruitVegPct),
+    effectiveServings: Math.round(safeServings * 10) / 10,
+    servingSizeG,
+    servingEstimateReason,
   };
 };

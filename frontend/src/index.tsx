@@ -5,18 +5,21 @@ import "./index.css";
 import { AuthProvider } from "./context/AuthContext";
 import { DataProvider } from "./context/DataContext";
 
-// @ts-ignore
-import { registerSW } from 'virtual:pwa-register';
+// Disable PWA/service-worker during staging tester launch.
+// Old cached bundles can keep stale auth code alive.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.getRegistrations()
+      .then((registrations) => registrations.forEach((registration) => registration.unregister()))
+      .catch(() => {});
 
-registerSW({ 
-  immediate: true,
-  onOfflineReady() {
-    console.log('✅ PWA: App is ready to work offline');
-  },
-  onRegisterError(error: any) {
-    console.error('❌ PWA: Service worker registration error', error);
-  }
-});
+    if ('caches' in window) {
+      caches.keys()
+        .then((keys) => keys.forEach((key) => caches.delete(key)))
+        .catch(() => {});
+    }
+  });
+}
 
 const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 

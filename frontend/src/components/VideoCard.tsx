@@ -214,7 +214,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
     [video, contentType],
   );
 
-  const showTypeBadge = !isProcessing && !hasError;
+  const showTypeBadge = !isProcessing && !hasError && contentType === 'recipe';
 
   const hasLocation = useMemo(() => {
     const loc = video?.location;
@@ -235,7 +235,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
     return false;
   }, [video?.location]);
 
-  const showPlacesBadge = !isProcessing && !hasError && hasLocation && contentType !== 'location' && contentType !== 'places';
+  const showPlacesBadge = false;
 
   const duration = video?.duration;
   const sourceUrl = String(video?.originalUrl ?? video?.sourceurl ?? video?.sourceUrl ?? video?.raw?.sourceurl ?? '');
@@ -432,7 +432,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
       <div className="pt-3 px-0.5">
         <div className="flex items-start gap-2">
           <p className="flex-1 text-sm font-bold text-gray-900 leading-snug line-clamp-2 mb-1">
-            {activeTitle}
+            {isProcessing ? 'Processing…' : activeTitle}
           </p>
           {originalTitle && !isDisabled && (
             <button

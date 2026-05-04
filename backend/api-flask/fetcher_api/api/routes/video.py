@@ -26,6 +26,30 @@ from fetcher_api.api.helpers.auth import get_user_id_from_request
 
 logger = logging.getLogger("video")
 
+EXTRACTION_DAILY_LIMIT_TOTAL = int(os.getenv("EXTRACTION_DAILY_LIMIT_TOTAL", "50"))
+
+
+def _count_extractions_today() -> int:
+    row = fetch_one(
+        """
+        SELECT COUNT(*) AS count
+        FROM reels
+        WHERE created_at >= DATE_TRUNC('day', NOW())
+          AND created_at < DATE_TRUNC('day', NOW()) + INTERVAL '1 day'
+        """
+    ) or {}
+    try:
+        return int(dict(row).get("count") or 0)
+    except Exception:
+        return 0
+
+
+def _extraction_limit_reached() -> bool:
+    if EXTRACTION_DAILY_LIMIT_TOTAL <= 0:
+        return False
+    return _count_extractions_today() >= EXTRACTION_DAILY_LIMIT_TOTAL
+
+
 video_bp = Blueprint("video", __name__)
 
 TEMP_DIR_BASE = os.path.join(tempfile.gettempdir(), "recolekt_processing")
@@ -314,6 +338,13 @@ def summarize():
                     "message": "This reel already exists in your collection.",
                     "preview_url": _preview_url_from_reel(existing_reel),
                 }), 200
+
+    if _extraction_limit_reached():
+        logger.warning("🚦 Daily extraction limit reached: %s", EXTRACTION_DAILY_LIMIT_TOTAL)
+        return jsonify({
+            "error": "extraction_limit_reached",
+            "message": "Lots of people are using Recolekt right now. Please try again in a few hours.",
+        }), 429
 
     temp_dir = tempfile.mkdtemp(dir=TEMP_DIR_BASE)
     video_path = None

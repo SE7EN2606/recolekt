@@ -82,13 +82,15 @@ function clearCachedUser() {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { i18n } = useTranslation();
+  const initialToken = localStorage.getItem('auth_token') || localStorage.getItem('token');
+
   const [user, setUser] = useState<User | null>(() => loadCachedUserUnsafeInstant());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(Boolean(initialToken));
   
   // Since the token was saved synchronously above, this will immediately find it!
-  const [token, setToken] = useState(localStorage.getItem('auth_token') || localStorage.getItem('token'));
+  const [token, setToken] = useState(initialToken);
 
   const userRef = useRef(user);
   userRef.current = user;

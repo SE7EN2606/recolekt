@@ -1558,6 +1558,110 @@ def _normalize_practical_recipe_summary(recipe: dict) -> None:
 
 
 
+def _recipe_join_text(recipe: dict, caption: str = "", transcript: str = "") -> str:
+    parts: list[str] = [caption, transcript]
+    for key in ("title", "notes"):
+        value = recipe.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+    summary = recipe.get("practical_summary")
+    if isinstance(summary, dict):
+        parts.extend(str(summary.get(k) or "") for k in ("what_it_is", "key_technique"))
+        notes = summary.get("important_notes")
+        if isinstance(notes, list):
+            parts.extend(str(x) for x in notes if x)
+    for key in ("ingredients", "instructions", "tips"):
+        value = recipe.get(key)
+        if isinstance(value, list):
+            parts.extend(_recipe_text_list(value, limit=20))
+    return " ".join(parts).lower()
+
+
+def _count_recipe_quantified_ingredients(recipe: dict) -> int:
+    count = 0
+    ingredients = recipe.get("ingredients")
+    if not isinstance(ingredients, list):
+        return 0
+    for ingredient in ingredients:
+        if not isinstance(ingredient, dict):
+            continue
+        quantity = ingredient.get("quantity")
+        unit = ingredient.get("unit")
+        if quantity is not None and safe_str(quantity).strip() and safe_str(quantity).strip().lower() not in {"to taste", "as needed"}:
+            count += 1
+        elif isinstance(ingredient.get("quantityRange"), dict):
+            count += 1
+        elif unit is not None and safe_str(unit).strip():
+            count += 1
+    return count
+
+
+def _infer_recipe_kind(recipe: dict, text: str) -> str:
+    ingredients = recipe.get("ingredients") if isinstance(recipe.get("ingredients"), list) else []
+    instructions = recipe.get("instructions") if isinstance(recipe.get("instructions"), list) else []
+    quantity_count = _count_recipe_quantified_ingredients(recipe)
+    has_servings = safe_str(recipe.get("servings") or "").strip() not in {"", "none", "null"}
+
+    technique_signal = bool(re.search(
+        r"\b(technique|method|how to|blanch|confit|temper|debone|slice|chop|peel|sharpen|cartouche|infuse|emulsify)\b",
+        text,
+    ))
+
+    if len(ingredients) >= 3 and quantity_count >= 2 and has_servings:
+        return "full_recipe"
+    if len(ingredients) <= 1 and technique_signal and len(instructions) >= 2:
+        return "pure_technique"
+    if technique_signal or not has_servings or quantity_count < 2:
+        return "technique_with_ingredients"
+    return "full_recipe"
+
+
+def _infer_recipe_metadata(recipe: dict, caption: str = "", transcript: str = "") -> None:
+    text = _recipe_join_text(recipe, caption=caption, transcript=transcript)
+
+    recipe["recipe_kind"] = recipe.get("recipe_kind") or _infer_recipe_kind(recipe, text)
+
+    cuisine_rules = [
+        ("French", r"\b(french|france|confit|cartouche|mirepoix|beurre|rillettes|baguette|bistro)\b"),
+        ("Italian", r"\b(italian|pasta|carbonara|risotto|parmesan|pecorino|gnocchi|bolognese)\b"),
+        ("Japanese", r"\b(japanese|sushi|ramen|miso|dashi|teriyaki|tempura)\b"),
+        ("Korean", r"\b(korean|kimchi|gochujang|bulgogi|bibimbap)\b"),
+        ("Mexican", r"\b(mexican|taco|tortilla|salsa|quesadilla|enchilada)\b"),
+        ("Indian", r"\b(indian|curry|masala|tandoori|dal|paneer|garam)\b"),
+        ("Thai", r"\b(thai|lemongrass|fish sauce|green curry|red curry|pad thai)\b"),
+        ("Mediterranean", r"\b(mediterranean|olive oil|anchovies|basil|tomato|tomatoes)\b"),
+    ]
+
+    style_rules = [
+        ("Chef-style", r"\b(like a chef|chef|restaurant|gourmet|bistro)\b"),
+        ("Home cooking", r"\b(home|homemade|family|weeknight)\b"),
+        ("Healthy", r"\b(healthy|high protein|low carb|light|macro)\b"),
+        ("Comfort food", r"\b(comfort|creamy|rich|cozy)\b"),
+        ("Fusion", r"\b(fusion|twist|inspired|mashup)\b"),
+    ]
+
+    cooking_style_rules = [
+        ("Confit", r"\b(confit|confiting|confited)\b"),
+        ("Low-temperature cooking", r"\b(low temperature|low heat|120\s*°?c|250\s*°?f)\b"),
+        ("Blanching", r"\b(blanch|blanching)\b"),
+        ("Baking", r"\b(bake|baking|oven)\b"),
+        ("Grilling", r"\b(grill|grilling|barbecue|bbq)\b"),
+        ("Frying", r"\b(fry|frying|deep-fry|pan-fry)\b"),
+        ("Simmering", r"\b(simmer|braise|stew)\b"),
+        ("No-cook", r"\b(no cook|no-cook|raw)\b"),
+    ]
+
+    def pick(rules: list[tuple[str, str]], fallback: str = "") -> str:
+        for label, pattern in rules:
+            if re.search(pattern, text):
+                return label
+        return fallback
+
+    recipe["cuisine"] = safe_str(recipe.get("cuisine") or pick(cuisine_rules, ""))
+    recipe["style"] = safe_str(recipe.get("style") or pick(style_rules, ""))
+    recipe["cooking_style"] = safe_str(recipe.get("cooking_style") or pick(cooking_style_rules, ""))
+
+
 def normalize_recipe_trust_layer(
     recipe: dict | None,
     caption: str = "",
@@ -1651,6 +1755,7 @@ def normalize_recipe_trust_layer(
             ]
 
     _normalize_practical_recipe_summary(recipe)
+    _infer_recipe_metadata(recipe, caption=caption, transcript=transcript)
 
     recipe["trust_version"] = "recipe-trust-v1"
     return recipe

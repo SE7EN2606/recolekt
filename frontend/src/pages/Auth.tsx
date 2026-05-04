@@ -1,11 +1,10 @@
 import { API_BASE } from "../utils/api";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, User, AlertCircle, KeyRound, Eye, EyeOff, Instagram } from 'lucide-react';
 import { Button } from '../components/Button';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
-import { useGoogleLogin } from '@react-oauth/google';
 import LogoWhite from '../assets/recolekt_logo_white.png';
 
 function joinUrl(base: string, path: string) {
@@ -18,20 +17,6 @@ function joinUrl(base: string, path: string) {
 type ViewState = 'login' | 'register' | 'forgot' | 'reset' | 'verify';
 
 const LAST_AUTH_KEY = 'last_auth_method';
-
-function detectBrowserInfo(): { name: string; shouldRedirect: boolean } {
-  const ua = navigator.userAgent || '';
-  if (/Focus/i.test(ua)) return { name: 'Firefox Focus', shouldRedirect: true };
-  if (/Klar/i.test(ua)) return { name: 'Firefox Klar', shouldRedirect: true };
-  if (/DuckDuckGo/i.test(ua)) return { name: 'DuckDuckGo', shouldRedirect: true };
-  if (/FBAN|FBAV/i.test(ua)) return { name: 'Facebook In-App', shouldRedirect: true };
-  if (/Instagram/i.test(ua)) return { name: 'Instagram In-App', shouldRedirect: true };
-  if (/Line\//i.test(ua)) return { name: 'LINE In-App', shouldRedirect: true };
-  if (/iPhone|iPad/i.test(ua) && !/Safari/i.test(ua)) return { name: 'iOS WebView', shouldRedirect: true };
-  if ((navigator as any).brave) return { name: 'Brave', shouldRedirect: true };
-  if (/iPhone|iPad/i.test(ua) && /FxiOS/i.test(ua)) return { name: 'Firefox iOS', shouldRedirect: true };
-  return { name: 'Standard', shouldRedirect: false };
-}
 
 export const Auth: React.FC = () => {
   const [view, setView] = useState<ViewState>('login');
@@ -50,11 +35,9 @@ export const Auth: React.FC = () => {
   const [isAdminMode, setIsAdminMode] = useState(false);
 
   const navigate = useNavigate();
-  const { user, verifyGoogleToken, loginUser, registerUser } = useAuth();
-  const googleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { user, loginUser, registerUser } = useAuth();
 
   const lastAuthMethod = localStorage.getItem(LAST_AUTH_KEY);
-  const browserInfo = detectBrowserInfo();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -77,53 +60,17 @@ export const Auth: React.FC = () => {
     return () => clearTimeout(timer);
   }, [resendCooldown]);
 
-  const loginWithGooglePopup = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
-      setGoogleLoading(true);
-      setErrorMsg('');
-      try {
-        await verifyGoogleToken(tokenResponse.access_token);
-        localStorage.setItem(LAST_AUTH_KEY, 'google');
-        navigate('/gallery');
-      } catch {
-        doRedirectLogin();
-      } finally {
-        setGoogleLoading(false);
-      }
-    },
-    onError: () => {
-      if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
-      doRedirectLogin();
-    },
-    onNonOAuthError: () => {
-      if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
-      doRedirectLogin();
-    }
-  });
-
   const doRedirectLogin = () => {
     setGoogleLoading(true);
-    window.location.assign(joinUrl(API_BASE, '/api/auth/google/login'));
+    const next = `${window.location.origin}/gallery`;
+    const loginUrl = `${joinUrl(API_BASE, '/api/auth/google/login')}?next=${encodeURIComponent(next)}`;
+    window.location.assign(loginUrl);
   };
 
   const handleGoogleLogin = () => {
     setErrorMsg('');
     setGoogleLoading(true);
-
-    if (browserInfo.shouldRedirect) {
-      doRedirectLogin();
-      return;
-    }
-
-    googleTimeoutRef.current = setTimeout(() => doRedirectLogin(), 8000);
-
-    try {
-      loginWithGooglePopup();
-    } catch {
-      if (googleTimeoutRef.current) clearTimeout(googleTimeoutRef.current);
-      doRedirectLogin();
-    }
+    doRedirectLogin();
   };
 
   const handleInstagramSetup = () => {

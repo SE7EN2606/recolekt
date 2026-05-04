@@ -156,14 +156,14 @@ export const Sidebar: React.FC = () => {
                 )}
               </NavLink>
 
-              <NavLink to="/organizer" className={({ isActive }) => linkClass(isActive)}>
+              {false && <NavLink to="/organizer" className={({ isActive }) => linkClass(isActive)}>
                 {({ isActive }) => (
                   <div className="flex items-center gap-3">
                     <FolderOpen size={20} strokeWidth={isActive ? 2.5 : 2} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
                     <span className="text-[15px] font-semibold">{t('sidebar:organizer', 'Organizer')}</span>
                   </div>
                 )}
-              </NavLink>
+              </NavLink>}
 
               <NavLink to="/gallery/unsorted" className={({ isActive }) => linkClass(isActive)}>
                 {({ isActive }) => (
@@ -217,7 +217,7 @@ export const Sidebar: React.FC = () => {
               </NavLink>
 
               {/* Saved Places */}
-              <NavLink to="/places" className={({ isActive }) => placesLinkClass(isActive)}>
+              {false && <NavLink to="/places" className={({ isActive }) => placesLinkClass(isActive)}>
                 {({ isActive }) => (
                   <div className="flex items-center gap-3">
                     <MapPin
@@ -229,7 +229,7 @@ export const Sidebar: React.FC = () => {
                     <span className="text-[15px] font-semibold">{t('sidebar:savedPlaces', 'Saved Places')}</span>
                   </div>
                 )}
-              </NavLink>
+              </NavLink>}
             </div>
           </div>
 

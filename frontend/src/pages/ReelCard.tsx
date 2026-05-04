@@ -243,7 +243,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     [video, contentType],
   );
 
-  const showTypeBadge = !isProcessing && !hasError && contentType !== 'general';
+  const showTypeBadge = !isProcessing && !hasError && contentType === 'recipe';
 
   const hasLocation = useMemo(() => {
     const loc = video?.location;
@@ -274,7 +274,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
     return false;
   }, [video?.location]);
 
-  const showPlacesBadge = !isProcessing && !hasError && hasLocation && contentType !== 'places';
+  const showPlacesBadge = false;
 
   const author = String(video?.author ?? video?.author_name ?? video?.authorName ?? t('videoCard:unknownAuthor'));
   const duration = video?.duration;
@@ -549,7 +549,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
         )}
 
         <p className="text-sm font-bold text-gray-900 leading-snug line-clamp-2 mb-1">
-          {displayTitle}
+          {isProcessing ? 'Processing…' : displayTitle}
         </p>
 
         {!isProcessing && (

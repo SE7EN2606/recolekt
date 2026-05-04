@@ -6,6 +6,7 @@ import {
   Package, Check, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { useData, GroceryItem } from '../context/DataContext';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -278,6 +279,7 @@ export const GroceryList: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [pantryExpandedMobile, setPantryExpandedMobile] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // ── Derived data ──────────────────────────────────────────────────────────
 
@@ -363,9 +365,7 @@ export const GroceryList: React.FC = () => {
         </div>
         {(groceryList as GroceryItem[]).length > 0 && (
           <button
-            onClick={() => {
-              if (window.confirm('Clear everything from your grocery list?')) clearGroceryList();
-            }}
+            onClick={() => setShowClearConfirm(true)}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-bold text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
           >
             <Trash2 size={15} />
@@ -582,6 +582,17 @@ export const GroceryList: React.FC = () => {
           </div>
         </>
       )}
+
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        onConfirm={clearGroceryList}
+        title="Clear grocery list?"
+        message="This will remove every ingredient from your grocery list."
+        confirmLabel="Clear all"
+        cancelLabel="Keep list"
+        variant="danger"
+      />
     </div>
   );
 };

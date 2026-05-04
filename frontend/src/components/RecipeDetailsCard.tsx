@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ChefHat, Clock, Flame, Moon, Lightbulb,
   ShoppingCart, Check,
@@ -6,6 +6,40 @@ import {
 import { useTranslation } from 'react-i18next';
 import CookModeModal from './CookModeModal';
 import NutritionCard from "./NutritionCard";
+import { apiUrl } from "../utils/videoDetailUtils";
+
+const getRecipeAssistantToken = (): string => {
+  try {
+    return String(
+      (window as any).__REKOLEKT_TOKEN__ ||
+      localStorage.getItem("auth_token") ||
+      localStorage.getItem("token") ||
+      localStorage.getItem("access_token") ||
+      localStorage.getItem("jwt") ||
+      ""
+    ).replace(/^Bearer\s+/i, "").trim();
+  } catch {
+    return "";
+  }
+};
+
+type RecipeAssistantHistoryEntry = {
+  question: string;
+  answer: string;
+  createdAt?: string;
+  created_at?: string;
+};
+
+type RecipeAssistantHistoryItem = RecipeAssistantHistoryEntry;
+
+type RecipeAssistantResponse = {
+  history?: RecipeAssistantHistoryEntry[];
+  answer?: string;
+  error?: string;
+  sourcesUsed?: string[];
+  missingInfo?: string[];
+  model?: string;
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -72,6 +106,10 @@ export interface RecipeForCard {
   rest_time_meta?: { source?: string; confidence?: string };
   total_time_meta?: { source?: string; confidence?: string };
   servings?: string | number | null;
+  recipe_kind?: 'full_recipe' | 'technique_with_ingredients' | 'pure_technique' | string | null;
+  cuisine?: string | null;
+  style?: string | null;
+  cooking_style?: string | null;
   ingredients_groups?: IngredientGroup[] | null;
   ingredients?: RawIngredient[] | null;
   instructions?: RawInstruction[] | null;
@@ -111,11 +149,39 @@ const toStr = (v: string | number | null | undefined): string =>
   v !== undefined && v !== null ? String(v) : '';
 
 function formatMinutes(raw: string | number | null | undefined): string | null {
-  const str = toStr(raw).trim();
+  const str = toStr(raw).trim().toLowerCase();
   if (!str) return null;
+
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw) || raw <= 0) return null;
+    if (raw < 60) return `${Math.round(raw)} min`;
+    const h = Math.floor(raw / 60);
+    const m = Math.round(raw % 60);
+    if (m === 0) return h === 1 ? '1 hr' : `${h} hr`;
+    return `${h} hr ${m} min`;
+  }
+
+  const hourMatch = str.match(/(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|heure|heures)/i);
+  const minuteMatch = str.match(/(\d+(?:\.\d+)?)\s*(m|min|mins|minute|minutes)/i);
+
+  if (hourMatch || minuteMatch) {
+    const hours = hourMatch ? Number(hourMatch[1]) : 0;
+    const minutes = minuteMatch ? Number(minuteMatch[1]) : 0;
+    const total = hours * 60 + minutes;
+
+    if (!Number.isFinite(total) || total <= 0) return null;
+    if (total < 60) return `${Math.round(total)} min`;
+
+    const h = Math.floor(total / 60);
+    const m = Math.round(total % 60);
+    if (m === 0) return h === 1 ? '1 hr' : `${h} hr`;
+    return `${h} hr ${m} min`;
+  }
+
   const n = parseFloat(str);
   if (!Number.isFinite(n) || n <= 0) return null;
   if (n < 60) return `${Math.round(n)} min`;
+
   const h = Math.floor(n / 60);
   const m = Math.round(n % 60);
   if (m === 0) return h === 1 ? '1 hr' : `${h} hr`;
@@ -152,6 +218,50 @@ function parseInstruction(raw: RawInstruction): { text: string; isInferred: bool
   return { text: obj.instruction || obj.text || '', isInferred: (obj.source || '') === 'ai_inferred' };
 }
 
+function normalizeForCountMatch(value: string | null | undefined): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[’']/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function isCountStyleIngredient(unit: string | null, name?: string): boolean {
+  const normalizedUnit = normalizeForCountMatch(unit).replace(/s$/, '');
+  const normalizedName = normalizeForCountMatch(name);
+
+  const countUnits = new Set([
+    'egg',
+    'yolk',
+    'clove',
+    'head',
+    'leaf',
+    'bay leaf',
+    'sprig',
+    'branch',
+    'bunch',
+    'piece',
+    'slice',
+  ]);
+
+  if (normalizedUnit && countUnits.has(normalizedUnit)) return true;
+
+  return /\b(egg|eggs|yolk|yolks|clove|cloves|garlic head|head of garlic|tete d ail|tetes d ail|leaf|leaves|bay leaf|bay leaves|feuille de laurier|feuilles de laurier|sprig|sprigs|branch|branches|branche de thym|branches de thym|brin de thym|brins de thym)\b/.test(normalizedName);
+}
+
+function normalizeCountQuantity(qty: string, unit: string | null, name?: string): string {
+  if (!isCountStyleIngredient(unit, name)) return qty;
+
+  const n = Number(String(qty).replace(',', '.'));
+  if (!Number.isFinite(n)) return qty;
+
+  // Kitchen count ingredients should not show values like 1.2 garlic heads or 2.4 bay leaves.
+  return String(Math.max(1, Math.round(n)));
+}
+
+
 function convertUnits(qty: string, unit: string, toMetric: boolean): { q: string; u: string } {
   const n = parseFloat(qty.replace(',', '.'));
   if (isNaN(n)) return { q: qty, u: unit };
@@ -175,13 +285,15 @@ function convertUnits(qty: string, unit: string, toMetric: boolean): { q: string
   return { q: qty, u: unit };
 }
 
-function formatQty(qty: string | null, unit: string | null, scale: number, scaleQty: ((q: string, s: number) => string) | undefined, useMetric: boolean): string {
+function formatQty(qty: string | null, unit: string | null, scale: number, scaleQty: ((q: string, s: number) => string) | undefined, useMetric: boolean, name?: string): string {
   if (!qty) return '';
   let q = qty;
   if (scale !== 1 && scaleQty) {
     const scaled = scaleQty(qty, scale);
     if (scaled && !scaled.includes('NaN')) q = scaled.trim();
   }
+  q = normalizeCountQuantity(q, unit, name);
+
   if (unit) {
     const conv = convertUnits(q, unit, useMetric);
     return `${conv.q} ${conv.u}`;
@@ -208,7 +320,7 @@ interface IngRowProps {
   servingScale: number;
   scaleQuantity?: (q: string, s: number) => string;
   checked: boolean;
-  onToggle: (id: string) => void;
+  onToggle?: (id: string) => void;
   useMetric: boolean;
 }
 
@@ -225,7 +337,7 @@ const IngredientRow: React.FC<IngRowProps> = ({
     displayQty  = `${qtyRange.min}–${qtyRange.max}`;
     displayUnit = qtyRange.unit || unit || '';
   } else if (quantity) {
-    const fmted = formatQty(quantity, unit, servingScale, scaleQuantity, useMetric);
+    const fmted = formatQty(quantity, unit, servingScale, scaleQuantity, useMetric, name);
     const parts = fmted.trim().split(/\s+/);
     displayQty  = parts[0] || '';
     displayUnit = parts.slice(1).join(' ') || '';
@@ -233,24 +345,28 @@ const IngredientRow: React.FC<IngRowProps> = ({
 
   const hasMeasurement = Boolean(displayQty);
   const assumed = needsReview ? assumedLabel(name) : null;
+  const interactive = Boolean(onToggle);
 
   return (
     <li
-      onClick={() => onToggle(id)}
-      className={`flex items-start gap-3 px-5 py-2.5 cursor-pointer select-none group transition-all ${
-        checked ? 'opacity-40' : 'hover:bg-gray-50/60'
+      onClick={interactive ? () => onToggle?.(id) : undefined}
+      className={`flex items-start gap-3 px-5 py-2.5 group transition-all ${
+        interactive ? 'cursor-pointer' : ''
+      } ${
+        checked ? 'opacity-75' : interactive ? 'hover:bg-gray-50/60' : ''
       }`}
     >
-      {/* Completion dot */}
-      <div className="flex-shrink-0 mt-[3px]">
-        <div className={`w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center transition-all ${
-          checked
-            ? 'border-gray-300 bg-gray-100'
-            : 'border-gray-200 bg-transparent group-hover:border-primary-300'
-        }`}>
-          {checked && <Check size={9} className="text-gray-400" strokeWidth={3} />}
+      {interactive && (
+        <div className="flex-shrink-0 mt-[3px]">
+          <div className={`w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center transition-all ${
+            checked
+              ? 'border-emerald-600 bg-emerald-600'
+              : 'border-gray-200 bg-transparent group-hover:border-primary-300'
+          }`}>
+            {checked && <Check size={9} className="text-white" strokeWidth={3} />}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Emoji */}
       {emoji && (
@@ -264,7 +380,7 @@ const IngredientRow: React.FC<IngRowProps> = ({
 
         {/* Measured quantity */}
         {hasMeasurement && !needsReview && (
-          <span className={`text-[13px] font-black ${checked ? 'text-gray-300' : 'text-primary-600'}`}>
+          <span className={`text-[13px] font-black ${checked ? 'text-gray-500' : 'text-primary-600'}`}>
             {displayQty}
             {displayUnit && <span className="font-bold"> {displayUnit}</span>}
           </span>
@@ -277,7 +393,7 @@ const IngredientRow: React.FC<IngRowProps> = ({
 
         {/* Name */}
         <span className={`text-[13px] leading-snug ${
-          checked ? 'text-gray-300 line-through decoration-gray-200' : 'text-gray-800 font-medium'
+          checked ? 'text-gray-500 line-through decoration-gray-400' : 'text-gray-800 font-medium'
         }`}>
           {name}
         </span>
@@ -318,12 +434,12 @@ const StepRow: React.FC<StepRowProps> = ({ index, raw, checked, onToggle }) => {
     >
       <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all ${
         checked
-          ? 'bg-gray-100 border-2 border-gray-200'
-          : 'bg-white border-2 border-tertiary-200 group-hover:border-tertiary-400'
+          ? 'bg-emerald-600 border-2 border-emerald-600'
+          : 'bg-white border-2 border-primary-200 group-hover:border-primary-400'
       }`}>
         {checked
-          ? <Check size={12} className="text-gray-400" strokeWidth={3} />
-          : <span className="text-[11px] font-black text-tertiary-600">{index + 1}</span>
+          ? <Check size={12} className="text-white" strokeWidth={3} />
+          : <span className="text-[11px] font-black text-primary-600">{index + 1}</span>
         }
       </div>
       <div className="flex-1 pt-[4px]">
@@ -402,7 +518,13 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const [added, setAdded] = React.useState(false);
   const [isCookModeOpen, setIsCookModeOpen] = React.useState(false);
   const [savedCookStep, setSavedCookStep] = React.useState<number | null>(null);
-  const [activeRecipeTab, setActiveRecipeTab] = React.useState<'ingredients' | 'steps' | 'nutrition'>('ingredients');
+  type RecipeTabKey = 'ingredients' | 'steps' | 'nutrition' | 'ask';
+  const [activeRecipeTab, setActiveRecipeTab] = React.useState<RecipeTabKey>('ingredients');
+  const [askQuestion, setAskQuestion] = useState("");
+  const [askAnswer, setAskAnswer] = useState("");
+  const [askError, setAskError] = useState("");
+  const [askLoading, setAskLoading] = useState(false);
+  const [askHistory, setAskHistory] = useState<RecipeAssistantHistoryItem[]>([]);
 
   if (recipe.is_compilation) return <RecipeCompilationCard recipe={recipe} />;
 
@@ -484,6 +606,72 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     return list;
   }, [flat, groups, hasGroups]);
 
+  const hasServings = Boolean(toStr(recipe.servings).trim());
+
+  const ingredientQuantityCount = React.useMemo(() => {
+    return allIngredients.filter(({ raw }) => {
+      if (typeof raw === 'string') return false;
+      const item = raw as any;
+      const q = item?.quantity ?? item?.amount ?? item?.qty ?? item?.rawQuantity;
+      const hasQuantity =
+        q !== null &&
+        q !== undefined &&
+        String(q).trim() !== '' &&
+        !/^(to taste|as needed|a\/r|q\.?s\.?)$/i.test(String(q).trim());
+      const hasRange =
+        item?.quantityRange?.min !== null &&
+        item?.quantityRange?.min !== undefined &&
+        item?.quantityRange?.unit;
+      return Boolean(hasQuantity || hasRange);
+    }).length;
+  }, [allIngredients]);
+
+  const techniqueText = [
+    recipe.practical_summary?.what_it_is,
+    recipe.practical_summary?.key_technique,
+    ...(recipe.practical_summary?.important_notes ?? []),
+    ...tips,
+    ...notes,
+    recipeName,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  const looksTechnique =
+    /\b(technique|method|how to|confit|blanch|temper|slice|knife|peel|sharpen|debone|cartouche|infuse|infusion|fold|knead|emulsify|sear|braise|poach)\b/.test(techniqueText);
+
+  const recipeKind: 'full_recipe' | 'technique_with_ingredients' | 'pure_technique' =
+    allIngredients.length <= 1
+      ? 'pure_technique'
+      : ingredientQuantityCount >= 2
+        ? 'full_recipe'
+        : looksTechnique || !hasServings
+          ? 'technique_with_ingredients'
+          : 'full_recipe';
+
+  const isFullRecipe = recipeKind === 'full_recipe';
+  const isTechnique = recipeKind !== 'full_recipe';
+  const showIngredientsTab = recipeKind !== 'pure_technique' && allIngredients.length > 0;
+  const showNutritionTab = isFullRecipe && allIngredients.length > 0;
+  const showShoppingList = isFullRecipe && Boolean(onAddToShoppingList) && allIngredients.length > 0;
+
+  const recipeTabs = [
+    ...(showIngredientsTab ? [{ key: 'ingredients' as const, label: 'Ingredients' }] : []),
+    ...(instructions.length > 0 ? [{ key: 'steps' as const, label: 'Steps' }] : []),
+    ...(showNutritionTab ? [{ key: 'nutrition' as const, label: 'Nutrition' }] : []),
+    { key: 'ask' as const, label: isTechnique ? 'Ask Technique' : 'Ask' },
+  ];
+  const metaChips = [
+    recipe.cuisine ? { label: 'Cuisine', value: recipe.cuisine } : null,
+    recipe.style ? { label: 'Style', value: recipe.style } : null,
+    recipe.cooking_style ? { label: 'Method', value: recipe.cooking_style } : null,
+  ].filter(Boolean) as { label: string; value: string }[];
+
+
+  React.useEffect(() => {
+    if (!recipeTabs.some((tab) => tab.key === activeRecipeTab)) {
+      setActiveRecipeTab(recipeTabs[0]?.key ?? 'ask');
+    }
+  }, [activeRecipeTab, recipeTabs]);
+
   // ── Serving scale ────────────────────────────────────────────────────────
 
   const baseServings = React.useMemo(() => {
@@ -496,7 +684,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
   const currentScale    = servingScale || 1;
   const currentServings = Math.max(1, Math.round(baseServings * currentScale));
-  const hasServings     = Boolean(toStr(recipe.servings).trim());
 
   const handleServingsDelta = (delta: number) => {
     if (!onServingScaleChange) return;
@@ -533,12 +720,19 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
       if (qtyRange) {
         qty = String(qtyRange.min);
         u   = qtyRange.unit || unit || undefined;
-      } else if (qty && u) {
-        const conv = convertUnits(qty, u, useMetric);
-        qty = conv.q; u = conv.u;
-      } else if (qty && scaleQuantity && currentScale !== 1) {
-        const scaled = scaleQuantity(qty, currentScale);
-        if (scaled && !scaled.includes('NaN')) qty = scaled;
+        if (qty) qty = normalizeCountQuantity(qty, u || null, name);
+      } else if (qty) {
+        if (scaleQuantity && currentScale !== 1) {
+          const scaled = scaleQuantity(qty, currentScale);
+          if (scaled && !scaled.includes('NaN')) qty = scaled;
+        }
+
+        qty = normalizeCountQuantity(qty, u || null, name);
+
+        if (u) {
+          const conv = convertUnits(qty, u, useMetric);
+          qty = conv.q; u = conv.u;
+        }
       }
 
       // For items with no stated quantity, pass the assumed label as the unit
@@ -562,6 +756,126 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     setTimeout(() => setAdded(false), 3000);
   };
 
+  const askHistoryStorageKey = React.useMemo(
+    () => (recipeId ? `recolekt:recipe-ask:${recipeId}` : ''),
+    [recipeId],
+  );
+
+  React.useEffect(() => {
+    if (!askHistoryStorageKey || !recipeId) return;
+
+    let cancelled = false;
+
+    const loadAskHistory = async () => {
+      try {
+        const token = getRecipeAssistantToken();
+        const res = await fetch(
+          apiUrl(`api/reel/${encodeURIComponent(recipeId)}/ask/history?limit=10`),
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            credentials: "include",
+          }
+        );
+
+        const data = (await res.json().catch(() => ({}))) as {
+          history?: RecipeAssistantHistoryEntry[];
+        };
+
+        if (!cancelled && res.ok && Array.isArray(data.history)) {
+          setAskHistory(data.history.slice(0, 10));
+          try {
+            localStorage.setItem(askHistoryStorageKey, JSON.stringify(data.history.slice(0, 10)));
+          } catch {
+            // Ignore localStorage sync failures.
+          }
+          return;
+        }
+      } catch {
+        // Fall back to localStorage below.
+      }
+
+      if (cancelled) return;
+
+      try {
+        const raw = localStorage.getItem(askHistoryStorageKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        setAskHistory(Array.isArray(parsed) ? parsed.slice(0, 10) : []);
+      } catch {
+        setAskHistory([]);
+      }
+    };
+
+    loadAskHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [recipeId, askHistoryStorageKey]);
+
+  const handleAskRecipe = async () => {
+    const question = askQuestion.trim();
+    if (!question || !recipeId || askLoading) return;
+
+    setAskLoading(true);
+    setAskError("");
+
+    try {
+      const token = getRecipeAssistantToken();
+      const res = await fetch(
+        apiUrl(`api/reel/${encodeURIComponent(recipeId)}/ask`),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          credentials: "include",
+          body: JSON.stringify({ question }),
+        }
+      );
+
+      const data = (await res.json().catch(() => ({}))) as RecipeAssistantResponse;
+
+      if (!res.ok) {
+        throw new Error(data?.error || `Recipe assistant failed (${res.status})`);
+      }
+
+      const nextAnswer = data.answer || "No answer returned.";
+
+
+      setAskAnswer(nextAnswer);
+
+      const fallbackEntry = {
+        question,
+        answer: nextAnswer,
+        createdAt: new Date().toISOString(),
+      };
+
+      const nextHistory =
+        Array.isArray(data.history) && data.history.length > 0
+          ? data.history.slice(0, 10)
+          : [fallbackEntry, ...askHistory].slice(0, 10);
+
+      setAskHistory(nextHistory);
+
+      if (askHistoryStorageKey) {
+        try {
+          localStorage.setItem(askHistoryStorageKey, JSON.stringify(nextHistory));
+        } catch {
+          // Ignore localStorage write failures.
+        }
+      }
+    } catch (err: any) {
+      setAskError(err?.message || "Recipe assistant failed.");
+    } finally {
+      setAskLoading(false);
+    }
+  };
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -572,7 +886,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         <div className="flex items-center gap-2.5">
           <ChefHat size={18} className="text-rose-500" />
           <h3 className="font-bold text-gray-900 text-base tracking-tight">
-            {t('videoDetail:recipeDetails', 'Recipe Details')}
+            {isTechnique ? 'Cooking Technique' : t('videoDetail:recipeDetails', 'Recipe Details')}
           </h3>
         </div>
         {onToggleMetric && (
@@ -584,6 +898,19 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </button>
         )}
       </div>
+
+      {metaChips.length > 0 && (
+        <div className="border-b border-rose-100 bg-white px-5 py-3">
+          <div className="flex flex-wrap gap-2">
+            {metaChips.map((chip) => (
+              <div key={`${chip.label}-${chip.value}`} className="rounded-full border border-gray-100 bg-gray-50 px-3 py-1.5">
+                <span className="text-[9px] font-black uppercase tracking-widest text-gray-400">{chip.label}</span>
+                <span className="ml-1.5 text-[11px] font-black text-gray-800">{chip.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Time grid — dynamic columns, only renders cells with data */}
       {timeCells.length > 0 && (
@@ -600,23 +927,19 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
       )}
 
       {/* Tabs */}
-      <div className="border-t border-gray-100 bg-gray-50 px-3 pt-3">
-        <div className="flex items-end gap-1">
-          {[
-            { key: 'ingredients', label: 'Ingredients' },
-            { key: 'steps', label: 'Recipe Steps' },
-            { key: 'nutrition', label: 'Nutrition Value' },
-          ].map((tab) => {
+      <div className="border-t border-gray-100 bg-gray-50 px-3 py-3">
+        <div className="grid gap-1 rounded-2xl bg-gray-100 p-1 text-[12px] font-black" style={{ gridTemplateColumns: `repeat(${recipeTabs.length}, minmax(0, 1fr))` }}>
+          {recipeTabs.map((tab) => {
             const active = activeRecipeTab === tab.key;
             return (
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveRecipeTab(tab.key as 'ingredients' | 'steps' | 'nutrition')}
-                className={`flex-1 rounded-t-2xl border px-2 py-3 text-[12px] font-black transition-all ${
+                onClick={() => setActiveRecipeTab(tab.key)}
+                className={`rounded-xl px-2 py-2.5 transition-all ${
                   active
-                    ? 'relative -mb-px border-gray-200 border-b-white bg-white text-rose-600 shadow-sm'
-                    : 'border-transparent bg-gray-100/80 text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                    ? 'bg-white text-violet-600 shadow-sm'
+                    : 'text-gray-500 hover:bg-white/50 hover:text-gray-700'
                 }`}
               >
                 {tab.label}
@@ -644,7 +967,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               )}
             </div>
 
-            {onAddToShoppingList && allIngredients.length > 0 && (
+            {showShoppingList && (
               <button
                 type="button"
                 onClick={handleAddToList}
@@ -676,7 +999,16 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                       {(group.items ?? []).map((item, ii) => {
                         const id = `g${gi}-i${ii}`;
                         return (
-                          <IngredientRow key={id} id={id} raw={item} servingScale={currentScale} scaleQuantity={scaleQuantity} checked={checkedIds.has(id)} onToggle={toggleIngredient} useMetric={useMetric} />
+                          <IngredientRow
+                            key={id}
+                            id={id}
+                            raw={item}
+                            servingScale={currentScale}
+                            scaleQuantity={scaleQuantity}
+                            checked={!isTechnique && checkedIds.has(id)}
+                            onToggle={isTechnique ? undefined : toggleIngredient}
+                            useMetric={useMetric}
+                          />
                         );
                       })}
                     </ul>
@@ -687,13 +1019,33 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                   {flat.map((item, i) => {
                     const id = `f${i}`;
                     return (
-                      <IngredientRow key={id} id={id} raw={item} servingScale={currentScale} scaleQuantity={scaleQuantity} checked={checkedIds.has(id)} onToggle={toggleIngredient} useMetric={useMetric} />
+                      <IngredientRow
+                        key={id}
+                        id={id}
+                        raw={item}
+                        servingScale={currentScale}
+                        scaleQuantity={scaleQuantity}
+                        checked={!isTechnique && checkedIds.has(id)}
+                        onToggle={isTechnique ? undefined : toggleIngredient}
+                        useMetric={useMetric}
+                      />
                     );
                   })}
                 </ul>
               )
             }
           </div>
+
+          {recipeKind === 'technique_with_ingredients' && (
+            <div className="mx-5 mt-4 rounded-2xl border border-violet-100 bg-violet-50/50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">
+                Technique note
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-gray-600">
+                This is a cooking technique, not a portioned recipe. Quantities and servings are not precise enough for reliable nutrition, so use the ingredients as a reference.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -714,12 +1066,112 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         </>
       )}
 
-      {activeRecipeTab === 'nutrition' && allIngredients.length > 0 && (
+      {activeRecipeTab === 'nutrition' && showNutritionTab && (
         <div className="px-5 py-5 border-t border-gray-50">
           <NutritionCard
             ingredients={allIngredients.map((entry) => entry.raw)}
-            servings={currentServings}
+            servings={hasServings ? currentServings : undefined}
+            recipeName={recipeName}
           />
+        </div>
+      )}
+
+      {activeRecipeTab === 'ask' && (
+        <div className="border-t border-gray-50 px-5 py-5">
+          <div className="rounded-2xl border border-violet-100 bg-violet-50/50 p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">
+{isTechnique ? 'Technique Assistant' : 'Recipe Assistant'}
+            </p>
+            <h4 className="mt-1 text-base font-black text-gray-950">
+{isTechnique ? 'Ask about this technique' : 'Ask about this recipe'}
+            </h4>
+            <p className="mt-1 text-xs leading-relaxed text-gray-500">
+{isTechnique
+                ? 'Uses this technique, caption, and transcript. Best for method, timing, equipment, and substitutions.'
+                : 'Uses this recipe, caption, and transcript. Best for missing quantities, substitutions, timing, and technique.'}
+            </p>
+
+            <div className="mt-4 flex gap-2">
+              <input
+                value={askQuestion}
+                onChange={(e) => setAskQuestion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAskRecipe();
+                  }
+                }}
+                placeholder={isTechnique ? "How should I use this technique?" : "What is missing from this recipe?"}
+                className="min-w-0 flex-1 rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-medium text-gray-800 outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+              />
+              <button
+                type="button"
+                onClick={handleAskRecipe}
+                disabled={askLoading || !askQuestion.trim() || !recipeId}
+                className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-black text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {askLoading ? "Asking..." : "Ask"}
+              </button>
+            </div>
+
+            {askHistory.length > 1 && (
+              <div className="mt-4 rounded-2xl border border-violet-100 bg-white/70 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">
+                    Recent questions
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAskHistory([]);
+                      if (askHistoryStorageKey) localStorage.removeItem(askHistoryStorageKey);
+                    }}
+                    className="text-[10px] font-black uppercase tracking-wide text-gray-400 hover:text-gray-700"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <div className="mt-3 space-y-3">
+                  {askHistory.slice(1, 5).map((entry, idx) => (
+                    <button
+                      key={`${entry.createdAt}-${idx}`}
+                      type="button"
+                      onClick={() => {
+                        setAskQuestion(entry.question);
+                        setAskAnswer(entry.answer);
+                      }}
+                      className="block w-full rounded-xl border border-gray-100 bg-white px-3 py-3 text-left transition hover:border-violet-100 hover:bg-violet-50/40"
+                    >
+                      <p className="line-clamp-1 text-xs font-black text-gray-800">
+                        {entry.question}
+                      </p>
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-500">
+                        {entry.answer}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {askError && (
+              <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+                {askError}
+              </p>
+            )}
+
+            {askAnswer && (
+              <div className="mt-4 rounded-2xl border border-gray-100 bg-white p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                  Answer
+                </p>
+                <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-gray-700">
+                  {askAnswer}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -762,12 +1214,14 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
             style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #e11d48 100%)' }}
           >
             <ChefHat size={17} strokeWidth={2.5} />
-            {savedCookStep !== null ? `Resume cooking · step ${savedCookStep + 1}` : 'Launch cooking mode'}
+            {savedCookStep !== null
+              ? `${isTechnique ? 'Resume guide' : 'Resume cooking'} · step ${savedCookStep + 1}`
+              : isTechnique ? 'Follow technique guide' : 'Launch cooking mode'}
           </button>
           <p className="mt-2 text-center text-[11px] font-medium text-gray-400">
             {savedCookStep !== null
               ? `You left off at step ${savedCookStep + 1} of ${instructions.length}`
-              : 'Follow this recipe step by step with timers.'}
+              : isTechnique ? 'Follow this technique step by step.' : 'Follow this recipe step by step with timers.'}
           </p>
         </div>
       )}

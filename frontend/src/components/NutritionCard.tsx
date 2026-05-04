@@ -4,6 +4,7 @@ import { calculateNutrition, type NutritionTotals } from "../utils/nutritionCalc
 type NutritionCardProps = {
   ingredients: any[];
   servings?: number;
+  recipeName?: string;
 };
 
 type ViewMode = "serving" | "per100g" | "total";
@@ -51,100 +52,53 @@ const nutriColors: Record<string, string> = {
 
 function NutriScoreVisual({ letter }: { letter: "A" | "B" | "C" | "D" | "E" }) {
   const grades = [
-    { l: "A", x: 0,   w: 58, color: "#038141" },
-    { l: "B", x: 56,  w: 52, color: "#85BB2F" },
-    { l: "C", x: 106, w: 52, color: "#FECB02" },
-    { l: "D", x: 156, w: 52, color: "#EE8100" },
-    { l: "E", x: 206, w: 58, color: "#E63E11" },
+    { l: "A", cls: "bg-[#038141]" },
+    { l: "B", cls: "bg-[#85BB2F]" },
+    { l: "C", cls: "bg-[#FECB02]" },
+    { l: "D", cls: "bg-[#EE8100]" },
+    { l: "E", cls: "bg-[#E63E11]" },
   ] as const;
-
-  const active = grades.find((g) => g.l === letter) ?? grades[0];
 
   return (
     <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Estimated Nutri-Score</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+          Estimated Nutri-Score
+        </p>
         <p className="text-[10px] font-bold text-gray-400">per 100g</p>
       </div>
 
       <div className="mx-auto w-full max-w-[280px]">
-        <svg viewBox="0 0 280 98" role="img" aria-label={`Estimated Nutri-Score ${letter}`} className="block h-auto w-full">
-          <text
-            x="0"
-            y="22"
-            fill="#7a7a7a"
-            fontSize="20"
-            fontWeight="900"
-            letterSpacing="-0.7"
-            fontFamily="Arial, Helvetica, sans-serif"
-          >
-            NUTRI-SCORE
-          </text>
+        <p className="mb-2 text-center text-lg font-black tracking-tight text-gray-500">
+          NUTRI-SCORE
+        </p>
 
-          <g transform="translate(0 34)">
-            {grades.map((g, i) => (
-              <rect
-                key={g.l}
-                x={g.x}
-                y="6"
-                width={g.w}
-                height="42"
-                rx={i === 0 || i === grades.length - 1 ? 18 : 0}
-                fill={g.color}
-              />
-            ))}
+        <div
+          role="img"
+          aria-label={`Estimated Nutri-Score ${letter}`}
+          className="flex items-center justify-center gap-1"
+        >
+          {grades.map((grade) => {
+            const active = grade.l === letter;
 
-            {grades.map((g) => (
-              <text
-                key={g.l}
-                x={g.x + g.w / 2}
-                y="36"
-                textAnchor="middle"
-                fill={g.l === letter ? "white" : "rgba(255,255,255,0.52)"}
-                fontSize={g.l === letter ? "30" : "26"}
-                fontWeight="900"
-                fontFamily="Arial, Helvetica, sans-serif"
+            return (
+              <div
+                key={grade.l}
+                className={[
+                  "flex h-10 w-12 items-center justify-center rounded-xl text-2xl font-black text-white transition-all",
+                  grade.cls,
+                  active ? "ring-4 ring-white shadow-md scale-110" : "opacity-80"
+                ].join(" ")}
               >
-                {g.l}
-              </text>
-            ))}
-
-            <rect
-              x={active.x - 5}
-              y="0"
-              width={active.w + 10}
-              height="54"
-              rx="20"
-              fill={active.color}
-              stroke="white"
-              strokeWidth="7"
-              filter="url(#shadow)"
-            />
-
-            <text
-              x={active.x + active.w / 2}
-              y="38"
-              textAnchor="middle"
-              fill="white"
-              fontSize="34"
-              fontWeight="900"
-              fontFamily="Arial, Helvetica, sans-serif"
-            >
-              {letter}
-            </text>
-          </g>
-
-          <defs>
-            <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
-              <feDropShadow dx="0" dy="4" stdDeviation="4" floodOpacity="0.18" />
-            </filter>
-          </defs>
-        </svg>
+                {grade.l}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 }
-
 
 function ValueTable({ values, label }: { values: NutritionTotals; label: string }) {
   const rows = [
@@ -154,7 +108,8 @@ function ValueTable({ values, label }: { values: NutritionTotals; label: string 
     ["Fat", fmt(values.fat_g)],
     ["Saturates", fmt(values.saturates_g)],
     ["Sugars", fmt(values.sugars_g)],
-    ["Salt", fmt(values.salt_g)]
+    ["Salt", "see notes"],
+    ["Fiber", fmt(values.fiber_g)]
   ];
 
   return (
@@ -172,9 +127,21 @@ function ValueTable({ values, label }: { values: NutritionTotals; label: string 
   );
 }
 
-export default function NutritionCard({ ingredients, servings = 1 }: NutritionCardProps) {
+export default function NutritionCard({ ingredients, servings, recipeName }: NutritionCardProps) {
   const [mode, setMode] = useState<ViewMode>("serving");
-  const nutrition = useMemo(() => calculateNutrition(ingredients, servings), [ingredients, servings]);
+  const nutrition = useMemo(
+    () => calculateNutrition(ingredients, servings, { recipeName }),
+    [ingredients, servings, recipeName]
+  );
+
+  const hasUsableNutrition =
+    nutrition.totalWeightG >= 50 &&
+    (
+      nutrition.totalRecipe.calories > 0 ||
+      nutrition.totalRecipe.protein_g > 0 ||
+      nutrition.totalRecipe.carbs_g > 0 ||
+      nutrition.totalRecipe.fat_g > 0
+    );
 
   const activeValues =
     mode === "serving" ? nutrition.perServing :
@@ -186,12 +153,95 @@ export default function NutritionCard({ ingredients, servings = 1 }: NutritionCa
     mode === "per100g" ? "Per 100g" :
     "Total recipe";
 
+  const nutritionNotes = useMemo(() => {
+    const assumptions: string[] = [];
+    const missing: string[] = [];
+
+    const labelFor = (ingredient: any) =>
+      String(
+        ingredient?.item ??
+        ingredient?.name ??
+        ingredient?.ingredient ??
+        ingredient?.displayName ??
+        ingredient?.rawText ??
+        "ingredient"
+      );
+
+    ingredients.forEach((ingredient: any) => {
+      const label = labelFor(ingredient);
+
+      const hasQuantity =
+        ingredient?.quantity !== null &&
+        ingredient?.quantity !== undefined &&
+        ingredient?.quantity !== "" &&
+        ingredient?.quantity !== "to taste" &&
+        ingredient?.quantity !== "as needed";
+
+      const hasRange =
+        ingredient?.quantityRange?.min !== null &&
+        ingredient?.quantityRange?.min !== undefined &&
+        ingredient?.quantityRange?.unit;
+
+      if (hasRange && !hasQuantity) {
+        assumptions.push(
+          `${label} estimated at ${ingredient.quantityRange.min}${ingredient.quantityRange.unit} from a ${ingredient.quantityRange.min}–${ingredient.quantityRange.max}${ingredient.quantityRange.unit} range.`
+        );
+        return;
+      }
+
+      if (!hasQuantity && !hasRange) {
+        missing.push(label);
+      }
+    });
+
+    if (nutrition.servingEstimateReason === "source") {
+      assumptions.unshift(`Nutrition estimated for ${nutrition.effectiveServings} servings.`);
+    } else if (nutrition.servingEstimateReason === "sauce_portion" && nutrition.servingSizeG) {
+      assumptions.unshift(`No serving count found. Per portion estimated as ${nutrition.servingSizeG}g for a sauce, dip, or spread.`);
+    } else if (nutrition.servingEstimateReason === "weight_portion" && nutrition.servingSizeG) {
+      assumptions.unshift(`No serving count found. Per portion estimated as ${nutrition.servingSizeG}g.`);
+    } else {
+      assumptions.unshift("No serving count found. Per portion currently equals the total calculated recipe.");
+    }
+
+    return { assumptions, missing };
+  }, [ingredients, servings, nutrition.effectiveServings, nutrition.servingEstimateReason, nutrition.servingSizeG]);
+
+  const saltMissing = nutritionNotes.missing.some((x) => {
+    const value = x.toLowerCase();
+    return value.includes("salt") || value.includes("sel");
+  });
+
   const trafficItems = [
     { key: "fat", label: "Fat", value: nutrition.per100g.fat_g, display: fmt(nutrition.per100g.fat_g) },
     { key: "saturates", label: "Saturates", value: nutrition.per100g.saturates_g, display: fmt(nutrition.per100g.saturates_g) },
     { key: "sugars", label: "Sugars", value: nutrition.per100g.sugars_g, display: fmt(nutrition.per100g.sugars_g) },
-    { key: "salt", label: "Salt", value: nutrition.per100g.salt_g, display: fmt(nutrition.per100g.salt_g) }
+    {
+      key: "salt",
+      label: "Salt",
+      value: nutrition.per100g.salt_g,
+      display: saltMissing ? "Unknown" : fmt(nutrition.per100g.salt_g),
+      forcedLabel: saltMissing ? "UNKNOWN" : undefined,
+      forcedClass: saltMissing ? "bg-amber-500 text-white" : undefined,
+    }
   ];
+
+  if (!hasUsableNutrition) {
+    return (
+      <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Estimated</p>
+          <h3 className="text-lg font-semibold text-gray-950">Nutrition values</h3>
+          <p className="mt-2 text-sm leading-relaxed text-gray-500">
+            Not enough quantity data to calculate reliable nutrition for this recipe.
+          </p>
+          <p className="mt-3 text-xs text-gray-400">
+            Key ingredient quantities are missing. Add quantities to improve the estimate.
+          </p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -199,7 +249,7 @@ export default function NutritionCard({ ingredients, servings = 1 }: NutritionCa
         <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Estimated</p>
         <h3 className="text-lg font-semibold text-gray-950">Nutrition values</h3>
         <p className="mt-1 text-xs text-gray-500">
-          {nutrition.matchedCount} of {nutrition.totalCount} ingredients calculated · {nutrition.confidence} confidence.
+          Nutrition estimated from main ingredients · partial estimate.
         </p>
       </div>
 
@@ -222,26 +272,72 @@ export default function NutritionCard({ ingredients, servings = 1 }: NutritionCa
 
       <ValueTable values={activeValues} label={activeLabel} />
 
+      {(nutritionNotes.assumptions.length > 0 || nutritionNotes.missing.length > 0) && (
+        <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">
+            Assumptions
+          </p>
+
+          <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-amber-900">
+            {nutritionNotes.assumptions.map((note, idx) => (
+              <li key={`assumption-${idx}`}>• {note}</li>
+            ))}
+
+            {nutritionNotes.missing.length > 0 && (
+              <li>
+                • Excluded missing quantities: {nutritionNotes.missing.join(", ")}.
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
+
       <div className="mt-4 grid grid-cols-4 overflow-hidden rounded-2xl border border-gray-200 text-center text-xs">
         {trafficItems.map((item) => {
           const level = traffic(item.key, item.value);
           return (
             <div key={item.key} className="border-r border-white last:border-r-0">
-              <div className={`${level.cls} px-1 py-2`}>
+              <div className={`${item.forcedClass ?? level.cls} px-1 py-2`}>
                 <p className="font-black">{item.display}</p>
                 <p className="text-[10px] font-bold uppercase">{item.label}</p>
               </div>
-              <div className="bg-gray-50 py-1 text-[10px] font-black text-gray-500">{level.label}</div>
+              <div className="bg-gray-50 py-1 text-[10px] font-black text-gray-500">
+                {item.forcedLabel ?? level.label}
+              </div>
             </div>
           );
         })}
       </div>
 
-      <NutriScoreVisual letter={nutrition.nutriScore.letter} />
+      <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+              Health estimate
+            </p>
+            <h4 className="mt-1 text-sm font-black text-gray-950">
+              Needs review
+            </h4>
+          </div>
+          <span className="rounded-full bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
+            Estimated
+          </span>
+        </div>
 
-      <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
-        Estimated from calculated per-100g values. Fruit/veg/pulse/nut percentage and fiber are not yet inferred, so this is demo-grade, not a regulatory label.
-      </p>
+        <ul className="space-y-1.5 text-xs leading-relaxed text-gray-600">
+          {nutrition.perServing.protein_g >= 20 && <li>• High protein per serving.</li>}
+          {nutrition.per100g.fat_g >= 17.5 && <li>• High fat per 100g.</li>}
+          {nutrition.per100g.saturates_g >= 5 && <li>• High saturated fat per 100g.</li>}
+          {nutrition.per100g.carbs_g <= 5 && <li>• Low carbohydrate estimate.</li>}
+          {nutritionNotes.missing.some((x) => x.toLowerCase().includes("salt") || x.toLowerCase().includes("sel")) && (
+            <li>• Salt is present but quantity is unknown.</li>
+          )}
+        </ul>
+
+        <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
+          This is a Recolekt estimate based on detected ingredients and usable quantities. It is not an official Nutri-Score or medical nutrition label.
+        </p>
+      </div>
     </section>
   );
 }

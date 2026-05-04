@@ -16,11 +16,11 @@ if (!raw && typeof window !== 'undefined') {
     hostname === '127.0.0.1'
   ) {
     raw = 'http://127.0.0.1:5001';
-  } else if (hostname.includes('staging')) {
-    raw = 'https://recolekt-staging.up.railway.app';
-  } else {
-    raw = 'https://api.recolekt.app';
   }
+}
+
+if (!raw) {
+  throw new Error('Missing API base URL. Set VITE_API_BASE, VITE_BACKEND_URL, or VITE_API_URL.');
 }
 
 const normalized = raw.replace(/\/+$/, '');

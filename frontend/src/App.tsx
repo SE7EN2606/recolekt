@@ -1,8 +1,7 @@
-import { API_BASE, GOOGLE_CLIENT_ID } from "./utils/api";
+import { API_BASE } from "./utils/api";
 import React, { useState, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { I18nextProvider, useTranslation } from 'react-i18next';
-import { GoogleOAuthProvider } from '@react-oauth/google';
 import i18n from './i18n';
 
 import { LanguageProvider } from './context/LanguageContext';
@@ -116,7 +115,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 function App() {
   return (
     <I18nextProvider i18n={i18n}>
-      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
         <LanguageProvider>
           <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" /></div>}>
             <Router>
@@ -141,7 +139,6 @@ function App() {
             </Router>
           </Suspense>
         </LanguageProvider>
-      </GoogleOAuthProvider>
     </I18nextProvider>
   );
 }

@@ -22,6 +22,7 @@ import { ContentTypeBadge, deriveToolsSubtype } from '../components/ContentTypeB
 import { useTranslation } from 'react-i18next';
 import { useScrollLock } from '../utils/useScrollLock';
 import { apiUrl, fetchGcsJson, HASHTAG_STYLE } from '../utils/videoDetailUtils';
+import { scaleQuantity } from '../utils/videoUtils';
 import { CustomMessageSquareMoreIcon, IOSShareIcon, PlatformIconAuthor } from '../components/CustomIcons';
 import {
   mergeVideoPayload,
@@ -341,7 +342,7 @@ export const VideoDetail: React.FC = () => {
   const toolsSubtype = isToolsContentType(viewModel.contentType)
     ? structuredBadgeSubtype ?? safeDerivedSubtype
     : undefined;
-  const showTypeBadge = viewModel.contentType !== 'general';
+  const showTypeBadge = false; // Recipe-only focus: hide content badge for now.
 
   const normalizedLocations: any[] = extractLocationPlaces(viewModel.location).map(
     (place: any, idx: number) => ({
@@ -546,7 +547,7 @@ export const VideoDetail: React.FC = () => {
               </div>
             )}
 
-            {showToolsListCard ? (
+            {false && showToolsListCard ? (
               <div className="mt-4 pt-4 border-t border-primary-100/50">
                 <ToolsListCard toolsList={viewModel.toolsList ?? undefined} showOriginal={showOriginal} />
               </div>
@@ -586,6 +587,7 @@ export const VideoDetail: React.FC = () => {
                 recipeId={currentVideoId}
                 recipeName={viewModel.title ?? 'Recipe'}
                 servingScale={servingScale}
+                scaleQuantity={scaleQuantity}
                 onServingScaleChange={setServingScale}
                 useMetric={useMetric}
                 onToggleMetric={setUseMetric}
@@ -594,11 +596,11 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
-          {viewModel.workout && (
+          {false && viewModel.workout && (
             <WorkoutCard workoutData={viewModel.workout} showOriginal={showOriginal} />
           )}
 
-          {isLocationContent && normalizedLocations.length > 0 && (
+          {false && isLocationContent && normalizedLocations.length > 0 && (
             <div className="relative z-0 mb-5">
               <LocationCard location={normalizedLocations} processId={currentVideoId} />
             </div>

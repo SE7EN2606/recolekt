@@ -521,7 +521,7 @@ class Call1Mixin:
             ranked_by_pairs = len(rank_pairs) >= 3
             is_ranked = bool(ranked_by_helper or ranked_by_pairs)
 
-            if rank_pairs and is_ranked:
+            if rank_pairs and is_ranked and content_type != "recipe":
                 tools_categories = enrich_ranks_from_transcript(tools_categories, rank_pairs)
                 tools_categories = _apply_authoritative_rank_pairs(tools_categories, rank_pairs)
                 tools_categories = add_missing_transcript_items(
@@ -542,10 +542,20 @@ class Call1Mixin:
                     "transcript post-processing: %d items after authoritative rank override + recovery",
                     total,
                 )
-            elif rank_pairs:
+            elif rank_pairs and is_ranked and content_type == "recipe":
+                logger.info(
+                    "🧯 Skipping ranked transcript recovery for recipe content; numbers are likely times, temperatures, or quantities."
+                )
+                is_ranked = False
+                list_subtype = None
+            elif rank_pairs and content_type != "recipe":
                 tools_categories = enrich_ranks_from_transcript(tools_categories, rank_pairs)
                 tools_categories = _apply_authoritative_rank_pairs(tools_categories, rank_pairs)
                 tools_categories = _sort_tools_categories_by_rank(tools_categories)
+            elif rank_pairs and content_type == "recipe":
+                logger.info(
+                    "🧯 Skipping transcript rank enrichment for recipe content; numbers are likely times, temperatures, or quantities."
+                )
 
         if tools_categories:
             before = sum(len(c.get("items", [])) for c in tools_categories)

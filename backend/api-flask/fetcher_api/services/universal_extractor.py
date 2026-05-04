@@ -594,7 +594,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         if parsed.get("location"):
             final_content_type = "location"
             logger.info("📍 public content_type confirmed -> 'location' (location populated)")
-        elif parsed.get("tools_categories"):
+        elif parsed.get("tools_categories") and extraction_content_type != "recipe" and public_content_type != "recipe":
             inferred_family = _call_classify_structured_family_safe(
                 transcript=transcript,
                 caption=caption,
@@ -612,8 +612,10 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                 "🧩 public content_type confirmed from structured list -> %r",
                 final_content_type,
             )
+        elif parsed.get("tools_categories"):
+            logger.info("🧩 Ignoring structured-list promotion because content is recipe")
 
-        if parsed.get("tools_categories"):
+        if parsed.get("tools_categories") and final_content_type != "recipe":
             structure_analysis = analyze_structure(
                 tools_categories=parsed.get("tools_categories") or [],
                 category=parsed.get("category", ""),
@@ -646,7 +648,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             logger.info("📞 CALL 2: English summary...")
             summary_result = self._call2_english(parsed, caption)
         else:
-            if parsed.get("tools_categories"):
+            if parsed.get("tools_categories") and final_content_type != "recipe":
                 logger.info(
                     "📞 CALL 2: Non-English structured tools path -> %s...",
                     effective_lang.upper(),

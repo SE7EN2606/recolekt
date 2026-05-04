@@ -185,7 +185,18 @@ export const Home: React.FC = () => {
       }
 
       if (!response.ok) {
-        setError(data.error || t("home:genericError"));
+        const message =
+          data.message ||
+          (data.error === "extraction_limit_reached"
+            ? "Lots of people are using Recolekt right now. Please try again in a few hours."
+            : null) ||
+          (data.error === "unsupported_platform"
+            ? "Only Instagram, Facebook, YouTube, and TikTok URLs are supported."
+            : null) ||
+          data.error ||
+          t("home:genericError");
+
+        setError(message);
         setIsLoading(false);
         return;
       }

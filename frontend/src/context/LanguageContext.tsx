@@ -34,17 +34,11 @@ const extractText = (v: any): string => {
   return '';
 };
 
-const STORAGE_KEY = 'recolekt_showOriginal';
-
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { i18n } = useTranslation();
 
-  // Read from localStorage first, fall back to i18n language detection
-  const [showOriginal, setShowOriginal] = useState<boolean>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored !== null) return stored === 'true';
-    return i18n.language?.startsWith('fr') ?? false;
-  });
+  // Default content display is always English. The globe toggles original language manually.
+  const [showOriginal, setShowOriginal] = useState<boolean>(false);
 
   const [languageCode, setLanguageCode] = useState('EN');
 
@@ -55,7 +49,6 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const toggleLanguage = useCallback(() => {
     setShowOriginal(prev => {
       const next = !prev;
-      localStorage.setItem(STORAGE_KEY, String(next));
       console.log('🔁 Content language toggled:', next ? 'Original' : 'English');
       return next;
     });

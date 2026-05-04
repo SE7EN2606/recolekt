@@ -18,6 +18,7 @@ from fetcher_api.api.helpers.formatters import (
 )
 from fetcher_api.api.helpers.recipe_formatters import normalize_recipe
 from fetcher_api.services.storage import generate_gcs_paths, platform_reels_folder
+from fetcher_api.services.recipe_assistant import answer_recipe_question
 from fetcher_api.utils.geocode import geocode_one, reverse_geocode_one
 
 logger = logging.getLogger("reels")
@@ -1018,6 +1019,183 @@ def patch_reel_location(process_id):
     except Exception as e:
         logger.error(f"❌ Error patching location for {process_id}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+def _ensure_recipe_assistant_table():
+    execute(
+        """
+        CREATE TABLE IF NOT EXISTS recipe_assistant_messages (
+            id BIGSERIAL PRIMARY KEY,
+            reel_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            question TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            sources_used JSONB NOT NULL DEFAULT '[]'::jsonb,
+            missing_info JSONB NOT NULL DEFAULT '[]'::jsonb,
+            model TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        commit=True,
+    )
+    execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_recipe_assistant_messages_reel_user_created
+        ON recipe_assistant_messages (reel_id, user_id, created_at DESC)
+        """,
+        commit=True,
+    )
+
+
+def _fetch_recipe_assistant_history(reel_id: str, user_id: str, limit: int = 10):
+    _ensure_recipe_assistant_table()
+    rows = fetch_all(
+        """
+        SELECT question, answer, sources_used, missing_info, model, created_at
+        FROM recipe_assistant_messages
+        WHERE reel_id = %s AND user_id = %s
+        ORDER BY created_at DESC
+        LIMIT %s
+        """,
+        (reel_id, user_id, limit),
+    ) or []
+
+    out = []
+    for row in rows:
+        d = dict(row)
+        out.append({
+            "question": d.get("question") or "",
+            "answer": d.get("answer") or "",
+            "sourcesUsed": json_loads_maybe(d.get("sources_used"), default=d.get("sources_used") or []),
+            "missingInfo": json_loads_maybe(d.get("missing_info"), default=d.get("missing_info") or []),
+            "model": d.get("model"),
+            "createdAt": d.get("created_at").isoformat() if d.get("created_at") else None,
+        })
+    return out
+
+
+def _save_recipe_assistant_message(
+    reel_id: str,
+    user_id: str,
+    question: str,
+    result: dict,
+):
+    _ensure_recipe_assistant_table()
+    execute(
+        """
+        INSERT INTO recipe_assistant_messages (
+            reel_id, user_id, question, answer, sources_used, missing_info, model
+        )
+        VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s)
+        """,
+        (
+            reel_id,
+            user_id,
+            question,
+            result.get("answer") or "",
+            _json_dumps_safe(result.get("sourcesUsed") or []),
+            _json_dumps_safe(result.get("missingInfo") or []),
+            result.get("model"),
+        ),
+        commit=True,
+    )
+
+
+
+@reel_bp.route("/reel/<process_id>/ask/history", methods=["GET", "OPTIONS"])
+def get_recipe_assistant_history(process_id):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        row_dict = _build_reel_payload_for_api(process_id, user_id, include_prompt=False)
+        if not row_dict:
+            return jsonify({"error": "Reel not found"}), 404
+
+        if (row_dict.get("content_type") or "").lower() != "recipe":
+            return jsonify({"error": "Recipe assistant is only available for recipe reels"}), 400
+
+        limit_raw = request.args.get("limit", "10")
+        try:
+            limit = int(limit_raw)
+        except ValueError:
+            limit = 10
+
+        limit = max(1, min(limit, 50))
+
+        history = _fetch_recipe_assistant_history(process_id, user_id, limit=limit)
+
+        return add_no_cache_headers(jsonify({"history": history}))
+
+    except Exception as e:
+        logger.error("Error fetching recipe assistant history for reel %s: %s", process_id, e, exc_info=True)
+        return jsonify({"error": "Recipe assistant history failed"}), 500
+
+
+@reel_bp.route("/reel/<process_id>/ask", methods=["POST", "OPTIONS"])
+def ask_reel_recipe(process_id):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+
+        if not question:
+            return jsonify({"error": "Question is required"}), 400
+
+        if len(question) > 1000:
+            return jsonify({"error": "Question is too long"}), 400
+
+        row_dict = _build_reel_payload_for_api(process_id, user_id, include_prompt=False)
+        if not row_dict:
+            return jsonify({"error": "Reel not found"}), 404
+
+        if (row_dict.get("content_type") or "").lower() != "recipe":
+            return jsonify({"error": "Recipe assistant is only available for recipe reels"}), 400
+
+        recipe = json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe"))
+        if not recipe:
+            return jsonify({"error": "Recipe data is missing"}), 400
+
+        transcription = parse_transcription(row_dict.get("transcription"))
+
+        result = answer_recipe_question(
+            question=question,
+            recipe=recipe,
+            caption=row_dict.get("caption") or "",
+            transcription=transcription,
+            language=row_dict.get("detected_language") or "en",
+        )
+
+        try:
+            _save_recipe_assistant_message(process_id, user_id, question, result)
+        except Exception as save_err:
+            logger.warning(
+                "⚠️ Recipe assistant answer generated but history save failed for %s: %s",
+                process_id,
+                save_err,
+                exc_info=True,
+            )
+
+        result["history"] = _fetch_recipe_assistant_history(process_id, user_id, limit=10)
+
+        return add_no_cache_headers(jsonify(result))
+
+    except Exception as e:
+        logger.error("Error in recipe assistant for reel %s: %s", process_id, e, exc_info=True)
+        return jsonify({"error": "Recipe assistant failed"}), 500
+
 
 @reel_bp.route("/update/<process_id>", methods=["PUT", "PATCH", "OPTIONS"])
 def update_reel(process_id):

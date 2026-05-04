@@ -82,7 +82,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
 
         {/* Right: Organizer */}
         <NavLink
-          to="/organizer"
+          to="/grocery-list"
           className={({ isActive }) =>
             `flex flex-col items-center justify-center gap-1 w-[84px] py-1.5 rounded-3xl transition-all duration-300 ${
               isActive 
@@ -99,7 +99,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
                 className={`transition-transform duration-300 ${isActive ? 'scale-110' : ''}`}
               />
               <span className="text-[11px] font-medium tracking-wide mt-0.5">
-                {t('modals:organizer', 'Organizer')}
+                {t('sidebar:groceryList', 'Grocery')}
               </span>
             </>
           )}
