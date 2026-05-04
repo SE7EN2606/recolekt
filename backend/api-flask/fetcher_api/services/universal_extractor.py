@@ -111,6 +111,38 @@ BOOKMARK_MESSAGES = {
 
 _CAPTION_MENTION_RE = re.compile(r"(?<![\w.])@([A-Za-z0-9._]{2,})")
 
+_RECIPE_ACTION_RE = re.compile(
+    r"\b(?:"
+    r"recipe|cook|cooking|bake|baking|oven|air\s*fryer|pan|pot|tray|"
+    r"grate|grated|slice|chop|mix|spread|roll|flip|add|season|serve|"
+    r"recette|cuire|four|po[eê]le|m[eé]langer|ajouter|"
+    r"rezept|ofen|backblech|reiben|gerieben|verteilen|umdrehen|salz|"
+    r"ricetta|forno|mescolare|aggiungere"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_RECIPE_INGREDIENT_RE = re.compile(
+    r"\b(?:"
+    r"potato|carrot|zucchini|courgette|egg|eggs|cheese|cottage\s+cheese|quark|"
+    r"lettuce|cucumber|turkey|chicken|beef|salmon|garlic|onion|salt|pepper|"
+    r"kartoffel|karotte|zucchini|ei|eier|k[aä]se|frischk[aä]se|kr[aä]uterquark|"
+    r"salat|gurke|putenbrust|poulet|ail|oignon|sel|poivre"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_spoken_recipe(transcript: str, caption: str) -> bool:
+    text = f"{transcript or ''} {caption or ''}"
+    if len(text.strip()) < 120:
+        return False
+
+    action_hits = len(_RECIPE_ACTION_RE.findall(text))
+    ingredient_hits = len(_RECIPE_INGREDIENT_RE.findall(text))
+
+    return action_hits >= 5 and ingredient_hits >= 4
+
 
 def _call_classify_structured_family_safe(
     transcript: str,
@@ -353,6 +385,12 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         )
 
         is_location_list = is_location_list_content(transcript, caption)
+        looks_spoken_recipe = _looks_like_spoken_recipe(transcript, caption)
+
+        if looks_spoken_recipe and requested_public_content_type not in {"workout", "location"}:
+            requested_public_content_type = "recipe"
+            is_location_list = False
+            logger.info("🍳 Spoken recipe guard: routing content as recipe")
 
         if requested_public_content_type in {"recipe", "workout"} and is_location_list:
             is_location_list = False
@@ -392,6 +430,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         is_tools = (
             not is_location_list
             and not looks_educational_explainer
+            and requested_public_content_type != "recipe"
             and (
                 is_tools_list_content(transcript, caption)
                 or signals.get("tool_kw", 0) >= 2
@@ -402,11 +441,16 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             )
         )
 
+        if looks_spoken_recipe and is_tools:
+            is_tools = False
+            logger.info("🍳 Spoken recipe guard: suppressing tools/list extraction")
+
         silent = is_silent or is_silent_video("", transcript)
 
         if (
             not is_tools
             and not is_location_list
+            and requested_public_content_type != "recipe"
             and promised_count >= 3
             and not looks_educational_explainer
         ):
@@ -529,6 +573,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             "mention_items": mention_items,
             "looks_ranked": looks_ranked,
             "looks_educational_explainer": looks_educational_explainer,
+            "looks_spoken_recipe": looks_spoken_recipe,
             "frames_sent": len(frame_images),
             "video_path_provided": bool(video_path),
             "transcript_chars": len(transcript),

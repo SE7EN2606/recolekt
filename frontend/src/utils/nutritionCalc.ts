@@ -285,49 +285,35 @@ const roundTotals = (totals: NutritionTotals): NutritionTotals => ({
   fiber_g: Math.round(totals.fiber_g * 10) / 10,
 });
 
+const pointsFromThresholds = (value: number, thresholds: number[]) =>
+  thresholds.reduce((points, threshold) => points + (value > threshold ? 1 : 0), 0);
+
 const calculateNutriScore = (
   per100g: NutritionTotals,
   fruitVegPct = 0
 ): NutriScoreResult => {
-  // Soft estimate only. This is not an official certified Nutri-Score implementation.
-  let negativePoints = 0;
-  let positivePoints = 0;
+  // Soft estimate for foods only. This is not an official certified Nutri-Score implementation.
+  // Nutri-Score sodium thresholds use sodium mg, while Recolekt stores salt in grams.
+  const sodiumMg = Math.max(0, per100g.salt_g) * 1000 * 0.4;
 
-  // Negative factors
-  if (per100g.calories > 335) negativePoints += 1;
-  if (per100g.calories > 670) negativePoints += 1;
-  if (per100g.calories > 1005) negativePoints += 1;
-  if (per100g.calories > 1340) negativePoints += 1;
+  const energyPoints = pointsFromThresholds(per100g.calories, [80, 160, 240, 320, 400, 480, 560, 640, 720, 800]);
+  const sugarsPoints = pointsFromThresholds(per100g.sugars_g, [3.4, 6.8, 10, 14, 17, 20, 24, 27, 31, 34]);
+  const saturatesPoints = pointsFromThresholds(per100g.saturates_g, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const sodiumPoints = pointsFromThresholds(sodiumMg, [90, 180, 270, 360, 450, 540, 630, 720, 810, 900]);
 
-  if (per100g.sugars_g > 4.5) negativePoints += 1;
-  if (per100g.sugars_g > 9) negativePoints += 1;
-  if (per100g.sugars_g > 13.5) negativePoints += 1;
-  if (per100g.sugars_g > 18) negativePoints += 1;
+  const negativePoints = energyPoints + sugarsPoints + saturatesPoints + sodiumPoints;
 
-  if (per100g.saturates_g > 1) negativePoints += 1;
-  if (per100g.saturates_g > 2) negativePoints += 1;
-  if (per100g.saturates_g > 3) negativePoints += 1;
-  if (per100g.saturates_g > 4) negativePoints += 1;
+  const fruitVegPoints =
+    fruitVegPct >= 80 ? 5 :
+    fruitVegPct >= 60 ? 2 :
+    fruitVegPct >= 40 ? 1 :
+    0;
 
-  if (per100g.salt_g > 0.225) negativePoints += 1;
-  if (per100g.salt_g > 0.45) negativePoints += 1;
-  if (per100g.salt_g > 0.9) negativePoints += 1;
-  if (per100g.salt_g > 1.35) negativePoints += 1;
+  const fiberPoints = pointsFromThresholds(per100g.fiber_g, [0.9, 1.9, 2.8, 3.7, 4.7]);
+  const proteinPoints = pointsFromThresholds(per100g.protein_g, [1.6, 3.2, 4.8, 6.4, 8.0]);
 
-  // Positive factors
-  if (per100g.protein_g > 1.6) positivePoints += 1;
-  if (per100g.protein_g > 3.2) positivePoints += 1;
-  if (per100g.protein_g > 4.8) positivePoints += 1;
-  if (per100g.protein_g > 6.4) positivePoints += 1;
-
-  if (per100g.fiber_g > 0.9) positivePoints += 1;
-  if (per100g.fiber_g > 1.9) positivePoints += 1;
-  if (per100g.fiber_g > 2.8) positivePoints += 1;
-  if (per100g.fiber_g > 3.7) positivePoints += 1;
-
-  if (fruitVegPct >= 40) positivePoints += 1;
-  if (fruitVegPct >= 60) positivePoints += 1;
-  if (fruitVegPct >= 80) positivePoints += 2;
+  const canCountProtein = negativePoints < 11 || fruitVegPoints === 5;
+  const positivePoints = fruitVegPoints + fiberPoints + (canCountProtein ? proteinPoints : 0);
 
   const score = negativePoints - positivePoints;
 

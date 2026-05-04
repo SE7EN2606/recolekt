@@ -91,6 +91,15 @@ _FASHION_PRODUCT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_ENGLISH_TRANSLATION_MARKERS = (
+    " let me translate ",
+    " we're gonna ",
+    " we are gonna ",
+    " i'm just eyeballing ",
+    " guys ",
+    " that is so good ",
+)
+
 _ENGLISH_PROSE_MARKERS = (
     " the ",
     " and ",
@@ -165,6 +174,14 @@ def _resolve_effective_language(
     transcript = transcript or ""
 
     combined = f"{caption[:2500]} {transcript[:1200]}".strip()
+
+    combined_l = f" {combined.lower()} "
+    if upstream not in ("", "unknown", "en") and any(marker in combined_l for marker in _ENGLISH_TRANSLATION_MARKERS):
+        logger.info(
+            "🌍 Language override: %s -> en (English translation narration detected)",
+            upstream,
+        )
+        return "en"
 
     if _looks_clearly_english(combined):
         if upstream not in ("", "unknown", "en"):

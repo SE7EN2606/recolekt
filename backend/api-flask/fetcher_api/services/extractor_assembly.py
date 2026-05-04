@@ -970,7 +970,11 @@ class AssemblyMixin:
 
 
         promoted = False
-        if not tools_list and parsed.get("items") and not has_location:
+        if content_type == "recipe" and parsed.get("items"):
+            logger.info("🧹 Recipe content: dropping frame items before tools promotion")
+            parsed["items"] = None
+
+        if content_type != "recipe" and not tools_list and parsed.get("items") and not has_location:
             tools_list = promote_items_to_tools_list(parsed["items"])
             if tools_list:
                 promoted = True
