@@ -687,6 +687,15 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
                 servingSizeG={adjustedServingSizeG}
               />
             </div>
+          ) : mode === "per100g" ? (
+            <div className="space-y-4">
+              <NutrientTrafficStrip
+                per100g={nutrition.per100g}
+                perServing={nutrition.per100g}
+                saltMissing={saltMissing}
+                servingSizeG={100}
+              />
+            </div>
           ) : (
             <ValueTable values={activeValues} label={activeLabel} saltMissing={saltMissing} />
           )}
