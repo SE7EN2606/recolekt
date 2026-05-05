@@ -705,7 +705,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
     if (nutrition.servingEstimateReason === "source") {
       assumptions.unshift(`Nutrition estimated for ${nutrition.effectiveServings} servings.`);
       if (nutrition.confidence !== "high" && nutrition.servingSizeG && nutrition.servingSizeG > 220) {
-        assumptions.push(`Displayed portion weight capped at 150g because the calculated serving weight (${Math.round(nutrition.servingSizeG)}g) is based on partial ingredient matches.`);
+        assumptions.push(`Displayed portion uses a practical 150g estimate because the source serving weight (${Math.round(nutrition.servingSizeG)}g) is based on partial ingredient matches.`);
       }
     } else if (nutrition.servingEstimateReason === "sauce_portion" && nutrition.servingSizeG) {
       assumptions.unshift(`No serving count found. Per portion estimated as ${nutrition.servingSizeG}g for a sauce, dip, or spread.`);
@@ -732,21 +732,25 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
     ? Math.max(1, nutrition.servingSizeG as number)
     : null;
 
-  const isLowConfidenceServingWeight =
+  // Keep the visible portion weight and visible nutrition values on the same basis.
+  // If we show a capped practical portion, we calculate its values from per-100g.
+  const shouldUsePracticalPortion =
     nutrition.servingEstimateReason === "source" &&
     nutrition.confidence !== "high" &&
     rawServingSizeG !== null &&
     rawServingSizeG > 220;
 
-  const displayBaseServingSizeG = isLowConfidenceServingWeight
+  const baseServingSizeG = shouldUsePracticalPortion
     ? 150
     : rawServingSizeG;
 
-  const adjustedServingSizeG = displayBaseServingSizeG
-    ? Math.max(20, Math.round(displayBaseServingSizeG * portionScale))
+  const adjustedServingSizeG = baseServingSizeG
+    ? Math.max(20, Math.round(baseServingSizeG * portionScale))
     : null;
 
-  const adjustedPerServing = scaleNutritionValues(nutrition.perServing, portionScale);
+  const adjustedPerServing = adjustedServingSizeG
+    ? scaleNutritionValues(nutrition.per100g, adjustedServingSizeG / 100)
+    : scaleNutritionValues(nutrition.perServing, portionScale);
 
   const activePortionSizeG =
     mode === "serving" || mode === "table" ? adjustedServingSizeG :
