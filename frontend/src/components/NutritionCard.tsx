@@ -538,7 +538,7 @@ function NutrientTrafficStrip({
     if (level === "low") return "bg-[#12b24b] text-white";
     if (level === "medium") return "bg-[#f59e0b] text-white";
     if (level === "high") return "bg-[#ef233c] text-white";
-    return "bg-gray-50 text-gray-950";
+    return "bg-white text-gray-950";
   };
 
   const cells = [
@@ -582,35 +582,35 @@ function NutrientTrafficStrip({
     {
       key: "salt",
       label: "Salt",
-      value: saltMissing ? "Needs qty" : fmt(perServing.salt_g || 0),
-      badge: saltMissing ? "" : nutrientLevel("salt", per100g.salt_g || 0).toUpperCase(),
+      value: saltMissing ? "N/A" : fmt(perServing.salt_g || 0),
+      badge: saltMissing ? "N/A" : nutrientLevel("salt", per100g.salt_g || 0).toUpperCase(),
       pct: saltMissing ? "—" : riPct(perServing.salt_g || 0, 6),
       level: saltMissing ? "medium" as const : nutrientLevel("salt", per100g.salt_g || 0),
     },
   ];
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-      <div className="flex items-end justify-between gap-3 px-3 pt-3">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
-            UK traffic light
-          </p>
-        </div>
-        <p className="pb-0.5 text-right text-[10px] font-black leading-tight text-gray-400">
+    <div className="rounded-2xl border border-gray-200 bg-white px-3 py-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
+          UK traffic light
+        </p>
+        <p className="text-right text-[10px] font-black leading-tight text-gray-400">
           % RI
         </p>
       </div>
 
-      <div className="grid grid-cols-5 gap-[1px] px-3 pt-3">
+      <div className="grid grid-cols-5 gap-[3px]">
         {cells.map((cell) => {
           const colorClass = levelClass(cell.level);
+          const isEnergy = cell.key === "energy";
+
           return (
             <div
               key={cell.key}
-              className={`overflow-hidden border border-black/10 text-center first:rounded-tl-2xl last:rounded-tr-2xl ${colorClass}`}
+              className="min-w-0 overflow-hidden rounded-[28px] border border-black/10 bg-gray-100 text-center"
             >
-              <div className="flex min-h-[88px] flex-col items-center justify-start px-1.5 py-2">
+              <div className={`flex min-h-[88px] flex-col items-center justify-start px-1.5 py-2 ${colorClass}`}>
                 <p className="text-[10px] font-black uppercase leading-tight">
                   {cell.label}
                 </p>
@@ -618,25 +618,22 @@ function NutrientTrafficStrip({
                 <div className="mt-1 flex min-h-[34px] flex-col items-center justify-center text-[13px] font-extrabold leading-tight">
                   {cell.value}
                 </div>
-
-                {cell.badge ? (
-                  <div className="mt-2 rounded-full bg-black/10 px-2 py-0.5 text-[9px] font-black uppercase leading-none">
-                    {cell.badge}
-                  </div>
-                ) : (
-                  <div className="mt-2 h-[16px]" />
-                )}
               </div>
 
-              <div className="border-t border-black/10 bg-gray-100 py-1 text-[12px] font-black leading-none text-gray-600">
-                {cell.pct}
+              <div className="border-t border-black/10 bg-gray-100 px-1 py-1.5">
+                <div className="min-h-[16px] text-[9px] font-black uppercase leading-none text-gray-700">
+                  {isEnergy ? "\u00a0" : cell.badge}
+                </div>
+                <div className="mt-1 text-[12px] font-black leading-none text-gray-700 tabular-nums">
+                  {cell.pct}
+                </div>
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="px-4 py-3 text-center text-xs leading-relaxed text-gray-400">
+      <div className="mt-3 text-center text-xs leading-relaxed text-gray-400">
         <p>% of adult&apos;s reference intake for the amount shown.</p>
         <p>
           Values shown for {shownAmountLabel}. Traffic-light colours use UK per-100g thresholds.
@@ -794,7 +791,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
 
           {activePortionSizeG && (
             <div className="mb-4 rounded-2xl border border-rose-100 bg-rose-50/60 px-4 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-h-[38px] flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-widest text-rose-400">
                     Portion size
@@ -807,7 +804,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
                   </p>
                 </div>
 
-                {mode === "serving" && (
+                {mode === "serving" ? (
                   <div className="flex items-center gap-1.5 rounded-xl border border-rose-100 bg-white px-2 py-1">
                     <button
                       type="button"
@@ -827,6 +824,8 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
                       +
                     </button>
                   </div>
+                ) : (
+                  <div className="hidden h-[38px] min-w-[116px] sm:block" aria-hidden="true" />
                 )}
               </div>
             </div>
