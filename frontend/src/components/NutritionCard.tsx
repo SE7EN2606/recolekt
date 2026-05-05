@@ -725,15 +725,48 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
   });
 
   const excludedNutritionItems = useMemo(() => {
+    const normalizeExcludedName = (value: string) =>
+      String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[’']/g, " ")
+        .replace(/[^\w\s-]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const classifyExcluded = (name: string, fallbackReason: string) => {
+      const normalized = normalizeExcludedName(name);
+      const saltLike = /\b(salt|sel)\b/.test(normalized);
+      const seasoningLike =
+        /\b(thyme|thym|bay|laurier|pepper|poivre|rosemary|romarin|parsley|persil|oregano|basil|basilic|cilantro|coriander|cumin|paprika|nutmeg|muscade|cinnamon|cannelle|spice|spices|herb|herbs|bouquet garni)\b/.test(normalized);
+
+      if (saltLike) {
+        return {
+          name,
+          reason: "salt quantity unknown",
+          impact: "seasoning" as const,
+        };
+      }
+
+      if (seasoningLike) {
+        return {
+          name,
+          reason: "negligible seasoning",
+          impact: "seasoning" as const,
+        };
+      }
+
+      return {
+        name,
+        reason: fallbackReason,
+        impact: "main" as const,
+      };
+    };
+
     const items = [
-      ...nutritionNotes.missing.map((name) => ({
-        name,
-        reason: "no usable quantity",
-      })),
-      ...(nutrition.unmatchedIngredients ?? []).map((name) => ({
-        name,
-        reason: "not matched",
-      })),
+      ...nutritionNotes.missing.map((name) => classifyExcluded(name, "no usable quantity")),
+      ...(nutrition.unmatchedIngredients ?? []).map((name) => classifyExcluded(name, "not matched")),
     ];
 
     const seen = new Set<string>();
@@ -745,7 +778,19 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
     });
   }, [nutritionNotes.missing, nutrition.unmatchedIngredients]);
 
-  const nutritionDisplayTotal = nutrition.matchedCount + excludedNutritionItems.length;
+  const mainExcludedNutritionItems = excludedNutritionItems.filter((item) => item.impact === "main");
+  const seasoningExcludedNutritionItems = excludedNutritionItems.filter((item) => item.impact === "seasoning");
+
+  const excludedNutritionLabel = [
+    mainExcludedNutritionItems.length > 0
+      ? `${mainExcludedNutritionItems.length} main excluded`
+      : null,
+    seasoningExcludedNutritionItems.length > 0
+      ? `${seasoningExcludedNutritionItems.length} seasoning${seasoningExcludedNutritionItems.length === 1 ? "" : "s"} excluded`
+      : null,
+  ].filter(Boolean).join(" · ");
+
+  const nutritionDisplayTotal = nutrition.matchedCount + mainExcludedNutritionItems.length;
 
 
   const hasServingSize =
@@ -848,7 +893,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
               aria-expanded={showExcludedDetails}
               className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-gray-500 transition hover:border-gray-300 hover:bg-white hover:text-gray-800"
             >
-              {excludedNutritionItems.length} excluded
+              {excludedNutritionLabel}
             </button>
           )}
         </div>

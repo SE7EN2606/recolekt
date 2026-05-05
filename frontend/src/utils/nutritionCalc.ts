@@ -269,6 +269,28 @@ const hasQuantifiedAmount = (ingredient: any): boolean => {
   return parsed !== null && parsed > 0;
 };
 
+const isSaltLikeIngredient = (ingredient: any): boolean => {
+  const name = normalizeName(ingredientLabel(ingredient));
+  return /\b(salt|sel)\b/.test(name);
+};
+
+const isNegligibleSeasoningIngredient = (ingredient: any): boolean => {
+  const name = normalizeName(ingredientLabel(ingredient));
+  const unit = normalizeUnit(
+    String(
+      ingredient?.unit ??
+      ingredient?.measurementUnit ??
+      ingredient?.quantityRange?.unit ??
+      ""
+    )
+  );
+
+  const haystack = `${unit} ${name}`;
+
+  return /\b(thyme|thym|bay|laurier|pepper|poivre|rosemary|romarin|parsley|persil|oregano|basil|basilic|cilantro|coriander|cumin|paprika|nutmeg|muscade|cinnamon|cannelle|spice|spices|herb|herbs|bouquet garni)\b/.test(haystack);
+};
+
+
 const estimateUnitlessCountGrams = (ingredient: any, quantity: number): number | null => {
   const name = normalizeName(ingredientLabel(ingredient));
   const unitText = normalizeUnit(
@@ -471,11 +493,19 @@ export const calculateNutrition = (
 
   ingredients.forEach((ingredient) => {
     const quantified = hasQuantifiedAmount(ingredient);
-    if (quantified) quantifiedCount += 1;
+    const saltLike = isSaltLikeIngredient(ingredient);
+    const negligibleSeasoning = isNegligibleSeasoningIngredient(ingredient);
+
+    // Confidence is based on main nutrition inputs only.
+    // Salt, pepper, herbs, bay leaves, thyme, etc. may be shown as excluded,
+    // but they should not lower macro confidence.
+    const countsAsMainIngredient = quantified && !saltLike && !negligibleSeasoning;
+
+    if (countsAsMainIngredient) quantifiedCount += 1;
 
     const nutrition = findNutrition(ingredient);
     if (!nutrition) {
-      if (quantified) unmatchedIngredients.push(ingredientLabel(ingredient));
+      if (countsAsMainIngredient) unmatchedIngredients.push(ingredientLabel(ingredient));
       return;
     }
 
@@ -484,11 +514,11 @@ export const calculateNutrition = (
     const grams = directGrams !== null && directGrams > 0 ? directGrams : countGrams;
 
     if (grams === null || grams <= 0) {
-      if (quantified) unmatchedIngredients.push(ingredientLabel(ingredient));
+      if (countsAsMainIngredient) unmatchedIngredients.push(ingredientLabel(ingredient));
       return;
     }
 
-    matchedCount += 1;
+    if (countsAsMainIngredient) matchedCount += 1;
 
     const factor = grams / 100;
     totalWeightG += grams;
