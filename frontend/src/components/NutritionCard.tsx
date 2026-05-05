@@ -756,8 +756,13 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
     mode === "serving" || mode === "table" ? adjustedServingSizeG :
     100;
 
+  const servingWeightHelper =
+    nutrition.servingEstimateReason === "source"
+      ? "per recipe serving"
+      : "estimated serving weight";
+
   const activePortionHelper =
-    mode === "serving" || mode === "table" ? "estimated serving weight" :
+    mode === "serving" || mode === "table" ? servingWeightHelper :
     "reference amount";
 
   const handlePortionScale = (nextScale: number) => {

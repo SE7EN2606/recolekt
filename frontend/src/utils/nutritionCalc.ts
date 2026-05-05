@@ -125,6 +125,11 @@ const aliases: Record<string, string> = {
   "grated cheese": "cheddar",
   "herby quark": "quark",
   "quark": "quark",
+  "zucchinis": "zucchini",
+  "courgettes": "zucchini",
+  "fromage cottage": "cottage cheese",
+  "fromage frais": "quark",
+  "quark aux herbes": "quark",
 };
 
 const unitToGrams: Record<string, number> = {
@@ -237,34 +242,64 @@ const parseQuantity = (value: unknown): number | null => {
   return null;
 };
 
-const estimateUnitlessCountGrams = (ingredient: any, quantity: number): number | null => {
-  const name = String(
-    ingredient.displayName ??
-    ingredient.name ??
-    ingredient.ingredient ??
-    ingredient.rawText ??
-    ""
-  ).toLowerCase();
+const ingredientLabel = (ingredient: any): string =>
+  typeof ingredient === "string"
+    ? ingredient.trim()
+    : String(
+        ingredient?.displayName ??
+        ingredient?.name ??
+        ingredient?.ingredient ??
+        ingredient?.item ??
+        ingredient?.text ??
+        ingredient?.rawText ??
+        "ingredient"
+      ).trim();
 
-  const unitText = String(
-    ingredient.unit ??
-    ingredient.measurementUnit ??
-    ingredient.rawText ??
-    ""
-  ).toLowerCase();
+const hasQuantifiedAmount = (ingredient: any): boolean => {
+  if (!ingredient || typeof ingredient === "string") return false;
+
+  const q =
+    ingredient?.quantity ??
+    ingredient?.amount ??
+    ingredient?.qty ??
+    ingredient?.rawQuantity ??
+    ingredient?.quantityRange?.min;
+
+  const parsed = parseQuantity(q);
+  return parsed !== null && parsed > 0;
+};
+
+const estimateUnitlessCountGrams = (ingredient: any, quantity: number): number | null => {
+  const name = normalizeName(ingredientLabel(ingredient));
+  const unitText = normalizeUnit(
+    String(
+      ingredient?.unit ??
+      ingredient?.measurementUnit ??
+      ingredient?.quantityRange?.unit ??
+      ""
+    )
+  );
+
+  const haystack = `${unitText} ${name}`;
 
   if (!Number.isFinite(quantity) || quantity <= 0) return null;
 
-  if (name.includes("garlic") && (unitText.includes("clove") || quantity <= 12)) return quantity * 3;
-  if (name.includes("egg")) return quantity * 50;
-  if (name.includes("lime")) return quantity * 67;
-  if (name.includes("lemon")) return quantity * 58;
-  if (name.includes("onion")) return quantity * 110;
-  if (name.includes("shallot")) return quantity * 35;
-  if (name.includes("tomato")) return quantity * 120;
-  if (name.includes("potato")) return quantity * 170;
-  if (name.includes("carrot")) return quantity * 60;
-  if (name.includes("scallop")) return quantity * 25;
+  // Practical kitchen count estimates for common home-cooking ingredients.
+  if (/\b(clove|cloves|gousse|gousses)\b/.test(haystack) && /\b(garlic|ail)\b/.test(name)) return quantity * 3;
+  if (/\b(head|heads|tete|tetes)\b/.test(haystack) && /\b(garlic|ail)\b/.test(name)) return quantity * 50;
+
+  if (/\b(egg|eggs|oeuf|oeufs)\b/.test(haystack)) return quantity * 50;
+
+  if (/\b(potato|potatoes|pomme terre)\b/.test(name)) return quantity * 170;
+  if (/\b(carrot|carrots|carotte)\b/.test(name)) return quantity * 60;
+  if (/\b(zucchini|zucchinis|courgette|courgettes)\b/.test(name)) return quantity * 180;
+  if (/\b(onion|onions|oignon)\b/.test(name)) return quantity * 110;
+  if (/\b(tomato|tomatoes|tomate)\b/.test(name)) return quantity * 120;
+  if (/\b(cucumber|concombre)\b/.test(name)) return quantity * 300;
+  if (/\b(lettuce leaf|lettuce leaves|leaf|leaves|feuille|feuilles)\b/.test(haystack) && /\b(lettuce|salade)\b/.test(name)) return quantity * 5;
+
+  if (/\b(lime)\b/.test(name)) return quantity * 67;
+  if (/\b(lemon|citron)\b/.test(name)) return quantity * 58;
 
   return null;
 };
@@ -358,35 +393,16 @@ const calculateNutriScore = (
 };
 
 const countIngredientGrams = (ingredient: any): number | null => {
-  if (!ingredient || typeof ingredient === "string") return null;
-
-  const rawQuantity = ingredient?.quantity ?? ingredient?.amount ?? ingredient?.qty ?? ingredient?.rawQuantity;
-  const quantity = Number(String(rawQuantity ?? "").replace(",", "."));
-  if (!Number.isFinite(quantity) || quantity <= 0) return null;
-
-  const unit = normalizeName(String(ingredient?.unit ?? ""));
-  const name = normalizeName(
-    String(
-      ingredient?.displayName ??
-      ingredient?.name ??
-      ingredient?.ingredient ??
-      ingredient?.item ??
-      ingredient?.text ??
-      ingredient?.rawText ??
-      ""
-    )
+  const quantity = parseQuantity(
+    ingredient?.quantity ??
+    ingredient?.amount ??
+    ingredient?.qty ??
+    ingredient?.rawQuantity ??
+    ingredient?.quantityRange?.min
   );
 
-  const has = (pattern: RegExp) => pattern.test(`${unit} ${name}`);
-
-  // Practical kitchen estimates. These are intentionally conservative.
-  if (has(/\b(head|tete|tetes)\b/) && has(/\b(garlic|ail)\b/)) return quantity * 50;
-  if (has(/\b(clove|cloves|gousse|gousses)\b/) && has(/\b(garlic|ail)\b/)) return quantity * 3;
-  if (has(/\b(leaf|leaves|feuille|feuilles)\b/) && has(/\b(bay|laurier)\b/)) return quantity * 0.2;
-  if (has(/\b(sprig|sprigs|branch|branches|brin|brins|branche|branches)\b/) && has(/\b(thyme|thym|rosemary|romarin)\b/)) return quantity * 1;
-  if (has(/\b(egg|eggs|oeuf|oeufs)\b/)) return quantity * 50;
-
-  return null;
+  if (quantity === null || quantity <= 0) return null;
+  return estimateUnitlessCountGrams(ingredient, quantity);
 };
 
 const findNutrition = (input: any): NutritionPer100g | null => {
@@ -452,35 +468,23 @@ export const calculateNutrition = (
   let totalWeightG = 0;
   let fruitVegWeightG = 0;
 
-  const labelForIngredient = (ingredient: any) =>
-    String(
-      ingredient?.displayName ??
-      ingredient?.name ??
-      ingredient?.ingredient ??
-      ingredient?.item ??
-      ingredient?.text ??
-      ingredient?.rawText ??
-      ingredient ?? 
-      "ingredient"
-    ).trim();
 
   ingredients.forEach((ingredient) => {
+    const quantified = hasQuantifiedAmount(ingredient);
+    if (quantified) quantifiedCount += 1;
+
+    const nutrition = findNutrition(ingredient);
+    if (!nutrition) {
+      if (quantified) unmatchedIngredients.push(ingredientLabel(ingredient));
+      return;
+    }
+
     const directGrams = ingredientToGrams(ingredient);
     const countGrams = directGrams === null || directGrams <= 0 ? countIngredientGrams(ingredient) : null;
     const grams = directGrams !== null && directGrams > 0 ? directGrams : countGrams;
 
     if (grams === null || grams <= 0) {
-      return;
-    }
-
-    quantifiedCount += 1;
-
-    const nutrition = findNutrition(ingredient);
-    if (!nutrition) {
-      const label = labelForIngredient(ingredient);
-      if (label && !unmatchedIngredients.includes(label)) {
-        unmatchedIngredients.push(label);
-      }
+      if (quantified) unmatchedIngredients.push(ingredientLabel(ingredient));
       return;
     }
 
@@ -557,9 +561,9 @@ export const calculateNutrition = (
     totalRecipe: roundTotals(totalRecipe),
     totalWeightG: Math.round(totalWeightG),
     matchedCount,
-    totalCount: ingredients.length,
+    totalCount: quantifiedCount,
     quantifiedCount,
-    unmatchedIngredients,
+    unmatchedIngredients: Array.from(new Set(unmatchedIngredients)).slice(0, 12),
     confidence,
     nutriScore: calculateNutriScore(roundedPer100g, fruitVegPct),
     effectiveServings: Math.round(safeServings * 10) / 10,
