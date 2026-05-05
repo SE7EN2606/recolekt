@@ -532,7 +532,7 @@ function NutrientTrafficStrip({
   servingSizeG?: number | null;
 }) {
   const energyKj = Math.round((perServing.calories || 0) * 4.184);
-  const per100Kj = Math.round((per100g.calories || 0) * 4.184);
+  const shownAmountLabel = servingSizeG ? `${Math.round(servingSizeG)}g` : "selected amount";
 
   const levelClass = (level: "low" | "medium" | "high" | "neutral") => {
     if (level === "low") return "bg-[#12b24b] text-white";
@@ -637,9 +637,9 @@ function NutrientTrafficStrip({
       </div>
 
       <div className="px-4 py-3 text-center text-xs leading-relaxed text-gray-400">
-        <p>% of adult&apos;s reference intake.</p>
+        <p>% of adult&apos;s reference intake for the amount shown.</p>
         <p>
-          Typical values per 100g: Energy {per100Kj}kJ/{Math.round(per100g.calories || 0)}kcal.
+          Values shown for {shownAmountLabel}. Traffic-light colours use UK per-100g thresholds.
         </p>
       </div>
     </div>
