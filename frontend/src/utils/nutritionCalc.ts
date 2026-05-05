@@ -521,7 +521,7 @@ export const calculateNutrition = (
     null;
 
   const servingSizeG =
-    hasExplicitServings && totalWeightG > 0 && quantifiedCoverage >= 0.6
+    hasExplicitServings && totalWeightG > 0 && quantifiedCount > 0 && matchedCount / quantifiedCount >= 0.8
       ? totalWeightG / explicitServings
       : inferredServingSizeG;
 

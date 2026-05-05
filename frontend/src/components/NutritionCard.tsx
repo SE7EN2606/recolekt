@@ -723,6 +723,28 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
     return value.includes("salt") || value.includes("sel");
   });
 
+  const excludedNutritionItems = useMemo(() => {
+    const items = [
+      ...nutritionNotes.missing.map((name) => ({
+        name,
+        reason: "no usable quantity",
+      })),
+      ...(nutrition.unmatchedIngredients ?? []).map((name) => ({
+        name,
+        reason: "not matched",
+      })),
+    ];
+
+    const seen = new Set<string>();
+    return items.filter((item) => {
+      const key = String(item.name || "").trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [nutritionNotes.missing, nutrition.unmatchedIngredients]);
+
+
   const hasServingSize =
     typeof nutrition.servingSizeG === "number" &&
     Number.isFinite(nutrition.servingSizeG) &&
@@ -792,8 +814,43 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
       <div className="mb-4">
         <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Estimated</p>
         <h3 className="text-lg font-semibold text-gray-950">Nutrition values</h3>
-        <p className="mt-1 text-xs text-gray-500">
-          Estimated · {nutrition.matchedCount} of {nutrition.quantifiedCount} quantified ingredients calculated ·{' '}
+        <div className="mt-1 flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-gray-500">
+          <span>
+            Estimated · {nutrition.matchedCount} of {nutrition.quantifiedCount} main ingredients calculated
+          </span>
+
+          {excludedNutritionItems.length > 0 && (
+            <span className="relative inline-flex group">
+              <span>·</span>
+              <button
+                type="button"
+                className="ml-1 font-bold text-gray-500 underline decoration-dotted underline-offset-2 transition hover:text-gray-800 focus:outline-none focus:text-gray-800"
+              >
+                {excludedNutritionItems.length} excluded
+              </button>
+
+              <span className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-72 rounded-2xl border border-gray-200 bg-white p-3 text-left shadow-xl shadow-gray-900/10 group-hover:block group-focus-within:block">
+                <span className="block text-[10px] font-black uppercase tracking-widest text-gray-400">
+                  Excluded from nutrition estimate
+                </span>
+                <span className="mt-2 block space-y-1.5">
+                  {excludedNutritionItems.slice(0, 10).map((item) => (
+                    <span key={`${item.name}-${item.reason}`} className="block text-[11px] leading-snug text-gray-600">
+                      <span className="font-bold text-gray-900">{item.name}</span>
+                      <span className="text-gray-400"> — {item.reason}</span>
+                    </span>
+                  ))}
+                  {excludedNutritionItems.length > 10 && (
+                    <span className="block text-[11px] font-bold text-gray-400">
+                      +{excludedNutritionItems.length - 10} more
+                    </span>
+                  )}
+                </span>
+              </span>
+            </span>
+          )}
+
+          <span>·</span>
           <span className={
             nutrition.confidence === 'high' ? 'font-bold text-green-600' :
             nutrition.confidence === 'medium' ? 'font-bold text-amber-600' :
@@ -801,7 +858,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
           }>
             {nutrition.confidence} confidence
           </span>
-        </p>
+        </div>
       </div>
 
       <div>
