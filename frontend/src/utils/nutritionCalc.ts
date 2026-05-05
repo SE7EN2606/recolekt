@@ -483,7 +483,7 @@ export const calculateNutrition = (
     /\b(mayo|mayonnaise|hollandaise|sauce|dip|spread|dressing|pesto|aioli|vinaigrette|salsa|chutney|jam|jar|rillette|rillettes|pate|pâté|terrine|tapenade)\b/.test(recipeHint);
 
   const servingSizeG =
-    hasExplicitServings ? null :
+    hasExplicitServings && totalWeightG > 0 ? totalWeightG / explicitServings :
     sauceLike ? 20 :
     totalWeightG >= 300 ? 150 :
     totalWeightG >= 120 ? 100 :
