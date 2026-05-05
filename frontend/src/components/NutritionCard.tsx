@@ -240,27 +240,29 @@ function MacroDonut({
 }) {
   const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
   const pctValue = Math.max(0.04, Math.min(0.92, safeValue / target));
-  const circumference = 2 * Math.PI * 42;
+  const radius = 41;
+  const circumference = 2 * Math.PI * radius;
   const dash = circumference * pctValue;
+  const displayUnit = unit === "kcal" ? "kcal" : "grams";
 
   return (
     <div className="flex min-w-0 flex-col items-center">
-      <div className="relative h-[108px] w-[108px]">
+      <div className="relative h-[96px] w-[96px]">
         <svg viewBox="0 0 108 108" className="absolute inset-0 h-full w-full" aria-hidden="true">
           <circle
             cx="54"
             cy="54"
-            r="42"
-            stroke="#e5e7eb"
-            strokeWidth="10"
+            r={radius}
+            stroke="#f1f2f5"
+            strokeWidth="7"
             fill="none"
           />
           <circle
             cx="54"
             cy="54"
-            r="42"
+            r={radius}
             stroke={color}
-            strokeWidth="10"
+            strokeWidth="7"
             fill="none"
             strokeDasharray={`${dash} ${circumference - dash}`}
             strokeLinecap="round"
@@ -269,16 +271,16 @@ function MacroDonut({
         </svg>
 
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="text-[30px] font-light leading-none tracking-tight text-gray-950">
+          <span className="text-[24px] font-semibold leading-none tracking-tight text-gray-950">
             {unit === "kcal" ? Math.round(safeValue) : fmtRing(safeValue)}
           </span>
-          <span className="mt-1 text-[15px] font-light leading-none text-gray-900">
-            {unit === "kcal" ? "kcal" : "gram"}
+          <span className="mt-1 text-[12px] font-medium leading-none text-gray-400">
+            {displayUnit}
           </span>
         </div>
       </div>
 
-      <span className="mt-4 text-center text-[13px] font-black uppercase tracking-[0.16em] text-gray-400">
+      <span className="mt-3 text-center text-[12px] font-extrabold uppercase tracking-[0.12em] text-gray-400">
         {label}
       </span>
     </div>
@@ -287,19 +289,8 @@ function MacroDonut({
 
 function MacroBreakdownDonuts({ values }: { values: MacroBalanceInput }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white px-4 py-5">
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-gray-400">
-            Macro breakdown
-          </p>
-          <p className="mt-1 text-xs font-medium text-gray-400">
-            Per selected portion
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-4">
+    <div className="rounded-2xl border border-gray-100 bg-white px-4 py-4">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-4">
         <MacroDonut
           label="Calories"
           value={values.calories}
@@ -310,21 +301,21 @@ function MacroBreakdownDonuts({ values }: { values: MacroBalanceInput }) {
         <MacroDonut
           label="Protein"
           value={values.protein_g}
-          unit="g"
+          unit="grams"
           target={50}
           color="#e11d48"
         />
         <MacroDonut
           label="Carbs"
           value={values.carbs_g}
-          unit="g"
+          unit="grams"
           target={90}
-          color="#a855f7"
+          color="#7c3aed"
         />
         <MacroDonut
           label="Fats"
           value={values.fat_g}
-          unit="g"
+          unit="grams"
           target={35}
           color="#10b981"
         />
@@ -386,10 +377,10 @@ function NutrientTrafficStrip({
   const per100Kj = Math.round((per100g.calories || 0) * 4.184);
 
   const levelClass = (level: "low" | "medium" | "high" | "neutral") => {
-    if (level === "low") return "bg-lime-400 text-black";
-    if (level === "medium") return "bg-orange-300 text-black";
-    if (level === "high") return "bg-red-500 text-black";
-    return "bg-white text-black";
+    if (level === "low") return "bg-[#12b24b] text-white";
+    if (level === "medium") return "bg-[#f59e0b] text-white";
+    if (level === "high") return "bg-[#ef233c] text-white";
+    return "bg-gray-50 text-gray-950";
   };
 
   const cells = [
@@ -405,7 +396,6 @@ function NutrientTrafficStrip({
       badge: "",
       pct: riPct(perServing.calories || 0, 2000),
       level: "neutral" as const,
-      extraClass: "bg-white text-black",
     },
     {
       key: "fat",
@@ -442,38 +432,48 @@ function NutrientTrafficStrip({
   ];
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
-      <div className="px-3 pt-3 text-center text-[13px] font-black text-gray-950">
-        Each serving{servingSizeG ? ` (${Math.round(servingSizeG)}g)` : ""} contains
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <div className="flex items-end justify-between gap-3 px-3 pt-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
+            UK traffic light
+          </p>
+          <p className="mt-1 text-[13px] font-black text-gray-950">
+            Each serving{servingSizeG ? ` (${Math.round(servingSizeG)}g)` : ""} contains
+          </p>
+        </div>
+        <p className="pb-0.5 text-right text-[10px] font-black leading-tight text-gray-400">
+          % RI
+        </p>
       </div>
 
-      <div className="grid grid-cols-5 gap-[2px] px-2 pt-2">
+      <div className="grid grid-cols-5 gap-[1px] px-3 pt-3">
         {cells.map((cell) => {
-          const colorClass = cell.extraClass || levelClass(cell.level);
+          const colorClass = levelClass(cell.level);
           return (
             <div
               key={cell.key}
-              className={`overflow-hidden rounded-t-2xl border border-black/20 text-center ${colorClass}`}
+              className={`overflow-hidden border border-black/10 text-center first:rounded-tl-2xl last:rounded-tr-2xl ${colorClass}`}
             >
-              <div className="flex min-h-[92px] flex-col items-center justify-start px-1 py-2">
-                <p className="text-[11px] font-black uppercase leading-tight text-black">
+              <div className="flex min-h-[88px] flex-col items-center justify-start px-1.5 py-2">
+                <p className="text-[10px] font-black uppercase leading-tight">
                   {cell.label}
                 </p>
 
-                <div className="mt-1 flex min-h-[34px] flex-col items-center justify-center text-[20px] font-black leading-none text-black">
+                <div className="mt-1 flex min-h-[34px] flex-col items-center justify-center text-[17px] font-extrabold leading-none">
                   {cell.value}
                 </div>
 
                 {cell.badge ? (
-                  <div className="mt-2 w-full rounded-sm bg-white px-1 py-0.5 text-[10px] font-black uppercase leading-none text-black">
+                  <div className="mt-2 rounded-full bg-black/10 px-2 py-0.5 text-[9px] font-black uppercase leading-none">
                     {cell.badge}
                   </div>
                 ) : (
-                  <div className="mt-2 h-[18px]" />
+                  <div className="mt-2 h-[16px]" />
                 )}
               </div>
 
-              <div className="border-t border-black/30 bg-white/30 py-1 text-[14px] font-black leading-none text-black">
+              <div className="border-t border-black/10 bg-gray-100 py-1 text-[12px] font-black leading-none text-gray-600">
                 {cell.pct}
               </div>
             </div>
@@ -481,13 +481,12 @@ function NutrientTrafficStrip({
         })}
       </div>
 
-      <p className="px-3 py-2 text-center text-[12px] font-black text-gray-950">
-        % of adult&apos;s reference intake.
-      </p>
-
-      <p className="border-t border-amber-100 px-3 py-2 text-center text-[11px] font-bold text-gray-700">
-        Typical values per 100g: Energy {per100Kj}kJ/{Math.round(per100g.calories || 0)}kcal
-      </p>
+      <div className="px-4 py-3 text-center text-xs leading-relaxed text-gray-400">
+        <p>% of adult&apos;s reference intake.</p>
+        <p>
+          Typical values per 100g: Energy {per100Kj}kJ/{Math.round(per100g.calories || 0)}kcal.
+        </p>
+      </div>
     </div>
   );
 }
