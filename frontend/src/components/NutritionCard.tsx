@@ -327,29 +327,29 @@ function NutritionFactsTable({
       </div>
 
       <div className="px-4 py-2">
-        <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b-4 border-gray-950 pb-1 text-right text-xs font-black text-gray-950">
+        <div className="grid grid-cols-[1fr_86px_86px] border-b-4 border-gray-950 pb-1 text-xs font-black text-gray-950">
           <span className="text-left">Nutrient</span>
-          <span>Serving</span>
-          <span>Total</span>
+          <span className="border-l border-gray-300 pl-3 text-right">Serving</span>
+          <span className="border-l border-gray-300 pl-3 text-right">Total</span>
         </div>
 
         <div className="divide-y divide-gray-200">
           {rows.map((row) => (
             <div
               key={row.label}
-              className="grid grid-cols-[1fr_auto_auto] items-baseline gap-3 py-2 text-sm"
+              className="grid grid-cols-[1fr_86px_86px] items-baseline py-2 text-sm"
             >
-              <div className={row.indent ? "pl-4" : ""}>
+              <div className={row.indent ? "pl-4 pr-2" : "pr-2"}>
                 <span className={row.strong ? "font-black text-gray-950" : "font-semibold text-gray-700"}>
                   {row.label}
                 </span>
               </div>
 
-              <div className="font-black text-gray-950 tabular-nums">
+              <div className="border-l border-gray-200 pl-3 text-right font-black text-gray-950 tabular-nums">
                 {row.serving}
               </div>
 
-              <div className="font-black text-gray-950 tabular-nums">
+              <div className="border-l border-gray-200 pl-3 text-right font-black text-gray-950 tabular-nums">
                 {row.total}
               </div>
             </div>
@@ -621,10 +621,10 @@ function NutrientTrafficStrip({
               </div>
 
               <div className={isEnergy ? "" : "border-t border-black/10"}>
-                <div className={`${isEnergy ? "bg-white" : "bg-gray-100"} min-h-[20px] px-1 py-1 text-[9px] font-black uppercase leading-none text-gray-950`}>
+                <div className={`${isEnergy ? "bg-white" : "bg-gray-100"} min-h-[16px] px-1 pt-0.5 pb-0 text-[9px] font-black uppercase leading-none text-gray-950`}>
                   {isEnergy ? "\u00a0" : cell.badge}
                 </div>
-                <div className={`border-t border-black/10 px-1 py-1 text-[12px] font-black leading-none tabular-nums ${colorClass}`}>
+                <div className={`border-t border-black/10 px-1 pt-1.5 pb-1.5 text-[12px] font-black leading-none tabular-nums ${colorClass}`}>
                   {cell.pct}
                 </div>
               </div>
