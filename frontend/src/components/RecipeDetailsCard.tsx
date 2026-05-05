@@ -659,13 +659,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     ...(showNutritionTab ? [{ key: 'nutrition' as const, label: 'Nutrition' }] : []),
     { key: 'ask' as const, label: isTechnique ? 'Ask Technique' : 'Ask' },
   ];
-  const metaChips = [
-    recipe.cuisine ? { label: 'Cuisine', value: recipe.cuisine } : null,
-    recipe.style ? { label: 'Style', value: recipe.style } : null,
-    recipe.cooking_style ? { label: 'Method', value: recipe.cooking_style } : null,
-  ].filter(Boolean) as { label: string; value: string }[];
-
-
   React.useEffect(() => {
     if (!recipeTabs.some((tab) => tab.key === activeRecipeTab)) {
       setActiveRecipeTab(recipeTabs[0]?.key ?? 'ask');
