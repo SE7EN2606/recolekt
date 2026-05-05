@@ -541,13 +541,6 @@ function NutrientTrafficStrip({
     return "bg-white text-gray-950";
   };
 
-  const percentClass = (level: "low" | "medium" | "high" | "neutral") => {
-    if (level === "low") return "text-[#12b24b]";
-    if (level === "medium") return "text-[#f59e0b]";
-    if (level === "high") return "text-[#ef233c]";
-    return "text-gray-700";
-  };
-
   const cells = [
     {
       key: "energy",
@@ -627,13 +620,21 @@ function NutrientTrafficStrip({
                 </div>
               </div>
 
-              <div className="border-t border-black/10 bg-gray-100">
-                <div className="min-h-[20px] px-1 py-1 text-[9px] font-black uppercase leading-none text-gray-700">
-                  {isEnergy ? "\u00a0" : cell.badge}
-                </div>
-                <div className={`border-t border-black/10 px-1 py-1 text-[12px] font-black leading-none tabular-nums ${percentClass(cell.level)}`}>
-                  {cell.pct}
-                </div>
+              <div className={`border-t border-black/10 ${colorClass}`}>
+                {isEnergy ? (
+                  <div className="px-1 py-2 text-[12px] font-black leading-none tabular-nums">
+                    {cell.pct}
+                  </div>
+                ) : (
+                  <>
+                    <div className="min-h-[20px] px-1 py-1 text-[9px] font-black uppercase leading-none">
+                      {cell.badge}
+                    </div>
+                    <div className="border-t border-black/10 px-1 py-1 text-[12px] font-black leading-none tabular-nums">
+                      {cell.pct}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           );
