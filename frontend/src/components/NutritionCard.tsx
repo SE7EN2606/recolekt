@@ -829,8 +829,8 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
                 {excludedNutritionItems.length} excluded
               </button>
 
-              <span className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-72 rounded-2xl border border-gray-200 bg-white p-3 text-left shadow-xl shadow-gray-900/10 group-hover:block group-focus-within:block">
-                <span className="block text-[10px] font-black uppercase tracking-widest text-gray-400">
+              <span className="pointer-events-none absolute right-0 top-full z-50 mt-2 hidden w-[min(18rem,calc(100vw-3rem))] rounded-2xl border border-gray-200 bg-white p-3 text-left shadow-xl shadow-gray-900/10 group-hover:block group-focus-within:block">
+                <span className="block whitespace-normal break-words text-[9px] font-black uppercase leading-snug tracking-widest text-gray-400">
                   Excluded from nutrition estimate
                 </span>
                 <span className="mt-2 block space-y-1.5">
