@@ -334,6 +334,38 @@ const calculateNutriScore = (
   };
 };
 
+const countIngredientGrams = (ingredient: any): number | null => {
+  if (!ingredient || typeof ingredient === "string") return null;
+
+  const rawQuantity = ingredient?.quantity ?? ingredient?.amount ?? ingredient?.qty ?? ingredient?.rawQuantity;
+  const quantity = Number(String(rawQuantity ?? "").replace(",", "."));
+  if (!Number.isFinite(quantity) || quantity <= 0) return null;
+
+  const unit = normalizeName(String(ingredient?.unit ?? ""));
+  const name = normalizeName(
+    String(
+      ingredient?.displayName ??
+      ingredient?.name ??
+      ingredient?.ingredient ??
+      ingredient?.item ??
+      ingredient?.text ??
+      ingredient?.rawText ??
+      ""
+    )
+  );
+
+  const has = (pattern: RegExp) => pattern.test(`${unit} ${name}`);
+
+  // Practical kitchen estimates. These are intentionally conservative.
+  if (has(/\b(head|tete|tetes)\b/) && has(/\b(garlic|ail)\b/)) return quantity * 50;
+  if (has(/\b(clove|cloves|gousse|gousses)\b/) && has(/\b(garlic|ail)\b/)) return quantity * 3;
+  if (has(/\b(leaf|leaves|feuille|feuilles)\b/) && has(/\b(bay|laurier)\b/)) return quantity * 0.2;
+  if (has(/\b(sprig|sprigs|branch|branches|brin|brins|branche|branches)\b/) && has(/\b(thyme|thym|rosemary|romarin)\b/)) return quantity * 1;
+  if (has(/\b(egg|eggs|oeuf|oeufs)\b/)) return quantity * 50;
+
+  return null;
+};
+
 const findNutrition = (input: any): NutritionPer100g | null => {
   const rawName = typeof input === "string"
     ? input
@@ -415,7 +447,10 @@ export const calculateNutrition = (
       return;
     }
 
-    const grams = ingredientToGrams(ingredient);
+    const directGrams = ingredientToGrams(ingredient);
+    const countGrams = directGrams === null || directGrams <= 0 ? countIngredientGrams(ingredient) : null;
+    const grams = directGrams !== null && directGrams > 0 ? directGrams : countGrams;
+
     if (grams === null || grams <= 0) {
       unmatchedIngredients.push(labelForIngredient(ingredient));
       return;
@@ -445,7 +480,7 @@ export const calculateNutrition = (
 
   const recipeHint = normalizeName(options.recipeName ?? "");
   const sauceLike =
-    /\b(mayo|mayonnaise|hollandaise|sauce|dip|spread|dressing|pesto|aioli|vinaigrette|salsa|chutney|jam|jar)\b/.test(recipeHint);
+    /\b(mayo|mayonnaise|hollandaise|sauce|dip|spread|dressing|pesto|aioli|vinaigrette|salsa|chutney|jam|jar|rillette|rillettes|pate|pâté|terrine|tapenade)\b/.test(recipeHint);
 
   const servingSizeG =
     hasExplicitServings ? null :
