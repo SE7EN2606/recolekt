@@ -541,6 +541,13 @@ function NutrientTrafficStrip({
     return "bg-white text-gray-950";
   };
 
+  const percentClass = (level: "low" | "medium" | "high" | "neutral") => {
+    if (level === "low") return "text-[#12b24b]";
+    if (level === "medium") return "text-[#f59e0b]";
+    if (level === "high") return "text-[#ef233c]";
+    return "text-gray-700";
+  };
+
   const cells = [
     {
       key: "energy",
@@ -600,7 +607,7 @@ function NutrientTrafficStrip({
         </p>
       </div>
 
-      <div className="grid grid-cols-5 gap-[3px]">
+      <div className="grid grid-cols-5 overflow-hidden rounded-[28px] border border-black/10">
         {cells.map((cell) => {
           const colorClass = levelClass(cell.level);
           const isEnergy = cell.key === "energy";
@@ -608,7 +615,7 @@ function NutrientTrafficStrip({
           return (
             <div
               key={cell.key}
-              className="min-w-0 overflow-hidden rounded-[28px] border border-black/10 bg-gray-100 text-center"
+              className="min-w-0 overflow-hidden border-r border-black/10 bg-gray-100 text-center last:border-r-0"
             >
               <div className={`flex min-h-[88px] flex-col items-center justify-start px-1.5 py-2 ${colorClass}`}>
                 <p className="text-[10px] font-black uppercase leading-tight">
@@ -620,11 +627,11 @@ function NutrientTrafficStrip({
                 </div>
               </div>
 
-              <div className="border-t border-black/10 bg-gray-100 px-1 py-1.5">
-                <div className="min-h-[16px] text-[9px] font-black uppercase leading-none text-gray-700">
+              <div className="border-t border-black/10 bg-gray-100">
+                <div className="min-h-[20px] px-1 py-1 text-[9px] font-black uppercase leading-none text-gray-700">
                   {isEnergy ? "\u00a0" : cell.badge}
                 </div>
-                <div className="mt-1 text-[12px] font-black leading-none text-gray-700 tabular-nums">
+                <div className={`border-t border-black/10 px-1 py-1 text-[12px] font-black leading-none tabular-nums ${percentClass(cell.level)}`}>
                   {cell.pct}
                 </div>
               </div>
