@@ -7,7 +7,7 @@ type NutritionCardProps = {
   recipeName?: string;
 };
 
-type ViewMode = "serving" | "per100g" | "total";
+type ViewMode = "serving" | "per100g" | "total" | "table";
 
 const fmt = (value: number, unit = "g") => {
   if (unit === "kcal") return `${Math.round(value)} kcal`;
@@ -205,6 +205,130 @@ function scaleNutritionValues<T extends Record<string, number>>(values: T, scale
 function formatPortionSize(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "—";
   return `${Math.round(value)}g`;
+}
+
+
+function NutritionFactsTable({
+  values,
+  servingSizeG,
+  saltMissing,
+}: {
+  values: NutritionTotals;
+  servingSizeG?: number | null;
+  saltMissing: boolean;
+}) {
+  const calories = Math.round(values.calories || 0);
+
+  const rows = [
+    {
+      label: "Total fat",
+      value: fmt(values.fat_g),
+      pct: riPct(values.fat_g || 0, 70),
+      strong: true,
+    },
+    {
+      label: "Saturated fat",
+      value: fmt(values.saturates_g),
+      pct: riPct(values.saturates_g || 0, 20),
+      indent: true,
+    },
+    {
+      label: "Total carbohydrate",
+      value: fmt(values.carbs_g),
+      pct: riPct(values.carbs_g || 0, 260),
+      strong: true,
+    },
+    {
+      label: "Sugars",
+      value: fmt(values.sugars_g),
+      pct: riPct(values.sugars_g || 0, 90),
+      indent: true,
+    },
+    {
+      label: "Fiber",
+      value: fmt(values.fiber_g),
+      pct: riPct(values.fiber_g || 0, 30),
+      indent: true,
+    },
+    {
+      label: "Protein",
+      value: fmt(values.protein_g),
+      pct: riPct(values.protein_g || 0, 50),
+      strong: true,
+    },
+    {
+      label: "Salt",
+      value: saltMissing ? "see notes" : fmt(values.salt_g),
+      pct: saltMissing ? "—" : riPct(values.salt_g || 0, 6),
+      strong: true,
+    },
+  ];
+
+  return (
+    <div className="overflow-hidden rounded-2xl border-2 border-gray-950 bg-white shadow-sm">
+      <div className="border-b-8 border-gray-950 px-4 py-3">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-rose-500">
+          Home cooking estimate
+        </p>
+        <h4 className="mt-1 text-3xl font-black leading-none tracking-tight text-gray-950">
+          Nutrition facts
+        </h4>
+
+        <div className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-sm font-extrabold text-gray-950">
+          <div className="flex items-center justify-between gap-3">
+            <span>Serving size</span>
+            <span>{servingSizeG ? formatPortionSize(servingSizeG) : "estimated portion"}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-b-8 border-gray-950 px-4 py-3">
+        <p className="text-[11px] font-black uppercase tracking-widest text-gray-500">
+          Amount per serving
+        </p>
+        <div className="mt-1 flex items-end justify-between gap-3">
+          <span className="text-4xl font-black leading-none text-gray-950">
+            Calories
+          </span>
+          <span className="text-4xl font-black leading-none text-gray-950 tabular-nums">
+            {calories}
+          </span>
+        </div>
+      </div>
+
+      <div className="px-4 py-2">
+        <div className="border-b-4 border-gray-950 pb-1 text-right text-xs font-black text-gray-950">
+          % Reference intake
+        </div>
+
+        <div className="divide-y divide-gray-200">
+          {rows.map((row) => (
+            <div
+              key={row.label}
+              className="grid grid-cols-[1fr_auto] items-baseline gap-3 py-2"
+            >
+              <div className={row.indent ? "pl-4" : ""}>
+                <span className={row.strong ? "font-black text-gray-950" : "font-semibold text-gray-700"}>
+                  {row.label}
+                </span>
+                <span className="ml-1 font-medium text-gray-600">{row.value}</span>
+              </div>
+
+              <div className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-black text-rose-600 tabular-nums">
+                {row.pct}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 border-t-8 border-gray-950 pt-3 text-[11px] leading-relaxed text-gray-500">
+          <p>
+            Percentages are based on common adult reference intakes. This is a Recolekt estimate from detected recipe quantities, not a certified nutrition label.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 
@@ -576,12 +700,12 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
   const adjustedPerServing = scaleNutritionValues(nutrition.perServing, portionScale);
 
   const activePortionSizeG =
-    mode === "serving" ? adjustedServingSizeG :
+    mode === "serving" || mode === "table" ? adjustedServingSizeG :
     mode === "per100g" ? 100 :
     Math.max(1, Math.round(nutrition.totalWeightG || 0));
 
   const activePortionHelper =
-    mode === "serving" ? "estimated serving weight" :
+    mode === "serving" || mode === "table" ? "estimated serving weight" :
     mode === "per100g" ? "reference amount" :
     "estimated total recipe weight";
 
@@ -591,12 +715,12 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
   };
 
   const activeValues =
-    mode === "serving" ? adjustedPerServing :
+    mode === "serving" || mode === "table" ? adjustedPerServing :
     mode === "per100g" ? nutrition.per100g :
     nutrition.totalRecipe;
 
   const activeLabel =
-    mode === "serving" ? "Per portion" :
+    mode === "serving" || mode === "table" ? "Per portion" :
     mode === "per100g" ? "Per 100g" :
     "Total recipe";
 
@@ -628,9 +752,10 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
       </div>
 
       <div>
-          <div className="mb-4 grid grid-cols-3 rounded-2xl bg-gray-100 p-1 text-xs font-bold">
+          <div className="mb-4 grid grid-cols-4 rounded-2xl bg-gray-100 p-1 text-xs font-bold">
             {[
-              { key: "serving", label: "Per portion" },
+              { key: "serving", label: "Macro" },
+              { key: "table", label: "Table" },
               { key: "per100g", label: "Per 100g" },
               { key: "total", label: "Total" },
             ].map((item) => (
@@ -695,6 +820,12 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
                 servingSizeG={adjustedServingSizeG}
               />
             </div>
+          ) : mode === "table" ? (
+            <NutritionFactsTable
+              values={adjustedPerServing}
+              servingSizeG={adjustedServingSizeG}
+              saltMissing={saltMissing}
+            />
           ) : mode === "per100g" ? (
             <div className="space-y-4">
               <NutrientTrafficStrip
