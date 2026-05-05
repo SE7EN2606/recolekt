@@ -367,27 +367,20 @@ function NutrientTrafficStrip({
   perServing,
   saltMissing,
   servingSizeG,
-  label = "Each serving",
 }: {
   per100g: any;
   perServing: any;
   saltMissing: boolean;
   servingSizeG?: number | null;
-  label?: string;
 }) {
   const energyKj = Math.round((perServing.calories || 0) * 4.184);
   const per100Kj = Math.round((per100g.calories || 0) * 4.184);
 
   const levelClass = (level: "low" | "medium" | "high" | "neutral") => {
-    if (level === "low") return "bg-[#16a34a] text-white";
+    if (level === "low") return "bg-[#12b24b] text-white";
     if (level === "medium") return "bg-[#f59e0b] text-white";
     if (level === "high") return "bg-[#ef233c] text-white";
-    return "bg-white text-gray-950";
-  };
-
-  const circleClass = (level: "low" | "medium" | "high" | "neutral") => {
-    if (level === "neutral") return "border-gray-300 bg-white text-gray-950";
-    return "border-white bg-white text-gray-950";
+    return "bg-gray-50 text-gray-950";
   };
 
   const cells = [
@@ -400,7 +393,8 @@ function NutrientTrafficStrip({
           <span>{Math.round(perServing.calories || 0)}kcal</span>
         </>
       ),
-      badge: riPct(perServing.calories || 0, 2000),
+      badge: "",
+      pct: riPct(perServing.calories || 0, 2000),
       level: "neutral" as const,
     },
     {
@@ -408,7 +402,7 @@ function NutrientTrafficStrip({
       label: "Fat",
       value: fmt(perServing.fat_g || 0),
       badge: nutrientLevel("fat", per100g.fat_g || 0).toUpperCase(),
-      ri: riPct(perServing.fat_g || 0, 70),
+      pct: riPct(perServing.fat_g || 0, 70),
       level: nutrientLevel("fat", per100g.fat_g || 0),
     },
     {
@@ -416,7 +410,7 @@ function NutrientTrafficStrip({
       label: "Saturates",
       value: fmt(perServing.saturates_g || 0),
       badge: nutrientLevel("saturates", per100g.saturates_g || 0).toUpperCase(),
-      ri: riPct(perServing.saturates_g || 0, 20),
+      pct: riPct(perServing.saturates_g || 0, 20),
       level: nutrientLevel("saturates", per100g.saturates_g || 0),
     },
     {
@@ -424,68 +418,70 @@ function NutrientTrafficStrip({
       label: "Sugars",
       value: fmt(perServing.sugars_g || 0),
       badge: nutrientLevel("sugars", per100g.sugars_g || 0).toUpperCase(),
-      ri: riPct(perServing.sugars_g || 0, 90),
+      pct: riPct(perServing.sugars_g || 0, 90),
       level: nutrientLevel("sugars", per100g.sugars_g || 0),
     },
     {
       key: "salt",
       label: "Salt",
       value: saltMissing ? "Needs qty" : fmt(perServing.salt_g || 0),
-      badge: saltMissing ? "—" : nutrientLevel("salt", per100g.salt_g || 0).toUpperCase(),
-      ri: saltMissing ? "—" : riPct(perServing.salt_g || 0, 6),
+      badge: saltMissing ? "" : nutrientLevel("salt", per100g.salt_g || 0).toUpperCase(),
+      pct: saltMissing ? "—" : riPct(perServing.salt_g || 0, 6),
       level: saltMissing ? "medium" as const : nutrientLevel("salt", per100g.salt_g || 0),
     },
   ];
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white px-3 py-4 shadow-sm">
-      <div className="mb-3 text-center">
-        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
-          UK traffic light
-        </p>
-        <p className="mt-1 text-[15px] font-black text-gray-950">
-          {label}{servingSizeG ? ` (${Math.round(servingSizeG)}g)` : ""} contains
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <div className="flex items-end justify-between gap-3 px-3 pt-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
+            UK traffic light
+          </p>
+          <p className="mt-1 text-[13px] font-black text-gray-950">
+            Each serving{servingSizeG ? ` (${Math.round(servingSizeG)}g)` : ""} contains
+          </p>
+        </div>
+        <p className="pb-0.5 text-right text-[10px] font-black leading-tight text-gray-400">
+          % RI
         </p>
       </div>
 
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-5 gap-[1px] px-3 pt-3">
         {cells.map((cell) => {
-          const isEnergy = cell.key === "energy";
           const colorClass = levelClass(cell.level);
-          const bottomText = isEnergy ? cell.badge : cell.badge;
-          const riText = isEnergy ? "" : cell.ri;
-
           return (
-            <div key={cell.key} className="flex min-w-0 flex-col items-center">
-              <div
-                className={`flex h-[150px] w-full max-w-[104px] flex-col items-center rounded-full border text-center ${colorClass} ${
-                  isEnergy ? "border-gray-300" : "border-transparent"
-                }`}
-              >
-                <div className="flex h-[52px] items-end justify-center px-1 pb-1">
-                  <p className="text-[10px] font-black uppercase leading-tight">
-                    {cell.label}
-                  </p>
-                </div>
+            <div
+              key={cell.key}
+              className={`overflow-hidden border border-black/10 text-center first:rounded-tl-2xl last:rounded-tr-2xl ${colorClass}`}
+            >
+              <div className="flex min-h-[88px] flex-col items-center justify-start px-1.5 py-2">
+                <p className="text-[10px] font-black uppercase leading-tight">
+                  {cell.label}
+                </p>
 
-                <div className="flex min-h-[38px] flex-col items-center justify-center px-1 text-[15px] font-extrabold leading-tight">
+                <div className="mt-1 flex min-h-[34px] flex-col items-center justify-center text-[17px] font-extrabold leading-none">
                   {cell.value}
                 </div>
 
-                <div className="mt-auto flex h-[58px] w-[58px] items-center justify-center rounded-full border-2 text-center text-[16px] font-black leading-none shadow-sm ${circleClass(cell.level)}">
-                  {bottomText}
-                </div>
+                {cell.badge ? (
+                  <div className="mt-2 rounded-full bg-black/10 px-2 py-0.5 text-[9px] font-black uppercase leading-none">
+                    {cell.badge}
+                  </div>
+                ) : (
+                  <div className="mt-2 h-[16px]" />
+                )}
               </div>
 
-              <div className="mt-2 h-4 text-center text-[11px] font-black leading-none text-gray-500">
-                {riText}
+              <div className="border-t border-black/10 bg-gray-100 py-1 text-[12px] font-black leading-none text-gray-600">
+                {cell.pct}
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="mt-3 text-center text-xs leading-relaxed text-gray-400">
+      <div className="px-4 py-3 text-center text-xs leading-relaxed text-gray-400">
         <p>% of adult&apos;s reference intake.</p>
         <p>
           Typical values per 100g: Energy {per100Kj}kJ/{Math.round(per100g.calories || 0)}kcal.
