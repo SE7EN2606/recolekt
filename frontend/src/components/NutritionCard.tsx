@@ -745,6 +745,8 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
     });
   }, [nutritionNotes.missing, nutrition.unmatchedIngredients]);
 
+  const nutritionDisplayTotal = nutrition.matchedCount + excludedNutritionItems.length;
+
 
   const hasServingSize =
     typeof nutrition.servingSizeG === "number" &&
@@ -824,7 +826,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
 
             <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-gray-500">
               <span>
-                {nutrition.matchedCount} of {nutrition.quantifiedCount} main ingredients calculated
+                {nutrition.matchedCount} of {nutritionDisplayTotal} main ingredients calculated
               </span>
               <span>·</span>
               <span
