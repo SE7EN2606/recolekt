@@ -600,7 +600,7 @@ function NutrientTrafficStrip({
         </p>
       </div>
 
-      <div className="grid grid-cols-5 gap-0">
+      <div className="grid grid-cols-5 gap-0 px-0.5">
         {cells.map((cell) => {
           const colorClass = levelClass(cell.level);
           const isEnergy = cell.key === "energy";
@@ -608,14 +608,14 @@ function NutrientTrafficStrip({
           return (
             <div
               key={cell.key}
-              className="min-w-0 overflow-hidden rounded-[28px] border border-black/10 bg-gray-100 text-center -ml-px first:ml-0"
+              className="relative min-w-0 overflow-hidden rounded-[28px] border border-black/10 bg-gray-100 text-center shadow-[0_2px_10px_rgba(15,23,42,0.10)] ring-1 ring-white/70 -ml-1 first:ml-0"
             >
-              <div className={`flex min-h-[88px] flex-col items-center justify-start px-1.5 py-2 ${colorClass}`}>
+              <div className={`flex min-h-[88px] flex-col items-center px-1.5 pt-3 pb-2 ${colorClass}`}>
                 <p className="text-[10px] font-black uppercase leading-tight">
                   {cell.label}
                 </p>
 
-                <div className="mt-1 flex min-h-[34px] flex-col items-center justify-center text-[13px] font-extrabold leading-tight">
+                <div className="mt-3 flex min-h-[34px] flex-col items-center justify-center text-[13px] font-extrabold leading-tight">
                   {cell.value}
                 </div>
               </div>
