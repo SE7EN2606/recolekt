@@ -26,6 +26,7 @@ export type NutritionResult = {
   totalWeightG: number;
   matchedCount: number;
   totalCount: number;
+  unmatchedIngredients: string[];
   confidence: "high" | "medium" | "low";
   nutriScore: NutriScoreResult;
   effectiveServings: number;
@@ -391,15 +392,34 @@ export const calculateNutrition = (
 ): NutritionResult => {
   const totalRecipe = zeroTotals();
   let matchedCount = 0;
+  let unmatchedIngredients: string[] = [];
   let totalWeightG = 0;
   let fruitVegWeightG = 0;
 
+  const labelForIngredient = (ingredient: any) =>
+    String(
+      ingredient?.displayName ??
+      ingredient?.name ??
+      ingredient?.ingredient ??
+      ingredient?.item ??
+      ingredient?.text ??
+      ingredient?.rawText ??
+      ingredient ?? 
+      "ingredient"
+    ).trim();
+
   ingredients.forEach((ingredient) => {
     const nutrition = findNutrition(ingredient);
-    if (!nutrition) return;
+    if (!nutrition) {
+      unmatchedIngredients.push(labelForIngredient(ingredient));
+      return;
+    }
 
     const grams = ingredientToGrams(ingredient);
-    if (grams === null || grams <= 0) return;
+    if (grams === null || grams <= 0) {
+      unmatchedIngredients.push(labelForIngredient(ingredient));
+      return;
+    }
 
     matchedCount += 1;
 
@@ -466,6 +486,7 @@ export const calculateNutrition = (
     totalWeightG: Math.round(totalWeightG),
     matchedCount,
     totalCount: ingredients.length,
+    unmatchedIngredients,
     confidence: ratio >= 0.8 ? "high" : ratio >= 0.5 ? "medium" : "low",
     nutriScore: calculateNutriScore(roundedPer100g, fruitVegPct),
     effectiveServings: Math.round(safeServings * 10) / 10,

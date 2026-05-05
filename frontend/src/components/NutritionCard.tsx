@@ -767,7 +767,14 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
         <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Estimated</p>
         <h3 className="text-lg font-semibold text-gray-950">Nutrition values</h3>
         <p className="mt-1 text-xs text-gray-500">
-          Nutrition estimated from main ingredients · partial estimate.
+          Estimated · {nutrition.matchedCount} of {nutrition.totalCount} ingredients matched ·{' '}
+          <span className={
+            nutrition.confidence === 'high' ? 'font-bold text-green-600' :
+            nutrition.confidence === 'medium' ? 'font-bold text-amber-600' :
+            'font-bold text-red-500'
+          }>
+            {nutrition.confidence} confidence
+          </span>
         </p>
       </div>
 
@@ -880,6 +887,12 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
                 {nutritionNotes.missing.length > 0 && (
                   <li>
                     • Missing quantities excluded from calculation: {nutritionNotes.missing.join(", ")}.
+                  </li>
+                )}
+
+                {nutrition.unmatchedIngredients && nutrition.unmatchedIngredients.length > 0 && (
+                  <li>
+                    • Not matched: {nutrition.unmatchedIngredients.join(", ")}.
                   </li>
                 )}
               </ul>
