@@ -812,27 +812,27 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
                 </div>
 
                 {mode === "serving" ? (
-                  <div className="flex items-center gap-1.5 rounded-xl border border-rose-100 bg-white px-2 py-1">
+                  <div className="flex h-[58px] min-w-[256px] items-center justify-between gap-3 rounded-[22px] border border-rose-100 bg-white px-3 shadow-sm">
                     <button
                       type="button"
                       onClick={() => handlePortionScale(portionScale - 0.25)}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
+                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-lg font-black text-rose-600 transition hover:bg-rose-100"
                     >
                       −
                     </button>
-                    <span className="min-w-[54px] text-center text-[11px] font-black text-rose-600 tabular-nums">
+                    <span className="min-w-[76px] text-center text-sm font-black text-rose-600 tabular-nums">
                       {Math.round(portionScale * 100)}%
                     </span>
                     <button
                       type="button"
                       onClick={() => handlePortionScale(portionScale + 0.25)}
-                      className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
+                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-lg font-black text-rose-600 transition hover:bg-rose-100"
                     >
                       +
                     </button>
                   </div>
                 ) : (
-                  <div className="hidden h-[38px] min-w-[116px] sm:block" aria-hidden="true" />
+                  <div className="hidden h-[58px] min-w-[256px] sm:block" aria-hidden="true" />
                 )}
               </div>
             </div>
