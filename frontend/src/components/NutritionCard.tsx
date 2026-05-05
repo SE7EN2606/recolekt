@@ -797,22 +797,22 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
           </div>
 
           {activePortionSizeG && (
-            <div className="mb-4 rounded-2xl border border-rose-100 bg-rose-50/60 px-4 py-3">
-              <div className="flex min-h-[38px] flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-rose-400">
+            <div className="mb-4 rounded-[24px] border border-rose-100 bg-rose-50/60 px-4 py-4">
+              <div className="grid min-h-[58px] grid-cols-[1fr_auto] items-center gap-4">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-rose-400">
                     Portion size
                   </p>
-                  <p className="mt-0.5 text-sm font-black text-gray-900">
-                    {formatPortionSize(activePortionSizeG)}
-                    <span className="ml-1 text-[11px] font-bold text-gray-400">
+                  <p className="mt-1 flex min-w-0 items-baseline gap-1.5 text-xl font-black text-gray-950">
+                    <span>{formatPortionSize(activePortionSizeG)}</span>
+                    <span className="truncate text-sm font-bold text-gray-400">
                       {activePortionHelper}
                     </span>
                   </p>
                 </div>
 
                 {mode === "serving" ? (
-                  <div className="flex h-[58px] min-w-[256px] items-center justify-between gap-3 rounded-[22px] border border-rose-100 bg-white px-3 shadow-sm">
+                  <div className="flex h-[58px] min-w-[260px] items-center justify-between rounded-[22px] border border-rose-100 bg-white px-3 shadow-sm">
                     <button
                       type="button"
                       onClick={() => handlePortionScale(portionScale - 0.25)}
@@ -820,7 +820,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
                     >
                       −
                     </button>
-                    <span className="min-w-[76px] text-center text-sm font-black text-rose-600 tabular-nums">
+                    <span className="min-w-[80px] text-center text-sm font-black text-rose-600 tabular-nums">
                       {Math.round(portionScale * 100)}%
                     </span>
                     <button
@@ -832,7 +832,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
                     </button>
                   </div>
                 ) : (
-                  <div className="hidden h-[58px] min-w-[256px] sm:block" aria-hidden="true" />
+                  <div className="hidden h-[58px] min-w-[260px] sm:block" aria-hidden="true" />
                 )}
               </div>
             </div>
