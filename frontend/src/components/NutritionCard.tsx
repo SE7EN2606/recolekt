@@ -796,7 +796,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
             ))}
           </div>
 
-          {activePortionSizeG && (
+          {mode === "serving" && adjustedServingSizeG && (
             <div className="mb-4 rounded-[24px] border border-rose-100 bg-rose-50/60 px-4 py-4">
               <div className="grid min-h-[58px] grid-cols-[1fr_auto] items-center gap-4">
                 <div className="min-w-0">
@@ -804,36 +804,32 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
                     Portion size
                   </p>
                   <p className="mt-1 flex min-w-0 items-baseline gap-1.5 text-xl font-black text-gray-950">
-                    <span>{formatPortionSize(activePortionSizeG)}</span>
+                    <span>{formatPortionSize(adjustedServingSizeG)}</span>
                     <span className="truncate text-sm font-bold text-gray-400">
-                      {activePortionHelper}
+                      estimated serving weight
                     </span>
                   </p>
                 </div>
 
-                {mode === "serving" ? (
-                  <div className="flex h-[58px] min-w-[260px] items-center justify-between rounded-[22px] border border-rose-100 bg-white px-3 shadow-sm">
-                    <button
-                      type="button"
-                      onClick={() => handlePortionScale(portionScale - 0.25)}
-                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-lg font-black text-rose-600 transition hover:bg-rose-100"
-                    >
-                      −
-                    </button>
-                    <span className="min-w-[80px] text-center text-sm font-black text-rose-600 tabular-nums">
-                      {Math.round(portionScale * 100)}%
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handlePortionScale(portionScale + 0.25)}
-                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-lg font-black text-rose-600 transition hover:bg-rose-100"
-                    >
-                      +
-                    </button>
-                  </div>
-                ) : (
-                  <div className="hidden h-[58px] min-w-[260px] sm:block" aria-hidden="true" />
-                )}
+                <div className="flex h-[58px] min-w-[260px] items-center justify-between rounded-[22px] border border-rose-100 bg-white px-3 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => handlePortionScale(portionScale - 0.25)}
+                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-lg font-black text-rose-600 transition hover:bg-rose-100"
+                  >
+                    −
+                  </button>
+                  <span className="min-w-[80px] text-center text-sm font-black text-rose-600 tabular-nums">
+                    {Math.round(portionScale * 100)}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handlePortionScale(portionScale + 0.25)}
+                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-lg font-black text-rose-600 transition hover:bg-rose-100"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
             </div>
           )}
