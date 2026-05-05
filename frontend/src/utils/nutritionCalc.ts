@@ -509,7 +509,6 @@ export const calculateNutrition = (
 
   const explicitServings = Number(servings);
   const hasExplicitServings = Number.isFinite(explicitServings) && explicitServings > 0;
-  const quantifiedCoverage = ingredients.length ? quantifiedCount / ingredients.length : 0;
 
   const recipeHint = normalizeName(options.recipeName ?? "");
   const sauceLike =
@@ -551,8 +550,9 @@ export const calculateNutrition = (
   const fruitVegPct = totalWeightG > 0 ? (fruitVegWeightG / totalWeightG) * 100 : 0;
   const matchRatio = quantifiedCount ? matchedCount / quantifiedCount : 0;
   const confidence =
-    quantifiedCoverage >= 0.8 && matchRatio >= 0.8 ? "high" :
-    quantifiedCoverage >= 0.5 && matchRatio >= 0.6 ? "medium" :
+    quantifiedCount === 0 ? "low" :
+    matchRatio >= 0.8 ? "high" :
+    matchRatio >= 0.5 ? "medium" :
     "low";
 
   return {
