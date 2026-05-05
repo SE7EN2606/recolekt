@@ -899,19 +899,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         )}
       </div>
 
-      {metaChips.length > 0 && (
-        <div className="border-b border-rose-100 bg-white px-5 py-3">
-          <div className="flex flex-wrap gap-2">
-            {metaChips.map((chip) => (
-              <div key={`${chip.label}-${chip.value}`} className="rounded-full border border-gray-100 bg-gray-50 px-3 py-1.5">
-                <span className="text-[9px] font-black uppercase tracking-widest text-gray-400">{chip.label}</span>
-                <span className="ml-1.5 text-[11px] font-black text-gray-800">{chip.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Time grid — dynamic columns, only renders cells with data */}
       {timeCells.length > 0 && (
         <div

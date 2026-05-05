@@ -123,6 +123,45 @@ const cachedLocationNeedsHydration = (candidate: any, thumb?: string) => {
   }
 };
 
+export type RecipeMetaChip = {
+  label: string;
+  value: string;
+};
+
+function getRecipeMetaChips(recipe: any): RecipeMetaChip[] {
+  if (!recipe) return [];
+
+  return [
+    recipe.cuisine ? { label: 'Cuisine', value: String(recipe.cuisine) } : null,
+    recipe.style ? { label: 'Style', value: String(recipe.style) } : null,
+    recipe.cooking_style ? { label: 'Method', value: String(recipe.cooking_style) } : null,
+  ].filter(Boolean) as RecipeMetaChip[];
+}
+
+function RecipeMetaPanel({ chips }: { chips: RecipeMetaChip[] }) {
+  if (!chips.length) return null;
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5">
+      <div className="flex flex-wrap justify-center gap-2">
+        {chips.map((chip) => (
+          <div
+            key={`${chip.label}-${chip.value}`}
+            className="flex items-center gap-1.5 rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1"
+          >
+            <span className="text-[8px] font-black uppercase tracking-widest text-violet-400">
+              {chip.label}
+            </span>
+            <span className="text-[11px] font-black text-gray-900">
+              {chip.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export const VideoDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -339,6 +378,7 @@ export const VideoDetail: React.FC = () => {
     : undefined;
   const derivedSubtype = deriveToolsSubtype(viewModel.toolsList);
   const safeDerivedSubtype = isBadgeToolsSubtype(derivedSubtype) ? derivedSubtype : 'picks';
+  const recipeMetaChips = getRecipeMetaChips(viewModel.recipe);
   const toolsSubtype = isToolsContentType(viewModel.contentType)
     ? structuredBadgeSubtype ?? safeDerivedSubtype
     : undefined;
@@ -666,6 +706,8 @@ export const VideoDetail: React.FC = () => {
             onEditTopic={(v: string) => handleEditField('topic', v)}
             onEditStart={() => setIsEditing(true)}
           />
+
+          <RecipeMetaPanel chips={recipeMetaChips} />
 
           {viewModel.transcript && (
             <Accordion

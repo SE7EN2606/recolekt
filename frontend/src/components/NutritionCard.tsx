@@ -210,101 +210,6 @@ function MacroRing({
   );
 }
 
-const riPct = (value: number, reference: number) =>
-  `${Math.max(0, Math.round((value / reference) * 100))}%`;
-
-function UKTrafficLightGrid({
-  per100g,
-  perServing,
-  saltMissing,
-}: {
-  per100g: NutritionTotals;
-  perServing: NutritionTotals;
-  saltMissing: boolean;
-}) {
-  const cells = [
-    {
-      key: "fat",
-      label: "Fat",
-      display: fmt(per100g.fat_g),
-      pct: riPct(perServing.fat_g, 70),
-      value: per100g.fat_g,
-    },
-    {
-      key: "saturates",
-      label: "Saturates",
-      display: fmt(per100g.saturates_g),
-      pct: riPct(perServing.saturates_g, 20),
-      value: per100g.saturates_g,
-    },
-    {
-      key: "sugars",
-      label: "Sugars",
-      display: fmt(per100g.sugars_g),
-      pct: riPct(perServing.sugars_g, 90),
-      value: per100g.sugars_g,
-    },
-    {
-      key: "salt",
-      label: "Salt",
-      display: saltMissing ? "Needs qty" : fmt(per100g.salt_g),
-      pct: saltMissing ? "—" : riPct(perServing.salt_g, 6),
-      value: per100g.salt_g,
-      forcedLabel: saltMissing ? "" : undefined,
-      forcedClass: saltMissing ? "bg-amber-500 text-white" : undefined,
-    },
-  ];
-
-  return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-          UK traffic light · per 100g
-        </p>
-        <p className="text-[10px] font-bold text-gray-400">RI per portion</p>
-      </div>
-
-      <div className="grid grid-cols-5 overflow-hidden rounded-2xl border border-gray-200 text-center text-[10px]">
-        <div className="border-r border-white bg-gray-50">
-          <div className="flex h-full min-h-[70px] flex-col items-center justify-center px-1 py-2 text-gray-700">
-            <p className="text-[9px] font-black uppercase tracking-wide text-gray-500">Energy</p>
-            <p className="mt-1 text-[12px] font-black">{Math.round(per100g.calories * 4.184)}kJ</p>
-            <p className="text-[12px] font-black">{Math.round(per100g.calories)}kcal</p>
-          </div>
-          <div className="bg-gray-100 py-1 text-[10px] font-black text-gray-500">
-            {riPct(perServing.calories, 2000)}
-          </div>
-        </div>
-
-        {cells.map((item) => {
-          const level = traffic(item.key, item.value);
-          return (
-            <div key={item.key} className="border-r border-white last:border-r-0">
-              <div className={`${item.forcedClass ?? level.cls} flex min-h-[70px] flex-col items-center justify-center px-1 py-2`}>
-                <p className="text-[9px] font-black uppercase tracking-wide">{item.label}</p>
-                <p className="mt-1 text-[12px] font-black leading-none">{item.display}</p>
-                {(item.forcedLabel ?? level.label) && (
-                  <p className="mt-1 rounded-full bg-black/10 px-1.5 py-0.5 text-[8px] font-black uppercase">
-                    {item.forcedLabel ?? level.label}
-                  </p>
-                )}
-              </div>
-              <div className="bg-gray-100 py-1 text-[10px] font-black text-gray-500">
-                {item.pct}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <p className="mt-1.5 text-center text-[10px] leading-relaxed text-gray-400">
-        Traffic-light colours use typical UK per-100g thresholds. Percentages are adult reference intake per portion.
-      </p>
-    </div>
-  );
-}
-
-
 function ValueTable({
   values,
   label,
@@ -340,8 +245,309 @@ function ValueTable({
   );
 }
 
+
+function scaleNutritionValues<T extends Record<string, number>>(values: T, scale: number): T {
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [
+      key,
+      typeof value === "number" ? value * scale : value,
+    ])
+  ) as T;
+}
+
+function formatPortionSize(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  return `${Math.round(value)}g`;
+}
+
+
+type MacroBalanceInput = {
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+};
+
+const riPct = (value: number, reference: number) =>
+  `${Math.max(0, Math.round((value / reference) * 100))}%`;
+
+function pct(value: number, total: number): number {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return 0;
+  return Math.round((value / total) * 100);
+}
+
+
+function MacroDonut({
+  label,
+  value,
+  unit,
+  target,
+  color,
+}: {
+  label: string;
+  value: number;
+  unit: string;
+  target: number;
+  color: string;
+}) {
+  const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
+  const pctValue = Math.max(0.04, Math.min(0.92, safeValue / target));
+  const circumference = 2 * Math.PI * 42;
+  const dash = circumference * pctValue;
+
+  return (
+    <div className="flex min-w-0 flex-col items-center">
+      <div className="relative h-[108px] w-[108px]">
+        <svg viewBox="0 0 108 108" className="absolute inset-0 h-full w-full" aria-hidden="true">
+          <circle
+            cx="54"
+            cy="54"
+            r="42"
+            stroke="#e5e7eb"
+            strokeWidth="10"
+            fill="none"
+          />
+          <circle
+            cx="54"
+            cy="54"
+            r="42"
+            stroke={color}
+            strokeWidth="10"
+            fill="none"
+            strokeDasharray={`${dash} ${circumference - dash}`}
+            strokeLinecap="round"
+            transform="rotate(-90 54 54)"
+          />
+        </svg>
+
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className="text-[30px] font-light leading-none tracking-tight text-gray-950">
+            {unit === "kcal" ? Math.round(safeValue) : fmtRing(safeValue)}
+          </span>
+          <span className="mt-1 text-[15px] font-light leading-none text-gray-900">
+            {unit === "kcal" ? "kcal" : "gram"}
+          </span>
+        </div>
+      </div>
+
+      <span className="mt-4 text-center text-[13px] font-black uppercase tracking-[0.16em] text-gray-400">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function MacroBreakdownDonuts({ values }: { values: MacroBalanceInput }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white px-4 py-5">
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-gray-400">
+            Macro breakdown
+          </p>
+          <p className="mt-1 text-xs font-medium text-gray-400">
+            Per selected portion
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-4">
+        <MacroDonut
+          label="Calories"
+          value={values.calories}
+          unit="kcal"
+          target={700}
+          color="#f59e0b"
+        />
+        <MacroDonut
+          label="Protein"
+          value={values.protein_g}
+          unit="g"
+          target={50}
+          color="#e11d48"
+        />
+        <MacroDonut
+          label="Carbs"
+          value={values.carbs_g}
+          unit="g"
+          target={90}
+          color="#a855f7"
+        />
+        <MacroDonut
+          label="Fats"
+          value={values.fat_g}
+          unit="g"
+          target={35}
+          color="#10b981"
+        />
+      </div>
+    </div>
+  );
+}
+
+
+function nutrientLevel(
+  kind: "fat" | "saturates" | "sugars" | "salt" | "fiber",
+  value: number
+): "low" | "medium" | "high" {
+  const v = Number(value) || 0;
+
+  if (kind === "fat") {
+    if (v <= 3) return "low";
+    if (v <= 17.5) return "medium";
+    return "high";
+  }
+
+  if (kind === "saturates") {
+    if (v <= 1.5) return "low";
+    if (v <= 5) return "medium";
+    return "high";
+  }
+
+  if (kind === "sugars") {
+    if (v <= 5) return "low";
+    if (v <= 22.5) return "medium";
+    return "high";
+  }
+
+  if (kind === "salt") {
+    if (v <= 0.3) return "low";
+    if (v <= 1.5) return "medium";
+    return "high";
+  }
+
+  // Fiber is inverted: higher is better. Product heuristic, not a UK traffic-light rule.
+  if (v >= 6) return "low";
+  if (v >= 3) return "medium";
+  return "high";
+}
+
+
+function NutrientTrafficStrip({
+  per100g,
+  perServing,
+  saltMissing,
+  servingSizeG,
+}: {
+  per100g: any;
+  perServing: any;
+  saltMissing: boolean;
+  servingSizeG?: number | null;
+}) {
+  const energyKj = Math.round((perServing.calories || 0) * 4.184);
+  const per100Kj = Math.round((per100g.calories || 0) * 4.184);
+
+  const levelClass = (level: "low" | "medium" | "high" | "neutral") => {
+    if (level === "low") return "bg-lime-400 text-black";
+    if (level === "medium") return "bg-orange-300 text-black";
+    if (level === "high") return "bg-red-500 text-black";
+    return "bg-white text-black";
+  };
+
+  const cells = [
+    {
+      key: "energy",
+      label: "Energy",
+      value: (
+        <>
+          <span>{energyKj}kJ</span>
+          <span>{Math.round(perServing.calories || 0)}kcal</span>
+        </>
+      ),
+      badge: "",
+      pct: riPct(perServing.calories || 0, 2000),
+      level: "neutral" as const,
+      extraClass: "bg-white text-black",
+    },
+    {
+      key: "fat",
+      label: "Fat",
+      value: fmt(perServing.fat_g || 0),
+      badge: nutrientLevel("fat", per100g.fat_g || 0).toUpperCase(),
+      pct: riPct(perServing.fat_g || 0, 70),
+      level: nutrientLevel("fat", per100g.fat_g || 0),
+    },
+    {
+      key: "saturates",
+      label: "Saturates",
+      value: fmt(perServing.saturates_g || 0),
+      badge: nutrientLevel("saturates", per100g.saturates_g || 0).toUpperCase(),
+      pct: riPct(perServing.saturates_g || 0, 20),
+      level: nutrientLevel("saturates", per100g.saturates_g || 0),
+    },
+    {
+      key: "sugars",
+      label: "Sugars",
+      value: fmt(perServing.sugars_g || 0),
+      badge: nutrientLevel("sugars", per100g.sugars_g || 0).toUpperCase(),
+      pct: riPct(perServing.sugars_g || 0, 90),
+      level: nutrientLevel("sugars", per100g.sugars_g || 0),
+    },
+    {
+      key: "salt",
+      label: "Salt",
+      value: saltMissing ? "Needs qty" : fmt(perServing.salt_g || 0),
+      badge: saltMissing ? "" : nutrientLevel("salt", per100g.salt_g || 0).toUpperCase(),
+      pct: saltMissing ? "—" : riPct(perServing.salt_g || 0, 6),
+      level: saltMissing ? "medium" as const : nutrientLevel("salt", per100g.salt_g || 0),
+    },
+  ];
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
+      <div className="px-3 pt-3 text-center text-[13px] font-black text-gray-950">
+        Each serving{servingSizeG ? ` (${Math.round(servingSizeG)}g)` : ""} contains
+      </div>
+
+      <div className="grid grid-cols-5 gap-[2px] px-2 pt-2">
+        {cells.map((cell) => {
+          const colorClass = cell.extraClass || levelClass(cell.level);
+          return (
+            <div
+              key={cell.key}
+              className={`overflow-hidden rounded-t-2xl border border-black/20 text-center ${colorClass}`}
+            >
+              <div className="flex min-h-[92px] flex-col items-center justify-start px-1 py-2">
+                <p className="text-[11px] font-black uppercase leading-tight text-black">
+                  {cell.label}
+                </p>
+
+                <div className="mt-1 flex min-h-[34px] flex-col items-center justify-center text-[20px] font-black leading-none text-black">
+                  {cell.value}
+                </div>
+
+                {cell.badge ? (
+                  <div className="mt-2 w-full rounded-sm bg-white px-1 py-0.5 text-[10px] font-black uppercase leading-none text-black">
+                    {cell.badge}
+                  </div>
+                ) : (
+                  <div className="mt-2 h-[18px]" />
+                )}
+              </div>
+
+              <div className="border-t border-black/30 bg-white/30 py-1 text-[14px] font-black leading-none text-black">
+                {cell.pct}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="px-3 py-2 text-center text-[12px] font-black text-gray-950">
+        % of adult&apos;s reference intake.
+      </p>
+
+      <p className="border-t border-amber-100 px-3 py-2 text-center text-[11px] font-bold text-gray-700">
+        Typical values per 100g: Energy {per100Kj}kJ/{Math.round(per100g.calories || 0)}kcal
+      </p>
+    </div>
+  );
+}
+
+
 export default function NutritionCard({ ingredients, servings, recipeName }: NutritionCardProps) {
   const [mode, setMode] = useState<ViewMode>("serving");
+  const [portionScale, setPortionScale] = useState(1);
   const nutrition = useMemo(
     () => calculateNutrition(ingredients, servings, { recipeName }),
     [ingredients, servings, recipeName]
@@ -415,8 +621,24 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
     return value.includes("salt") || value.includes("sel");
   });
 
+  const hasServingSize =
+    typeof nutrition.servingSizeG === "number" &&
+    Number.isFinite(nutrition.servingSizeG) &&
+    nutrition.servingSizeG > 0;
+
+  const adjustedServingSizeG = hasServingSize
+    ? Math.max(25, Math.round(nutrition.servingSizeG * portionScale))
+    : null;
+
+  const adjustedPerServing = scaleNutritionValues(nutrition.perServing, portionScale);
+
+  const handlePortionScale = (nextScale: number) => {
+    setPortionScale(Math.max(0.25, Math.min(4, Number(nextScale.toFixed(3)))));
+    setMode("serving");
+  };
+
   const activeValues =
-    mode === "serving" ? nutrition.perServing :
+    mode === "serving" ? adjustedPerServing :
     mode === "per100g" ? nutrition.per100g :
     nutrition.totalRecipe;
 
@@ -452,94 +674,129 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
         </p>
       </div>
 
-      <div className="mb-5 grid grid-cols-4 gap-3">
-        <MacroRing label="Calories" value={nutrition.perServing.calories} unit="kcal" target={700} color="#f59e0b" />
-        <MacroRing label="Protein" value={nutrition.perServing.protein_g} unit="g" target={50} color="#e11d48" />
-        <MacroRing label="Carbs" value={nutrition.perServing.carbs_g} unit="g" target={90} color="#7c3aed" />
-        <MacroRing label="Fats" value={nutrition.perServing.fat_g} unit="g" target={35} color="#10b981" />
-      </div>
-
-      <div className="mb-4 border-t border-gray-100" />
-
-      <div className="mb-4 grid grid-cols-3 rounded-2xl bg-gray-100 p-1 text-xs font-bold">
-        {[
-          { key: "serving", label: "Per portion" },
-          { key: "per100g", label: "Per 100g" },
-          { key: "total", label: "Total" },
-        ].map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => setMode(item.key as ViewMode)}
-            className={`rounded-xl px-2 py-2 transition ${mode === item.key ? "bg-white text-rose-600 shadow-sm" : "text-gray-500"}`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-
-      <ValueTable values={activeValues} label={activeLabel} saltMissing={saltMissing} />
-
-      <div className="my-4 border-t border-gray-100" />
-
-      <UKTrafficLightGrid
-        per100g={nutrition.per100g}
-        perServing={nutrition.perServing}
-        saltMissing={saltMissing}
-      />
-
-      <div className="my-4 border-t border-gray-100" />
-
-      <NutriScoreVisual letter={nutrition.nutriScore.letter} />
-
-      {(nutritionNotes.assumptions.length > 0 || nutritionNotes.missing.length > 0) && (
-        <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
-          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">
-            Assumptions
-          </p>
-
-          <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-amber-900">
-            {nutritionNotes.assumptions.map((note, idx) => (
-              <li key={`assumption-${idx}`}>• {note}</li>
+      <div>
+          <div className="mb-4 grid grid-cols-3 rounded-2xl bg-gray-100 p-1 text-xs font-bold">
+            {[
+              { key: "serving", label: "Per portion" },
+              { key: "per100g", label: "Per 100g" },
+              { key: "total", label: "Total" },
+            ].map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setMode(item.key as ViewMode)}
+                className={`rounded-xl px-2 py-2 transition ${mode === item.key ? "bg-white text-rose-600 shadow-sm" : "text-gray-500"}`}
+              >
+                {item.label}
+              </button>
             ))}
-
-            {nutritionNotes.missing.length > 0 && (
-              <li>
-                • Missing quantities excluded from calculation: {nutritionNotes.missing.join(", ")}.
-              </li>
-            )}
-          </ul>
-        </div>
-      )}
-
-      <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-              Health estimate
-            </p>
-            <h4 className="mt-1 text-sm font-black text-gray-950">
-              Needs review
-            </h4>
           </div>
-          <span className="rounded-full bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
-            Estimated
-          </span>
-        </div>
 
-        <ul className="space-y-1.5 text-xs leading-relaxed text-gray-600">
-          {nutrition.perServing.protein_g >= 20 && <li>• High protein per serving.</li>}
-          {nutrition.per100g.fat_g >= 17.5 && <li>• High fat per 100g.</li>}
-          {nutrition.per100g.saturates_g >= 5 && <li>• High saturated fat per 100g.</li>}
-          {nutrition.per100g.carbs_g <= 5 && <li>• Low carbohydrate estimate.</li>}
-          {nutritionNotes.missing.some((x) => x.toLowerCase().includes("salt") || x.toLowerCase().includes("sel")) && (
-            <li>• Salt is present but quantity is unknown.</li>
+          {mode === "serving" && hasServingSize && adjustedServingSizeG && (
+            <div className="mb-4 rounded-2xl border border-rose-100 bg-rose-50/60 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-rose-400">
+                    Portion size
+                  </p>
+                  <p className="mt-0.5 text-sm font-black text-gray-900">
+                    {formatPortionSize(adjustedServingSizeG)}
+                    <span className="ml-1 text-[11px] font-bold text-gray-400">
+                      estimated serving weight
+                    </span>
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5 rounded-xl border border-rose-100 bg-white px-2 py-1">
+                  <button
+                    type="button"
+                    onClick={() => handlePortionScale(portionScale - 0.25)}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
+                  >
+                    −
+                  </button>
+                  <span className="min-w-[54px] text-center text-[11px] font-black text-rose-600 tabular-nums">
+                    {Math.round(portionScale * 100)}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handlePortionScale(portionScale + 0.25)}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
-        </ul>
 
-        <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
-          This is a Recolekt estimate based on detected ingredients and usable quantities. It is not an official Nutri-Score or medical nutrition label.
-        </p>
+          {mode === "serving" ? (
+            <div className="space-y-4">
+              <MacroBreakdownDonuts values={adjustedPerServing} />
+              <NutrientTrafficStrip
+                per100g={nutrition.per100g}
+                perServing={adjustedPerServing}
+                saltMissing={saltMissing}
+                servingSizeG={adjustedServingSizeG}
+              />
+            </div>
+          ) : (
+            <ValueTable values={activeValues} label={activeLabel} saltMissing={saltMissing} />
+          )}
+
+          <div className="my-4 border-t border-gray-100" />
+
+          <NutriScoreVisual letter={nutrition.nutriScore.letter} />
+
+          {(nutritionNotes.assumptions.length > 0 || nutritionNotes.missing.length > 0) && (
+            <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">
+                Assumptions
+              </p>
+
+              <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-amber-900">
+                {nutritionNotes.assumptions.map((note, idx) => (
+                  <li key={`assumption-${idx}`}>• {note}</li>
+                ))}
+
+                {nutritionNotes.missing.length > 0 && (
+                  <li>
+                    • Missing quantities excluded from calculation: {nutritionNotes.missing.join(", ")}.
+                  </li>
+                )}
+              </ul>
+            </div>
+          )}
+
+          <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                  Health estimate
+                </p>
+                <h4 className="mt-1 text-sm font-black text-gray-950">
+                  Needs review
+                </h4>
+              </div>
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
+                Estimated
+              </span>
+            </div>
+
+            <ul className="space-y-1.5 text-xs leading-relaxed text-gray-600">
+              {adjustedPerServing.protein_g >= 20 && <li>• High protein per serving.</li>}
+              {nutrition.per100g.fat_g >= 17.5 && <li>• High fat per 100g.</li>}
+              {nutrition.per100g.saturates_g >= 5 && <li>• High saturated fat per 100g.</li>}
+              {nutrition.per100g.carbs_g <= 5 && <li>• Low carbohydrate estimate.</li>}
+              {nutritionNotes.missing.some((x) => x.toLowerCase().includes("salt") || x.toLowerCase().includes("sel")) && (
+                <li>• Salt is present but quantity is unknown.</li>
+              )}
+            </ul>
+
+            <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
+              This is a Recolekt estimate based on detected ingredients and usable quantities. It is not an official Nutri-Score or medical nutrition label.
+            </p>
+          </div>
       </div>
     </section>
   );
