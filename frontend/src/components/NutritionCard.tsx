@@ -788,7 +788,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
         <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Estimated</p>
         <h3 className="text-lg font-semibold text-gray-950">Nutrition values</h3>
         <p className="mt-1 text-xs text-gray-500">
-          Estimated · {nutrition.matchedCount} of {nutrition.totalCount} ingredients matched ·{' '}
+          Estimated · {nutrition.matchedCount} of {nutrition.quantifiedCount} quantified ingredients calculated ·{' '}
           <span className={
             nutrition.confidence === 'high' ? 'font-bold text-green-600' :
             nutrition.confidence === 'medium' ? 'font-bold text-amber-600' :
@@ -890,7 +890,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
 
           <div className="my-4 border-t border-gray-100" />
 
-          {(nutritionNotes.assumptions.length > 0 || nutritionNotes.missing.length > 0) && (
+          {(nutritionNotes.assumptions.length > 0 || nutritionNotes.missing.length > 0 || nutrition.unmatchedIngredients.length > 0) && (
             <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
               <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">
                 Assumptions

@@ -26,6 +26,7 @@ export type NutritionResult = {
   totalWeightG: number;
   matchedCount: number;
   totalCount: number;
+  quantifiedCount: number;
   unmatchedIngredients: string[];
   confidence: "high" | "medium" | "low";
   nutriScore: NutriScoreResult;
@@ -112,6 +113,18 @@ const aliases: Record<string, string> = {
   "ground beef": "beef mince",
   "minced beef": "beef mince",
   "olive oil": "olive oil",
+  "zucchini": "courgette",
+  "courgette": "courgette",
+  "cottage cheese": "cottage cheese",
+  "turkey breast": "turkey breast",
+  "cucumber": "cucumber",
+  "lettuce leaves": "lettuce",
+  "lettuce leaf": "lettuce",
+  "lettuce": "lettuce",
+  "shredded cheese": "cheddar",
+  "grated cheese": "cheddar",
+  "herby quark": "quark",
+  "quark": "quark",
 };
 
 const unitToGrams: Record<string, number> = {
@@ -139,6 +152,16 @@ const unitToGrams: Record<string, number> = {
   "c a soupe": 15,
   "gousse": 5,
   "gousses": 5,
+  "clove": 3,
+  "cloves": 3,
+  "head": 50,
+  "heads": 50,
+  "leaf": 0.2,
+  "leaves": 0.2,
+  "sprig": 1,
+  "sprigs": 1,
+  "branch": 1,
+  "branches": 1,
   "tete": 50,
   "tetes": 50,
   "brin": 1,
@@ -424,6 +447,7 @@ export const calculateNutrition = (
 ): NutritionResult => {
   const totalRecipe = zeroTotals();
   let matchedCount = 0;
+  let quantifiedCount = 0;
   let unmatchedIngredients: string[] = [];
   let totalWeightG = 0;
   let fruitVegWeightG = 0;
@@ -441,18 +465,22 @@ export const calculateNutrition = (
     ).trim();
 
   ingredients.forEach((ingredient) => {
-    const nutrition = findNutrition(ingredient);
-    if (!nutrition) {
-      unmatchedIngredients.push(labelForIngredient(ingredient));
-      return;
-    }
-
     const directGrams = ingredientToGrams(ingredient);
     const countGrams = directGrams === null || directGrams <= 0 ? countIngredientGrams(ingredient) : null;
     const grams = directGrams !== null && directGrams > 0 ? directGrams : countGrams;
 
     if (grams === null || grams <= 0) {
-      unmatchedIngredients.push(labelForIngredient(ingredient));
+      return;
+    }
+
+    quantifiedCount += 1;
+
+    const nutrition = findNutrition(ingredient);
+    if (!nutrition) {
+      const label = labelForIngredient(ingredient);
+      if (label && !unmatchedIngredients.includes(label)) {
+        unmatchedIngredients.push(label);
+      }
       return;
     }
 
@@ -477,17 +505,22 @@ export const calculateNutrition = (
 
   const explicitServings = Number(servings);
   const hasExplicitServings = Number.isFinite(explicitServings) && explicitServings > 0;
+  const quantifiedCoverage = ingredients.length ? quantifiedCount / ingredients.length : 0;
 
   const recipeHint = normalizeName(options.recipeName ?? "");
   const sauceLike =
     /\b(mayo|mayonnaise|hollandaise|sauce|dip|spread|dressing|pesto|aioli|vinaigrette|salsa|chutney|jam|jar|rillette|rillettes|pate|pâté|terrine|tapenade)\b/.test(recipeHint);
 
-  const servingSizeG =
-    hasExplicitServings && totalWeightG > 0 ? totalWeightG / explicitServings :
+  const inferredServingSizeG =
     sauceLike ? 20 :
     totalWeightG >= 300 ? 150 :
     totalWeightG >= 120 ? 100 :
     null;
+
+  const servingSizeG =
+    hasExplicitServings && totalWeightG > 0 && quantifiedCoverage >= 0.6
+      ? totalWeightG / explicitServings
+      : inferredServingSizeG;
 
   const estimatedServings =
     hasExplicitServings ? explicitServings :
@@ -512,7 +545,11 @@ export const calculateNutrition = (
 
   const roundedPer100g = roundTotals(per100g);
   const fruitVegPct = totalWeightG > 0 ? (fruitVegWeightG / totalWeightG) * 100 : 0;
-  const ratio = ingredients.length ? matchedCount / ingredients.length : 0;
+  const matchRatio = quantifiedCount ? matchedCount / quantifiedCount : 0;
+  const confidence =
+    quantifiedCoverage >= 0.8 && matchRatio >= 0.8 ? "high" :
+    quantifiedCoverage >= 0.5 && matchRatio >= 0.6 ? "medium" :
+    "low";
 
   return {
     perServing: roundTotals(perServing),
@@ -521,8 +558,9 @@ export const calculateNutrition = (
     totalWeightG: Math.round(totalWeightG),
     matchedCount,
     totalCount: ingredients.length,
+    quantifiedCount,
     unmatchedIngredients,
-    confidence: ratio >= 0.8 ? "high" : ratio >= 0.5 ? "medium" : "low",
+    confidence,
     nutriScore: calculateNutriScore(roundedPer100g, fruitVegPct),
     effectiveServings: Math.round(safeServings * 10) / 10,
     servingSizeG,
