@@ -32,7 +32,7 @@ export type NutritionResult = {
   nutriScore: NutriScoreResult;
   effectiveServings: number;
   servingSizeG: number | null;
-  servingEstimateReason: "source" | "sauce_portion" | "weight_portion" | "fallback";
+  servingEstimateReason: "source" | "spread_portion" | "sauce_portion" | "weight_portion" | "fallback";
 };
 
 const zeroTotals = (): NutritionTotals => ({
@@ -541,28 +541,37 @@ export const calculateNutrition = (
   const hasExplicitServings = Number.isFinite(explicitServings) && explicitServings > 0;
 
   const recipeHint = normalizeName(options.recipeName ?? "");
+
+  // Rillettes / pâté / terrine are usually eaten like a spread.
+  // When the creator says "for 10 people", that is social yield, not a nutrition-label serving.
+  // Use a label-style 40g portion, matching common rillettes packs.
+  const spreadLike =
+    /\b(rillette|rillettes|pate|pâté|terrine|tapenade|charcuterie)\b/.test(recipeHint);
+
   const sauceLike =
-    /\b(mayo|mayonnaise|hollandaise|sauce|dip|spread|dressing|pesto|aioli|vinaigrette|salsa|chutney|jam|jar|rillette|rillettes|pate|pâté|terrine|tapenade)\b/.test(recipeHint);
+    /\b(mayo|mayonnaise|hollandaise|sauce|dip|spread|dressing|pesto|aioli|vinaigrette|salsa|chutney|jam|jar)\b/.test(recipeHint);
 
   const inferredServingSizeG =
+    spreadLike ? 40 :
     sauceLike ? 20 :
     totalWeightG >= 300 ? 150 :
     totalWeightG >= 120 ? 100 :
     null;
 
   const servingSizeG =
-    hasExplicitServings && totalWeightG > 0 && quantifiedCount > 0 && matchedCount / quantifiedCount >= 0.8
+    hasExplicitServings && !spreadLike && totalWeightG > 0 && quantifiedCount > 0 && matchedCount / quantifiedCount >= 0.8
       ? totalWeightG / explicitServings
       : inferredServingSizeG;
 
   const estimatedServings =
-    hasExplicitServings ? explicitServings :
+    hasExplicitServings && !spreadLike ? explicitServings :
     servingSizeG && totalWeightG > 0 ? Math.max(1, totalWeightG / servingSizeG) :
     1;
 
   const safeServings = Math.max(estimatedServings, 1);
 
   const servingEstimateReason =
+    spreadLike ? "spread_portion" :
     hasExplicitServings ? "source" :
     sauceLike ? "sauce_portion" :
     servingSizeG ? "weight_portion" :
