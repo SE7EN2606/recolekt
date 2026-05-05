@@ -620,21 +620,13 @@ function NutrientTrafficStrip({
                 </div>
               </div>
 
-              <div className={`border-t border-black/10 ${colorClass}`}>
-                {isEnergy ? (
-                  <div className="px-1 py-2 text-[12px] font-black leading-none tabular-nums">
-                    {cell.pct}
-                  </div>
-                ) : (
-                  <>
-                    <div className="min-h-[20px] px-1 py-1 text-[9px] font-black uppercase leading-none">
-                      {cell.badge}
-                    </div>
-                    <div className="border-t border-black/10 px-1 py-1 text-[12px] font-black leading-none tabular-nums">
-                      {cell.pct}
-                    </div>
-                  </>
-                )}
+              <div className="border-t border-black/10">
+                <div className="min-h-[20px] bg-gray-100 px-1 py-1 text-[9px] font-black uppercase leading-none text-gray-950">
+                  {isEnergy ? "\u00a0" : cell.badge}
+                </div>
+                <div className={`border-t border-black/10 px-1 py-1 text-[12px] font-black leading-none tabular-nums ${colorClass}`}>
+                  {cell.pct}
+                </div>
               </div>
             </div>
           );
