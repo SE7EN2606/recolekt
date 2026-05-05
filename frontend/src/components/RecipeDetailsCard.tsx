@@ -656,7 +656,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const recipeTabs = [
     ...(showIngredientsTab ? [{ key: 'ingredients' as const, label: 'Ingredients' }] : []),
     ...(instructions.length > 0 ? [{ key: 'steps' as const, label: 'Steps' }] : []),
-    ...(showNutritionTab ? [{ key: 'nutrition' as const, label: 'Nutrition' }] : []),
+    ...(showNutritionTab ? [{ key: 'nutrition' as const, label: 'Macro' }] : []),
     { key: 'ask' as const, label: isTechnique ? 'Ask Technique' : 'Ask' },
   ];
   React.useEffect(() => {

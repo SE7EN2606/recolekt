@@ -78,7 +78,6 @@ function NutriScoreVisual({ letter }: { letter: "A" | "B" | "C" | "D" | "E" }) {
         <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
           Nutri-Score · estimated
         </p>
-        <p className="text-[10px] font-bold text-gray-400">per 100g</p>
       </div>
 
       <svg
@@ -438,9 +437,6 @@ function NutrientTrafficStrip({
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
             UK traffic light
           </p>
-          <p className="mt-1 text-[13px] font-black text-gray-950">
-            Each serving{servingSizeG ? ` (${Math.round(servingSizeG)}g)` : ""} contains
-          </p>
         </div>
         <p className="pb-0.5 text-right text-[10px] font-black leading-tight text-gray-400">
           % RI
@@ -460,7 +456,7 @@ function NutrientTrafficStrip({
                   {cell.label}
                 </p>
 
-                <div className="mt-1 flex min-h-[34px] flex-col items-center justify-center text-[17px] font-extrabold leading-none">
+                <div className="mt-1 flex min-h-[34px] flex-col items-center justify-center text-[13px] font-extrabold leading-tight">
                   {cell.value}
                 </div>
 
@@ -579,6 +575,16 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
 
   const adjustedPerServing = scaleNutritionValues(nutrition.perServing, portionScale);
 
+  const activePortionSizeG =
+    mode === "serving" ? adjustedServingSizeG :
+    mode === "per100g" ? 100 :
+    Math.max(1, Math.round(nutrition.totalWeightG || 0));
+
+  const activePortionHelper =
+    mode === "serving" ? "estimated serving weight" :
+    mode === "per100g" ? "reference amount" :
+    "estimated total recipe weight";
+
   const handlePortionScale = (nextScale: number) => {
     setPortionScale(Math.max(0.25, Math.min(4, Number(nextScale.toFixed(3)))));
     setMode("serving");
@@ -639,7 +645,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
             ))}
           </div>
 
-          {mode === "serving" && hasServingSize && adjustedServingSizeG && (
+          {activePortionSizeG && (
             <div className="mb-4 rounded-2xl border border-rose-100 bg-rose-50/60 px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -647,32 +653,34 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
                     Portion size
                   </p>
                   <p className="mt-0.5 text-sm font-black text-gray-900">
-                    {formatPortionSize(adjustedServingSizeG)}
+                    {formatPortionSize(activePortionSizeG)}
                     <span className="ml-1 text-[11px] font-bold text-gray-400">
-                      estimated serving weight
+                      {activePortionHelper}
                     </span>
                   </p>
                 </div>
 
-                <div className="flex items-center gap-1.5 rounded-xl border border-rose-100 bg-white px-2 py-1">
-                  <button
-                    type="button"
-                    onClick={() => handlePortionScale(portionScale - 0.25)}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
-                  >
-                    −
-                  </button>
-                  <span className="min-w-[54px] text-center text-[11px] font-black text-rose-600 tabular-nums">
-                    {Math.round(portionScale * 100)}%
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handlePortionScale(portionScale + 0.25)}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
-                  >
-                    +
-                  </button>
-                </div>
+                {mode === "serving" && (
+                  <div className="flex items-center gap-1.5 rounded-xl border border-rose-100 bg-white px-2 py-1">
+                    <button
+                      type="button"
+                      onClick={() => handlePortionScale(portionScale - 0.25)}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
+                    >
+                      −
+                    </button>
+                    <span className="min-w-[54px] text-center text-[11px] font-black text-rose-600 tabular-nums">
+                      {Math.round(portionScale * 100)}%
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handlePortionScale(portionScale + 0.25)}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
+                    >
+                      +
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
