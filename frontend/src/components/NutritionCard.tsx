@@ -600,7 +600,7 @@ function NutrientTrafficStrip({
         </p>
       </div>
 
-      <div className="grid grid-cols-5 overflow-hidden rounded-[28px] border border-black/10">
+      <div className="grid grid-cols-5 gap-0">
         {cells.map((cell) => {
           const colorClass = levelClass(cell.level);
           const isEnergy = cell.key === "energy";
@@ -608,7 +608,7 @@ function NutrientTrafficStrip({
           return (
             <div
               key={cell.key}
-              className="min-w-0 overflow-hidden border-r border-black/10 bg-gray-100 text-center last:border-r-0"
+              className="min-w-0 overflow-hidden rounded-[28px] border border-black/10 bg-gray-100 text-center -ml-px first:ml-0"
             >
               <div className={`flex min-h-[88px] flex-col items-center justify-start px-1.5 py-2 ${colorClass}`}>
                 <p className="text-[10px] font-black uppercase leading-tight">
@@ -620,8 +620,8 @@ function NutrientTrafficStrip({
                 </div>
               </div>
 
-              <div className="border-t border-black/10">
-                <div className="min-h-[20px] bg-gray-100 px-1 py-1 text-[9px] font-black uppercase leading-none text-gray-950">
+              <div className={isEnergy ? "" : "border-t border-black/10"}>
+                <div className={`${isEnergy ? "bg-white" : "bg-gray-100"} min-h-[20px] px-1 py-1 text-[9px] font-black uppercase leading-none text-gray-950`}>
                   {isEnergy ? "\u00a0" : cell.badge}
                 </div>
                 <div className={`border-t border-black/10 px-1 py-1 text-[12px] font-black leading-none tabular-nums ${colorClass}`}>
