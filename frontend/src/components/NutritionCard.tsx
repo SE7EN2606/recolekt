@@ -704,6 +704,9 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
 
     if (nutrition.servingEstimateReason === "source") {
       assumptions.unshift(`Nutrition estimated for ${nutrition.effectiveServings} servings.`);
+      if (nutrition.confidence !== "high" && nutrition.servingSizeG && nutrition.servingSizeG > 220) {
+        assumptions.push(`Displayed portion weight capped at 150g because the calculated serving weight (${Math.round(nutrition.servingSizeG)}g) is based on partial ingredient matches.`);
+      }
     } else if (nutrition.servingEstimateReason === "sauce_portion" && nutrition.servingSizeG) {
       assumptions.unshift(`No serving count found. Per portion estimated as ${nutrition.servingSizeG}g for a sauce, dip, or spread.`);
     } else if (nutrition.servingEstimateReason === "weight_portion" && nutrition.servingSizeG) {
@@ -725,8 +728,22 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
     Number.isFinite(nutrition.servingSizeG) &&
     nutrition.servingSizeG > 0;
 
-  const adjustedServingSizeG = hasServingSize
-    ? Math.max(25, Math.round(nutrition.servingSizeG * portionScale))
+  const rawServingSizeG = hasServingSize
+    ? Math.max(1, nutrition.servingSizeG as number)
+    : null;
+
+  const isLowConfidenceServingWeight =
+    nutrition.servingEstimateReason === "source" &&
+    nutrition.confidence !== "high" &&
+    rawServingSizeG !== null &&
+    rawServingSizeG > 220;
+
+  const displayBaseServingSizeG = isLowConfidenceServingWeight
+    ? 150
+    : rawServingSizeG;
+
+  const adjustedServingSizeG = displayBaseServingSizeG
+    ? Math.max(20, Math.round(displayBaseServingSizeG * portionScale))
     : null;
 
   const adjustedPerServing = scaleNutritionValues(nutrition.perServing, portionScale);
@@ -798,34 +815,34 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
 
           {mode === "serving" && adjustedServingSizeG && (
             <div className="mb-4 rounded-[24px] border border-rose-100 bg-rose-50/60 px-4 py-4">
-              <div className="grid min-h-[48px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+              <div className="grid min-h-[44px] grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5">
                 <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-rose-400">
+                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-rose-400">
                     Portion size
                   </p>
-                  <p className="mt-1 flex min-w-0 items-baseline gap-1.5 text-lg font-black text-gray-950">
+                  <p className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-base font-black text-gray-950">
                     <span>{formatPortionSize(adjustedServingSizeG)}</span>
-                    <span className="truncate text-sm font-bold text-gray-400">
+                    <span className="truncate text-xs font-bold text-gray-400">
                       estimated serving weight
                     </span>
                   </p>
                 </div>
 
-                <div className="flex h-11 w-[156px] shrink-0 items-center justify-between rounded-[18px] border border-rose-100 bg-white px-2 shadow-sm">
+                <div className="flex h-10 w-[132px] shrink-0 items-center justify-between rounded-[16px] border border-rose-100 bg-white px-1.5 shadow-sm">
                   <button
                     type="button"
                     onClick={() => handlePortionScale(portionScale - 0.25)}
-                    className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 text-base font-black text-rose-600 transition hover:bg-rose-100"
+                    className="flex h-7 w-7 items-center justify-center rounded-xl bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
                   >
                     −
                   </button>
-                  <span className="min-w-[52px] text-center text-xs font-black text-rose-600 tabular-nums">
+                  <span className="min-w-[42px] text-center text-[11px] font-black text-rose-600 tabular-nums">
                     {Math.round(portionScale * 100)}%
                   </span>
                   <button
                     type="button"
                     onClick={() => handlePortionScale(portionScale + 0.25)}
-                    className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 text-base font-black text-rose-600 transition hover:bg-rose-100"
+                    className="flex h-7 w-7 items-center justify-center rounded-xl bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
                   >
                     +
                   </button>
