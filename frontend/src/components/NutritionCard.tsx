@@ -647,6 +647,7 @@ function NutrientTrafficStrip({
 export default function NutritionCard({ ingredients, servings, recipeName }: NutritionCardProps) {
   const [mode, setMode] = useState<ViewMode>("serving");
   const [portionScale, setPortionScale] = useState(1);
+  const [showExcludedDetails, setShowExcludedDetails] = useState(false);
   const nutrition = useMemo(
     () => calculateNutrition(ingredients, servings, { recipeName }),
     [ingredients, servings, recipeName]
@@ -812,53 +813,60 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="mb-4">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Estimated</p>
-        <h3 className="text-lg font-semibold text-gray-950">Nutrition values</h3>
-        <div className="mt-1 flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-gray-500">
-          <span>
-            Estimated · {nutrition.matchedCount} of {nutrition.quantifiedCount} main ingredients calculated
-          </span>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+              Estimated
+            </p>
+            <h3 className="text-lg font-semibold text-gray-950">
+              Nutrition values
+            </h3>
+
+            <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-gray-500">
+              <span>
+                {nutrition.matchedCount} of {nutrition.quantifiedCount} main ingredients calculated
+              </span>
+              <span>·</span>
+              <span
+                className={
+                  nutrition.confidence === "high" ? "font-bold text-green-600" :
+                  nutrition.confidence === "medium" ? "font-bold text-amber-600" :
+                  "font-bold text-red-500"
+                }
+              >
+                {nutrition.confidence} confidence
+              </span>
+            </div>
+          </div>
 
           {excludedNutritionItems.length > 0 && (
-            <span className="relative inline-flex group">
-              <span>·</span>
-              <button
-                type="button"
-                className="ml-1 font-bold text-gray-500 underline decoration-dotted underline-offset-2 transition hover:text-gray-800 focus:outline-none focus:text-gray-800"
-              >
-                {excludedNutritionItems.length} excluded
-              </button>
-
-              <span className="pointer-events-none absolute right-0 top-full z-50 mt-2 hidden w-[min(18rem,calc(100vw-3rem))] rounded-2xl border border-gray-200 bg-white p-3 text-left shadow-xl shadow-gray-900/10 group-hover:block group-focus-within:block">
-                <span className="block whitespace-normal break-words text-[9px] font-black uppercase leading-snug tracking-widest text-gray-400">
-                  Excluded from nutrition estimate
-                </span>
-                <span className="mt-2 block space-y-1.5">
-                  {excludedNutritionItems.slice(0, 10).map((item) => (
-                    <span key={`${item.name}-${item.reason}`} className="block text-[11px] leading-snug text-gray-600">
-                      <span className="font-bold text-gray-900">{item.name}</span>
-                      <span className="text-gray-400"> — {item.reason}</span>
-                    </span>
-                  ))}
-                  {excludedNutritionItems.length > 10 && (
-                    <span className="block text-[11px] font-bold text-gray-400">
-                      +{excludedNutritionItems.length - 10} more
-                    </span>
-                  )}
-                </span>
-              </span>
-            </span>
+            <button
+              type="button"
+              onClick={() => setShowExcludedDetails((prev) => !prev)}
+              aria-expanded={showExcludedDetails}
+              className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-gray-500 transition hover:border-gray-300 hover:bg-white hover:text-gray-800"
+            >
+              {excludedNutritionItems.length} excluded
+            </button>
           )}
-
-          <span>·</span>
-          <span className={
-            nutrition.confidence === 'high' ? 'font-bold text-green-600' :
-            nutrition.confidence === 'medium' ? 'font-bold text-amber-600' :
-            'font-bold text-red-500'
-          }>
-            {nutrition.confidence} confidence
-          </span>
         </div>
+
+        {showExcludedDetails && excludedNutritionItems.length > 0 && (
+          <div className="mt-3 rounded-2xl border border-gray-200 bg-gray-50/80 p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+              Excluded from nutrition estimate
+            </p>
+
+            <div className="mt-2 space-y-1.5">
+              {excludedNutritionItems.map((item) => (
+                <p key={`${item.name}-${item.reason}`} className="text-[11px] leading-snug text-gray-600">
+                  <span className="font-bold text-gray-900">{item.name}</span>
+                  <span className="text-gray-400"> — {item.reason}</span>
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div>
