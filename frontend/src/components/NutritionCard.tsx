@@ -158,58 +158,6 @@ function NutriScoreVisual({ letter }: { letter: "A" | "B" | "C" | "D" | "E" }) {
   );
 }
 
-function MacroRing({
-  label,
-  value,
-  unit,
-  target,
-  color,
-}: {
-  label: string;
-  value: number;
-  unit: string;
-  target: number;
-  color: string;
-}) {
-  const radius = 27;
-  const circumference = 2 * Math.PI * radius;
-  const pct = Math.max(0.04, Math.min(1, value / target));
-  const dashOffset = circumference * (1 - pct);
-
-  return (
-    <div className="flex min-w-0 flex-col items-center gap-1">
-      <div className="relative h-16 w-16">
-        <svg viewBox="0 0 64 64" className="absolute inset-0 h-16 w-16" aria-hidden="true">
-          <circle cx="32" cy="32" r={radius} stroke="#f3f4f6" strokeWidth="6" fill="none" />
-          <circle
-            cx="32"
-            cy="32"
-            r={radius}
-            stroke={color}
-            strokeWidth="6"
-            fill="none"
-            strokeDasharray={circumference}
-            strokeDashoffset={dashOffset}
-            strokeLinecap="round"
-            transform="rotate(-90 32 32)"
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-sm font-black leading-none text-gray-950">
-            {fmtRing(value)}
-          </span>
-          <span className="mt-0.5 text-[9px] font-bold leading-none text-gray-400">
-            {unit}
-          </span>
-        </div>
-      </div>
-      <span className="text-center text-[9px] font-black uppercase tracking-wider text-gray-400">
-        {label}
-      </span>
-    </div>
-  );
-}
-
 function ValueTable({
   values,
   label,
