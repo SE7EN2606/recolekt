@@ -860,10 +860,15 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const looksTechnique =
     /\b(technique|method|how to|confit|blanch|temper|slice|knife|peel|sharpen|debone|cartouche|infuse|infusion|fold|knead|emulsify|sear|braise|poach)\b/.test(techniqueText);
 
+  const hasActionableRecipe =
+    allIngredients.length >= 2 &&
+    instructions.length >= 3 &&
+    (hasServings || prepTime || cookTime || totalTime);
+
   const recipeKind: 'full_recipe' | 'technique_with_ingredients' | 'pure_technique' =
-    allIngredients.length <= 1
+    allIngredients.length <= 1 && instructions.length >= 2
       ? 'pure_technique'
-      : ingredientQuantityCount >= 2
+      : ingredientQuantityCount >= 2 || hasActionableRecipe
         ? 'full_recipe'
         : looksTechnique || !hasServings
           ? 'technique_with_ingredients'
