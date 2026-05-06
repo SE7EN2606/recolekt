@@ -528,16 +528,18 @@ def _yt_dlp_download(url: str, output_path: str, platform: str) -> Dict:
 def download_instagram_video(url: str, output_path: str) -> Dict:
     url_lower = url.lower()
 
-    # ── YOUTUBE ───────────────────────────────────────────────────────────────
-    if "youtube.com" in url_lower or "youtu.be" in url_lower:
-        logger.info("🎬 YouTube URL — using transcript API path: %s", url)
-        output_dir = os.path.dirname(output_path)
-        return fetch_youtube_data(url, temp_dir=output_dir)
-
     # ── TIKTOK ────────────────────────────────────────────────────────────────
     if "tiktok.com" in url_lower:
+        from fetcher_api.api.helpers.video_downloader import (
+            TikTokVideoUnavailable,
+            _download_tiktok_video,
+        )
+
+        if str(os.getenv("TIKTOK_TRY_VIDEO_DOWNLOAD", "")).lower() not in {"1", "true", "yes"}:
+            logger.info("TikTok video download disabled; entering caption-only fallback")
+            raise TikTokVideoUnavailable("tiktok_video_download_disabled")
+
         logger.info("⬇️ Downloading TikTok video: %s", url)
-        from fetcher_api.api.helpers.video_downloader import _download_tiktok_video
         return _download_tiktok_video(url, output_path)
 
     # ── FACEBOOK ──────────────────────────────────────────────────────────────
