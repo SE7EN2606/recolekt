@@ -627,31 +627,62 @@ export const Organizer: React.FC = () => {
                       let idsToMove = [video.id];
                       if (selectedVideoIds.has(video.id)) idsToMove = Array.from(selectedVideoIds);
                       e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
-
-                      const idsToMoveLabel =
-                        idsToMove.length > 1 ? `${idsToMove.length} reels` : '1 reel';
+                      
+                      const idsToMoveLabel = idsToMove.length === 1 ? '1 reel' : `${idsToMove.length} reels`;
+                      const ghostVideos = folderVideos
+                        .filter((candidate: any) => idsToMove.includes(candidate?.id ?? candidate?.process_id ?? candidate?.processId ?? ''))
+                        .slice(0, 4);
 
                       const dragGhost = document.createElement('div');
                       dragGhost.style.position = 'fixed';
                       dragGhost.style.top = '-1000px';
                       dragGhost.style.left = '-1000px';
-                      dragGhost.style.padding = '8px 12px';
-                      dragGhost.style.borderRadius = '999px';
-                      dragGhost.style.background = 'white';
-                      dragGhost.style.boxShadow = '0 12px 30px rgba(0,0,0,0.20)';
-                      dragGhost.style.fontSize = '13px';
-                      dragGhost.style.fontWeight = '800';
-                      dragGhost.style.color = '#111827';
-                      dragGhost.textContent = idsToMoveLabel;
+                      dragGhost.style.pointerEvents = 'none';
+                      dragGhost.style.zIndex = '999999';
 
+                      const stack = document.createElement('div');
+                      stack.style.position = 'relative';
+                      stack.style.width = '104px';
+                      stack.style.height = '126px';
+
+                      ghostVideos.forEach((ghostVideo: any, index: number) => {
+                        const img = document.createElement('img');
+                        img.src = ghostVideo?.thumbnailUrl || ghostVideo?.gcs_urls?.preview_thumbnail || '';
+                        img.style.position = 'absolute';
+                        img.style.width = '62px';
+                        img.style.height = '88px';
+                        img.style.objectFit = 'cover';
+                        img.style.borderRadius = '14px';
+                        img.style.border = '2px solid white';
+                        img.style.boxShadow = '0 10px 24px rgba(0,0,0,0.24)';
+                        img.style.left = `${index * 11}px`;
+                        img.style.top = `${index * 7}px`;
+                        img.style.transform = `rotate(${(index - 1.5) * 5}deg)`;
+                        img.style.background = '#e5e7eb';
+                        stack.appendChild(img);
+                      });
+
+                      const badge = document.createElement('div');
+                      badge.style.position = 'absolute';
+                      badge.style.left = '34px';
+                      badge.style.bottom = '0';
+                      badge.style.padding = '8px 13px';
+                      badge.style.borderRadius = '999px';
+                      badge.style.background = 'white';
+                      badge.style.boxShadow = '0 12px 30px rgba(0,0,0,0.24)';
+                      badge.style.fontSize = '13px';
+                      badge.style.fontWeight = '900';
+                      badge.style.color = '#111827';
+                      badge.style.whiteSpace = 'nowrap';
+                      badge.textContent = idsToMoveLabel;
+                      stack.appendChild(badge);
+
+                      dragGhost.appendChild(stack);
                       document.body.appendChild(dragGhost);
-                      e.dataTransfer.setDragImage(dragGhost, 18, 18);
+                      e.dataTransfer.setDragImage(dragGhost, 48, 62);
 
-                      setTimeout(() => {
-                        dragGhost.remove();
-                      }, 0);
-
-                      e.dataTransfer.setData('sourceId', selectedFolderId);
+                      setTimeout(() => dragGhost.remove(), 0);
+e.dataTransfer.setData('sourceId', selectedFolderId);
                       e.dataTransfer.effectAllowed = 'move';
                     }}
                     onClick={() => {
