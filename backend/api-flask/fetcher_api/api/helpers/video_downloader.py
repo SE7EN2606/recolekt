@@ -190,6 +190,16 @@ def _download_tiktok_video(url: str, output_path: str) -> Dict:
             base_opts["cookiefile"] = cookies_path
             logger.info("🍪 TikTok: using TT_COOKIES_CONTENT")
 
+        if str(os.getenv("TIKTOK_TRY_VIDEO_DOWNLOAD", "")).lower() not in {"1", "true", "yes"}:
+            logger.info("TikTok video download skipped; using caption/thumbnail fallback")
+            return {
+                "success": False,
+                "video_path": None,
+                "thumbnail_path": locals().get("thumbnail_path"),
+                "caption": locals().get("caption") or "",
+                "error": "tiktok_video_download_disabled",
+            }
+
         attempts = [
             ("default", {}),
             ("force_generic", {"force_generic_extractor": False}),
