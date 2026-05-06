@@ -627,6 +627,30 @@ export const Organizer: React.FC = () => {
                       let idsToMove = [video.id];
                       if (selectedVideoIds.has(video.id)) idsToMove = Array.from(selectedVideoIds);
                       e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
+
+                      const idsToMoveLabel =
+                        idsToMove.length > 1 ? `${idsToMove.length} reels` : '1 reel';
+
+                      const dragGhost = document.createElement('div');
+                      dragGhost.style.position = 'fixed';
+                      dragGhost.style.top = '-1000px';
+                      dragGhost.style.left = '-1000px';
+                      dragGhost.style.padding = '8px 12px';
+                      dragGhost.style.borderRadius = '999px';
+                      dragGhost.style.background = 'white';
+                      dragGhost.style.boxShadow = '0 12px 30px rgba(0,0,0,0.20)';
+                      dragGhost.style.fontSize = '13px';
+                      dragGhost.style.fontWeight = '800';
+                      dragGhost.style.color = '#111827';
+                      dragGhost.textContent = idsToMoveLabel;
+
+                      document.body.appendChild(dragGhost);
+                      e.dataTransfer.setDragImage(dragGhost, 18, 18);
+
+                      setTimeout(() => {
+                        dragGhost.remove();
+                      }, 0);
+
                       e.dataTransfer.setData('sourceId', selectedFolderId);
                       e.dataTransfer.effectAllowed = 'move';
                     }}
