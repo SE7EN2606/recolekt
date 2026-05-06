@@ -193,6 +193,36 @@ def _save_input_payload(
         logger.warning("⚠️ Could not save input payload: %s", e)
 
 
+
+def _stabilize_tiktok_caption_recipe(ai_res: dict, caption: str) -> None:
+    """
+    TikTok caption-only fallback can produce useful recipe shells from dish names,
+    but post-processing may mislabel the cooking method. Keep the rich recipe UI,
+    while tagging the recipe as inferred and correcting obvious hashtag-derived method.
+    """
+    if not isinstance(ai_res, dict):
+        return
+
+    recipe = ai_res.get("recipe")
+    if not isinstance(recipe, dict):
+        return
+
+    text = (caption or "").lower()
+
+    recipe["recipe_source"] = "caption_only_ai_inferred"
+    recipe["source_confidence"] = "medium"
+
+    if "slowcooker" in text or "slow cooker" in text or "#slowcooker" in text:
+        recipe["cooking_style"] = "Slow cooking"
+        if not recipe.get("style"):
+            recipe["style"] = "Comfort food"
+
+    if "bourguignon" in text:
+        recipe["cuisine"] = "French"
+        if not recipe.get("cooking_style") or recipe.get("cooking_style") == "Baking":
+            recipe["cooking_style"] = "Slow cooking"
+
+
 def background_process(
     result,
     video_path,
@@ -426,6 +456,124 @@ def background_process(
                 dl_result = ensure_dict(meta_client.download_video(url, video_path))
 
             if not dl_result.get("success"):
+                meta = ensure_dict(dl_result.get("metadata", {}))
+                caption = caption or meta.get("caption", "")
+                author_name = author_name or meta.get("username", "")
+
+                if is_tiktok and caption:
+                    logger.info("TikTok video unavailable; using caption-only recipe fallback")
+
+                    thumbnail_path = os.path.join(os.path.dirname(video_path), f"{shortcode}_thumb.jpg")
+                    platform_thumb = dl_result.get("thumbnail_path")
+                    if platform_thumb and os.path.exists(platform_thumb):
+                        shutil.copy2(platform_thumb, thumbnail_path)
+
+                    transcription_data = {
+                        "status": "caption_only",
+                        "transcript": "",
+                        "detected_language": "en",
+                        "transcription_source": "caption_only",
+                        "deepgram": None,
+                        "voxtral": None,
+                    }
+
+                    prompt_transcript = caption
+                    final_transcript = ""
+
+                    _save_input_payload(
+                        result["process_id"],
+                        gcs_paths,
+                        temp_dir,
+                        gcs_client,
+                        caption,
+                        final_transcript,
+                        "",
+                        prompt_transcript,
+                    )
+
+                    ai_res = ensure_dict(
+                        analyze_instagram_video(
+                            prompt_transcript,
+                            caption,
+                            "en",
+                            video_path=None,
+                            duration_seconds=0,
+                            is_silent=False,
+                        )
+                    )
+
+                    content_payload = ai_res.pop("_content_payload", None)
+                    _stabilize_tiktok_caption_recipe(ai_res, caption)
+
+                    ai_summary = ai_res.get("summary", {})
+                    if isinstance(ai_summary, str):
+                        try:
+                            ai_summary = json.loads(ai_summary)
+                        except Exception:
+                            ai_summary = {}
+                    if not isinstance(ai_summary, dict):
+                        ai_summary = {}
+
+                    summary_title = _extract_title_from_ai_summary(ai_summary)
+                    if not summary_title and caption:
+                        summary_title = caption.split("\n")[0][:80].strip()
+
+                    result.update(
+                        {
+                            "status": "done",
+                            "user_id": user_id,
+                            "source_url": url,
+                            "duration": "0:00",
+                            "duration_seconds": 0,
+                            "caption": caption,
+                            "author_name": author_name,
+                            "summary": ai_summary,
+                            "summary_title": summary_title,
+                            "content_type": ai_res.get("content_type", "general"),
+                            "summary_category": ai_res.get("category", ""),
+                            "summary_topic": ai_res.get("topic", ""),
+                            "recipe": json_stringify(ai_res.get("recipe")),
+                            "workout": json_stringify(ai_res.get("workout")),
+                            "tools_list": ai_res.get("tools_list"),
+                            "location": ai_res.get("location"),
+                            "is_list": ai_res.get("is_list"),
+                            "list_count": ai_res.get("list_count"),
+                            "list_type": ai_res.get("list_type"),
+                            "list_subtype": ai_res.get("list_subtype"),
+                            "prompt": ai_res.get("prompt"),
+                            "transcription": transcription_data,
+                            "processing_strategy": "tiktok_caption_only",
+                            "detected_language": ai_res.get("detected_language", "en"),
+                        }
+                    )
+
+                    if save_to_gcs and gcs_client.available:
+                        if os.path.exists(thumbnail_path):
+                            thumb_blob = gcs_client.client.bucket(gcs_client.analysis_bucket_name).blob(
+                                gcs_paths["preview_thumbnail"]
+                            )
+                            thumb_blob.upload_from_filename(thumbnail_path, content_type="image/jpeg")
+                            base_url = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/"
+                            result["gcs_urls"]["preview_thumbnail"] = base_url + gcs_paths["preview_thumbnail"]
+
+                        save_result_json_to_gcs(result, result["process_id"], temp_dir, shortcode, platform_code)
+                        base_url = f"https://storage.googleapis.com/{gcs_client.analysis_bucket_name}/"
+                        result["gcs_urls"].update(
+                            {
+                                "result_json": base_url + gcs_paths["result_json"],
+                                "video": None,
+                            }
+                        )
+                        _save_content_payload(content_payload, result["process_id"], gcs_paths, temp_dir, gcs_client)
+
+                    insert_reel_into_db(result)
+
+                    if os.path.exists(thumbnail_path):
+                        cleanup_file(thumbnail_path)
+                    if temp_dir and os.path.exists(temp_dir):
+                        shutil.rmtree(temp_dir, ignore_errors=True)
+                    return
+
                 result["status"] = "error"
                 insert_reel_into_db(result)
                 return

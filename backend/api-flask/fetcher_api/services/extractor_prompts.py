@@ -788,6 +788,9 @@ def _build_recipe_block() -> str:
      "rest_time_meta": {"source": "caption|transcript|caption_transcript|ai_estimated", "confidence": "high|medium|low"}
      "total_time_meta": {"source": "computed|ai_estimated", "confidence": "high|medium|low"}
    - **ingredients**: (For single recipes) ARRAY OF OBJECTS. Each must have: "item", "quantity", "unit", "emoji".
+   - **ingredient_sections**: If the source splits ingredients into named parts such as base, dough, filling, frosting, sauce, topping, marinade, dressing, or glaze, ALSO output:
+     [{"title": "Section name", "items": [{"item": "...", "quantity": "...", "unit": "...", "emoji": "..."}]}]
+     Keep **ingredients** as the flat concatenation of all section items in the same order. Do not drop any ingredient.
    - If quantity is not specified, set "quantity": null. Do not invent a quantity.
    - If the source gives a range such as "320-350g" or "2-3 tbsp", preserve it as "quantityRange": {"min": 320, "max": 350, "unit": "g"} and use the lower bound as the default "quantity".
    - If the source says "about", "around", "roughly", "environ", or similar, set "approximate": true.
@@ -795,6 +798,9 @@ def _build_recipe_block() -> str:
    - If an ingredient quantity is missing, add "needs_review": true and "missing_reason": "quantity_not_specified".
    - **instructions**: (For single recipes) Detailed, actionable steps. Prefer ARRAY OF OBJECTS:
      [{"instruction": "Step text", "source": "caption|transcript|caption_transcript|ai_inferred", "confidence": "high|medium|low"}]
+   - **instructions_sections**: If the method is split into named phases, ALSO output:
+     [{"title": "Section name", "instructions": [{"instruction": "Step text", "source": "caption|transcript|caption_transcript|ai_inferred", "confidence": "high|medium|low"}]}]
+     Keep **instructions** as the flat concatenation of all section steps in the same order.
    - **practical_summary**: Object with:
      {"what_it_is": "...", "key_technique": "...", "important_notes": ["..."], "source": "ai_generated", "confidence": "high|medium|low"}
    - practical_summary must be specific and useful for cooking. Avoid food-blog language.
@@ -804,7 +810,6 @@ def _build_recipe_block() -> str:
 
 
    CRITICAL: If 'is_compilation' is true, the 'ideas' array is mandatory and ingredients/instructions can be left empty.
-
 
 10. **workout** object: null
 11. **location** object: null
@@ -848,6 +853,9 @@ def _build_general_block() -> str:
      "total_time_meta": {"source": "computed|ai_estimated", "confidence": "high|medium|low"}
    - If prep time is not explicitly stated, estimate it but mark prep_time_meta.source as "ai_estimated".
    - **ingredients**: ARRAY OF OBJECTS with "item", "quantity", "unit", "emoji".
+   - **ingredient_sections**: If the source splits ingredients into named parts such as base, dough, filling, frosting, sauce, topping, marinade, dressing, or glaze, ALSO output:
+     [{"title": "Section name", "items": [{"item": "...", "quantity": "...", "unit": "...", "emoji": "..."}]}]
+     Keep **ingredients** as the flat concatenation of all section items in the same order. Do not drop any ingredient.
    - For any ingredient where quantity is not specified, set "quantity": null. Do not invent a quantity.
    - If the source gives a quantity range such as "320-350g", "2-3 tbsp", or "10–12 minutes", preserve the range using "quantityRange": {"min": 320, "max": 350, "unit": "g"} and set "quantity" to the lower bound only as the default display value.
    - If the source says "about", "around", "roughly", "environ", or similar, set "approximate": true.
@@ -855,6 +863,9 @@ def _build_general_block() -> str:
    - If an ingredient quantity is missing, add metadata when possible: "needs_review": true and "missing_reason": "quantity_not_specified".
    - **instructions**: Detailed, actionable steps. Prefer ARRAY OF OBJECTS:
      [{"instruction": "Step text", "source": "caption|transcript|caption_transcript|ai_inferred", "confidence": "high|medium|low"}]
+   - **instructions_sections**: If the method is split into named phases, ALSO output:
+     [{"title": "Section name", "instructions": [{"instruction": "Step text", "source": "caption|transcript|caption_transcript|ai_inferred", "confidence": "high|medium|low"}]}]
+     Keep **instructions** as the flat concatenation of all section steps in the same order.
      Backward-compatible string arrays are allowed only if metadata is unavailable.
      Do not hide missing quantities inside the step text.
    - **practical_summary**: Object with:

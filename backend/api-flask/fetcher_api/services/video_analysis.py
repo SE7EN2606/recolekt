@@ -537,7 +537,8 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
     # ── TIKTOK ────────────────────────────────────────────────────────────────
     if "tiktok.com" in url_lower:
         logger.info("⬇️ Downloading TikTok video: %s", url)
-        return _yt_dlp_download(url, output_path, "TikTok")
+        from fetcher_api.api.helpers.video_downloader import _download_tiktok_video
+        return _download_tiktok_video(url, output_path)
 
     # ── FACEBOOK ──────────────────────────────────────────────────────────────
     if "facebook.com" in url_lower or "fb." in url_lower:

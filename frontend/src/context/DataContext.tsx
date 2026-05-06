@@ -667,11 +667,18 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         const loadedVideos: Video[] = (data?.reels || []).map((r: any) => {
           const summary = normalizeSummary(r.summary);
+
+          const hydratedSummary = {
+            ...(summary || {}),
+            category: r.summary_category || summary?.category || '',
+            topic: r.summary_topic || summary?.topic || summary?.theme || '',
+          };
+
           const status = String(r.status || '');
           const isDone = status === 'done' || status === 'completed';
           const isFailed = status === 'failed' || status === 'error';
 
-          let finalCategory = summary?.category || 'General';
+          let finalCategory = hydratedSummary.category || '';
           if (!isDone && !isFailed) finalCategory = 'Processing';
           if (isFailed) finalCategory = 'Failed';
 
@@ -721,9 +728,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             duration: r.duration || '',
             savedAt: r.created_at,
             category: finalCategory,
-            topic: summary?.topic || summary?.theme || '',
-            tags: summary?.hashtags || [],
-            summary,
+            topic: hydratedSummary.topic || '',
+            subCategory: hydratedSummary.topic || '',
+            tags: hydratedSummary.hashtags || [],
+            summary: hydratedSummary,
+            summary_category: r.summary_category || hydratedSummary.category || '',
+            summary_topic: r.summary_topic || hydratedSummary.topic || '',
             transcript: transcriptText,
             transcription: r.transcription,
             originalUrl: sourceUrl,

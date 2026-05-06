@@ -128,36 +128,77 @@ export type RecipeMetaChip = {
   value: string;
 };
 
-function getRecipeMetaChips(recipe: any): RecipeMetaChip[] {
-  if (!recipe) return [];
+function getRecipeMetaChips(recipe: any, video?: any): RecipeMetaChip[] {
+  const read = (...values: any[]) =>
+    values
+      .map((value) => String(value || '').trim())
+      .find((value) => value && value.toLowerCase() !== 'general') || '';
+
+  const recipeCategory = read(
+    recipe?.category,
+    recipe?.recipe_category,
+    recipe?.dish_type,
+    recipe?.meal_type,
+    video?.recipe?.category,
+    video?.recipe?.dish_type,
+  );
+
+  const recipeTopic = read(
+    recipe?.name,
+    recipe?.title,
+    recipe?.topic,
+    video?.recipe?.name,
+    video?.recipe?.title,
+    video?.topic,
+    video?.subCategory,
+  );
 
   return [
-    recipe.cuisine ? { label: 'Cuisine', value: String(recipe.cuisine) } : null,
-    recipe.style ? { label: 'Style', value: String(recipe.style) } : null,
-    recipe.cooking_style ? { label: 'Method', value: String(recipe.cooking_style) } : null,
+    recipeCategory ? { label: 'Category', value: recipeCategory } : null,
+    recipeTopic ? { label: 'Topic', value: recipeTopic } : null,
+    read(recipe?.cuisine) ? { label: 'Cuisine', value: read(recipe?.cuisine) } : null,
+    read(recipe?.style) ? { label: 'Style', value: read(recipe?.style) } : null,
+    read(recipe?.cooking_style, recipe?.method) ? { label: 'Method', value: read(recipe?.cooking_style, recipe?.method) } : null,
   ].filter(Boolean) as RecipeMetaChip[];
 }
 
 function RecipeMetaPanel({ chips }: { chips: RecipeMetaChip[] }) {
-  if (!chips.length) return null;
+  const readChip = (...labels: string[]) =>
+    chips.find((chip) =>
+      labels.includes(String(chip.label || '').trim().toLowerCase())
+    )?.value || '';
+
+  const cuisine = readChip('cuisine');
+  const style = readChip('style');
+  const method = readChip('method');
+
+  const cuisineStyle = [cuisine, style].filter(Boolean).join(' · ');
+
+  if (!cuisineStyle && !method) return null;
 
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5">
-      <div className="flex flex-wrap justify-center gap-2">
-        {chips.map((chip) => (
-          <div
-            key={`${chip.label}-${chip.value}`}
-            className="flex items-center gap-1.5 rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1"
-          >
-            <span className="text-[8px] font-black uppercase tracking-widest text-violet-400">
-              {chip.label}
-            </span>
-            <span className="text-[11px] font-black text-gray-900">
-              {chip.value}
-            </span>
+    <div className="flex gap-3">
+      {cuisineStyle && (
+        <div className="flex-1 bg-orange-50 border border-orange-100 rounded-2xl shadow-sm p-4 flex flex-col items-center justify-center gap-1">
+          <span className="text-[9px] font-black text-orange-600/80 uppercase tracking-widest text-center">
+            Cuisine
+          </span>
+          <div className="text-sm font-black text-orange-900 leading-snug text-center">
+            {cuisineStyle}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+
+      {method && (
+        <div className="flex-1 bg-rose-50 border border-rose-100 rounded-2xl shadow-sm p-4 flex flex-col items-center justify-center gap-1">
+          <span className="text-[9px] font-black text-rose-600/80 uppercase tracking-widest text-center">
+            Method
+          </span>
+          <div className="text-sm font-black text-rose-900 leading-snug text-center">
+            {method}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -378,7 +419,41 @@ export const VideoDetail: React.FC = () => {
     : undefined;
   const derivedSubtype = deriveToolsSubtype(viewModel.toolsList);
   const safeDerivedSubtype = isBadgeToolsSubtype(derivedSubtype) ? derivedSubtype : 'picks';
-  const recipeMetaChips = getRecipeMetaChips(viewModel.recipe);
+  const recipeMetaChips = getRecipeMetaChips(viewModel.recipe, viewModel);
+
+  const cleanMetadataValue = (value: any) => {
+    const text = String(value || '').trim();
+    if (!text || text.toLowerCase() === 'general') return '';
+    return text;
+  };
+
+  const categoryCandidates = [
+    (video as any)?.summary_category,
+    (video as any)?.__raw?.summary_category,
+    (viewModel as any)?.summary_category,
+    (video as any)?.summary?.category,
+    (video as any)?.__raw?.summary?.category,
+    (viewModel as any)?.summary?.category,
+  ];
+
+  const topicCandidates = [
+    (video as any)?.summary_topic,
+    (video as any)?.__raw?.summary_topic,
+    (viewModel as any)?.summary_topic,
+    (video as any)?.summary?.topic,
+    (video as any)?.summary?.theme,
+    (video as any)?.__raw?.summary?.topic,
+    (video as any)?.__raw?.summary?.theme,
+    (viewModel as any)?.summary?.topic,
+    (viewModel as any)?.summary?.theme,
+  ];
+
+  // Category should not be guessed. It appears only when persisted/fetched.
+  const metadataCategory = categoryCandidates.map(cleanMetadataValue).find(Boolean) || '';
+
+  // Topic may be empty, but the Topic block itself should still render.
+  const metadataTopic = topicCandidates.map(cleanMetadataValue).find(Boolean) || '';
+
   const toolsSubtype = isToolsContentType(viewModel.contentType)
     ? structuredBadgeSubtype ?? safeDerivedSubtype
     : undefined;
@@ -545,8 +620,8 @@ export const VideoDetail: React.FC = () => {
           {/* Metadata (mobile) */}
           <MetadataPanel
             variant="mobile"
-            category={viewModel.category}
-            subCategory={viewModel.subCategory}
+            category={metadataCategory}
+            subCategory={metadataTopic}
             tags={viewModel.tags}
             isEditing={isEditing}
             onEditCategory={(v: string) => handleEditField('category', v)}
@@ -696,18 +771,18 @@ export const VideoDetail: React.FC = () => {
 
         {/* Desktop right column */}
         <div className="hidden md:flex flex-col w-full gap-5 mt-0">
+          <RecipeMetaPanel chips={recipeMetaChips} />
+
           <MetadataPanel
             variant="desktop"
-            category={viewModel.category}
-            subCategory={viewModel.subCategory}
+            category={metadataCategory}
+            subCategory={metadataTopic}
             tags={viewModel.tags}
             isEditing={isEditing}
             onEditCategory={(v: string) => handleEditField('category', v)}
             onEditTopic={(v: string) => handleEditField('topic', v)}
             onEditStart={() => setIsEditing(true)}
           />
-
-          <RecipeMetaPanel chips={recipeMetaChips} />
 
           {viewModel.transcript && (
             <Accordion

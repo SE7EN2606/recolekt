@@ -18,6 +18,7 @@ const SUPPORTED_DOMAINS = [
   'instagram.com',
   'facebook.com', 'fb.watch', 'fb.com',
   'youtube.com', 'youtu.be',
+  'tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com',
 ];
 
 const isSupportedUrl = (url: string): boolean => {
@@ -86,7 +87,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
 
     // ── Platform validation ───────────────────────────────────────────
     if (!isSupportedUrl(url.trim())) {
-      setError(t('modals:errorUnsupportedPlatform', 'Only Instagram, Facebook and YouTube URLs are supported.'));
+      setError(t('modals:errorUnsupportedPlatform', 'Only Instagram, Facebook, YouTube, and TikTok URLs are supported.'));
       return;
     }
 
@@ -113,7 +114,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
       if (backendError.includes('not authenticated') || backendError.includes('authentication required')) {
         translatedError = t('modals:errorNotAuth');
       } else if (backendError.includes('unsupported_platform') || backendError.includes('unsupported platform')) {
-        translatedError = t('modals:errorUnsupportedPlatform', 'Only Instagram, Facebook and YouTube URLs are supported.');
+        translatedError = t('modals:errorUnsupportedPlatform', 'Only Instagram, Facebook, YouTube, and TikTok URLs are supported.');
       } else if (backendError.includes('provide either file or url') || backendError.includes('invalid url')) {
         translatedError = t('modals:errorInvalidUrl');
       } else if (backendError.includes('failed to import') || backendError.includes('internal error')) {
@@ -231,9 +232,9 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
                 </div>
               </div>
 
-              {/* Platform hint — TikTok removed */}
+              {/* Platform hint */}
               <p className="text-xs text-gray-400 -mt-1">
-                {t('modals:supportedPlatforms', 'Instagram · Facebook · YouTube')}
+                {t('modals:supportedPlatforms', 'Instagram · Facebook · YouTube · TikTok')}
               </p>
 
               {error && (

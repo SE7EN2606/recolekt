@@ -191,6 +191,15 @@ def classify_reel_content(transcript: str, caption: str) -> dict:
         "location_guard_keywords": location_guard_hits,
     }
 
+    # Caption-only TikTok/metadata recipes often have recipe hashtags but no quantities.
+    if caption_looks_like_recipe(caption):
+        return {
+            "label": "recipe",
+            "score": 0.86,
+            "reason": "recipe: caption/hashtag recipe markers",
+            "signals": signals,
+        }
+
     # Workout first: avoid fitness content being pulled into list/software buckets.
     if workout_hits >= 2:
         score = min(0.55 + workout_hits * 0.06, 0.94)
@@ -282,6 +291,20 @@ def caption_looks_like_recipe(caption: str) -> bool:
     if not caption:
         return False
     text = caption.lower()
+
+    explicit_recipe_markers = [
+        "#recipe", "#recipes", "#easyrecipe", "#easyrecipes",
+        "#recette", "#recettes", "#cooktok", "#foodtok",
+    ]
+    if any(marker in text for marker in explicit_recipe_markers):
+        return True
+
+    food_context_markers = [
+        "#homecooking", "#comfortfood", "#frenchfood", "#italianfood",
+        "#asmrfood", "#mealprep", "#dinner", "#lunch", "#breakfast",
+    ]
+    if sum(1 for marker in food_context_markers if marker in text) >= 2:
+        return True
 
     action_verbs = [
         "mix", "stir", "bake", "cook", "fry", "boil", "blend",

@@ -94,6 +94,30 @@ export interface IngredientGroup {
   items: RawIngredient[];
 }
 
+export interface IngredientSection {
+  title?: string;
+  group?: string;
+  name?: string;
+  section?: string;
+  component?: string;
+  ingredients?: RawIngredient[];
+  items?: RawIngredient[];
+  children?: RawIngredient[];
+}
+
+export interface InstructionSection {
+  title?: string;
+  group?: string;
+  name?: string;
+  section?: string;
+  phase?: string;
+  part?: string;
+  instructions?: RawInstruction[];
+  steps?: RawInstruction[];
+  items?: RawInstruction[];
+  children?: RawInstruction[];
+}
+
 export interface RecipeForCard {
   is_compilation?: boolean;
   ideas?: { headline?: string; text?: string; emoji?: string }[];
@@ -111,7 +135,18 @@ export interface RecipeForCard {
   style?: string | null;
   cooking_style?: string | null;
   ingredients_groups?: IngredientGroup[] | null;
+  ingredient_sections?: IngredientSection[] | null;
+  ingredients_sections?: IngredientSection[] | null;
+  ingredientSections?: IngredientSection[] | null;
+  ingredientsSections?: IngredientSection[] | null;
   ingredients?: RawIngredient[] | null;
+  instruction_sections?: InstructionSection[] | null;
+  instructions_sections?: InstructionSection[] | null;
+  instructionSections?: InstructionSection[] | null;
+  instructionsSections?: InstructionSection[] | null;
+  method_sections?: InstructionSection[] | null;
+  step_sections?: InstructionSection[] | null;
+  steps_sections?: InstructionSection[] | null;
   instructions?: RawInstruction[] | null;
   practical_summary?: PracticalSummary | null;
   tips?: string[];
@@ -308,6 +343,181 @@ function assumedLabel(name: string): string {
   if (n.match(/\b(stock|broth|water|bouillon|fond|milk|cream|wine|oil|sauce|liquid)/)) return 'as needed';
   if (n.match(/\b(thyme|rosemary|bay|parsley|herb|basilic|laurier|thym|sage)/)) return 'a few sprigs';
   return 'to taste';
+}
+
+type NormalizedIngredientSection = { title: string; items: RawIngredient[] };
+type NormalizedInstructionSection = { title: string; instructions: RawInstruction[] };
+
+function firstArray(...values: any[]): any[] | null {
+  for (const value of values) {
+    if (Array.isArray(value)) return value;
+  }
+  return null;
+}
+
+function cleanSectionTitle(value: any): string {
+  const text = String(value ?? '').trim();
+  if (!text || text.toLowerCase() === 'general') return '';
+  return text.replace(/:$/, '').trim();
+}
+
+function objectSectionTitle(raw: any, keys: string[]): string {
+  if (!raw || typeof raw !== 'object') return '';
+  for (const key of keys) {
+    const direct = cleanSectionTitle(raw?.[key]);
+    if (direct) return direct;
+  }
+  const metaSection = cleanSectionTitle(raw?.meta?.section || raw?.metadata?.section);
+  return metaSection;
+}
+
+function possibleSectionHeading(raw: RawIngredient | RawInstruction): string {
+  if (typeof raw !== 'string') return '';
+  const text = raw.trim().replace(/:$/, '').trim();
+  if (!text || text.length > 80) return '';
+  if (/^\d+[\).\s]/.test(text)) return '';
+  if (/\b(cup|cups|tbsp|tablespoon|tsp|teaspoon|g|gram|kg|ml|l|oz|lb|pound|pinch)\b/i.test(text)) return '';
+  if (/^(for|the\s+|cream\s+cheese|frosting|dough|base|topping|filling|sauce|marinade|dressing|method|steps?|instructions?)/i.test(text)) {
+    return text;
+  }
+  return '';
+}
+
+function groupIngredientsBySection(flat: RawIngredient[]): NormalizedIngredientSection[] {
+  const sections: NormalizedIngredientSection[] = [];
+  const byKey = new Map<string, NormalizedIngredientSection>();
+  let currentTitle = '';
+
+  const getOrCreate = (title: string) => {
+    const key = title || '__default__';
+    let section = byKey.get(key);
+    if (!section) {
+      section = { title, items: [] };
+      byKey.set(key, section);
+      sections.push(section);
+    }
+    return section;
+  };
+
+  flat.filter(Boolean).forEach((item) => {
+    const heading = possibleSectionHeading(item);
+    if (heading) {
+      currentTitle = heading;
+      getOrCreate(currentTitle);
+      return;
+    }
+
+    const title =
+      objectSectionTitle(item, ['section', 'group', 'category', 'part', 'component', 'heading']) ||
+      currentTitle;
+
+    getOrCreate(title).items.push(item);
+  });
+
+  return sections.filter((section) => section.items.length > 0);
+}
+
+function normalizeIngredientSections(recipe: RecipeForCard): NormalizedIngredientSection[] {
+  const r = recipe as any;
+
+  const explicitSections = firstArray(
+    r.ingredient_sections,
+    r.ingredients_sections,
+    r.ingredientSections,
+    r.ingredientsSections,
+  );
+
+  if (explicitSections?.length) {
+    const mapped = explicitSections
+      .map((section: any) => {
+        const items = firstArray(section?.ingredients, section?.items, section?.children) ?? [];
+        return {
+          title: cleanSectionTitle(section?.title || section?.group || section?.name || section?.section || section?.component),
+          items: items.filter(Boolean) as RawIngredient[],
+        };
+      })
+      .filter((section: NormalizedIngredientSection) => section.items.length > 0);
+
+    if (mapped.length) return mapped;
+  }
+
+  const groups = Array.isArray(recipe.ingredients_groups) ? recipe.ingredients_groups : [];
+  if (groups.length) {
+    return groups
+      .map((group) => ({
+        title: cleanSectionTitle(group.title || group.group),
+        items: Array.isArray(group.items) ? group.items.filter(Boolean) : [],
+      }))
+      .filter((section) => section.items.length > 0);
+  }
+
+  const flat = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+  return groupIngredientsBySection(flat);
+}
+
+function groupInstructionsBySection(flat: RawInstruction[]): NormalizedInstructionSection[] {
+  const sections: NormalizedInstructionSection[] = [];
+  const byKey = new Map<string, NormalizedInstructionSection>();
+  let currentTitle = '';
+
+  const getOrCreate = (title: string) => {
+    const key = title || '__default__';
+    let section = byKey.get(key);
+    if (!section) {
+      section = { title, instructions: [] };
+      byKey.set(key, section);
+      sections.push(section);
+    }
+    return section;
+  };
+
+  flat.filter(Boolean).forEach((step) => {
+    const heading = possibleSectionHeading(step);
+    if (heading) {
+      currentTitle = heading;
+      getOrCreate(currentTitle);
+      return;
+    }
+
+    const title =
+      objectSectionTitle(step, ['section', 'group', 'phase', 'part', 'stage', 'heading']) ||
+      currentTitle;
+
+    getOrCreate(title).instructions.push(step);
+  });
+
+  return sections.filter((section) => section.instructions.length > 0);
+}
+
+function normalizeInstructionSections(recipe: RecipeForCard): NormalizedInstructionSection[] {
+  const r = recipe as any;
+
+  const explicitSections = firstArray(
+    r.instruction_sections,
+    r.instructions_sections,
+    r.instructionSections,
+    r.instructionsSections,
+    r.method_sections,
+    r.step_sections,
+    r.steps_sections,
+  );
+
+  if (explicitSections?.length) {
+    const mapped = explicitSections
+      .map((section: any) => {
+        const instructions = firstArray(section?.instructions, section?.steps, section?.items, section?.children) ?? [];
+        return {
+          title: cleanSectionTitle(section?.title || section?.group || section?.name || section?.section || section?.phase || section?.part),
+          instructions: instructions.filter(Boolean) as RawInstruction[],
+        };
+      })
+      .filter((section: NormalizedInstructionSection) => section.instructions.length > 0);
+
+    if (mapped.length) return mapped;
+  }
+
+  const flat = Array.isArray(recipe.instructions) ? recipe.instructions : [];
+  return groupInstructionsBySection(flat);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -528,10 +738,22 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
   if (recipe.is_compilation) return <RecipeCompilationCard recipe={recipe} />;
 
-  const flat:   RawIngredient[]   = Array.isArray(recipe.ingredients)        ? recipe.ingredients        : [];
-  const groups: IngredientGroup[] = Array.isArray(recipe.ingredients_groups) ? recipe.ingredients_groups : [];
-  const hasGroups     = groups.length > 0;
-  const instructions: RawInstruction[] = Array.isArray(recipe.instructions) ? recipe.instructions : [];
+  const ingredientSections = normalizeIngredientSections(recipe);
+  const hasStructuredIngredientSections =
+    ingredientSections.length > 1 || Boolean(ingredientSections[0]?.title);
+
+  const flat: RawIngredient[] = hasStructuredIngredientSections
+    ? []
+    : ingredientSections[0]?.items ?? [];
+
+  const groups: IngredientGroup[] = hasStructuredIngredientSections
+    ? ingredientSections.map((section) => ({ title: section.title, items: section.items }))
+    : [];
+
+  const hasGroups = groups.length > 0;
+
+  const instructionSections = normalizeInstructionSections(recipe);
+  const instructions: RawInstruction[] = instructionSections.flatMap((section) => section.instructions);
   const tips:   string[]          = Array.isArray(recipe.tips)  ? recipe.tips  : [];
 
   const notes: string[] = recipe.notes
@@ -1037,9 +1259,39 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                 {t('videoDetail:directions', 'Directions')}
               </h4>
               <div className="space-y-5">
-                {instructions.map((step, i) => (
-                  <StepRow key={i} index={i} raw={step} checked={checkedSteps.has(i)} onToggle={toggleStep} />
-                ))}
+                {(() => {
+                  let offset = 0;
+
+                  return instructionSections.map((section, sectionIndex) => {
+                    const startIndex = offset;
+                    offset += section.instructions.length;
+
+                    return (
+                      <div key={`${section.title || 'section'}-${sectionIndex}`} className={sectionIndex > 0 ? 'pt-2 border-t border-gray-50' : ''}>
+                        {section.title && (
+                          <h5 className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-3">
+                            {section.title}
+                          </h5>
+                        )}
+
+                        <div className="space-y-5">
+                          {section.instructions.map((step, stepIndex) => {
+                            const absoluteIndex = startIndex + stepIndex;
+                            return (
+                              <StepRow
+                                key={absoluteIndex}
+                                index={absoluteIndex}
+                                raw={step}
+                                checked={checkedSteps.has(absoluteIndex)}
+                                onToggle={toggleStep}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
           )}

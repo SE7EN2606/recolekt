@@ -99,7 +99,7 @@ from fetcher_api.utils.ocr_utils import (
 
 logger = logging.getLogger(__name__)
 
-EXTRACTOR_VERSION = "universal-v23"
+EXTRACTOR_VERSION = "universal-v24"
 
 BOOKMARK_MESSAGES = {
     "en": "Bookmark saved. The creator did not provide a detailed caption or transcript for this video.",

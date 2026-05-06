@@ -1662,6 +1662,201 @@ def _infer_recipe_metadata(recipe: dict, caption: str = "", transcript: str = ""
     recipe["cooking_style"] = safe_str(recipe.get("cooking_style") or pick(cooking_style_rules, ""))
 
 
+
+_RECIPE_INGREDIENT_SECTION_FIELDS = (
+    "ingredient_sections",
+    "ingredients_sections",
+    "ingredientsSections",
+)
+
+_RECIPE_INSTRUCTION_SECTION_FIELDS = (
+    "instructions_sections",
+    "instruction_sections",
+    "instructionsSections",
+)
+
+
+def _recipe_first_list_value(*values):
+    for value in values:
+        if isinstance(value, list):
+            return value
+    return []
+
+
+def _recipe_clean_section_title(section):
+    if not isinstance(section, dict):
+        return ""
+    return safe_str(
+        section.get("title")
+        or section.get("name")
+        or section.get("group")
+        or section.get("section")
+        or ""
+    ).strip()
+
+
+def _recipe_normalize_ingredient_sections_for_trust(recipe):
+    sections = None
+
+    for field in _RECIPE_INGREDIENT_SECTION_FIELDS:
+        value = recipe.get(field)
+        if isinstance(value, list) and value:
+            sections = value
+            break
+
+    if sections is None and isinstance(recipe.get("ingredients_groups"), list):
+        sections = recipe.get("ingredients_groups")
+
+    if not isinstance(sections, list) or not sections:
+        return []
+
+    normalized = []
+    flat = []
+
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+
+        items = _recipe_first_list_value(
+            section.get("items"),
+            section.get("ingredients"),
+            section.get("children"),
+        )
+
+        if not items:
+            continue
+
+        title = _recipe_clean_section_title(section)
+        normalized_section = {
+            "title": title,
+            "items": list(items),
+        }
+        normalized.append(normalized_section)
+        flat.extend(items)
+
+    if normalized:
+        recipe["ingredient_sections"] = normalized
+        recipe["ingredients_sections"] = normalized
+        recipe["ingredients_groups"] = [
+            {"name": section.get("title", ""), "items": list(section.get("items") or [])}
+            for section in normalized
+        ]
+
+    return flat
+
+
+def _recipe_normalize_instruction_sections_for_trust(recipe):
+    sections = None
+
+    for field in _RECIPE_INSTRUCTION_SECTION_FIELDS:
+        value = recipe.get(field)
+        if isinstance(value, list) and value:
+            sections = value
+            break
+
+    if not isinstance(sections, list) or not sections:
+        return []
+
+    normalized = []
+    flat = []
+
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+
+        instructions = _recipe_first_list_value(
+            section.get("instructions"),
+            section.get("steps"),
+            section.get("items"),
+            section.get("children"),
+        )
+
+        if not instructions:
+            continue
+
+        normalized_section = {
+            "title": _recipe_clean_section_title(section),
+            "instructions": list(instructions),
+        }
+        normalized.append(normalized_section)
+        flat.extend(instructions)
+
+    if normalized:
+        recipe["instructions_sections"] = normalized
+        recipe["instruction_sections"] = normalized
+
+    return flat
+
+
+def _recipe_flatten_sectioned_fields(recipe):
+    section_ingredients = _recipe_normalize_ingredient_sections_for_trust(recipe)
+    current_ingredients = recipe.get("ingredients")
+    if section_ingredients and (not isinstance(current_ingredients, list) or not current_ingredients):
+        recipe["ingredients"] = section_ingredients
+
+    section_instructions = _recipe_normalize_instruction_sections_for_trust(recipe)
+    current_instructions = recipe.get("instructions")
+    if section_instructions and (not isinstance(current_instructions, list) or not current_instructions):
+        recipe["instructions"] = section_instructions
+
+
+def _recipe_sync_sectioned_ingredients(recipe, processed_items):
+    if not isinstance(processed_items, list) or not processed_items:
+        return
+
+    for field in _RECIPE_INGREDIENT_SECTION_FIELDS:
+        sections = recipe.get(field)
+        if not isinstance(sections, list) or not sections:
+            continue
+
+        cursor = 0
+        synced = []
+
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+
+            original_items = _recipe_first_list_value(
+                section.get("items"),
+                section.get("ingredients"),
+                section.get("children"),
+            )
+            count = len(original_items)
+            next_items = processed_items[cursor: cursor + count]
+            cursor += count
+
+            synced.append({
+                **section,
+                "title": _recipe_clean_section_title(section),
+                "items": next_items,
+            })
+
+        if synced:
+            recipe[field] = synced
+
+    groups = recipe.get("ingredients_groups")
+    if isinstance(groups, list) and groups:
+        cursor = 0
+        synced_groups = []
+
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+
+            original_items = _recipe_first_list_value(group.get("items"), group.get("ingredients"))
+            count = len(original_items)
+            next_items = processed_items[cursor: cursor + count]
+            cursor += count
+
+            synced_groups.append({
+                **group,
+                "name": safe_str(group.get("name") or group.get("title") or "").strip(),
+                "items": next_items,
+            })
+
+        if synced_groups:
+            recipe["ingredients_groups"] = synced_groups
+
 def normalize_recipe_trust_layer(
     recipe: dict | None,
     caption: str = "",
@@ -1671,6 +1866,8 @@ def normalize_recipe_trust_layer(
         return recipe
 
     recipe = dict(recipe)
+    _recipe_flatten_sectioned_fields(recipe)
+
     ingredients = recipe.get("ingredients")
     if not isinstance(ingredients, list):
         ingredients = []
@@ -1741,6 +1938,7 @@ def normalize_recipe_trust_layer(
         next_ingredients.append(ing)
 
     recipe["ingredients"] = next_ingredients
+    _recipe_sync_sectioned_ingredients(recipe, next_ingredients)
 
     _normalize_recipe_times(recipe, caption=caption, transcript=transcript)
 

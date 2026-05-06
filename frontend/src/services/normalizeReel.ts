@@ -268,7 +268,7 @@ export function normalizeReel(row: any): NormalizedReel | null {
           englishSummary?.category ||
           englishSummaryText?.category ||
           row.summary_category ||
-          "General",
+          "",
       ),
     title,
     topic:
@@ -277,7 +277,7 @@ export function normalizeReel(row: any): NormalizedReel | null {
           englishSummary?.topic ||
           englishSummaryText?.topic ||
           row.summary_topic ||
-          "General",
+          "",
       ),
     summary: String(summaryText || ""),
     bullets: Array.isArray(bullets) ? bullets : [],

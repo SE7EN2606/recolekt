@@ -225,6 +225,207 @@ def _normalize_ingredient_groups(groups: Any) -> List[Dict[str, Any]]:
     return out
 
 
+
+def _first_list(*values: Any) -> List[Any]:
+    for value in values:
+        if isinstance(value, list):
+            return value
+    return []
+
+
+def _section_title(section: Dict[str, Any]) -> str:
+    return (
+        _normalize_string_or_empty(section.get("title"))
+        or _normalize_string_or_empty(section.get("name"))
+        or _normalize_string_or_empty(section.get("group"))
+        or _normalize_string_or_empty(section.get("section"))
+    )
+
+
+def _normalize_ingredient_sections(sections: Any) -> List[Dict[str, Any]]:
+    """
+    Normalize modern sectioned ingredient structure.
+
+    Canonical output:
+      ingredient_sections: [
+        {"title": "The Pumpkin Base", "items": [...]},
+        {"title": "Cream Cheese Frosting", "items": [...]}
+      ]
+
+    Backward-compatible output can be mirrored into ingredients_groups.
+    """
+    raw_sections = _ensure_list(sections)
+    out: List[Dict[str, Any]] = []
+
+    for section in raw_sections:
+        if not isinstance(section, dict):
+            continue
+
+        title = _section_title(section)
+        items = _normalize_ingredient_list(
+            _first_list(
+                section.get("items"),
+                section.get("ingredients"),
+                section.get("children"),
+            )
+        )
+
+        if not items:
+            continue
+
+        out.append({
+            "title": title,
+            "items": items,
+        })
+
+    return out
+
+
+def _ingredient_sections_to_groups(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "name": _normalize_string_or_empty(section.get("title")),
+            "items": list(section.get("items") or []),
+        }
+        for section in sections
+        if isinstance(section, dict) and isinstance(section.get("items"), list) and section.get("items")
+    ]
+
+
+def _ingredient_groups_to_sections(groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "title": _normalize_string_or_empty(group.get("name") or group.get("title") or group.get("group")),
+            "items": list(group.get("items") or []),
+        }
+        for group in groups
+        if isinstance(group, dict) and isinstance(group.get("items"), list) and group.get("items")
+    ]
+
+
+def _flatten_ingredient_sections(sections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    flat: List[Dict[str, Any]] = []
+    for section in sections:
+        if isinstance(section, dict) and isinstance(section.get("items"), list):
+            flat.extend(section.get("items") or [])
+    return flat
+
+
+def _normalize_instruction_sections(sections: Any) -> List[Dict[str, Any]]:
+    """
+    Normalize sectioned method/direction structure.
+
+    Canonical output:
+      instructions_sections: [
+        {"title": "Cake", "instructions": [...]},
+        {"title": "Frosting", "instructions": [...]}
+      ]
+    """
+    raw_sections = _ensure_list(sections)
+    out: List[Dict[str, Any]] = []
+
+    for section in raw_sections:
+        if not isinstance(section, dict):
+            continue
+
+        title = _section_title(section)
+        instructions = _normalize_instruction_list(
+            _first_list(
+                section.get("instructions"),
+                section.get("steps"),
+                section.get("items"),
+                section.get("children"),
+            )
+        )
+
+        if not instructions:
+            continue
+
+        out.append({
+            "title": title,
+            "instructions": instructions,
+        })
+
+    return out
+
+
+def _flatten_instruction_sections(sections: List[Dict[str, Any]]) -> List[Any]:
+    flat: List[Any] = []
+    for section in sections:
+        if isinstance(section, dict) and isinstance(section.get("instructions"), list):
+            flat.extend(section.get("instructions") or [])
+    return flat
+
+
+def _normalize_recipe_block(lang_block: Dict[str, Any]) -> None:
+    # ---- INGREDIENTS, GROUPS & SECTIONS ----
+    raw_sections = (
+        lang_block.get("ingredient_sections")
+        if lang_block.get("ingredient_sections") is not None
+        else lang_block.get("ingredients_sections")
+        if lang_block.get("ingredients_sections") is not None
+        else lang_block.get("ingredientsSections")
+    )
+    raw_groups = lang_block.get("ingredients_groups", None)
+    raw_ings = lang_block.get("ingredients", None)
+
+    if raw_sections is not None:
+        sections = _normalize_ingredient_sections(raw_sections)
+        lang_block["ingredient_sections"] = sections
+        lang_block["ingredients_sections"] = sections
+        lang_block["ingredients_groups"] = _ingredient_sections_to_groups(sections)
+        lang_block["ingredients"] = _flatten_ingredient_sections(sections)
+
+    elif raw_groups is not None:
+        groups = _normalize_ingredient_groups(raw_groups)
+        lang_block["ingredients_groups"] = groups
+        lang_block["ingredient_sections"] = _ingredient_groups_to_sections(groups)
+        lang_block["ingredients_sections"] = lang_block["ingredient_sections"]
+
+        flat: List[Dict[str, Any]] = []
+        for g in groups:
+            flat.extend(g.get("items", []))
+        lang_block["ingredients"] = flat
+
+    elif isinstance(raw_ings, list) and raw_ings and isinstance(raw_ings[0], dict) and (
+        "items" in raw_ings[0] or "ingredients" in raw_ings[0] or "children" in raw_ings[0]
+    ):
+        sections = _normalize_ingredient_sections(raw_ings)
+        lang_block["ingredient_sections"] = sections
+        lang_block["ingredients_sections"] = sections
+        lang_block["ingredients_groups"] = _ingredient_sections_to_groups(sections)
+        lang_block["ingredients"] = _flatten_ingredient_sections(sections)
+
+    elif raw_ings is not None:
+        lang_block["ingredients"] = _normalize_ingredient_list(raw_ings)
+
+    # ---- INSTRUCTIONS & METHOD SECTIONS ----
+    raw_instruction_sections = (
+        lang_block.get("instructions_sections")
+        if lang_block.get("instructions_sections") is not None
+        else lang_block.get("instruction_sections")
+        if lang_block.get("instruction_sections") is not None
+        else lang_block.get("instructionsSections")
+    )
+
+    if raw_instruction_sections is not None:
+        sections = _normalize_instruction_sections(raw_instruction_sections)
+        lang_block["instructions_sections"] = sections
+        lang_block["instruction_sections"] = sections
+        lang_block["instructions"] = _flatten_instruction_sections(sections)
+    elif "instructions" in lang_block:
+        lang_block["instructions"] = _normalize_instruction_list(lang_block.get("instructions"))
+
+    # ---- OTHER FIELDS ----
+    if "tips" in lang_block:
+        lang_block["tips"] = _normalize_instruction_list(lang_block.get("tips"))
+
+    if "notes" in lang_block:
+        lang_block["notes"] = _normalize_instruction_list(lang_block.get("notes"))
+
+    if "title" in lang_block:
+        lang_block["title"] = _normalize_string_or_empty(lang_block.get("title"))
+
 def _extract_caption_sections(caption: Optional[str]) -> List[Tuple[str, int]]:
     """
     From a caption string, detect ingredient section headings and counts.
@@ -303,31 +504,22 @@ def normalize_recipe(recipe_obj: Any, caption: Optional[str] = None) -> Any:
     """
     Normalize a full recipe object returned by the LLM.
 
-    Per language ("english", "original"):
-    - If `ingredients_groups` exists:
-        - normalize groups + items
-        - set `ingredients_groups`
-        - set flat `ingredients` = concatenation of all group items
-    - Else if `ingredients` itself looks like groups (list of dicts with 'items'):
-        - treat it as groups, create `ingredients_groups` + flat `ingredients`
-    - Else if `ingredients` is flat:
-        - normalize flat list
+    Supports both legacy flat/grouped recipes and modern sectioned recipes:
 
-    Additionally, if caption provides clear sections like:
-        "Îles flottantes :", "Sauce mangue passion :", "Tuiles coco :", "Déco :"
-    and there is NO `ingredients_groups` yet, we:
-        - infer group names + counts from caption
-        - split the flat `ingredients` list into matching groups, per language.
+      ingredient_sections / ingredients_sections / ingredientsSections
+      ingredients_groups
+      instructions_sections / instruction_sections / instructionsSections
 
-    If the caption has fewer ingredient lines than the actual ingredient count,
-    leftover ingredients are appended to the last group so nothing is lost.
-    We only skip grouping if the caption claims MORE lines than we have
-    ingredients (to avoid truncation).
+    Always preserves flat compatibility:
+      ingredients = concatenation of all ingredient section/group items
+      instructions = concatenation of all instruction section items
     """
     if not isinstance(recipe_obj, dict):
         return recipe_obj
 
-    # First pass: normalize ingredients / groups / instructions / tips / notes / title
+    # Normalize top-level recipe object as well as language-specific blocks.
+    blocks: List[Dict[str, Any]] = [recipe_obj]
+
     for lang in LANG_KEYS:
         lang_block = recipe_obj.get(lang)
         if lang_block is None:
@@ -335,76 +527,32 @@ def normalize_recipe(recipe_obj: Any, caption: Optional[str] = None) -> Any:
         if not isinstance(lang_block, dict):
             lang_block = {"raw": lang_block}
             recipe_obj[lang] = lang_block
+        blocks.append(lang_block)
 
-        # ---- INGREDIENTS & GROUPS (from model) ----
-        raw_groups = lang_block.get("ingredients_groups", None)
-        raw_ings = lang_block.get("ingredients", None)
+    for block in blocks:
+        _normalize_recipe_block(block)
 
-        if raw_groups is not None:
-            # Explicit groups from model
-            groups = _normalize_ingredient_groups(raw_groups)
-            lang_block["ingredients_groups"] = groups
-
-            flat: List[Dict[str, Any]] = []
-            for g in groups:
-                flat.extend(g.get("items", []))
-            lang_block["ingredients"] = flat
-
-        elif isinstance(raw_ings, list) and raw_ings and isinstance(raw_ings[0], dict) and "items" in raw_ings[0]:
-            # Backward-compat: ingredients field itself is grouped
-            groups = _normalize_ingredient_groups(raw_ings)
-            lang_block["ingredients_groups"] = groups
-
-            flat: List[Dict[str, Any]] = []
-            for g in groups:
-                flat.extend(g.get("items", []))
-            lang_block["ingredients"] = flat
-
-        elif raw_ings is not None:
-            # Simple flat list
-            lang_block["ingredients"] = _normalize_ingredient_list(raw_ings)
-            # No ingredients_groups in this case yet
-
-        # ---- OTHER FIELDS ----
-        if "instructions" in lang_block:
-            lang_block["instructions"] = _normalize_instruction_list(lang_block.get("instructions"))
-
-        if "tips" in lang_block:
-            lang_block["tips"] = _normalize_instruction_list(lang_block.get("tips"))
-
-        if "notes" in lang_block:
-            lang_block["notes"] = _normalize_instruction_list(lang_block.get("notes"))
-
-        if "title" in lang_block:
-            lang_block["title"] = _normalize_string_or_empty(lang_block.get("title"))
-
-    # Second pass: if there are no groups but caption has clear sections,
-    # infer groups by slicing each language's ingredients.
+    # If there are no explicit groups/sections but caption has clear sections,
+    # infer groups by slicing each language/top-level ingredient list.
     sections = _extract_caption_sections(caption)
     if sections:
         total_lines = sum(count for _, count in sections)
         if total_lines <= 0:
             return recipe_obj
 
-        for lang in LANG_KEYS:
-            lang_block = recipe_obj.get(lang)
-            if not isinstance(lang_block, dict):
+        for block in blocks:
+            # Skip if groups/sections already exist.
+            if block.get("ingredients_groups") or block.get("ingredient_sections"):
                 continue
 
-            # Skip if groups already exist (from model)
-            if "ingredients_groups" in lang_block:
-                continue
-
-            ings = lang_block.get("ingredients")
+            ings = block.get("ingredients")
             if not isinstance(ings, list) or not ings:
                 continue
 
             if len(ings) < total_lines:
-                # Caption claims more lines than we have ingredients — expected
-                # for non-recipe content, not a real error. Log at DEBUG only.
                 logger.debug(
                     f"[recipe] Caption sections ({total_lines} lines) "
-                    f"exceed ingredient count ({len(ings)}) for '{lang}', skipping grouping."
+                    f"exceed ingredient count ({len(ings)}), skipping grouping."
                 )
                 continue
 
@@ -424,15 +572,13 @@ def normalize_recipe(recipe_obj: Any, caption: Optional[str] = None) -> Any:
                     "items": group_items,
                 })
 
-            # Any leftover ingredients go into the last group, if present
             if idx < len(ings) and groups:
-                leftover = ings[idx:]
-                groups[-1]["items"].extend(leftover)
+                groups[-1]["items"].extend(ings[idx:])
 
             if groups:
-                lang_block["ingredients_groups"] = groups
-                logger.info(
-                    f"[recipe] Inferred {len(groups)} ingredient groups from caption for '{lang}'."
-                )
+                block["ingredients_groups"] = groups
+                block["ingredient_sections"] = _ingredient_groups_to_sections(groups)
+                block["ingredients_sections"] = block["ingredient_sections"]
+                logger.info(f"[recipe] Inferred {len(groups)} ingredient groups from caption.")
 
     return recipe_obj
