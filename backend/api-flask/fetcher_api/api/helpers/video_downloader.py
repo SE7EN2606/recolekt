@@ -166,59 +166,35 @@ def _download_tiktok_video(url: str, output_path: str) -> Dict:
         resolved_url = _resolve_redirect_url(url)
         oembed_meta = _fetch_tiktok_oembed(resolved_url)
 
-        cookies_path = _write_cookies("TT_COOKIES_CONTENT", "tt_cookies.txt")
-
-        common_headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-                "AppleWebKit/605.1.15 (KHTML, like Gecko) "
-                "Version/17.0 Mobile/15E148 Safari/604.1"
-            ),
-            "Referer": "https://www.tiktok.com/",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-
-        base_opts = {
-            "outtmpl": output_path,
-            "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
-            "merge_output_format": "mp4",
-            "quiet": True,
-            "no_warnings": True,
-            "retries": 3,
-            "fragment_retries": 3,
-            "socket_timeout": 30,
-            "sleep_interval": 1,
-            "max_sleep_interval": 4,
-            "http_headers": common_headers,
-            "extractor_args": {"tiktok": {"api_hostname": "api22-normal-c-useast2a.tiktokv.com"}},
-        }
-
-        if cookies_path:
-            base_opts["cookiefile"] = cookies_path
-            logger.info("🍪 TikTok: using TT_COOKIES_CONTENT")
-
         caption = caption if "caption" in locals() else ""
         thumbnail_path = thumbnail_path if "thumbnail_path" in locals() else None
 
-        attempts = [
-            ("default", {}),
-            ("force_generic", {"force_generic_extractor": False}),
-            ("metadata_light", {"skip_download": False, "writesubtitles": False, "writeautomaticsub": False}),
-        ]
-
         last_error = None
         info = None
+        actual_path = None
 
         if str(os.getenv("TIKTOK_TRY_VIDEO_DOWNLOAD", "")).lower() not in {"1", "true", "yes"}:
             logger.info("TikTok video download disabled; skipping yt-dlp attempts and using caption/thumbnail fallback")
-            attempts = []
             last_error = "tiktok_video_download_disabled"
-
-        for label, extra in attempts:
+        else:
             try:
-                opts = dict(base_opts)
-                opts.update(extra)
-                logger.info("⬇️ TikTok yt-dlp attempt: %s", label)
+                # Keep this intentionally close to the raw yt-dlp CLI invocation that works locally:
+                # python3 -m yt_dlp -f "bv*+ba/b" -o "/tmp/file.%(ext)s" URL
+                # Extra TikTok API host/header overrides caused status-code-0 failures.
+                opts = {
+                    "outtmpl": output_path,
+                    "format": "bv*+ba/b",
+                    "quiet": False,
+                    "no_warnings": False,
+                    "noplaylist": True,
+                }
+
+                cookies_path = _write_cookies("TT_COOKIES_CONTENT", "tt_cookies.txt")
+                if cookies_path:
+                    opts["cookiefile"] = cookies_path
+                    logger.info("TikTok: using TT_COOKIES_CONTENT")
+
+                logger.info("TikTok yt-dlp opt-in enabled; attempting simple yt-dlp download")
 
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(resolved_url, download=True)
@@ -226,17 +202,16 @@ def _download_tiktok_video(url: str, output_path: str) -> Dict:
                 actual_path = _find_downloaded_media(output_path)
                 if actual_path:
                     logger.info("✅ TikTok video saved → %s", actual_path)
-                    break
-
-                last_error = "yt-dlp completed but media file missing"
-                logger.warning("⚠️ TikTok attempt %s produced no media file", label)
+                else:
+                    last_error = "yt-dlp completed but media file missing"
+                    logger.warning("TikTok yt-dlp completed but produced no media file")
 
             except Exception as e:
                 last_error = str(e)
-                logger.warning("⚠️ TikTok attempt %s failed: %s", label, e)
+                logger.warning("TikTok yt-dlp opt-in download failed: %s", e)
                 info = None
 
-        actual_path = _find_downloaded_media(output_path)
+        actual_path = actual_path or _find_downloaded_media(output_path)
 
         thumb_url = ""
         if isinstance(info, dict):
