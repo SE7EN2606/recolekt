@@ -183,7 +183,7 @@ def _download_tiktok_video(url: str, output_path: str) -> Dict:
                 # Extra TikTok API host/header overrides caused status-code-0 failures.
                 opts = {
                     "outtmpl": output_path,
-                    "format": "bv*+ba/b",
+                    "format": "h264_720p*/h264_540p*/download/b[ext=mp4]/best[ext=mp4]/best",
                     "quiet": False,
                     "no_warnings": False,
                     "noplaylist": True,
