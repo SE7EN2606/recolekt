@@ -881,14 +881,20 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
   const isFullRecipe = recipeKind === 'full_recipe';
   const isTechnique = recipeKind !== 'full_recipe';
-  const showIngredientsTab = recipeKind !== 'pure_technique' && allIngredients.length > 0;
+  const isPureTechnique = recipeKind === 'pure_technique';
+
+  // Full recipes get macro/shopping support.
+  // Technique-with-ingredients should still show Ingredients + Steps;
+  // only pure techniques collapse to Ask-only when there are no ingredients.
+  const showIngredientsTab = !isPureTechnique && allIngredients.length > 0;
+  const showStepsTab = instructions.length > 0;
   const showNutritionTab = isFullRecipe && allIngredients.length > 0;
   const showShoppingList = isFullRecipe && Boolean(onAddToShoppingList) && allIngredients.length > 0;
 
   const recipeTabs = [
     ...(showNutritionTab ? [{ key: 'nutrition' as const, label: 'Macro' }] : []),
     ...(showIngredientsTab ? [{ key: 'ingredients' as const, label: 'Ingredients' }] : []),
-    ...(instructions.length > 0 ? [{ key: 'steps' as const, label: 'Steps' }] : []),
+    ...(showStepsTab ? [{ key: 'steps' as const, label: 'Steps' }] : []),
     { key: 'ask' as const, label: isTechnique ? 'Ask Technique' : 'Ask' },
   ];
   React.useEffect(() => {
