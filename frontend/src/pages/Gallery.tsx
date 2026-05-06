@@ -516,62 +516,20 @@ export const Gallery: React.FC = () => {
                   idsToMove.length > 1 ? `${idsToMove.length} reels` : '1 reel';
 
                 const dragGhost = document.createElement('div');
-                const idsToMoveLabel = idsToMove.length === 1 ? '1 reel' : `${idsToMove.length} reels`;
-                const ghostVideos = displayedVideos
-                  .filter((candidate: any) => idsToMove.includes(candidate?.id ?? candidate?.process_id ?? candidate?.processId ?? ''))
-                  .slice(0, 4);
-                const posterUrls = ghostVideos
-                  .map((candidate: any) => candidate?.thumbnailUrl || candidate?.gcs_urls?.preview_thumbnail)
-                  .filter(Boolean);
-
                 dragGhost.style.position = 'fixed';
                 dragGhost.style.top = '-1000px';
                 dragGhost.style.left = '-1000px';
-                dragGhost.style.width = '108px';
-                dragGhost.style.height = '128px';
-                dragGhost.style.pointerEvents = 'none';
-                dragGhost.style.zIndex = '99999';
+                dragGhost.style.padding = '8px 12px';
+                dragGhost.style.borderRadius = '999px';
+                dragGhost.style.background = 'white';
+                dragGhost.style.boxShadow = '0 12px 30px rgba(0,0,0,0.20)';
+                dragGhost.style.fontSize = '13px';
+                dragGhost.style.fontWeight = '800';
+                dragGhost.style.color = '#111827';
+                dragGhost.textContent = idsToMoveLabel;
 
-                const stack = document.createElement('div');
-                stack.style.position = 'relative';
-                stack.style.width = '96px';
-                stack.style.height = '118px';
-
-                (posterUrls.length ? posterUrls : ['']).forEach((url: string, idx: number) => {
-                  const card = url ? document.createElement('img') : document.createElement('div');
-                  if (url) (card as HTMLImageElement).src = url;
-                  card.style.position = 'absolute';
-                  card.style.width = '64px';
-                  card.style.height = '88px';
-                  card.style.objectFit = 'cover';
-                  card.style.borderRadius = '14px';
-                  card.style.border = '2px solid white';
-                  card.style.background = '#ede9fe';
-                  card.style.boxShadow = '0 10px 22px rgba(0,0,0,0.22)';
-                  card.style.left = `${idx * 8}px`;
-                  card.style.top = `${idx * 5}px`;
-                  card.style.transform = `rotate(${(idx - 1) * 4}deg)`;
-                  stack.appendChild(card);
-                });
-
-                const badge = document.createElement('div');
-                badge.style.position = 'absolute';
-                badge.style.left = '28px';
-                badge.style.bottom = '0';
-                badge.style.padding = '7px 12px';
-                badge.style.borderRadius = '999px';
-                badge.style.background = 'white';
-                badge.style.boxShadow = '0 12px 30px rgba(0,0,0,0.20)';
-                badge.style.fontSize = '13px';
-                badge.style.fontWeight = '900';
-                badge.style.color = '#111827';
-                badge.style.whiteSpace = 'nowrap';
-                badge.textContent = idsToMoveLabel;
-                stack.appendChild(badge);
-
-                dragGhost.appendChild(stack);
                 document.body.appendChild(dragGhost);
-                e.dataTransfer.setDragImage(dragGhost, 44, 58);
+                e.dataTransfer.setDragImage(dragGhost, 18, 18);
 
                 setTimeout(() => {
                   dragGhost.remove();
