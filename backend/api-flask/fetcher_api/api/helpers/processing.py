@@ -841,25 +841,6 @@ def background_process(
         if not summary_title and caption:
             summary_title = caption.split("\n")[0][:80].strip()
 
-        final_processing_strategy = "bookmark" if is_too_long else "full"
-        if result.get("uploaded_video_used"):
-            final_processing_strategy = (
-                "tiktok_user_uploaded_video" if is_tiktok else "user_uploaded_video"
-            )
-
-        debug_payload = ai_res.get("debug")
-        if not isinstance(debug_payload, dict):
-            debug_payload = {}
-        if result.get("uploaded_video_used"):
-            debug_payload.update({
-                "uploaded_video_used": True,
-                "video_path_provided": True,
-                "source_video_saved": False,
-                "processing_strategy": final_processing_strategy,
-                "transcription_source": transcription_data.get("transcription_source"),
-                "transcript_chars": len(transcription_data.get("transcript", "") or ""),
-            })
-
         result.update({
             "status": "done",
             "user_id": user_id,
@@ -878,13 +859,13 @@ def background_process(
             "tools_list": ai_res.get("tools_list"),
             "location": ai_res.get("location"),
             "prompt": ai_res.get("prompt"),
-            "debug": debug_payload,
+            "debug": ai_res.get("debug"),
             "is_list": ai_res.get("is_list", False),
             "list_subtype": ai_res.get("list_subtype"),
             "list_count": ai_res.get("list_count"),
             "list_type": ai_res.get("list_type"),
             "transcription": transcription_data,
-            "processing_strategy": final_processing_strategy,
+            "processing_strategy": "bookmark" if is_too_long else "full",
             "detected_language": ai_res.get(
                 "detected_language",
                 transcription_data.get("detected_language", "unknown"),
@@ -915,39 +896,4 @@ def background_process(
     except Exception as e:
         logger.error(f"❌ Background Process Failed: {e}", exc_info=True)
         result["status"] = "error"
-
-        debug_payload = result.get("debug")
-        if not isinstance(debug_payload, dict):
-            debug_payload = {}
-        if result.get("uploaded_video_used"):
-            debug_payload.update({
-                "uploaded_video_used": True,
-                "video_path_provided": bool(video_path),
-                "source_video_saved": False,
-                "temp_video_deleted": False,
-            })
-
-        result["debug"] = debug_payload
         insert_reel_into_db(result)
-
-    finally:
-        if result.get("uploaded_video_used"):
-            temp_video_deleted = False
-            try:
-                if video_path and os.path.exists(video_path):
-                    cleanup_file(video_path)
-                temp_video_deleted = not video_path or not os.path.exists(video_path)
-            except Exception as cleanup_exc:
-                logger.warning("⚠️ Failed deleting uploaded temp video %s: %s", video_path, cleanup_exc)
-
-            try:
-                if temp_dir and os.path.exists(temp_dir):
-                    shutil.rmtree(temp_dir, ignore_errors=True)
-            except Exception as cleanup_exc:
-                logger.warning("⚠️ Failed deleting uploaded temp dir %s: %s", temp_dir, cleanup_exc)
-
-            logger.info(
-                "Uploaded temp video cleanup for %s: deleted=%s",
-                result.get("process_id"),
-                temp_video_deleted,
-            )

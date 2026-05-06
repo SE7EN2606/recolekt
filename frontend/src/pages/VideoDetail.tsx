@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Trash2, Heart, FolderInput, AlertCircle, X,
   EllipsisVertical, AlignLeft, Pencil, Save, Globe, Folder, Archive,
-  MapPin, Upload, Loader2,
+  MapPin,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -232,9 +232,6 @@ export const VideoDetail: React.FC = () => {
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-  const [uploadingTikTokVideo, setUploadingTikTokVideo] = useState(false);
-  const [uploadTikTokError, setUploadTikTokError] = useState<string | null>(null);
-  const uploadTikTokInputRef = useRef<HTMLInputElement | null>(null);
 
   useScrollLock(
     isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen,
@@ -387,54 +384,6 @@ export const VideoDetail: React.FC = () => {
     }
   };
 
-  const handleUploadTikTokVideo = async (file?: File | null) => {
-    if (!file || !currentVideoId) return;
-
-    setUploadingTikTokVideo(true);
-    setUploadTikTokError(null);
-
-    try {
-      const token = getAuthToken();
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const res = await fetch(
-        apiUrl(`api/reel/${encodeURIComponent(currentVideoId)}/upload-video`),
-        {
-          method: 'POST',
-          headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          credentials: 'include',
-          body: formData,
-        },
-      );
-
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload?.error || `Upload failed with HTTP ${res.status}`);
-      }
-
-      setVideo((prev: any) => prev ? {
-        ...prev,
-        status: 'processing',
-        processing_strategy: payload?.processing_strategy || 'tiktok_user_uploaded_video',
-      } : prev);
-
-      window.setTimeout(() => {
-        enrichVideo();
-      }, 1500);
-    } catch (err: any) {
-      setUploadTikTokError(err?.message || 'Upload failed');
-    } finally {
-      setUploadingTikTokVideo(false);
-      if (uploadTikTokInputRef.current) {
-        uploadTikTokInputRef.current.value = '';
-      }
-    }
-  };
-
-
   const findFolderById = (targetId: string, list: any[]): any | null => {
     for (const f of list) {
       if (f.id === targetId) return f;
@@ -509,41 +458,6 @@ export const VideoDetail: React.FC = () => {
     ? structuredBadgeSubtype ?? safeDerivedSubtype
     : undefined;
   const showTypeBadge = false; // Recipe-only focus: hide content badge for now.
-
-  const rawVideo = (video as any)?.__raw || video || {};
-  const sourceUrl = String(
-    rawVideo?.source_url ||
-    rawVideo?.sourceUrl ||
-    viewModel.originalUrl ||
-    '',
-  ).toLowerCase();
-
-  const processingStrategy = String(
-    rawVideo?.processing_strategy ||
-    rawVideo?.processingStrategy ||
-    video?.processing_strategy ||
-    '',
-  );
-
-  const transcriptionStatus = String(
-    rawVideo?.transcription?.status ||
-    video?.transcription?.status ||
-    '',
-  );
-
-  const debugPayload = rawVideo?.debug || video?.debug || {};
-  const isTikTokCaptionOnly =
-    sourceUrl.includes('tiktok.com') &&
-    (
-      processingStrategy === 'tiktok_caption_only' ||
-      transcriptionStatus === 'caption_only' ||
-      debugPayload?.video_path_provided === false
-    );
-
-  const uploadedVideoUsed =
-    processingStrategy === 'tiktok_user_uploaded_video' ||
-    debugPayload?.uploaded_video_used === true;
-
 
   const normalizedLocations: any[] = extractLocationPlaces(viewModel.location).map(
     (place: any, idx: number) => ({
@@ -779,62 +693,6 @@ export const VideoDetail: React.FC = () => {
               </div>
             ) : null}
           </div>
-
-          {isTikTokCaptionOnly && !uploadedVideoUsed && (
-            <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-              <input
-                ref={uploadTikTokInputRef}
-                type="file"
-                accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.m4v,.webm"
-                className="hidden"
-                onChange={(e) => handleUploadTikTokVideo(e.target.files?.[0])}
-              />
-
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-                  <Upload size={18} />
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-black text-amber-950">
-                    Improve this TikTok
-                  </div>
-                  <p className="mt-1 text-sm leading-relaxed text-amber-900">
-                    TikTok blocks direct video access. Upload the saved video to extract audio,
-                    captions, and on-screen text.
-                  </p>
-                  <p className="mt-1 text-xs font-medium text-amber-800/80">
-                    We delete the temporary video after processing.
-                  </p>
-
-                  {uploadTikTokError && (
-                    <div className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-xs font-bold text-red-700">
-                      {uploadTikTokError}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    disabled={uploadingTikTokVideo}
-                    onClick={() => uploadTikTokInputRef.current?.click()}
-                    className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-sm font-black text-white shadow-sm transition-colors hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {uploadingTikTokVideo ? (
-                      <>
-                        <Loader2 size={16} className="animate-spin" />
-                        Uploading…
-                      </>
-                    ) : (
-                      <>
-                        <Upload size={16} />
-                        Upload saved video for full extraction
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Recipe card */}
           {viewModel.recipe && !viewModel.recipe.is_compilation && (
