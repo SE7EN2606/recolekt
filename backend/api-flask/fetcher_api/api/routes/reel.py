@@ -4,9 +4,12 @@ Reel management routes - list, update, delete, search
 import os
 import json
 import logging
+import tempfile
+import threading
 from decimal import Decimal
 
 from flask import Blueprint, request, jsonify
+from werkzeug.utils import secure_filename
 import psycopg2.extras
 
 from fetcher_api.adapters.db import execute, fetch_all, fetch_one, get_db_connection
@@ -1195,6 +1198,141 @@ def ask_reel_recipe(process_id):
     except Exception as e:
         logger.error("Error in recipe assistant for reel %s: %s", process_id, e, exc_info=True)
         return jsonify({"error": "Recipe assistant failed"}), 500
+
+
+
+_ALLOWED_UPLOAD_EXTENSIONS = {".mp4", ".mov", ".m4v", ".webm"}
+_ALLOWED_UPLOAD_MIME_TYPES = {
+    "video/mp4",
+    "video/quicktime",
+    "video/webm",
+    "application/octet-stream",  # some browsers/dev tools send this for local video files
+}
+_MAX_UPLOAD_BYTES = int(os.getenv("RECOLEKT_MAX_VIDEO_UPLOAD_MB", "250")) * 1024 * 1024
+
+
+def _is_allowed_video_upload(filename: str, content_type: str | None) -> tuple[bool, str]:
+    ext = os.path.splitext(filename or "")[1].lower()
+    if ext not in _ALLOWED_UPLOAD_EXTENSIONS:
+        return False, "unsupported_file_extension"
+
+    if content_type and content_type not in _ALLOWED_UPLOAD_MIME_TYPES:
+        return False, "unsupported_file_type"
+
+    return True, ""
+
+
+@reel_bp.route("/reel/<process_id>/upload-video", methods=["POST", "OPTIONS"])
+def upload_reel_video(process_id):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        content_length = request.content_length or 0
+        if content_length and content_length > _MAX_UPLOAD_BYTES:
+            return jsonify({
+                "error": "file_too_large",
+                "max_mb": int(_MAX_UPLOAD_BYTES / 1024 / 1024),
+            }), 413
+
+        file = request.files.get("file")
+        if not file or not file.filename:
+            return jsonify({"error": "missing_file"}), 400
+
+        safe_name = secure_filename(file.filename)
+        allowed, reason = _is_allowed_video_upload(safe_name, file.content_type)
+        if not allowed:
+            return jsonify({
+                "error": reason,
+                "allowed_extensions": sorted(_ALLOWED_UPLOAD_EXTENSIONS),
+            }), 400
+
+        row = fetch_one(
+            """
+            SELECT id, source_url, caption, author_name, gcs_urls
+            FROM reels
+            WHERE id = %s AND user_id = %s
+            LIMIT 1
+            """,
+            (process_id, user_id),
+        )
+        if not row:
+            return jsonify({"error": "Reel not found"}), 404
+
+        row_dict = dict(row) if hasattr(row, "keys") else row._asdict()
+        source_url = row_dict.get("source_url") or ""
+        caption = row_dict.get("caption") or ""
+        author_name = row_dict.get("author_name") or ""
+
+        temp_dir = tempfile.mkdtemp(prefix="recolekt-upload-")
+        ext = os.path.splitext(safe_name)[1].lower()
+        uploaded_video_path = os.path.join(temp_dir, f"{process_id}{ext}")
+        file.save(uploaded_video_path)
+
+        shortcode = process_id.split("--")[0] if "--" in process_id else process_id.split("_")[0]
+        is_tiktok = "tiktok.com" in source_url.lower()
+        platform_code = "TT" if is_tiktok else "IG"
+
+        try:
+            gcs_paths = generate_gcs_paths(shortcode, platform_code, user_id=user_id)
+        except TypeError:
+            gcs_paths = generate_gcs_paths(shortcode, platform_code)
+
+        existing_gcs_urls = json_loads_maybe(row_dict.get("gcs_urls"), default={}) or {}
+
+        result = {
+            "process_id": process_id,
+            "user_id": user_id,
+            "source_url": source_url,
+            "caption": caption,
+            "author_name": author_name,
+            "gcs_paths": gcs_paths,
+            "gcs_urls": existing_gcs_urls,
+            "uploaded_video_used": True,
+            "source_video_saved": False,
+            "processing_strategy": "tiktok_user_uploaded_video" if is_tiktok else "user_uploaded_video",
+            "debug": {
+                "uploaded_video_used": True,
+                "video_path_provided": True,
+                "source_video_saved": False,
+            },
+        }
+
+        execute(
+            """
+            UPDATE reels
+            SET status = 'processing',
+                updated_at = NOW()
+            WHERE id = %s AND user_id = %s
+            """,
+            (process_id, user_id),
+        )
+
+        from fetcher_api.api.helpers.processing import background_process
+
+        threading.Thread(
+            target=background_process,
+            args=(result, uploaded_video_path, temp_dir, shortcode, caption, source_url, True, author_name, None, user_id),
+            daemon=True,
+        ).start()
+
+        logger.info("✅ Started manual video upload processing for reel %s", process_id)
+
+        return jsonify({
+            "ok": True,
+            "status": "processing",
+            "process_id": process_id,
+            "processing_strategy": result["processing_strategy"],
+        }), 202
+
+    except Exception as e:
+        logger.error("❌ Error uploading video for reel %s: %s", process_id, e, exc_info=True)
+        return jsonify({"error": "Internal error"}), 500
 
 
 @reel_bp.route("/update/<process_id>", methods=["PUT", "PATCH", "OPTIONS"])
