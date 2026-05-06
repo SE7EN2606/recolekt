@@ -530,17 +530,22 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
 
     # ── TIKTOK ────────────────────────────────────────────────────────────────
     if "tiktok.com" in url_lower:
-        from fetcher_api.api.helpers.video_downloader import (
-            TikTokVideoUnavailable,
-            _download_tiktok_video,
-        )
+        logger.info("TikTok URL detected; using TikTok downloader/fallback helper")
+        from fetcher_api.api.helpers.video_downloader import _download_tiktok_video
 
-        if str(os.getenv("TIKTOK_TRY_VIDEO_DOWNLOAD", "")).lower() not in {"1", "true", "yes"}:
-            logger.info("TikTok video download disabled; entering caption-only fallback")
-            raise TikTokVideoUnavailable("tiktok_video_download_disabled")
+        result = _download_tiktok_video(url, output_path)
 
-        logger.info("⬇️ Downloading TikTok video: %s", url)
-        return _download_tiktok_video(url, output_path)
+        if isinstance(result, dict):
+            metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+            if not result.get("caption"):
+                result["caption"] = metadata.get("caption") or ""
+            if not result.get("thumbnail_url") and metadata.get("thumbnail_url"):
+                result["thumbnail_url"] = metadata.get("thumbnail_url")
+            result.setdefault("video_path", None)
+            result.setdefault("thumbnail_path", None)
+            result.setdefault("success", False)
+
+        return result
 
     # ── FACEBOOK ──────────────────────────────────────────────────────────────
     if "facebook.com" in url_lower or "fb." in url_lower:

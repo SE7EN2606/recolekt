@@ -142,6 +142,13 @@ def _find_downloaded_media(output_path: str) -> Optional[str]:
 
 
 def _download_tiktok_video(url: str, output_path: str) -> Dict:
+    metadata = {}
+    caption = ""
+    thumbnail_path = None
+    post = None
+    info = None
+    last_error = None
+
     """
     TikTok is hostile to server-side downloads. This uses compliant fallbacks:
       1. Resolve short URLs.
@@ -190,15 +197,8 @@ def _download_tiktok_video(url: str, output_path: str) -> Dict:
             base_opts["cookiefile"] = cookies_path
             logger.info("🍪 TikTok: using TT_COOKIES_CONTENT")
 
-        if str(os.getenv("TIKTOK_TRY_VIDEO_DOWNLOAD", "")).lower() not in {"1", "true", "yes"}:
-            logger.info("TikTok video download skipped; using caption/thumbnail fallback")
-            return {
-                "success": False,
-                "video_path": None,
-                "thumbnail_path": locals().get("thumbnail_path"),
-                "caption": locals().get("caption") or "",
-                "error": "tiktok_video_download_disabled",
-            }
+        caption = caption if "caption" in locals() else ""
+        thumbnail_path = thumbnail_path if "thumbnail_path" in locals() else None
 
         attempts = [
             ("default", {}),
@@ -208,6 +208,11 @@ def _download_tiktok_video(url: str, output_path: str) -> Dict:
 
         last_error = None
         info = None
+
+        if str(os.getenv("TIKTOK_TRY_VIDEO_DOWNLOAD", "")).lower() not in {"1", "true", "yes"}:
+            logger.info("TikTok video download disabled; skipping yt-dlp attempts and using caption/thumbnail fallback")
+            attempts = []
+            last_error = "tiktok_video_download_disabled"
 
         for label, extra in attempts:
             try:
@@ -269,11 +274,15 @@ def _download_tiktok_video(url: str, output_path: str) -> Dict:
         meta["caption"] = meta["caption"] or oembed_meta.get("caption", "")
 
         if not actual_path:
-            logger.error("❌ TikTok download failed after fallbacks: %s", last_error)
+            if str(last_error) == "tiktok_video_download_disabled":
+                logger.info("TikTok video download disabled; caption/thumbnail fallback prepared")
+            else:
+                logger.error("❌ TikTok download failed after fallbacks: %s", last_error)
             return {
                 "success": False,
                 "metadata": meta,
                 "post": None,
+                "caption": (metadata if isinstance(metadata, dict) else {}).get("caption") or caption or "",
                 "thumbnail_path": thumbnail_path,
                 "video_path": None,
                 "error": last_error,
