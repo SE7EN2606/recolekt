@@ -408,7 +408,12 @@ def background_process(
             transcript_text = yt.get("transcript", "") or ""
             detected_language = yt.get("detected_language", "en") or "en"
             audio_path = yt.get("audio_path")
-            processing_strategy = "youtube_captions"
+            yt_video_path = yt.get("video_path")
+            yt_duration = None
+            yt_duration_seconds = 0
+            if yt_video_path and os.path.exists(yt_video_path):
+                yt_duration, yt_duration_seconds = get_video_duration(yt_video_path)
+            processing_strategy = "youtube_captions_with_video" if yt_video_path else "youtube_captions"
             t_result = None
 
             if not transcript_text.strip() and audio_path and os.path.exists(audio_path):
@@ -417,7 +422,11 @@ def background_process(
                     t_result = _run_transcription(audio_path)
                     transcript_text = t_result.transcript or ""
                     detected_language = t_result.detected_language or "en"
-                    processing_strategy = f"youtube_audio_{t_result.transcription_source}"
+                    processing_strategy = (
+                        f"youtube_audio_{t_result.transcription_source}_with_video"
+                        if yt_video_path
+                        else f"youtube_audio_{t_result.transcription_source}"
+                    )
                     logger.info(
                         f"✅ Transcription: {len(transcript_text)} chars, "
                         f"lang={detected_language}, source={t_result.transcription_source}"
@@ -501,8 +510,8 @@ def background_process(
                     merged_text,
                     caption,
                     detected_language,
-                    video_path=None,
-                    duration_seconds=0,
+                    video_path=yt_video_path if yt_video_path and os.path.exists(yt_video_path) else None,
+                    duration_seconds=yt_duration_seconds,
                     is_silent=is_silent_input,
                 )
             )
@@ -526,8 +535,8 @@ def background_process(
                 "status": "done",
                 "user_id": user_id,
                 "source_url": url,
-                "duration": None,
-                "duration_seconds": 0,
+                "duration": yt_duration,
+                "duration_seconds": yt_duration_seconds,
                 "caption": caption,
                 "author_name": author_name,
                 "summary": ai_summary,

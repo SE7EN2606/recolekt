@@ -863,7 +863,12 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const hasActionableRecipe =
     allIngredients.length >= 2 &&
     instructions.length >= 3 &&
-    (hasServings || prepTime || cookTime || totalTime);
+    (
+      hasServings ||
+      recipe.prep_time ||
+      recipe.cook_time ||
+      recipe.total_time
+    );
 
   const recipeKind: 'full_recipe' | 'technique_with_ingredients' | 'pure_technique' =
     allIngredients.length <= 1 && instructions.length >= 2

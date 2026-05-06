@@ -324,6 +324,57 @@ def _download_youtube_audio(url: str, output_dir: str) -> Optional[str]:
                 pass
 
 
+
+def _download_youtube_video(url: str, output_dir: str) -> Optional[str]:
+    """Download a temporary YouTube video for frame/OCR extraction."""
+    cookies_path = None
+    try:
+        import yt_dlp
+
+        os.makedirs(output_dir, exist_ok=True)
+        outtmpl = os.path.join(output_dir, "yt_video.%(ext)s")
+
+        ydl_opts = {
+            "outtmpl": outtmpl,
+            "format": "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+            "merge_output_format": "mp4",
+            "quiet": False,
+            "no_warnings": False,
+            "noplaylist": True,
+        }
+
+        cookies_path = _write_cookies("YT_COOKIES_CONTENT", "yt_cookies.txt")
+        if cookies_path:
+            ydl_opts["cookiefile"] = cookies_path
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        video_path = os.path.join(output_dir, "yt_video.mp4")
+        if os.path.exists(video_path) and os.path.getsize(video_path) > 100_000:
+            logger.info("✅ YouTube temp video downloaded: %s (%dKB)", video_path, os.path.getsize(video_path) // 1024)
+            return video_path
+
+        for ext in ("mp4", "webm", "mkv", "mov"):
+            candidate = os.path.join(output_dir, f"yt_video.{ext}")
+            if os.path.exists(candidate) and os.path.getsize(candidate) > 100_000:
+                logger.info("✅ YouTube temp video downloaded: %s (%dKB)", candidate, os.path.getsize(candidate) // 1024)
+                return candidate
+
+        logger.warning("⚠️ YouTube video download finished but no usable file found")
+        return None
+
+    except Exception as e:
+        logger.warning("⚠️ YouTube temp video download failed: %s", e)
+        return None
+    finally:
+        if cookies_path and os.path.exists(cookies_path):
+            try:
+                os.unlink(cookies_path)
+            except Exception:
+                pass
+
+
 # ── YOUTUBE: transcript + thumbnail ──────────────────────────────────────────
 
 def fetch_youtube_data(url: str, temp_dir: Optional[str] = None) -> Dict:
@@ -414,6 +465,12 @@ def fetch_youtube_data(url: str, temp_dir: Optional[str] = None) -> Dict:
             else:
                 logger.warning("⚠️ Audio fallback also failed — downstream will summarize from title/caption")
 
+        # ── 5. Optional temp video for Shorts frames/OCR ─────────────
+        video_path = None
+        if str(os.getenv("YOUTUBE_TRY_VIDEO_DOWNLOAD", "")).lower() in {"1", "true", "yes"}:
+            logger.info("YouTube temp video download enabled for frame/OCR extraction")
+            video_path = _download_youtube_video(url, thumb_dir)
+
         return {
             "success": True,
             "metadata": metadata,
@@ -422,6 +479,7 @@ def fetch_youtube_data(url: str, temp_dir: Optional[str] = None) -> Dict:
             "detected_language": detected_language,
             "is_youtube": True,
             "audio_path": audio_path,
+            "video_path": video_path,
             "thumbnail_path": thumbnail_path,
         }
 
