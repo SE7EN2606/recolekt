@@ -547,7 +547,7 @@ export const Gallery: React.FC = () => {
 
                 ghostVideos.forEach((ghostVideo: any, index: number) => {
                   const img = document.createElement('img');
-                  img.src = ghostVideo?.thumbnailUrl || ghostVideo?.gcs_urls?.preview_thumbnail || '';
+                  img.src = ghostVideo?.thumbnailUrl || ghostVideo?.thumbnail_url || ghostVideo?.gcs_urls?.preview_thumbnail || ghostVideo?.gcs_urls?.thumbnail || '';
                   img.style.position = 'absolute';
                   img.style.width = '62px';
                   img.style.height = '88px';

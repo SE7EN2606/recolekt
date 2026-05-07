@@ -5,6 +5,7 @@ import {
   LayoutGrid, Heart, Archive, Share2,
   Download, SquarePen, FolderPlus, CornerDownRight, FolderClosed, Inbox,
   FolderOpen, MapPin, ShoppingCart,
+  Ban
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { Button } from './Button';
@@ -16,6 +17,7 @@ import { ConfirmModal } from './ConfirmModal';
 
 
 const SYSTEM_FOLDER_IDS = new Set(['all', 'favorites', 'shared', 'archive', 'default', 'unsorted']);
+const DROP_BLOCKED_IDS = new Set(['all', 'unsorted', 'grocery-list', 'favorites']);
 
 const isSystemOrAllVideos = (folder: any) => {
   const name = String(folder?.name || '').trim().toLowerCase();
@@ -26,6 +28,9 @@ const isSystemOrAllVideos = (folder: any) => {
 
 export const Sidebar: React.FC = () => {
   const { folders, addFolder, videos, moveVideos, groceryList } = useData();
+
+  const [dragOverId, setDragOverId] = React.useState<string | null>(null);
+  const [pendingMove, setPendingMove] = React.useState<{ids: string[]; targetFolderId: string; targetFolderName: string} | null>(null);
   const [isInputModalOpen, setIsInputModalOpen] = React.useState(false);
   const [isManageModalOpen, setIsManageModalOpen] = React.useState(false);
   const [isVideoModalOpen, setIsVideoModalOpen] = React.useState(false);
@@ -81,7 +86,6 @@ export const Sidebar: React.FC = () => {
     await addFolder(name, pid || null);
   };
 
-  const [pendingMove, setPendingMove] = React.useState<{ids: string[]; targetFolderId: string; targetFolderName: string} | null>(null);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -154,7 +158,13 @@ export const Sidebar: React.FC = () => {
             </div>
 
             <div className="space-y-1">
-              <NavLink to="/gallery" end className={({ isActive }) => linkClass(isActive && !location.pathname.includes('favorites') && !location.pathname.includes('unsorted'))}>
+              <div className="relative">
+                {dragOverId === 'all' && (
+                  <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-red-50/80 ring-2 ring-red-400">
+                    <Ban size={18} className="text-red-500" />
+                  </div>
+                )}
+                <NavLink to="/gallery" end className={({ isActive }) => linkClass(isActive && !location.pathname.includes('favorites') && !location.pathname.includes('unsorted'))}>
                 {({ isActive }) => (
                   <>
                     <div className="flex items-center gap-3">
@@ -167,7 +177,7 @@ export const Sidebar: React.FC = () => {
                   </>
                 )}
               </NavLink>
-
+              </div>
               {false && <NavLink to="/organizer" className={({ isActive }) => linkClass(isActive)}>
                 {({ isActive }) => (
                   <div className="flex items-center gap-3">
@@ -177,7 +187,13 @@ export const Sidebar: React.FC = () => {
                 )}
               </NavLink>}
 
-              <NavLink to="/gallery/unsorted" className={({ isActive }) => linkClass(isActive)}>
+              <div className="relative">
+                {dragOverId === 'unsorted' && (
+                  <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-red-50/80 ring-2 ring-red-400">
+                    <Ban size={18} className="text-red-500" />
+                  </div>
+                )}
+                <NavLink to="/gallery/unsorted" className={({ isActive }) => linkClass(isActive)}>
                 {({ isActive }) => (
                   <>
                     <div className="flex items-center gap-3">
@@ -190,7 +206,7 @@ export const Sidebar: React.FC = () => {
                   </>
                 )}
               </NavLink>
-
+              </div>
               <NavLink to="/gallery/favorites" className={({ isActive }) => favLinkClass(isActive)}>
                 {({ isActive }) => (
                   <>
@@ -206,7 +222,13 @@ export const Sidebar: React.FC = () => {
               </NavLink>
 
               {/* Grocery List */}
-              <NavLink to="/grocery-list" className={({ isActive }) => groceryLinkClass(isActive)}>
+              <div className="relative">
+                {dragOverId === 'grocery-list' && (
+                  <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-red-50/80 ring-2 ring-red-400">
+                    <Ban size={18} className="text-red-500" />
+                  </div>
+                )}
+                <NavLink to="/grocery-list" className={({ isActive }) => groceryLinkClass(isActive)}>
                 {({ isActive }) => (
                   <>
                     <div className="flex items-center gap-3">
@@ -227,7 +249,7 @@ export const Sidebar: React.FC = () => {
                   </>
                 )}
               </NavLink>
-
+              </div>
               {/* Saved Places */}
               {false && <NavLink to="/places" className={({ isActive }) => placesLinkClass(isActive)}>
                 {({ isActive }) => (
