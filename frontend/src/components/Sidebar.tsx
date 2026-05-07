@@ -12,6 +12,7 @@ import { InputModal } from './InputModal';
 import { ManageCollectionsModal } from './ManageCollectionsModal';
 import { AddVideoModal } from './AddVideoModal';
 import { useTranslation } from 'react-i18next';
+import { ConfirmModal } from './ConfirmModal';
 
 
 const SYSTEM_FOLDER_IDS = new Set(['all', 'favorites', 'shared', 'archive', 'default', 'unsorted']);
@@ -80,9 +81,11 @@ export const Sidebar: React.FC = () => {
     await addFolder(name, pid || null);
   };
 
+  const [pendingMove, setPendingMove] = React.useState<{ids: string[]; targetFolderId: string; targetFolderName: string} | null>(null);
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    e.currentTarget.classList.add('bg-primary-50', 'scale-[1.02]', 'shadow-sm', 'border-primary-200');
+    e.currentTarget.classList.add('bg-primary-50/70', 'scale-[1.04]', 'shadow-lg', 'ring-2', 'ring-primary-500', 'ring-offset-1', 'animate-[pulse_0.45s_ease-in-out_infinite]');
   };
 
   const handleDragEnter = (e: React.DragEvent) => {
@@ -90,12 +93,12 @@ export const Sidebar: React.FC = () => {
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
-    e.currentTarget.classList.remove('bg-primary-50', 'scale-[1.02]', 'shadow-sm', 'border-primary-200');
+    e.currentTarget.classList.remove('bg-primary-50/70', 'scale-[1.04]', 'shadow-lg', 'ring-2', 'ring-primary-500', 'ring-offset-1', 'animate-[pulse_0.45s_ease-in-out_infinite]');
   };
 
   const handleDrop = async (e: React.DragEvent, targetFolderId: string) => {
     e.preventDefault();
-    e.currentTarget.classList.remove('bg-primary-50', 'scale-[1.02]', 'shadow-sm', 'border-primary-200');
+    e.currentTarget.classList.remove('bg-primary-50/70', 'scale-[1.04]', 'shadow-lg', 'ring-2', 'ring-primary-500', 'ring-offset-1', 'animate-[pulse_0.45s_ease-in-out_infinite]');
 
     const videoIdsStr = e.dataTransfer.getData('videoIds');
     const oldSingleVideoId = e.dataTransfer.getData('videoId');
@@ -109,17 +112,26 @@ export const Sidebar: React.FC = () => {
     }
 
     if (idsToMove.length > 0 && sourceId !== targetFolderId) {
-      await moveVideos(idsToMove, targetFolderId);
-      window.dispatchEvent(new CustomEvent('app-video-moved', {
-        detail: { videoIds: idsToMove, fromFolderId: sourceId, toFolderId: targetFolderId }
-      }));
+      const flat = (list: any[]): any[] => list.flatMap((f: any) => [f, ...(f.subFolders ? flat(f.subFolders) : [])]);
+      const found = flat(folders).find((f: any) => f.id === targetFolderId);
+      const targetFolderName = found?.name || targetFolderId;
+      setPendingMove({ ids: idsToMove, targetFolderId, targetFolderName });
     }
+  };
+
+  const confirmMove = async () => {
+    if (!pendingMove) return;
+    await moveVideos(pendingMove.ids, pendingMove.targetFolderId);
+    window.dispatchEvent(new CustomEvent('app-video-moved', {
+      detail: { videoIds: pendingMove.ids, toFolderId: pendingMove.targetFolderId }
+    }));
+    setPendingMove(null);
   };
 
 
   return (
     <>
-      <aside className="hidden md:flex flex-col w-[280px] shrink-0 sticky top-24 self-start z-20 bg-white/70 backdrop-blur-2xl border border-white/80 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)] rounded-[2rem] p-4 pb-4 transition-all max-h-[calc(100vh-7rem)]">
+      <aside className="hidden md:flex flex-col w-[280px] shrink-0 sticky top-24 self-start z-20 bg-white/70 backdrop-blur-2xl border border-white/80 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)] rounded-[2rem] p-4 pb-4 transition-all max-h-[calc(100vh-7rem)] overflow-visible overflow-visible">
 
         {/* Fixed Top Section */}
         <div className="mb-6 px-0.5 shrink-0">
@@ -135,7 +147,7 @@ export const Sidebar: React.FC = () => {
         </div>
 
         {/* Scrollable Inner Section */}
-        <div className="flex-1 overflow-y-auto space-y-8 pb-4 pr-1 -mr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+        <div className="flex-1 overflow-y-auto overflow-x-visible space-y-8 pb-4 px-2 -mx-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
           <div>
             <div className="mb-2 px-0.5">
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{t('sidebar:library', 'Library')}</h3>
@@ -253,7 +265,7 @@ export const Sidebar: React.FC = () => {
                       onDragEnter={handleDragEnter}
                       onDragLeave={handleDragLeave}
                       onDrop={(e) => handleDrop(e, folder.id)}
-                      className="rounded-xl transition-all duration-200"
+                      className="rounded-xl transition-all duration-100"
                     >
                       <NavLink to={folderPath} className={({ isActive }) => linkClass(isActive)}>
                         {({ isActive }) => (
@@ -281,7 +293,7 @@ export const Sidebar: React.FC = () => {
                               onDragEnter={handleDragEnter}
                               onDragLeave={handleDragLeave}
                               onDrop={(e) => handleDrop(e, sub.id)}
-                              className="rounded-xl transition-all duration-200"
+                              className="rounded-xl transition-all duration-100"
                             >
                               <NavLink
                                 to={subPath}
@@ -346,6 +358,14 @@ export const Sidebar: React.FC = () => {
       />
       <ManageCollectionsModal isOpen={isManageModalOpen} onClose={() => setIsManageModalOpen(false)} />
       <AddVideoModal isOpen={isVideoModalOpen} onClose={() => setIsVideoModalOpen(false)} />
-    </>
+      <ConfirmModal
+        open={!!pendingMove}
+        title={`Move ${pendingMove?.ids.length ?? 0} video${(pendingMove?.ids.length ?? 0) !== 1 ? 's' : ''} to "${pendingMove?.targetFolderName}"?`}
+        message="This action cannot be undone."
+        confirmLabel="Move"
+        onConfirm={confirmMove}
+        onCancel={() => setPendingMove(null)}
+      />
+        </>
   );
 };

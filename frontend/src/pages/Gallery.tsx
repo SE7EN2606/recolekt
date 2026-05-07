@@ -653,8 +653,8 @@ e.dataTransfer.setData('sourceId', video.folderId || 'unsorted');
       />
       <ConfirmModal
         open={deleteConfirm}
-        title={t('gallery:deleteTitle', 'Delete videos')}
-        message={t('gallery:confirmDelete', `Delete ${selectedIds.size} video(s)?`)}
+        title={`Delete ${selectedIds.size} video${selectedIds.size !== 1 ? 's' : ''}?`}
+        message={'This action cannot be undone.'}
         confirmLabel={t('common:delete', 'Delete')}
         danger
         onConfirm={() => { setDeleteConfirm(false); doDelete(); }}
