@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { MoveCollectionModal } from '../components/MoveCollectionModal';
 import { MoveFolderModal } from '../components/MoveFolderModal';
+import ConfirmModal from '../components/ConfirmModal';
 
 
 const CalendarArrowUp = ({ size = 20 }) => ( <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 18 4-4 4 4"/><path d="M16 2v4"/><path d="M18 22v-8"/><path d="M21 11.343V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2-2v14a2 2 0 0 0 2 2h9"/><path d="M3 10h18"/><path d="M8 2v4"/></svg> );
@@ -27,6 +28,7 @@ const PROCESSING_MESSAGES = [
 
 function useSearch(query: string, folderId: string | undefined) {
   const [results, setResults]     = useState<any[] | null>(null);
+
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
@@ -155,6 +157,8 @@ export const Gallery: React.FC = () => {
   } = useData();
   const { t } = useTranslation(['gallery', 'common', 'sidebar']);
 
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [moveConfirm, setMoveConfirm] = useState<{open: boolean; targetId: string; targetName: string}>({open: false, targetId: '', targetName: ''});
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -273,19 +277,30 @@ export const Gallery: React.FC = () => {
     setSelectedIds(next);
   };
 
-  const handleMoveSubmit = async (targetId: string) => {
+  const handleMoveSubmit = (targetId: string) => {
+    const flat = (list: any[]): any[] => list.flatMap((f: any) => [f, ...(f.subFolders ? flat(f.subFolders) : [])]);
+    const found = flat(folders).find((f: any) => f.id === targetId);
+    const targetName = found?.name || targetId;
+    setIsMoveModalOpen(false);
+    setMoveConfirm({ open: true, targetId, targetName });
+  };
+
+  const doMove = async (targetId: string) => {
     try {
       await moveVideos(Array.from(selectedIds), targetId);
       setSelectedIds(new Set());
       setSelectionMode(false);
-      setIsMoveModalOpen(false);
     } catch {
       alert(t('gallery:moveFailed', 'Failed to move videos'));
     }
   };
 
   const handleDelete = async () => {
-    if (selectedIds.size === 0 || !confirm(t('gallery:confirmDelete', `Delete ${selectedIds.size} video(s)?`))) return;
+    if (selectedIds.size === 0) return;
+    setDeleteConfirm(true);
+  };
+
+  const doDelete = async () => {
     try {
       await deleteVideos(Array.from(selectedIds));
       setSelectedIds(new Set());
@@ -522,6 +537,7 @@ export const Gallery: React.FC = () => {
                 dragGhost.style.top = '-1000px';
                 dragGhost.style.left = '-1000px';
                 dragGhost.style.pointerEvents = 'none';
+                dragGhost.style.transform = 'scale(0.82)';
                 dragGhost.style.zIndex = '999999';
 
                 const stack = document.createElement('div');
@@ -552,9 +568,9 @@ export const Gallery: React.FC = () => {
                 badge.style.bottom = '0';
                 badge.style.padding = '8px 13px';
                 badge.style.borderRadius = '999px';
-                badge.style.background = 'white';
+                badge.style.background = 'rgba(255,255,255,0.82)';
                 badge.style.boxShadow = '0 12px 30px rgba(0,0,0,0.24)';
-                badge.style.fontSize = '13px';
+                badge.style.fontSize = '11px';
                 badge.style.fontWeight = '900';
                 badge.style.color = '#111827';
                 badge.style.whiteSpace = 'nowrap';
@@ -626,6 +642,24 @@ e.dataTransfer.setData('sourceId', video.folderId || 'unsorted');
         onConfirm={handleDeleteFolder}
       />
 
-    </div>
+    
+      <ConfirmModal
+        open={moveConfirm.open}
+        title={t('gallery:moveTitle', 'Move videos')}
+        message={t('gallery:confirmMove', `Move ${selectedIds.size} video(s) to "${moveConfirm.targetName}"?`)}
+        confirmLabel={t('common:move', 'Move')}
+        onConfirm={() => { doMove(moveConfirm.targetId); setMoveConfirm({ open: false, targetId: '', targetName: '' }); }}
+        onCancel={() => setMoveConfirm({ open: false, targetId: '', targetName: '' })}
+      />
+      <ConfirmModal
+        open={deleteConfirm}
+        title={t('gallery:deleteTitle', 'Delete videos')}
+        message={t('gallery:confirmDelete', `Delete ${selectedIds.size} video(s)?`)}
+        confirmLabel={t('common:delete', 'Delete')}
+        danger
+        onConfirm={() => { setDeleteConfirm(false); doDelete(); }}
+        onCancel={() => setDeleteConfirm(false)}
+      />
+      </div>
   );
 };

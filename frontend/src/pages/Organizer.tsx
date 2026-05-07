@@ -24,6 +24,7 @@ import {
   FolderPlus,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import ConfirmModal from '../components/ConfirmModal';
 
 interface DropdownOption {
   value: string;
@@ -156,6 +157,7 @@ export const Organizer: React.FC = () => {
   const { t } = useTranslation(['organizer', 'common']);
   const { folders, videos, addFolder, updateFolder, deleteFolder, moveVideos } = useData();
 
+  const [folderDeleteConfirm, setFolderDeleteConfirm] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string>('unsorted');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
@@ -290,10 +292,7 @@ export const Organizer: React.FC = () => {
   };
 
   const handleDeleteFolder = () => {
-    if (window.confirm(t('organizer:deleteConfirm', { name: selectedFolder?.name }))) {
-      deleteFolder(selectedFolderId);
-      setSelectedFolderId('unsorted');
-    }
+    setFolderDeleteConfirm(true);
   };
 
   const handleMoveSelected = (targetId: string) => {
@@ -638,6 +637,7 @@ export const Organizer: React.FC = () => {
                       dragGhost.style.top = '-1000px';
                       dragGhost.style.left = '-1000px';
                       dragGhost.style.pointerEvents = 'none';
+                dragGhost.style.transform = 'scale(0.82)';
                       dragGhost.style.zIndex = '999999';
 
                       const stack = document.createElement('div');
@@ -668,9 +668,9 @@ export const Organizer: React.FC = () => {
                       badge.style.bottom = '0';
                       badge.style.padding = '8px 13px';
                       badge.style.borderRadius = '999px';
-                      badge.style.background = 'white';
+                      badge.style.background = 'rgba(255,255,255,0.82)';
                       badge.style.boxShadow = '0 12px 30px rgba(0,0,0,0.24)';
-                      badge.style.fontSize = '13px';
+                      badge.style.fontSize = '11px';
                       badge.style.fontWeight = '900';
                       badge.style.color = '#111827';
                       badge.style.whiteSpace = 'nowrap';
@@ -735,6 +735,16 @@ e.dataTransfer.setData('sourceId', selectedFolderId);
           </div>
         </div>
       </div>
-    </div>
+    
+      <ConfirmModal
+        open={folderDeleteConfirm}
+        title={t('organizer:deleteTitle', 'Delete folder')}
+        message={t('organizer:deleteConfirm', { name: selectedFolder?.name })}
+        confirmLabel={t('common:delete', 'Delete')}
+        danger
+        onConfirm={() => { setFolderDeleteConfirm(false); deleteFolder(selectedFolderId); setSelectedFolderId('unsorted'); }}
+        onCancel={() => setFolderDeleteConfirm(false)}
+      />
+      </div>
   );
 };

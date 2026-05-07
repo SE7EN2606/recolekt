@@ -1,111 +1,67 @@
-import { API_BASE } from "../utils/api";
-import React, { useEffect, useState } from 'react';
-import { X, AlertTriangle } from 'lucide-react';
-import { Button } from './Button';
+import React from "react";
 
 interface ConfirmModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
+  open?: boolean;
+  isOpen?: boolean;
   title: string;
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
-  variant?: 'primary' | 'danger';
+  onConfirm: () => void | Promise<void>;
+  onCancel?: () => void;
+  onClose?: () => void;
+  danger?: boolean;
+  variant?: string;
 }
 
-export const ConfirmModal: React.FC<ConfirmModalProps> = ({
+const ConfirmModal: React.FC<ConfirmModalProps> = ({
+  open,
   isOpen,
-  onClose,
-  onConfirm,
   title,
   message,
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
-  variant = 'primary'
+  onConfirm,
+  onCancel,
+  onClose,
+  danger,
+  variant,
 }) => {
-  const [isVisible, setIsVisible] = useState(false);
+  const visible = open ?? isOpen ?? false;
+  const handleCancel = onCancel ?? onClose ?? (() => {});
+  const isDanger = danger || variant === "danger" || variant === "destructive";
 
-  useEffect(() => {
-    if (isOpen) {
-      setIsVisible(true);
-      document.body.style.overflow = 'hidden';
-    } else {
-      const timer = setTimeout(() => setIsVisible(false), 300);
-      document.body.style.overflow = '';
-      return () => clearTimeout(timer);
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
-
-  if (!isVisible) return null;
-
+  if (!visible) return null;
   return (
-    <div
-      className={`fixed inset-0 z-200 flex items-center justify-center px-4 transition-all duration-300 ${
-        isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-      }`}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={handleCancel}>
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
-      />
-
-      <div
-        className={`
-          relative bg-white/90 backdrop-blur-xl border border-white/40
-          w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden
-          transform transition-all duration-300
-          ${isOpen ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}
-        `}
+        className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl p-6 w-full max-w-sm mx-4"
+        onClick={e => e.stopPropagation()}
       >
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div
-              className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                variant === 'danger'
-                  ? 'bg-red-100 text-red-600'
-                  : 'bg-primary-100 text-primary-600'
-              }`}
-            >
-              <AlertTriangle size={20} />
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 -mr-2 text-gray-400 hover:bg-white/50 rounded-full transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          <h3 className="text-lg font-bold text-gray-900 mb-2 uppercase tracking-tight">
-            {title}
-          </h3>
-
-          <p className="text-gray-500 text-sm leading-relaxed mb-6">
-            {message}
-          </p>
-
-          <div className="flex justify-end gap-3">
-            <Button variant="ghost" onClick={onClose} size="sm" className="font-bold">
-              {cancelLabel}
-            </Button>
-            <Button
-              variant={variant === 'danger' ? 'danger' : 'primary'}
-              onClick={() => {
-                onConfirm();
-                onClose();
-              }}
-              size="sm"
-              className="font-black px-6"
-            >
-              {confirmLabel}
-            </Button>
-          </div>
+        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">{title}</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">{message}</p>
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={handleCancel}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+              isDanger
+                ? "bg-red-500 text-white hover:bg-red-600"
+                : "bg-blue-600 text-white hover:bg-blue-700"
+            }`}
+          >
+            {confirmLabel}
+          </button>
         </div>
       </div>
     </div>
   );
 };
+
+export default ConfirmModal;
+export { ConfirmModal };
