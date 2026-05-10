@@ -4,6 +4,7 @@ import { RecipeIngredients } from '../features/recipe-core/RecipeIngredients';
 import RecipeDirections from '../features/recipe-core/RecipeDirections';
 import RecipeAskPanel from '../features/recipe-core/RecipeAskPanel';
 import RecipeMainView from '../features/recipe-layout/RecipeMainView';
+import useRecipeAssistant from '../features/recipe-assistant/useRecipeAssistant';
 import IngredientRow from '../features/recipe-core/rows/IngredientRow';
 import StepRow from '../features/recipe-core/rows/StepRow';
 import TimeCell from '../features/recipe-core/rows/TimeCell';
@@ -17,38 +18,9 @@ import { useTranslation } from 'react-i18next';
 import CookModeModal from './CookModeModal';
 import { apiUrl } from "../utils/videoDetailUtils";
 
-const getRecipeAssistantToken = (): string => {
-  try {
-    return String(
-      (window as any).__REKOLEKT_TOKEN__ ||
-      localStorage.getItem("auth_token") ||
-      localStorage.getItem("token") ||
-      localStorage.getItem("access_token") ||
-      localStorage.getItem("jwt") ||
-      ""
-    ).replace(/^Bearer\s+/i, "").trim();
-  } catch {
-    return "";
-  }
-};
 
-type RecipeAssistantHistoryEntry = {
-  question: string;
-  answer: string;
-  createdAt?: string;
-  created_at?: string;
-};
 
-type RecipeAssistantHistoryItem = RecipeAssistantHistoryEntry;
 
-type RecipeAssistantResponse = {
-  history?: RecipeAssistantHistoryEntry[];
-  answer?: string;
-  error?: string;
-  sourcesUsed?: string[];
-  missingInfo?: string[];
-  model?: string;
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -558,11 +530,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const [savedCookStep, setSavedCookStep] = React.useState<number | null>(null);
   type RecipeTabKey = 'ingredients' | 'steps' | 'nutrition' | 'ask';
   const [activeRecipeTab, setActiveRecipeTab] = React.useState<RecipeTabKey>('nutrition');
-  const [askQuestion, setAskQuestion] = useState("");
-  const [askAnswer, setAskAnswer] = useState("");
-  const [askError, setAskError] = useState("");
-  const [askLoading, setAskLoading] = useState(false);
-  const [askHistory, setAskHistory] = useState<RecipeAssistantHistoryItem[]>([]);
 
   if (recipe.is_compilation) return <RecipeCompilationCard recipe={recipe} />;
 
@@ -731,6 +698,22 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     }
   }, [activeRecipeTab, recipeTabs]);
 
+
+  const {
+    askQuestion,
+    setAskQuestion,
+    askAnswer,
+    setAskAnswer,
+    askLoading,
+    askError,
+    askHistory,
+    askHistoryStorageKey,
+    setAskHistory,
+    handleAskRecipe,
+  } = useRecipeAssistant({
+    recipeId,
+  });
+
   // ── Serving scale ────────────────────────────────────────────────────────
 
   const baseServings = React.useMemo(() => {
@@ -813,126 +796,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     onAddToShoppingList(items);
     setAdded(true);
     setTimeout(() => setAdded(false), 3000);
-  };
-
-  const askHistoryStorageKey = React.useMemo(
-    () => (recipeId ? `recolekt:recipe-ask:${recipeId}` : ''),
-    [recipeId],
-  );
-
-  React.useEffect(() => {
-    if (!askHistoryStorageKey || !recipeId) return;
-
-    let cancelled = false;
-
-    const loadAskHistory = async () => {
-      try {
-        const token = getRecipeAssistantToken();
-        const res = await fetch(
-          apiUrl(`api/reel/${encodeURIComponent(recipeId)}/ask/history?limit=10`),
-          {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            credentials: "include",
-          }
-        );
-
-        const data = (await res.json().catch(() => ({}))) as {
-          history?: RecipeAssistantHistoryEntry[];
-        };
-
-        if (!cancelled && res.ok && Array.isArray(data.history)) {
-          setAskHistory(data.history.slice(0, 10));
-          try {
-            localStorage.setItem(askHistoryStorageKey, JSON.stringify(data.history.slice(0, 10)));
-          } catch {
-            // Ignore localStorage sync failures.
-          }
-          return;
-        }
-      } catch {
-        // Fall back to localStorage below.
-      }
-
-      if (cancelled) return;
-
-      try {
-        const raw = localStorage.getItem(askHistoryStorageKey);
-        const parsed = raw ? JSON.parse(raw) : [];
-        setAskHistory(Array.isArray(parsed) ? parsed.slice(0, 10) : []);
-      } catch {
-        setAskHistory([]);
-      }
-    };
-
-    loadAskHistory();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [recipeId, askHistoryStorageKey]);
-
-  const handleAskRecipe = async () => {
-    const question = askQuestion.trim();
-    if (!question || !recipeId || askLoading) return;
-
-    setAskLoading(true);
-    setAskError("");
-
-    try {
-      const token = getRecipeAssistantToken();
-      const res = await fetch(
-        apiUrl(`api/reel/${encodeURIComponent(recipeId)}/ask`),
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          credentials: "include",
-          body: JSON.stringify({ question }),
-        }
-      );
-
-      const data = (await res.json().catch(() => ({}))) as RecipeAssistantResponse;
-
-      if (!res.ok) {
-        throw new Error(data?.error || `Recipe assistant failed (${res.status})`);
-      }
-
-      const nextAnswer = data.answer || "No answer returned.";
-
-
-      setAskAnswer(nextAnswer);
-
-      const fallbackEntry = {
-        question,
-        answer: nextAnswer,
-        createdAt: new Date().toISOString(),
-      };
-
-      const nextHistory =
-        Array.isArray(data.history) && data.history.length > 0
-          ? data.history.slice(0, 10)
-          : [fallbackEntry, ...askHistory].slice(0, 10);
-
-      setAskHistory(nextHistory);
-
-      if (askHistoryStorageKey) {
-        try {
-          localStorage.setItem(askHistoryStorageKey, JSON.stringify(nextHistory));
-        } catch {
-          // Ignore localStorage write failures.
-        }
-      }
-    } catch (err: any) {
-      setAskError(err?.message || "Recipe assistant failed.");
-    } finally {
-      setAskLoading(false);
-    }
   };
 
   // ── Render ───────────────────────────────────────────────────────────────
