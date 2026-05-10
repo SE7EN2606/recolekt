@@ -1,5 +1,5 @@
 import RecipeSecondaryContent from '../features/recipe-secondary/RecipeSecondaryContent';
-import { RecipeNutritionSummary } from '../features/recipe-secondary/RecipeNutritionSummary';
+import RecipeNutritionSummary from '../features/recipe-secondary/RecipeNutritionSummary';
 import { RecipeIngredients } from '../features/recipe-core/RecipeIngredients';
 import RecipeAskPanel from '../features/recipe-core/RecipeAskPanel';
 import RecipeMainView from '../features/recipe-layout/RecipeMainView';
