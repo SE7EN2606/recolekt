@@ -1,4 +1,5 @@
 import RecipeSecondaryContent from '../features/recipe-secondary/RecipeSecondaryContent';
+import RecipeAskPanel from '../features/recipe-core/RecipeAskPanel';
 import RecipeMainView from '../features/recipe-layout/RecipeMainView';
 import React, { useState } from 'react';
 import {
@@ -1329,102 +1330,112 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
       )}
 
       {activeRecipeTab === 'ask' && (
-        <div className="border-t border-gray-50 px-5 py-5">
-          <div className="rounded-2xl border border-violet-100 bg-violet-50/50 p-4">
-            <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">
-{isTechnique ? 'Technique Assistant' : 'Recipe Assistant'}
-            </p>
-            <h4 className="mt-1 text-base font-black text-gray-950">
-{isTechnique ? 'Ask about this technique' : 'Ask about this recipe'}
-            </h4>
-            <p className="mt-1 text-xs leading-relaxed text-gray-500">
-{isTechnique
-                ? 'Uses this technique, caption, and transcript. Best for method, timing, equipment, and substitutions.'
-                : 'Uses this recipe, caption, and transcript. Best for missing quantities, substitutions, timing, and technique.'}
-            </p>
+        <RecipeAskPanel>
+          <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">
+            {isTechnique ? 'Technique Assistant' : 'Recipe Assistant'}
+          </p>
 
-            <div className="mt-4 flex gap-2">
-              <input
-                value={askQuestion}
-                onChange={(e) => setAskQuestion(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAskRecipe();
-                  }
-                }}
-                placeholder={isTechnique ? "How should I use this technique?" : "What is missing from this recipe?"}
-                className="min-w-0 flex-1 rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-medium text-gray-800 outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
-              />
-              <button
-                type="button"
-                onClick={handleAskRecipe}
-                disabled={askLoading || !askQuestion.trim() || !recipeId}
-                className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-black text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {askLoading ? "Asking..." : "Ask"}
-              </button>
-            </div>
+          <h4 className="mt-1 text-base font-black text-gray-950">
+            {isTechnique ? 'Ask about this technique' : 'Ask about this recipe'}
+          </h4>
 
-            {askHistory.length > 1 && (
-              <div className="mt-4 rounded-2xl border border-violet-100 bg-white/70 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">
-                    Recent questions
-                  </p>
+          <p className="mt-1 text-xs leading-relaxed text-gray-500">
+            {isTechnique
+              ? 'Uses this technique, caption, and transcript. Best for method, timing, equipment, and substitutions.'
+              : 'Uses this recipe, caption, and transcript. Best for missing quantities, substitutions, timing, and technique.'}
+          </p>
+
+          <div className="mt-4 flex gap-2">
+            <input
+              value={askQuestion}
+              onChange={(e) => setAskQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAskRecipe();
+                }
+              }}
+              placeholder={
+                isTechnique
+                  ? 'How should I use this technique?'
+                  : 'What is missing from this recipe?'
+              }
+              className="min-w-0 flex-1 rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-medium text-gray-800 outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+            />
+
+            <button
+              type="button"
+              onClick={handleAskRecipe}
+              disabled={askLoading || !askQuestion.trim() || !recipeId}
+              className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-black text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {askLoading ? 'Asking...' : 'Ask'}
+            </button>
+          </div>
+
+          {askHistory.length > 1 && (
+            <div className="mt-4 rounded-2xl border border-violet-100 bg-white/70 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">
+                  Recent questions
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAskHistory([]);
+                    if (askHistoryStorageKey) {
+                      localStorage.removeItem(askHistoryStorageKey);
+                    }
+                  }}
+                  className="text-[10px] font-black uppercase tracking-wide text-gray-400 hover:text-gray-700"
+                >
+                  Clear
+                </button>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                {askHistory.slice(1, 5).map((entry, idx) => (
                   <button
+                    key={`${entry.createdAt}-${idx}`}
                     type="button"
                     onClick={() => {
-                      setAskHistory([]);
-                      if (askHistoryStorageKey) localStorage.removeItem(askHistoryStorageKey);
+                      setAskQuestion(entry.question);
+                      setAskAnswer(entry.answer);
                     }}
-                    className="text-[10px] font-black uppercase tracking-wide text-gray-400 hover:text-gray-700"
+                    className="block w-full rounded-xl border border-gray-100 bg-white px-3 py-3 text-left transition hover:border-violet-100 hover:bg-violet-50/40"
                   >
-                    Clear
+                    <p className="line-clamp-1 text-xs font-black text-gray-800">
+                      {entry.question}
+                    </p>
+
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-500">
+                      {entry.answer}
+                    </p>
                   </button>
-                </div>
-
-                <div className="mt-3 space-y-3">
-                  {askHistory.slice(1, 5).map((entry, idx) => (
-                    <button
-                      key={`${entry.createdAt}-${idx}`}
-                      type="button"
-                      onClick={() => {
-                        setAskQuestion(entry.question);
-                        setAskAnswer(entry.answer);
-                      }}
-                      className="block w-full rounded-xl border border-gray-100 bg-white px-3 py-3 text-left transition hover:border-violet-100 hover:bg-violet-50/40"
-                    >
-                      <p className="line-clamp-1 text-xs font-black text-gray-800">
-                        {entry.question}
-                      </p>
-                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-500">
-                        {entry.answer}
-                      </p>
-                    </button>
-                  ))}
-                </div>
+                ))}
               </div>
-            )}
+            </div>
+          )}
 
-            {askError && (
-              <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
-                {askError}
+          {askError && (
+            <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+              {askError}
+            </p>
+          )}
+
+          {askAnswer && (
+            <div className="mt-4 rounded-2xl border border-gray-100 bg-white p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                Answer
               </p>
-            )}
 
-            {askAnswer && (
-              <div className="mt-4 rounded-2xl border border-gray-100 bg-white p-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-                  Answer
-                </p>
-                <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-gray-700">
-                  {askAnswer}
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
+              <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-gray-700">
+                {askAnswer}
+              </p>
+            </div>
+          )}
+        </RecipeAskPanel>
       )}
 
         </div>
