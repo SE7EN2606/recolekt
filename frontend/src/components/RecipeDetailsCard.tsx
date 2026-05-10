@@ -1427,6 +1427,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         </div>
       )}
 
+        </div>
+      }
 
       secondary={
         <RecipeSecondaryContent>
@@ -1495,8 +1497,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           onProgressChange={handleCookProgressChange}
           onComplete={handleCookComplete}
         />
-      }
-        </div>
       }
     />
   );
