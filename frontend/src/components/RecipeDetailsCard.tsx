@@ -1,3 +1,4 @@
+import RecipeSecondaryContent from '../features/recipe-secondary/RecipeSecondaryContent';
 import RecipeMainView from '../features/recipe-layout/RecipeMainView';
 import React, { useState } from 'react';
 import {
@@ -1426,6 +1427,9 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         </div>
       )}
 
+
+      secondary={
+        <RecipeSecondaryContent>
       {/* Chef's Tips */}
       {activeRecipeTab === 'steps' && (tips.length > 0 || notes.length > 0) && (
         <div className="border-t border-amber-100 bg-amber-50/40 px-5 py-5">
@@ -1476,18 +1480,22 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </p>
         </div>
       )}
+        </RecipeSecondaryContent>
+      }
 
-      <CookModeModal
-        isOpen={isCookModeOpen}
-        recipeId={recipeId}
-        recipeName={recipeName}
-        instructions={instructions}
-        ingredients={allIngredients.map((entry) => entry.raw)}
-        initialStepIndex={savedCookStep ?? 0}
-        onClose={() => setIsCookModeOpen(false)}
-        onProgressChange={handleCookProgressChange}
-        onComplete={handleCookComplete}
-      />
+      cook={
+        <CookModeModal
+          isOpen={isCookModeOpen}
+          recipeId={recipeId}
+          recipeName={recipeName}
+          instructions={instructions}
+          ingredients={allIngredients.map((entry) => entry.raw)}
+          initialStepIndex={savedCookStep ?? 0}
+          onClose={() => setIsCookModeOpen(false)}
+          onProgressChange={handleCookProgressChange}
+          onComplete={handleCookComplete}
+        />
+      }
         </div>
       }
     />
