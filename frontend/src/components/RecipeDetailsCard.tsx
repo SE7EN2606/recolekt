@@ -1,5 +1,6 @@
 import RecipeSecondaryContent from '../features/recipe-secondary/RecipeSecondaryContent';
-import RecipeNutritionSummary from '../features/recipe-secondary/RecipeNutritionSummary';
+import { RecipeNutritionSummary } from '../features/recipe-secondary/RecipeNutritionSummary';
+import { RecipeIngredients } from '../features/recipe-core/RecipeIngredients';
 import RecipeAskPanel from '../features/recipe-core/RecipeAskPanel';
 import RecipeMainView from '../features/recipe-layout/RecipeMainView';
 import React, { useState } from 'react';
@@ -1174,7 +1175,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
       </div>
 
       {activeRecipeTab === 'ingredients' && (flat.length > 0 || groups.length > 0) && (
-        <div className="border-t border-gray-50 pt-5 pb-4">
+        <RecipeIngredients>
           <div className="flex items-center justify-between px-5 mb-4 gap-2 flex-wrap">
             <div className="flex items-center gap-3">
               <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
@@ -1270,7 +1271,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               </p>
             </div>
           )}
-        </div>
+        </RecipeIngredients>
       )}
 
       {activeRecipeTab === 'steps' && (
