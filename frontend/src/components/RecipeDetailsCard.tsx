@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import CookModeModal from './CookModeModal';
-import NutritionCard from "./NutritionCard";
 import { apiUrl } from "../utils/videoDetailUtils";
 
 const getRecipeAssistantToken = (): string => {
