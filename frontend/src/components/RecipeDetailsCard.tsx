@@ -1,6 +1,7 @@
 import RecipeSecondaryContent from '../features/recipe-secondary/RecipeSecondaryContent';
 import RecipeNutritionSummary from '../features/recipe-secondary/RecipeNutritionSummary';
 import { RecipeIngredients } from '../features/recipe-core/RecipeIngredients';
+import RecipeDirections from '../features/recipe-core/RecipeDirections';
 import RecipeAskPanel from '../features/recipe-core/RecipeAskPanel';
 import RecipeMainView from '../features/recipe-layout/RecipeMainView';
 import React, { useState } from 'react';
@@ -1277,7 +1278,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
       {activeRecipeTab === 'steps' && (
         <>
           {instructions.length > 0 && (
-            <div className="border-t border-gray-50 px-5 py-5">
+            <RecipeDirections>
               <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-5">
                 {t('videoDetail:directions', 'Directions')}
               </h4>
@@ -1316,7 +1317,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                   });
                 })()}
               </div>
-            </div>
+            </RecipeDirections>
           )}
         </>
       )}
