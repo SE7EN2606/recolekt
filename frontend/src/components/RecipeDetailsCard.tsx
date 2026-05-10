@@ -4,6 +4,9 @@ import { RecipeIngredients } from '../features/recipe-core/RecipeIngredients';
 import RecipeDirections from '../features/recipe-core/RecipeDirections';
 import RecipeAskPanel from '../features/recipe-core/RecipeAskPanel';
 import RecipeMainView from '../features/recipe-layout/RecipeMainView';
+import IngredientRow from '../features/recipe-core/rows/IngredientRow';
+import StepRow from '../features/recipe-core/rows/StepRow';
+import TimeCell from '../features/recipe-core/rows/TimeCell';
 import React, { useState } from 'react';
 import {
   ChefHat, Clock, Flame, Moon, Lightbulb,
@@ -524,170 +527,6 @@ function normalizeInstructionSections(recipe: RecipeForCard): NormalizedInstruct
   const flat = Array.isArray(recipe.instructions) ? recipe.instructions : [];
   return groupInstructionsBySection(flat);
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// INGREDIENT ROW
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface IngRowProps {
-  id: string;
-  raw: RawIngredient;
-  servingScale: number;
-  scaleQuantity?: (q: string, s: number) => string;
-  checked: boolean;
-  onToggle?: (id: string) => void;
-  useMetric: boolean;
-}
-
-const IngredientRow: React.FC<IngRowProps> = ({
-  id, raw, servingScale, scaleQuantity, checked, onToggle, useMetric,
-}) => {
-  const { name, note, quantity, unit, emoji, needsReview, isApprox, qtyRange } = parseRawIngredient(raw);
-
-  // Build display quantity
-  let displayQty = '';
-  let displayUnit = '';
-
-  if (qtyRange) {
-    displayQty  = `${qtyRange.min}–${qtyRange.max}`;
-    displayUnit = qtyRange.unit || unit || '';
-  } else if (quantity) {
-    const fmted = formatQty(quantity, unit, servingScale, scaleQuantity, useMetric, name);
-    const parts = fmted.trim().split(/\s+/);
-    displayQty  = parts[0] || '';
-    displayUnit = parts.slice(1).join(' ') || '';
-  }
-
-  const hasMeasurement = Boolean(displayQty);
-  const assumed = needsReview ? assumedLabel(name) : null;
-  const interactive = Boolean(onToggle);
-
-  return (
-    <li
-      onClick={interactive ? () => onToggle?.(id) : undefined}
-      className={`flex items-start gap-3 px-5 py-2.5 group transition-all ${
-        interactive ? 'cursor-pointer' : ''
-      } ${
-        checked ? 'opacity-75' : interactive ? 'hover:bg-gray-50/60' : ''
-      }`}
-    >
-      {interactive && (
-        <div className="flex-shrink-0 mt-[3px]">
-          <div className={`w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center transition-all ${
-            checked
-              ? 'border-emerald-600 bg-emerald-600'
-              : 'border-gray-200 bg-transparent group-hover:border-primary-300'
-          }`}>
-            {checked && <Check size={9} className="text-white" strokeWidth={3} />}
-          </div>
-        </div>
-      )}
-
-      {/* Emoji */}
-      {emoji && (
-        <span className={`text-[15px] leading-none flex-shrink-0 mt-[1px] ${checked ? 'grayscale' : ''}`}>
-          {emoji}
-        </span>
-      )}
-
-      {/* Content */}
-      <div className="flex-1 min-w-0 flex items-baseline flex-wrap gap-x-1.5">
-
-        {/* Measured quantity */}
-        {hasMeasurement && !needsReview && (
-          <span className={`text-[13px] font-black ${checked ? 'text-gray-500' : 'text-primary-600'}`}>
-            {displayQty}
-            {displayUnit && <span className="font-bold"> {displayUnit}</span>}
-          </span>
-        )}
-
-        {/* Assumed quantity — soft gray italic, no icon, no panel */}
-        {needsReview && assumed && !checked && (
-          <span className="text-[12px] text-gray-400 italic font-normal">{assumed}</span>
-        )}
-
-        {/* Name */}
-        <span className={`text-[13px] leading-snug ${
-          checked ? 'text-gray-500 line-through decoration-gray-400' : 'text-gray-800 font-medium'
-        }`}>
-          {name}
-        </span>
-
-        {/* Approx */}
-        {isApprox && !checked && (
-          <span className="text-[10px] text-gray-400 italic">(approx.)</span>
-        )}
-
-        {/* Note */}
-        {note && !checked && (
-          <span className="text-[11px] text-gray-400 italic">({note})</span>
-        )}
-      </div>
-    </li>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// STEP ROW
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface StepRowProps {
-  index: number;
-  raw: RawInstruction;
-  checked: boolean;
-  onToggle: (i: number) => void;
-}
-
-const StepRow: React.FC<StepRowProps> = ({ index, raw, checked, onToggle }) => {
-  const { text, isInferred } = parseInstruction(raw);
-  return (
-    <div
-      onClick={() => onToggle(index)}
-      className={`flex items-start gap-3.5 cursor-pointer select-none transition-all group ${
-        checked ? 'opacity-40' : ''
-      }`}
-    >
-      <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all ${
-        checked
-          ? 'bg-emerald-600 border-2 border-emerald-600'
-          : 'bg-white border-2 border-primary-200 group-hover:border-primary-400'
-      }`}>
-        {checked
-          ? <Check size={12} className="text-white" strokeWidth={3} />
-          : <span className="text-[11px] font-black text-primary-600">{index + 1}</span>
-        }
-      </div>
-      <div className="flex-1 pt-[4px]">
-        <p className={`text-[13px] leading-relaxed ${
-          checked ? 'text-gray-300' : 'text-gray-600 font-medium'
-        }`}>
-          {/* Inferred steps get a soft tilde prefix — no label, no badge */}
-          {isInferred && !checked && (
-            <span className="text-gray-300 select-none mr-0.5">~</span>
-          )}
-          {text}
-        </p>
-      </div>
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TIME CELL
-// ─────────────────────────────────────────────────────────────────────────────
-
-const TimeCell: React.FC<{ icon: React.ReactNode; label: string; value: string | null }> = ({
-  icon, label, value,
-}) => {
-  if (!value) return null;
-  return (
-    <div className="flex flex-col items-center justify-center gap-1 py-4 px-2 text-center">
-      <div className="text-rose-500">{icon}</div>
-      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{label}</span>
-      <span className="text-[13px] font-black text-rose-600 leading-tight">{value}</span>
-    </div>
-  );
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPILATION CARD
@@ -1225,6 +1064,9 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                         const id = `g${gi}-i${ii}`;
                         return (
                           <IngredientRow
+                            parseRawIngredient={parseRawIngredient}
+                            formatQty={formatQty}
+                            assumedLabel={assumedLabel}
                             key={id}
                             id={id}
                             raw={item}
@@ -1245,6 +1087,9 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                     const id = `f${i}`;
                     return (
                       <IngredientRow
+                            parseRawIngredient={parseRawIngredient}
+                            formatQty={formatQty}
+                            assumedLabel={assumedLabel}
                         key={id}
                         id={id}
                         raw={item}
@@ -1302,6 +1147,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                             const absoluteIndex = startIndex + stepIndex;
                             return (
                               <StepRow
+                                parseInstruction={parseInstruction}
                                 key={absoluteIndex}
                                 index={absoluteIndex}
                                 raw={step}
