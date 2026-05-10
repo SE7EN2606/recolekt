@@ -1,4 +1,5 @@
 import RecipeSecondaryContent from '../features/recipe-secondary/RecipeSecondaryContent';
+import RecipeNutritionSummary from '../features/recipe-secondary/RecipeNutritionSummary';
 import RecipeAskPanel from '../features/recipe-core/RecipeAskPanel';
 import RecipeMainView from '../features/recipe-layout/RecipeMainView';
 import React, { useState } from 'react';
@@ -1320,13 +1321,11 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
       )}
 
       {activeRecipeTab === 'nutrition' && showNutritionTab && (
-        <div className="px-5 py-5 border-t border-gray-50">
-          <NutritionCard
-            ingredients={allIngredients.map((entry) => entry.raw)}
-            servings={hasServings ? currentServings : undefined}
-            recipeName={recipeName}
-          />
-        </div>
+        <RecipeNutritionSummary
+          ingredients={allIngredients.map((entry) => entry.raw)}
+          servings={hasServings ? currentServings : undefined}
+          recipeName={recipeName}
+        />
       )}
 
       {activeRecipeTab === 'ask' && (
