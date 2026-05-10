@@ -1,3 +1,4 @@
+import RecipeMainView from '../features/recipe-layout/RecipeMainView';
 import React, { useState } from 'react';
 import {
   ChefHat, Clock, Flame, Moon, Lightbulb,
@@ -1110,7 +1111,9 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
+    <RecipeMainView
+      primary={
+        <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
 
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-rose-100 bg-rose-50/70">
@@ -1485,7 +1488,9 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         onProgressChange={handleCookProgressChange}
         onComplete={handleCookComplete}
       />
-    </div>
+        </div>
+      }
+    />
   );
 };
 
