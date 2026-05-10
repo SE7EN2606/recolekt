@@ -4,6 +4,7 @@ import { RecipeIngredients } from '../features/recipe-core/RecipeIngredients';
 import RecipeDirections from '../features/recipe-core/RecipeDirections';
 import RecipeAskPanel from '../features/recipe-core/RecipeAskPanel';
 import RecipeMainView from '../features/recipe-layout/RecipeMainView';
+import RecipeHeaderShell from '../features/recipe-layout/RecipeHeaderShell';
 import useRecipeAssistant from '../features/recipe-assistant/useRecipeAssistant';
 import IngredientRow from '../features/recipe-core/rows/IngredientRow';
 import StepRow from '../features/recipe-core/rows/StepRow';
@@ -803,62 +804,25 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   return (
     <RecipeMainView
       primary={
-        <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
-
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-rose-100 bg-rose-50/70">
-        <div className="flex items-center gap-2.5">
-          <ChefHat size={18} className="text-rose-500" />
-          <h3 className="font-bold text-gray-900 text-base tracking-tight">
-            {isTechnique ? 'Cooking Technique' : t('videoDetail:recipeDetails', 'Recipe Details')}
-          </h3>
-        </div>
-        {onToggleMetric && (
-          <button
-            onClick={() => onToggleMetric(!useMetric)}
-            className="px-3 py-1.5 bg-white/90 border border-rose-100 text-gray-700 rounded-xl text-[11px] font-bold shadow-sm hover:bg-white transition-colors"
-          >
-            {useMetric ? 'Imperial' : 'Metric'}
-          </button>
-        )}
-      </div>
-
-      {/* Time grid — dynamic columns, only renders cells with data */}
-      {timeCells.length > 0 && (
-        <div
-          className="grid border-b border-gray-50"
-          style={{ gridTemplateColumns: `repeat(${timeCells.length}, 1fr)` }}
+        <RecipeHeaderShell
+          isTechnique={isTechnique}
+          title={t('videoDetail:recipeDetails', 'Recipe Details')}
+          useMetric={useMetric}
+          onToggleMetric={onToggleMetric}
+          timeCells={timeCells.map((cell) => ({
+            ...cell,
+            icon: (
+              <TimeCell
+                icon={cell.icon}
+                label={cell.label}
+                value={cell.value}
+              />
+            ),
+          }))}
+          activeRecipeTab={activeRecipeTab}
+          setActiveRecipeTab={setActiveRecipeTab}
+          recipeTabs={recipeTabs}
         >
-          {timeCells.map((cell, i) => (
-            <div key={i} className={i > 0 ? 'border-l border-gray-50' : ''}>
-              <TimeCell icon={cell.icon} label={cell.label} value={cell.value} />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Tabs */}
-      <div className="border-t border-gray-100 bg-gray-50 px-3 py-3">
-        <div className="grid gap-1 rounded-2xl bg-gray-100 p-1 text-[12px] font-black" style={{ gridTemplateColumns: `repeat(${recipeTabs.length}, minmax(0, 1fr))` }}>
-          {recipeTabs.map((tab) => {
-            const active = activeRecipeTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveRecipeTab(tab.key)}
-                className={`rounded-xl px-2 py-2.5 transition-all ${
-                  active
-                    ? 'bg-white text-violet-600 shadow-sm'
-                    : 'text-gray-500 hover:bg-white/50 hover:text-gray-700'
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
       {activeRecipeTab === 'ingredients' && (flat.length > 0 || groups.length > 0) && (
         <RecipeIngredients>
@@ -1131,7 +1095,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         </RecipeAskPanel>
       )}
 
-        </div>
+        </RecipeHeaderShell>
       }
 
       secondary={
