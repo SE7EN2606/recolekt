@@ -787,7 +787,7 @@ export const VideoDetail: React.FC = () => {
 
             <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between z-30 pointer-events-none">
               <div className="flex items-center gap-2 pointer-events-auto">
-                {folderName && (
+                {showFolderBadge && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
                     <Folder size={12} className="text-primary-400" strokeWidth={2.5} />
                     <span className="text-[11px] font-bold text-white uppercase tracking-wide">
