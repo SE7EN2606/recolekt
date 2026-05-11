@@ -12,7 +12,7 @@ import { MoveCollectionModal } from '../components/MoveCollectionModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ReportModal } from '../components/ReportModal';
 import { EditableTitle, EditableBullets } from '../components/VideoDetailComponents';
-import { RecipeDetailsCard, ShoppingListItem } from '../components/RecipeDetailsCard';
+import RecipeDetailsCard from "../components/RecipeDetailsCard";
 import { WorkoutCard } from '../components/WorkoutCard';
 import { ToolsListCard } from '../components/ToolsListCard';
 import { LocationCard } from '../components/LocationCard';
@@ -45,6 +45,159 @@ const ReportModalExt = ReportModal as React.ComponentType<{
   onClose: () => void;
   videoId?: string;
 }>;
+
+const parseRecipePayload = (recipe: any): any => {
+  if (!recipe) return null;
+
+  if (typeof recipe === 'string') {
+    try {
+      return JSON.parse(recipe);
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof recipe.recipe === 'string') {
+    try {
+      return JSON.parse(recipe.recipe);
+    } catch {
+      return recipe;
+    }
+  }
+
+  if (recipe.recipe && typeof recipe.recipe === 'object') {
+    return recipe.recipe;
+  }
+
+  return recipe;
+};
+
+const hasItems = (sections: any[], itemKeys: string[]): boolean =>
+  sections.some((section: any) =>
+    itemKeys.some((key) => Array.isArray(section?.[key]) && section[key].length > 0)
+  );
+
+const recipeInstructionCount = (recipe: any): number => {
+  const parsed = parseRecipePayload(recipe);
+
+  if (!parsed) return 0;
+
+  const flatCount = [
+    parsed.instructions,
+    parsed.steps,
+    parsed.directions,
+    parsed.method,
+  ]
+    .filter(Array.isArray)
+    .flat().length;
+
+  const sectionCount = [
+    parsed.instructionSections,
+    parsed.instructionsSections,
+    parsed.instruction_sections,
+    parsed.instructions_sections,
+    parsed.method_sections,
+    parsed.step_sections,
+    parsed.steps_sections,
+  ]
+    .filter(Array.isArray)
+    .flat()
+    .reduce((total: number, section: any) => {
+      const items = [
+        section?.instructions,
+        section?.steps,
+        section?.items,
+        section?.children,
+      ]
+        .filter(Array.isArray)
+        .flat();
+
+      return total + items.length;
+    }, 0);
+
+  return flatCount + sectionCount;
+};
+
+const recipeIngredientCount = (recipe: any): number => {
+  const parsed = parseRecipePayload(recipe);
+
+  if (!parsed) return 0;
+
+  const flatCount = Array.isArray(parsed.ingredients) ? parsed.ingredients.length : 0;
+
+  const sectionCount = [
+    parsed.ingredientSections,
+    parsed.ingredientsSections,
+    parsed.ingredient_sections,
+    parsed.ingredients_sections,
+    parsed.ingredient_groups,
+    parsed.ingredients_groups,
+  ]
+    .filter(Array.isArray)
+    .flat()
+    .reduce((total: number, section: any) => {
+      const items = [
+        section?.items,
+        section?.ingredients,
+        section?.children,
+      ]
+        .filter(Array.isArray)
+        .flat();
+
+      return total + items.length;
+    }, 0);
+
+  return Math.max(flatCount, sectionCount);
+};
+
+const firstNonEmptyArray = (...values: any[]): any[] | undefined => {
+  for (const value of values) {
+    if (Array.isArray(value) && value.length > 0) return value;
+  }
+
+  return undefined;
+};
+
+const hasUsableRecipeContent = (recipe: any): boolean => {
+  const parsed = parseRecipePayload(recipe);
+
+  if (!parsed || parsed.is_compilation) return false;
+
+  const ingredientSectionSources = [
+    parsed.ingredientSections,
+    parsed.ingredientsSections,
+    parsed.ingredient_sections,
+    parsed.ingredients_sections,
+    parsed.ingredient_groups,
+    parsed.ingredients_groups,
+  ].filter(Array.isArray) as any[][];
+
+  const instructionSectionSources = [
+    parsed.instructionSections,
+    parsed.instructionsSections,
+    parsed.instruction_sections,
+    parsed.instructions_sections,
+    parsed.method_sections,
+    parsed.step_sections,
+    parsed.steps_sections,
+  ].filter(Array.isArray) as any[][];
+
+  const hasSectionIngredients = ingredientSectionSources.some((sections) =>
+    hasItems(sections, ['items', 'ingredients', 'children'])
+  );
+
+  const hasSectionInstructions = instructionSectionSources.some((sections) =>
+    hasItems(sections, ['instructions', 'steps', 'items', 'children'])
+  );
+
+  const hasFlatIngredients = Array.isArray(parsed.ingredients) && parsed.ingredients.length > 0;
+  const hasFlatInstructions = Array.isArray(parsed.instructions) && parsed.instructions.length > 0;
+  const hasFlatSteps = Array.isArray(parsed.steps) && parsed.steps.length > 0;
+  const hasFlatDirections = Array.isArray(parsed.directions) && parsed.directions.length > 0;
+  const hasFlatMethod = Array.isArray(parsed.method) && parsed.method.length > 0;
+
+  return hasSectionIngredients || hasSectionInstructions || hasFlatIngredients || hasFlatInstructions || hasFlatSteps || hasFlatDirections || hasFlatMethod;
+};
 
 const getAuthToken = (): string => {
   try {
@@ -227,6 +380,7 @@ export const VideoDetail: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedVideo, setEditedVideo] = useState<any>(null);
   const [servingScale, setServingScale] = useState(1);
+  const richRecipeRef = useRef<any>(null);
   const [useMetric, setUseMetric] = useState(true);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
@@ -244,14 +398,6 @@ export const VideoDetail: React.FC = () => {
   }, [id]);
 
   // Push ingredients into the shared GroceryList via DataContext
-  const handleAddToShoppingList = useCallback(
-    (items: ShoppingListItem[]) => {
-      if (typeof addToGroceryList === 'function') {
-        addToGroceryList(items);
-      }
-    },
-    [addToGroceryList],
-  );
 
   const enrichVideo = useCallback(async () => {
     if (!id || !navigator.onLine) {
@@ -474,6 +620,88 @@ export const VideoDetail: React.FC = () => {
     hasToolsList &&
     (viewModel.isStructuredTools || !!viewModel.structuredType || !hasBullets);
 
+  const rawVideoRecipe = parseRecipePayload((video as any)?.recipe);
+  const viewModelRecipe = parseRecipePayload(viewModel.recipe);
+
+  const recipeForCard = viewModelRecipe || rawVideoRecipe
+    ? {
+        ...(rawVideoRecipe || {}),
+        ...(viewModelRecipe || {}),
+        ingredients:
+          firstNonEmptyArray(
+            viewModelRecipe?.ingredients,
+            rawVideoRecipe?.ingredients
+          ),
+        ingredient_sections:
+          firstNonEmptyArray(
+            viewModelRecipe?.ingredient_sections,
+            rawVideoRecipe?.ingredient_sections,
+            viewModelRecipe?.ingredients_sections,
+            rawVideoRecipe?.ingredients_sections,
+            viewModelRecipe?.ingredient_groups,
+            rawVideoRecipe?.ingredient_groups,
+            viewModelRecipe?.ingredients_groups,
+            rawVideoRecipe?.ingredients_groups
+          ),
+        instructions:
+          firstNonEmptyArray(
+            viewModelRecipe?.instructions,
+            rawVideoRecipe?.instructions,
+            viewModelRecipe?.steps,
+            rawVideoRecipe?.steps,
+            viewModelRecipe?.directions,
+            rawVideoRecipe?.directions,
+            viewModelRecipe?.method,
+            rawVideoRecipe?.method
+          ),
+        instructions_sections:
+          firstNonEmptyArray(
+            viewModelRecipe?.instructions_sections,
+            rawVideoRecipe?.instructions_sections,
+            viewModelRecipe?.instruction_sections,
+            rawVideoRecipe?.instruction_sections,
+            viewModelRecipe?.method_sections,
+            rawVideoRecipe?.method_sections,
+            viewModelRecipe?.step_sections,
+            rawVideoRecipe?.step_sections,
+            viewModelRecipe?.steps_sections,
+            rawVideoRecipe?.steps_sections
+          ),
+        instructionSections:
+          firstNonEmptyArray(
+            viewModelRecipe?.instructionSections,
+            rawVideoRecipe?.instructionSections,
+            viewModelRecipe?.instructionsSections,
+            rawVideoRecipe?.instructionsSections
+          ),
+      }
+    : null;
+
+  const currentInstructionCount = recipeInstructionCount(recipeForCard);
+  const currentIngredientCount = recipeIngredientCount(recipeForCard);
+  const storedInstructionCount = recipeInstructionCount(richRecipeRef.current);
+  const storedIngredientCount = recipeIngredientCount(richRecipeRef.current);
+
+  if (
+    recipeForCard &&
+    (
+      currentInstructionCount > storedInstructionCount ||
+      (
+        currentInstructionCount === storedInstructionCount &&
+        currentIngredientCount > storedIngredientCount
+      )
+    )
+  ) {
+    richRecipeRef.current = recipeForCard;
+  }
+
+  const stableRecipeForCard =
+    richRecipeRef.current && recipeInstructionCount(richRecipeRef.current) > currentInstructionCount
+      ? richRecipeRef.current
+      : recipeForCard;
+
+  const showRecipeCard = Boolean(stableRecipeForCard && hasUsableRecipeContent(stableRecipeForCard));
+
   const actionItems = (video
     ? [
         { icon: <IOSShareIcon />, label: t('videoDetail:share', 'Share'), onClick: handleShare },
@@ -630,7 +858,8 @@ export const VideoDetail: React.FC = () => {
           />
 
           {/* AI Summary */}
-          <div className="bg-primary-50 rounded-2xl p-5 md:p-6 mb-6">
+          {!showRecipeCard && (
+            <div className="bg-primary-50 rounded-2xl p-5 md:p-6 mb-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-primary-700 font-bold text-sm uppercase tracking-wide">
                 {t('videoDetail:aiSummary', 'AI Summary')}
@@ -692,21 +921,20 @@ export const VideoDetail: React.FC = () => {
                 )}
               </div>
             ) : null}
-          </div>
+            </div>
+          )}
 
           {/* Recipe card */}
-          {viewModel.recipe && !viewModel.recipe.is_compilation && (
+          {showRecipeCard && stableRecipeForCard && (
             <div className="mb-5">
               <RecipeDetailsCard
-                recipe={viewModel.recipe}
+                recipe={stableRecipeForCard}
                 recipeId={currentVideoId}
-                recipeName={viewModel.title ?? 'Recipe'}
+                recipeName={viewModel.title ?? "Recipe"}
                 servingScale={servingScale}
                 scaleQuantity={scaleQuantity}
-                onServingScaleChange={setServingScale}
                 useMetric={useMetric}
                 onToggleMetric={setUseMetric}
-                onAddToShoppingList={handleAddToShoppingList}
               />
             </div>
           )}
