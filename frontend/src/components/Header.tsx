@@ -132,13 +132,6 @@ export const Header: React.FC = () => {
                     <NavPill to="/gallery" label={t('gallery:gallery')} />
                     <NavPill to="/grocery-list" label="Grocery List" />
                     <NavPill to="/settings" label={t('header:settings')} />
-                    <button 
-                      onClick={() => setIsSearchOpen(true)}
-                      aria-label={t('gallery:search', 'Search')}
-                      className="ml-4 p-2 text-gray-500 hover:text-primary-600 transition-colors"
-                    >
-                      <Search size={22} />
-                    </button>
                   </>
                 ) : !loading && (
                   <>
@@ -148,6 +141,14 @@ export const Header: React.FC = () => {
                   </>
                 )}
               </nav>
+
+              <button
+                onClick={() => setIsSearchOpen(true)}
+                aria-label={t('gallery:search', 'Search')}
+                className="p-2 rounded-lg text-gray-500 hover:text-primary-600 hover:bg-gray-100 transition-colors"
+              >
+                <Search size={22} />
+              </button>
 
               <div className="h-5 w-px bg-gray-400/30" />
 

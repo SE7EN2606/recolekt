@@ -2,7 +2,7 @@ import { API_BASE } from "../utils/api";
 import React, { useMemo } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  LayoutGrid, Heart, Archive, Share2,
+  LayoutGrid, Heart, Archive,
   Download, SquarePen, FolderPlus, CornerDownRight, FolderClosed, Inbox,
   FolderOpen, MapPin, ShoppingCart,
   Ban
@@ -17,7 +17,7 @@ import { ConfirmModal } from './ConfirmModal';
 
 
 const SYSTEM_FOLDER_IDS = new Set(['all', 'favorites', 'shared', 'archive', 'default', 'unsorted']);
-const DROP_BLOCKED_IDS = new Set(['all', 'unsorted', 'grocery-list', 'favorites']);
+const DROP_BLOCKED_IDS = new Set(['all', 'unsorted']);
 
 const isSystemOrAllVideos = (folder: any) => {
   const name = String(folder?.name || '').trim().toLowerCase();
@@ -44,63 +44,65 @@ export const Sidebar: React.FC = () => {
 
   const getDirectVideoCount = (folderId: string) => {
     if (folderId === 'unsorted') {
-      return (videos || []).filter((v: any) => !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all').length;
+      return (videos || []).filter((v: any) => !v.folderId || v.folderId === 'unsorted').length;
     }
     return (videos || []).filter((v: any) => v.folderId === folderId).length;
   };
 
   const getFavoritesCount = () => (videos || []).filter((v: any) => v.isFavorite).length;
 
-  // Items still to buy (not marked as "have it")
   const getGroceryCount = () => (groceryList || []).filter((i: any) => !i.have).length;
 
+  const isFolderActive = (folder: any) => {
+    const folderPath = `/gallery/${folder.id}`;
+    return location.pathname === folderPath ||
+      (folder.subFolders || []).some((sub: any) => location.pathname === `/gallery/${sub.id}`);
+  };
+
+  // Active: solid filled background, no border outline, bold text. Hover: same fill, no border.
   const linkClass = (active: boolean) =>
-    `flex items-center justify-between pl-3 pr-3.5 py-3 rounded-xl transition-all duration-200 group border ${
+    `flex items-center justify-between pl-3 pr-3.5 py-3 rounded-xl transition-all duration-200 group ${
       active
-        ? 'bg-primary-50 text-primary-700 shadow-sm border-primary-100/50'
-        : 'text-gray-600 hover:bg-primary-50 hover:text-primary-600 border-transparent'
+        ? 'bg-primary-100 text-primary-700'
+        : 'text-gray-600 hover:bg-primary-100 hover:text-primary-700'
     }`;
 
   const favLinkClass = (active: boolean) =>
-    `flex items-center justify-between pl-3 pr-3.5 py-3 rounded-xl transition-all duration-200 group border ${
+    `flex items-center justify-between pl-3 pr-3.5 py-3 rounded-xl transition-all duration-200 group ${
       active
-        ? 'bg-red-50 text-red-600 shadow-sm border-red-100/50'
-        : 'text-gray-600 hover:bg-red-50 hover:text-red-600 border-transparent'
-    }`;
-
-  const placesLinkClass = (active: boolean) =>
-    `flex items-center justify-between pl-3 pr-3.5 py-3 rounded-xl transition-all duration-200 group border ${
-      active
-        ? 'bg-teal-50 text-teal-700 shadow-sm border-teal-100/50'
-        : 'text-gray-600 hover:bg-teal-50 hover:text-teal-700 border-transparent'
-    }`;
-
-  const groceryLinkClass = (active: boolean) =>
-    `flex items-center justify-between pl-3 pr-3.5 py-3 rounded-xl transition-all duration-200 group border ${
-      active
-        ? 'bg-green-50 text-green-700 shadow-sm border-green-100/50'
-        : 'text-gray-600 hover:bg-green-50 hover:text-green-700 border-transparent'
+        ? 'bg-red-100 text-red-600'
+        : 'text-gray-600 hover:bg-red-100 hover:text-red-600'
     }`;
 
   const handleAddFolderSubmit = async (name: string, pid?: string) => {
     await addFolder(name, pid || null);
   };
 
-
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent<any>, folderId?: string) => {
     e.preventDefault();
-    e.currentTarget.classList.add('bg-primary-50/70', 'scale-[1.04]', 'shadow-lg', 'ring-2', 'ring-primary-500', 'ring-offset-1', 'animate-[pulse_0.45s_ease-in-out_infinite]');
+    if (folderId) setDragOverId(folderId);
+    if (folderId && DROP_BLOCKED_IDS.has(folderId)) {
+      const ban = document.getElementById('drag-ban-overlay');
+      if (ban) ban.style.display = 'flex';
+    } else {
+      const ban = document.getElementById('drag-ban-overlay');
+      if (ban) ban.style.display = 'none';
+      e.currentTarget.classList.add('bg-primary-50/70', 'scale-[1.04]', 'shadow-lg', 'ring-2', 'ring-primary-500', 'ring-offset-1', 'animate-[pulse_0.45s_ease-in-out_infinite]');
+    }
   };
 
-  const handleDragEnter = (e: React.DragEvent) => {
+  const handleDragEnter = (e: React.DragEvent<any>) => {
     e.preventDefault();
   };
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = (e: React.DragEvent<any>) => {
     e.currentTarget.classList.remove('bg-primary-50/70', 'scale-[1.04]', 'shadow-lg', 'ring-2', 'ring-primary-500', 'ring-offset-1', 'animate-[pulse_0.45s_ease-in-out_infinite]');
+    setDragOverId(null);
+    const ban = document.getElementById('drag-ban-overlay');
+    if (ban) ban.style.display = 'none';
   };
 
-  const handleDrop = async (e: React.DragEvent, targetFolderId: string) => {
+  const handleDrop = async (e: React.DragEvent<any>, targetFolderId: string) => {
     e.preventDefault();
     e.currentTarget.classList.remove('bg-primary-50/70', 'scale-[1.04]', 'shadow-lg', 'ring-2', 'ring-primary-500', 'ring-offset-1', 'animate-[pulse_0.45s_ease-in-out_infinite]');
 
@@ -152,121 +154,91 @@ export const Sidebar: React.FC = () => {
 
         {/* Scrollable Inner Section */}
         <div className="flex-1 overflow-y-auto overflow-x-visible space-y-8 pb-4 px-2 -mx-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+
+          {/* Library */}
           <div>
             <div className="mb-2 px-0.5">
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{t('sidebar:library', 'Library')}</h3>
             </div>
 
             <div className="space-y-1">
+              {/* All Videos */}
               <div className="relative">
-                {dragOverId === 'all' && (
-                  <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-red-50/80 ring-2 ring-red-400">
-                    <Ban size={18} className="text-red-500" />
-                  </div>
-                )}
-                <NavLink to="/gallery" end className={({ isActive }) => linkClass(isActive && !location.pathname.includes('favorites') && !location.pathname.includes('unsorted'))}>
-                {({ isActive }) => (
-                  <>
-                    <div className="flex items-center gap-3">
-                      <LayoutGrid size={20} strokeWidth={isActive ? 2.5 : 2} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                      <span className="text-[15px] font-semibold">{t('gallery:myVideos', 'All Videos')}</span>
-                    </div>
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-primary-50 text-primary-600 border border-primary-100/50">
-                      {videos.length}
-                    </span>
-                  </>
-                )}
-              </NavLink>
+                <NavLink to="/gallery" end onDragOver={(e: any) => handleDragOver(e, 'all')} onDragLeave={(e: any) => handleDragLeave(e)} className={({ isActive }) => linkClass(isActive && !location.pathname.includes('favorites') && !location.pathname.includes('unsorted'))}>
+                  {({ isActive }) => {
+                    const active = isActive && !location.pathname.includes('favorites') && !location.pathname.includes('unsorted');
+                    return (
+                      <>
+                        <div className="flex items-center gap-3">
+                          <LayoutGrid size={20} strokeWidth={2} className={active ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
+                          <span className={"text-[15px] font-semibold"}>{t('gallery:myVideos', 'All Videos')}</span>
+                        </div>
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-primary-50 text-primary-600">
+                          {videos.length}
+                        </span>
+                      </>
+                    );
+                  }}
+                </NavLink>
               </div>
-              {false && <NavLink to="/organizer" className={({ isActive }) => linkClass(isActive)}>
-                {({ isActive }) => (
-                  <div className="flex items-center gap-3">
-                    <FolderOpen size={20} strokeWidth={isActive ? 2.5 : 2} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                    <span className="text-[15px] font-semibold">{t('sidebar:organizer', 'Organizer')}</span>
-                  </div>
-                )}
-              </NavLink>}
 
+              {/* Unsorted */}
               <div className="relative">
-                {dragOverId === 'unsorted' && (
-                  <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-red-50/80 ring-2 ring-red-400">
-                    <Ban size={18} className="text-red-500" />
-                  </div>
-                )}
-                <NavLink to="/gallery/unsorted" className={({ isActive }) => linkClass(isActive)}>
-                {({ isActive }) => (
-                  <>
-                    <div className="flex items-center gap-3">
-                      <Inbox size={20} strokeWidth={isActive ? 2.5 : 2} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                      <span className="text-[15px] font-semibold">{t('sidebar:unsorted', 'Unsorted')}</span>
-                    </div>
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-primary-50 text-primary-600 border border-primary-100/50">
-                      {getDirectVideoCount('unsorted')}
-                    </span>
-                  </>
-                )}
-              </NavLink>
+                <NavLink to="/gallery/unsorted" onDragOver={(e: any) => handleDragOver(e, 'unsorted')} onDragLeave={(e: any) => handleDragLeave(e)} className={({ isActive }) => linkClass(isActive)}>
+                  {({ isActive }) => (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <Inbox size={20} strokeWidth={2} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
+                        <span className="text-[15px] font-semibold">{t('sidebar:unsorted', 'Unsorted')}</span>
+                      </div>
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-primary-50 text-primary-600">
+                        {getDirectVideoCount('unsorted')}
+                      </span>
+                    </>
+                  )}
+                </NavLink>
               </div>
-              <NavLink to="/gallery/favorites" className={({ isActive }) => favLinkClass(isActive)}>
-                {({ isActive }) => (
-                  <>
-                    <div className="flex items-center gap-3">
-                      <Heart size={20} strokeWidth={isActive ? 2.5 : 2} className={isActive ? 'text-red-600' : 'text-gray-400 group-hover:text-red-600'} />
-                      <span className="text-[15px] font-semibold">{t('gallery:favorites', 'Favorites')}</span>
-                    </div>
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-red-50 text-red-600 border border-red-100/50">
-                      {getFavoritesCount()}
-                    </span>
-                  </>
-                )}
-              </NavLink>
 
-              {/* Grocery List */}
+              {/* Favorites */}
               <div className="relative">
-                {dragOverId === 'grocery-list' && (
-                  <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-red-50/80 ring-2 ring-red-400">
-                    <Ban size={18} className="text-red-500" />
-                  </div>
-                )}
-                <NavLink to="/grocery-list" className={({ isActive }) => groceryLinkClass(isActive)}>
-                {({ isActive }) => (
-                  <>
-                    <div className="flex items-center gap-3">
-                      <ShoppingCart
-                        size={20}
-                        strokeWidth={isActive ? 2.5 : 2}
-                        className={isActive ? 'text-green-600' : 'text-gray-400 group-hover:text-green-600'}
-                      />
-                      <span className="text-[15px] font-semibold">
-                        {t('sidebar:groceryList', 'Grocery List')}
+                <NavLink to="/gallery/favorites" onDragOver={(e: any) => handleDragOver(e, 'favorites')} onDragLeave={(e: any) => handleDragLeave(e)} className={({ isActive }) => favLinkClass(isActive)}>
+                  {({ isActive }) => (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <Heart size={20} strokeWidth={2} className={isActive ? 'text-red-600' : 'text-gray-400 group-hover:text-red-600'} />
+                        <span className="text-[15px] font-semibold">{t('gallery:favorites', 'Favorites')}</span>
+                      </div>
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-red-50 text-red-500">
+                        {getFavoritesCount()}
                       </span>
-                    </div>
-                    {getGroceryCount() > 0 && (
-                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-green-50 text-green-700 border border-green-100/50">
-                        {getGroceryCount()}
-                      </span>
-                    )}
-                  </>
-                )}
-              </NavLink>
+                    </>
+                  )}
+                </NavLink>
               </div>
-              {/* Saved Places */}
-              {false && <NavLink to="/places" className={({ isActive }) => placesLinkClass(isActive)}>
-                {({ isActive }) => (
-                  <div className="flex items-center gap-3">
-                    <MapPin
-                      size={20}
-                      strokeWidth={isActive ? 2.5 : 2}
-                      className={isActive ? 'text-teal-600' : 'text-gray-400 group-hover:text-teal-600'}
-                      aria-hidden="true"
-                    />
-                    <span className="text-[15px] font-semibold">{t('sidebar:savedPlaces', 'Saved Places')}</span>
-                  </div>
-                )}
-              </NavLink>}
+
+              {/* Archive */}
+              <div
+                onDragOver={handleDragOver}
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, 'archive')}
+                className="rounded-xl transition-all duration-100"
+              >
+                <NavLink to="/gallery/archive" className={({ isActive }) => linkClass(isActive)}>
+                  {({ isActive }) => (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <Archive size={20} strokeWidth={2} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
+                        <span className="text-[15px] font-semibold">{t('sidebar:archive', 'Archive')}</span>
+                      </div>
+                    </>
+                  )}
+                </NavLink>
+              </div>
             </div>
           </div>
 
+          {/* Collections */}
           <div>
             <div className="flex items-center justify-between mb-2 pl-0.5 pr-3.5">
               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{t('sidebar:collections', 'Collections')}</h3>
@@ -279,6 +251,7 @@ export const Sidebar: React.FC = () => {
               {customFolders.map((folder: any) => {
                 const hasSubs = !!(folder.subFolders && folder.subFolders.length > 0);
                 const folderPath = `/gallery/${folder.id}`;
+                const isActive = isFolderActive(folder);
 
                 return (
                   <div key={folder.id} className="mb-1">
@@ -289,21 +262,23 @@ export const Sidebar: React.FC = () => {
                       onDrop={(e) => handleDrop(e, folder.id)}
                       className="rounded-xl transition-all duration-100"
                     >
-                      <NavLink to={folderPath} className={({ isActive }) => linkClass(isActive)}>
-                        {({ isActive }) => (
+                      <NavLink to={folderPath} className={({ isActive: navActive }) => linkClass(navActive)}>
+                        {({ isActive: navActive }) => (
                           <>
                             <div className="flex items-center gap-3 min-w-0 pointer-events-none">
-                              <FolderOpen size={20} strokeWidth={isActive ? 2.5 : 2} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                              <span className="text-[15px] font-semibold truncate">{folder.name}</span>
+                              <FolderOpen size={20} strokeWidth={2} className={navActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
+                              <span className="text-[15px] font-semibold">{folder.name}</span>
                             </div>
-                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-primary-50 text-primary-600 border border-primary-100/50 pointer-events-none">
-                              {getDirectVideoCount(folder.id)}
-                            </span>
+                            {isActive && (
+                              <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-primary-50 text-primary-600 pointer-events-none shrink-0">
+                                {getDirectVideoCount(folder.id)}
+                              </span>
+                            )}
                           </>
                         )}
                       </NavLink>
                     </div>
-
+                    {/* Subfolders always visible, counts shown when parent is active */}
                     {hasSubs && (
                       <div className="space-y-1 mt-1">
                         {folder.subFolders.map((sub: any) => {
@@ -319,18 +294,26 @@ export const Sidebar: React.FC = () => {
                             >
                               <NavLink
                                 to={subPath}
-                                className={({ isActive }) =>
-                                  `group flex items-center gap-2.5 py-2.5 pr-3 rounded-xl text-[14px] transition-all border pl-7 ${
-                                    isActive
-                                      ? 'text-primary-700 border-primary-100/30 bg-primary-50/30'
-                                      : 'text-gray-500 hover:text-primary-600 hover:bg-primary-50 border-transparent'
+                                className={({ isActive: subActive }) =>
+                                  `group flex items-center justify-between py-2.5 pr-3 rounded-xl text-[14px] transition-all pl-7 ${
+                                    subActive
+                                      ? 'text-primary-700 bg-primary-100'
+                                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
                                   }`
                                 }
                               >
-                                {({ isActive }) => (
+                                {({ isActive: subActive }) => (
                                   <>
-                                    <CornerDownRight size={14} className={isActive ? 'text-primary-600' : 'text-gray-300 group-hover:text-primary-600'} strokeWidth={isActive ? 2.5 : 2} />
-                                    <span className="truncate font-medium">{sub.name}</span>
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <CornerDownRight size={14} className={subActive ? 'text-primary-500' : 'text-gray-300 group-hover:text-gray-400'} strokeWidth={2} />
+                                      <span className="truncate font-medium">{sub.name}</span>
+                                    </div>
+                                    {/* Subfolder count only shown when parent folder is active */}
+                                    {isActive && (
+                                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-gray-200 text-gray-600 pointer-events-none shrink-0">
+                                        {getDirectVideoCount(sub.id)}
+                                      </span>
+                                    )}
                                   </>
                                 )}
                               </NavLink>
@@ -345,29 +328,6 @@ export const Sidebar: React.FC = () => {
             </div>
           </div>
 
-          <div>
-            <div className="mb-2 px-0.5">
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{t('sidebar:others', 'Others')}</h3>
-            </div>
-            <div className="space-y-1">
-              <NavLink to="/gallery/shared" className={({ isActive }) => linkClass(isActive)}>
-                {({ isActive }) => (
-                  <div className="flex items-center gap-3">
-                    <Share2 size={20} strokeWidth={isActive ? 2.5 : 2} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                    <span className="text-[15px] font-semibold">{t('sidebar:shared', 'Shared')}</span>
-                  </div>
-                )}
-              </NavLink>
-              <NavLink to="/gallery/archive" className={({ isActive }) => linkClass(isActive)}>
-                {({ isActive }) => (
-                  <div className="flex items-center gap-3">
-                    <Archive size={20} strokeWidth={isActive ? 2.5 : 2} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                    <span className="text-[15px] font-semibold">{t('sidebar:archive', 'Archive')}</span>
-                  </div>
-                )}
-              </NavLink>
-            </div>
-          </div>
         </div>
       </aside>
 
@@ -388,6 +348,6 @@ export const Sidebar: React.FC = () => {
         onConfirm={confirmMove}
         onCancel={() => setPendingMove(null)}
       />
-        </>
+    </>
   );
 };

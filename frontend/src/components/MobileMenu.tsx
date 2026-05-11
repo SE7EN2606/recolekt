@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
-  LayoutGrid, Heart, Archive, Share2,
+  LayoutGrid, Heart, Archive,
   ChevronRight, BookOpen, HelpCircle, FolderPlus, User, Settings, LogOut,
   FolderOpen, Inbox, CreditCard, FolderClosed, CornerDownRight
 } from 'lucide-react';
@@ -179,10 +179,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                         );
                       })}
 
-                      <button onClick={() => handleNav('/gallery/shared')} className="w-full flex items-center justify-between p-5 border-t border-white/50 group transition-all hover:bg-white/80">
-                        <div className="flex items-center gap-4"><Share2 size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{t('sidebar:shared', 'Shared with Me')}</span></div>
-                        <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
-                      </button>
                       <button onClick={() => handleNav('/gallery/archive')} className="w-full flex items-center justify-between p-5 border-t border-white/50 group transition-all hover:bg-white/80">
                         <div className="flex items-center gap-4"><Archive size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" /><span className="text-gray-900 font-bold group-hover:text-primary-600 transition-colors">{t('sidebar:archive', 'Archive')}</span></div>
                         <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
