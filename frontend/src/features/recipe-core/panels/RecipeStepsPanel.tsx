@@ -1,52 +1,99 @@
 import React from 'react';
-import StepRow from '../rows/StepRow';
 import { RawInstruction } from '../types';
 
-type Props = {
-  instructionSections: { title?: string; instructions: RawInstruction[] }[];
-  checkedSteps: Set<number>;
-  toggleStep: (i: number) => void;
+type InstructionSection = {
+  title?: string;
+  instructions: RawInstruction[];
 };
+
+type Props = {
+  instructionSections: InstructionSection[];
+  checkedSteps: Set<number>;
+  toggleStep: (index: number) => void;
+};
+
+function getInstructionText(raw: RawInstruction): string {
+  if (typeof raw === 'string') return raw.trim();
+
+  const obj = raw as any;
+
+  return String(
+    obj?.instruction ??
+    obj?.text ??
+    obj?.step ??
+    obj?.description ??
+    obj?.body ??
+    ''
+  ).trim();
+}
 
 const RecipeStepsPanel: React.FC<Props> = ({
   instructionSections,
   checkedSteps,
   toggleStep,
 }) => {
+  let globalIndex = 0;
+
   return (
     <div className="space-y-5">
-      {(() => {
-        let offset = 0;
-        return instructionSections.map((section, sectionIndex) => {
-          const startIndex = offset;
-          offset += section.instructions.length;
+      {instructionSections.map((section, sectionIndex) => {
+        const visibleInstructions = (section.instructions || [])
+          .map((instruction) => ({
+            raw: instruction,
+            text: getInstructionText(instruction),
+          }))
+          .filter((item) => item.text.length > 0);
 
-          return (
-            <div key={`${section.title || 'section'}-${sectionIndex}`} className={sectionIndex > 0 ? 'pt-2 border-t border-gray-50' : ''}>
-              {section.title && (
-                <h5 className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-3">
-                  {section.title}
-                </h5>
-              )}
-              <div className="space-y-5">
-                {section.instructions.map((step, stepIndex) => {
-                  const absoluteIndex = startIndex + stepIndex;
-                  return (
-                    <StepRow
-                      parseInstruction={(r) => r}
-                      key={absoluteIndex}
-                      index={absoluteIndex}
-                      raw={step}
-                      checked={checkedSteps.has(absoluteIndex)}
-                      onToggle={toggleStep}
-                    />
-                  );
-                })}
-              </div>
+        if (visibleInstructions.length === 0) return null;
+
+        return (
+          <div key={sectionIndex} className="space-y-5">
+            {section.title && (
+              <h4 className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+                {section.title}
+              </h4>
+            )}
+
+            <div className="space-y-5">
+              {visibleInstructions.map(({ text }) => {
+                const stepIndex = globalIndex++;
+                const checked = checkedSteps.has(stepIndex);
+
+                return (
+                  <button
+                    key={`${sectionIndex}-${stepIndex}-${text.slice(0, 24)}`}
+                    type="button"
+                    onClick={() => toggleStep(stepIndex)}
+                    className="flex w-full items-start gap-3.5 text-left cursor-pointer select-none transition-all group"
+                  >
+                    <div
+                      className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all border-2 ${
+                        checked
+                          ? 'bg-primary-600 border-primary-600 text-white'
+                          : 'bg-white border-primary-200 group-hover:border-primary-400'
+                      }`}
+                    >
+                      <span className={`text-[11px] font-black ${checked ? 'text-white' : 'text-primary-600'}`}>
+                        {stepIndex + 1}
+                      </span>
+                    </div>
+
+                    <div className="flex-1 pt-[4px]">
+                      <p
+                        className={`text-[13px] leading-relaxed font-medium ${
+                          checked ? 'text-gray-400 line-through' : 'text-gray-700'
+                        }`}
+                      >
+                        {text}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
-          );
-        });
-      })()}
+          </div>
+        );
+      })}
     </div>
   );
 };
