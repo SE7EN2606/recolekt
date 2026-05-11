@@ -1000,8 +1000,7 @@ export const VideoDetail: React.FC = () => {
 
         {/* Desktop right column */}
         <div className="hidden md:flex flex-col w-full gap-5 mt-0">
-          <RecipeMetaPanel chips={recipeMetaChips} />
-
+          {!showRecipeCard && <RecipeMetaPanel chips={recipeMetaChips} />}
           <MetadataPanel
             variant="desktop"
             category={metadataCategory}
