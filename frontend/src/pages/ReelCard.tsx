@@ -378,7 +378,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
       <div
         onClick={handleCardClick}
         className={`
-          relative rounded-2xl overflow-hidden aspect-9/16 shadow-sm
+          relative rounded-2xl overflow-hidden aspect-9/16 shadow-sm select-none
           transition-all duration-300 bg-slate-900 cursor-pointer hover:shadow-lg
           ${selected ? 'ring-2 ring-primary-600 ring-offset-2' : ''} group
         `}
@@ -395,6 +395,8 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
             onLoad={() => setImageLoaded(true)}
             loading="lazy"
             decoding="async"
+            draggable={false}
+            onDragStart={e => e.preventDefault()}
             className={`
               absolute inset-0 w-full h-full object-cover transition-all duration-200 z-10
               ${imageLoaded ? 'opacity-100' : 'opacity-0'}
@@ -521,7 +523,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({ video, selected, onToggl
           <div className="absolute bottom-3 left-3 z-30">
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
               <FolderIcon size={11} className="text-primary-400" strokeWidth={2.5} />
-              <span className="text-[10px] font-bold text-white uppercase tracking-wide truncate max-w-20">
+              <span className="text-[10px] font-bold text-white uppercase tracking-wide truncate max-w-32">
                 {folderName}
               </span>
             </div>

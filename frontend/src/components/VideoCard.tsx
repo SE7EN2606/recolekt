@@ -214,7 +214,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
     [video, contentType],
   );
 
-  const showTypeBadge = !isProcessing && !hasError && contentType === 'recipe';
+  const showTypeBadge = !isProcessing && !hasError;
 
   const hasLocation = useMemo(() => {
     const loc = video?.location;
@@ -235,9 +235,9 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
     return false;
   }, [video?.location]);
 
-  const showPlacesBadge = false;
+  const showPlacesBadge = !isProcessing && !hasError && hasLocation && contentType !== 'location' && contentType !== 'places';
 
-  const duration = video?.duration;
+  const duration = String(video?.duration ?? '').trim();
   const sourceUrl = String(video?.originalUrl ?? video?.sourceurl ?? video?.sourceUrl ?? video?.raw?.sourceurl ?? '');
 
   const handleHeartClick = async (e: React.MouseEvent) => {
@@ -409,7 +409,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
           <div className="absolute bottom-3 left-3 z-30">
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
               <FolderIcon size={11} className="text-primary-400" strokeWidth={2.5} />
-              <span className="text-[10px] font-bold text-white uppercase tracking-wide truncate max-w-20">{folderName}</span>
+              <span className="text-[10px] font-bold text-white uppercase tracking-wide truncate max-w-[72px] md:max-w-[120px]">{folderName}</span>
             </div>
           </div>
         )}
@@ -429,9 +429,9 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
       </div>
 
       {/* Title row with globe toggle (only shown when original title differs from english) */}
-      <div className="pt-3 px-0.5">
+      <div className="pt-3 px-0.5" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} style={{userSelect:"text"}}>
         <div className="flex items-start gap-2">
-          <p className="flex-1 text-sm font-bold text-gray-900 leading-snug line-clamp-2 mb-1">
+          <p className="flex-1 text-sm font-bold text-gray-900 leading-snug line-clamp-2 mb-1 select-text cursor-text">
             {isProcessing ? 'Processing…' : activeTitle}
           </p>
           {originalTitle && !isDisabled && (
