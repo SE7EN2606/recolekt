@@ -256,6 +256,24 @@ async function fetchWithTimeout(
 
 /* ── Provider ────────────────────────────────────────────────────────────── */
 
+const formatVideoDuration = (value: any, fallbackSeconds?: any): string => {
+  const raw = value ?? fallbackSeconds;
+
+  if (raw === null || raw === undefined || raw === '') return '';
+
+  const str = String(raw).trim();
+
+  if (/^\d+:\d{2}$/.test(str)) return str;
+
+  const secs = Number(str);
+  if (!Number.isFinite(secs) || secs <= 0) return '';
+
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
+
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const userId = user?.id ? String(user.id) : '';
@@ -271,6 +289,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             ? parsed.map((v: any) => ({
                 ...v,
                 content_type: normalizeContentType(v?.content_type),
+                duration: formatVideoDuration(v?.duration, v?.duration_seconds),
               }))
             : [];
         } catch {
@@ -419,6 +438,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               parsed.map((v: any) => ({
                 ...v,
                 content_type: normalizeContentType(v?.content_type),
+                duration: formatVideoDuration(v?.duration, v?.duration_seconds),
               })),
             );
           }
@@ -725,7 +745,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             author: r.author_name || r.author || 'Unknown',
             platform,
             thumbnailUrl: r.gcs_urls?.preview_thumbnail || '',
-            duration: r.duration || '',
+            duration: formatVideoDuration(r.duration, r.duration_seconds),
             savedAt: r.created_at,
             category: finalCategory,
             topic: hydratedSummary.topic || '',

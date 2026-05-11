@@ -579,6 +579,13 @@ export const Gallery: React.FC = () => {
 
                 dragGhost.appendChild(stack);
                 document.body.appendChild(dragGhost);
+
+                    const cleanupGhost = () => {
+                      dragGhost.remove();
+                      window.removeEventListener('dragend', cleanupGhost);
+                    };
+
+                    window.addEventListener('dragend', cleanupGhost);
                 e.dataTransfer.setDragImage(dragGhost, 48, 62);
 
                 setTimeout(() => dragGhost.remove(), 0);

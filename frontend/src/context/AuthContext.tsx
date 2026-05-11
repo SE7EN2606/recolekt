@@ -25,6 +25,7 @@ interface User {
   name: string;
   picture?: string;
   language?: string;
+  country?: string;
 }
 
 interface AuthContextType {

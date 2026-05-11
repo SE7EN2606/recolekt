@@ -55,17 +55,29 @@ export const ProfileSettings: React.FC = () => {
 
   // Fetch user location on mount
   useEffect(() => {
-    fetch('https://ipapi.co/json/')
+    const savedCountry = user?.country;
+
+    if (savedCountry) {
+      setCountry(savedCountry);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 4000);
+
+    fetch('https://ipapi.co/json/', { signal: controller.signal })
       .then(res => res.json())
       .then(data => {
-        if (data.country_name) {
-          setCountry(data.country_name);
-        } else {
-          setCountry(t('account:unknown'));
-        }
+        window.clearTimeout(timeout);
+        setCountry(data.country_name || t('account:unknown'));
       })
       .catch(() => setCountry(t('account:unknown')));
-  }, [t]);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [t, user?.country]);
 
   const fetchTokenInfo = async () => {
     setIsLoadingToken(true);
