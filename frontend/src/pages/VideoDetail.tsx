@@ -847,6 +847,7 @@ export const VideoDetail: React.FC = () => {
           </div>
 
           {/* Metadata (mobile) */}
+          {!showRecipeCard && (
           <MetadataPanel
             variant="mobile"
             category={metadataCategory}
@@ -857,6 +858,7 @@ export const VideoDetail: React.FC = () => {
             onEditTopic={(v: string) => handleEditField('topic', v)}
             onEditStart={() => setIsEditing(true)}
           />
+          )}
 
           {/* AI Summary */}
           {!showRecipeCard && (
