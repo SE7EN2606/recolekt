@@ -938,6 +938,10 @@ export const VideoDetail: React.FC = () => {
                 scaleQuantity={scaleQuantity}
                 useMetric={useMetric}
                 onToggleMetric={setUseMetric}
+<<<<<<< HEAD
+=======
+                onAddToShoppingList={handleAddToShoppingList}
+>>>>>>> origin/main
               />
             </div>
           )}

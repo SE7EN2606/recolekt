@@ -249,6 +249,7 @@ function normalizeIngredientSections(recipe: any): IngredientSection[] {
     ? uniqueBy(parsed.ingredients, ingredientSignature)
     : [];
 
+<<<<<<< HEAD
   if (dedupedSections.length > 0) {
     const sectionItemKeys = new Set(
       dedupedSections.flatMap((section) => section.items.map(ingredientSignature))
@@ -309,6 +310,22 @@ function normalizeInstructionSections(recipe: any): InstructionSection[] {
   const dedupedSections = uniqueBy(
     sections,
     (section) => `${normalizeSignatureValue(section.title)}::${section.instructions.map(instructionSignature).join('||')}`
+=======
+const TimeCell: React.FC<{ icon: React.ReactNode; label: string; value: string | null; accent?: string }> = ({ icon, label, value, accent }) => {
+  if (!value) return null;
+  return (
+    <div className="flex flex-col items-center justify-center gap-1 py-4 px-2 text-center">
+      <div className={
+        accent === 'tertiary-500' ? 'text-tertiary-500' :
+        accent === 'amber-500' ? 'text-amber-500' :
+        accent === 'purple-500' ? 'text-purple-500' :
+        accent === 'gray-400' ? 'text-gray-400' :
+        'text-gray-400'
+      }>{icon}</div>
+      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{label}</span>
+      <span className="text-[13px] font-black text-gray-900 leading-tight">{value}</span>
+    </div>
+>>>>>>> origin/main
   );
 
   if (dedupedSections.length > 0) return dedupedSections;
@@ -402,12 +419,17 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
       return next;
     });
 
+<<<<<<< HEAD
   const toggleStep = (index: number) =>
     setCheckedSteps((prev) => {
       const next = new Set(prev);
       next.has(index) ? next.delete(index) : next.add(index);
       return next;
     });
+=======
+  // ── Render ───────────────────────────────────────────────────────────────
+
+>>>>>>> origin/main
 
   return (
     <>
@@ -441,6 +463,52 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               </button>
             )}
           </div>
+<<<<<<< HEAD
+=======
+
+          {/* Ingredient rows */}
+          <div className="divide-y divide-gray-50/80">
+            {hasGroups
+              ? groups.map((group, gi) => (
+                  <div key={gi}>
+                    {(group.title || group.group) && (
+                      <div className="px-5 pt-3 pb-1.5">
+                        <h5 className="text-[11px] font-black text-gray-400 uppercase tracking-widest">
+                          {group.title || group.group}
+                        </h5>
+                      </div>
+                    )}
+                    <ul>
+                      {(group.items ?? []).map((item, ii) => {
+                        const id = `g${gi}-i${ii}`;
+                        return (
+                          <IngredientRow
+                            key={id} id={id} raw={item}
+                            servingScale={currentScale} scaleQuantity={scaleQuantity}
+                            checked={checkedIds.has(id)} onToggle={toggleIngredient}
+                            useMetric={useMetric}
+                          />
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))
+              : <ul className="divide-y divide-gray-50/80">
+                  {flat.map((item, i) => {
+                    const id = `f${i}`;
+                    return (
+                      <IngredientRow
+                        key={id} id={id} raw={item}
+                        servingScale={currentScale} scaleQuantity={scaleQuantity}
+                        checked={checkedIds.has(id)} onToggle={toggleIngredient}
+                        useMetric={useMetric}
+                      />
+                    );
+                  })}
+                </ul>
+            }
+          </div>
+>>>>>>> origin/main
         </div>
 
         {recipeTabs.length > 1 && (
