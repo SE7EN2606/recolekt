@@ -701,6 +701,7 @@ export const VideoDetail: React.FC = () => {
       : recipeForCard;
 
   const showRecipeCard = Boolean(stableRecipeForCard && hasUsableRecipeContent(stableRecipeForCard));
+  const showFolderBadge = Boolean(folderName && !showRecipeCard);
 
   const actionItems = (video
     ? [
