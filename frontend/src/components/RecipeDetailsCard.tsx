@@ -47,7 +47,7 @@ type InstructionSection = {
   instructions: RawInstruction[];
 };
 
-type RecipeTabKey = 'ingredients' | 'steps' | 'nutrition' | 'ask';
+type RecipeSecondaryTabKey = 'nutrition' | 'ask';
 
 export interface RecipeDetailsCardProps {
   recipe?: any;
@@ -351,7 +351,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const [checkedSteps, setCheckedSteps] = useState<Set<number>>(new Set());
   const [isCookModeOpen, setIsCookModeOpen] = useState(false);
   const [savedCookStep, setSavedCookStep] = useState<number | null>(null);
-  const [activeRecipeTab, setActiveRecipeTab] = useState<RecipeTabKey>('ingredients');
+  const [activeSecondaryTab, setActiveSecondaryTab] = useState<RecipeSecondaryTabKey | null>(null);
 
   const {
     askQuestion,
@@ -375,21 +375,18 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const hasIngredients = allIngredients.length > 0;
   const hasSteps = allInstructions.length > 0;
 
-  const recipeTabs = useMemo(() => {
-    const tabs: { key: RecipeTabKey; label: string }[] = [];
+  const secondaryTabs = useMemo(() => {
+    const tabs: { key: RecipeSecondaryTabKey; label: string }[] = [];
 
-    if (hasIngredients) tabs.push({ key: 'ingredients', label: 'Ingredients' });
-    if (hasSteps) tabs.push({ key: 'steps', label: 'Steps' });
     if (hasIngredients) tabs.push({ key: 'nutrition', label: 'Macro' });
-
     tabs.push({ key: 'ask', label: 'Ask' });
 
     return tabs;
-  }, [hasIngredients, hasSteps]);
+  }, [hasIngredients]);
 
-  const visibleRecipeTab: RecipeTabKey = recipeTabs.some((tab) => tab.key === activeRecipeTab)
-    ? activeRecipeTab
-    : recipeTabs[0]?.key || 'ask';
+  const visibleSecondaryTab = secondaryTabs.some((tab) => tab.key === activeSecondaryTab)
+    ? activeSecondaryTab
+    : null;
 
   if (!recipe) return null;
   if (recipe.is_compilation) return <RecipeCompilationCard recipe={recipe} />;
@@ -421,16 +418,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {hasSteps && (
-              <button
-                type="button"
-                onClick={() => setIsCookModeOpen(true)}
-                className="px-3 py-1.5 bg-gray-950 text-white rounded-xl text-[11px] font-black shadow-sm hover:bg-gray-800 transition-colors"
-              >
-                Cook
-              </button>
-            )}
-
             {onToggleMetric && hasIngredients && (
               <button
                 type="button"
@@ -443,20 +430,88 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
         </div>
 
-        {recipeTabs.length > 1 && (
+        {hasSteps && (
+          <div className="px-5 py-4 bg-white border-b border-gray-100">
+            <button
+              type="button"
+              onClick={() => setIsCookModeOpen(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-950 px-5 py-4 text-sm font-black text-white shadow-sm transition-colors hover:bg-gray-800 active:bg-gray-900"
+            >
+              <ChefHat size={18} aria-hidden="true" />
+              Cook this recipe
+            </button>
+          </div>
+        )}
+
+        <div className="divide-y divide-gray-100">
+          {hasIngredients && (
+            <section className="py-4">
+              <div className="px-5 pb-3">
+                <h4 className="text-sm font-black tracking-tight text-gray-950">Ingredients</h4>
+              </div>
+
+              <div className="space-y-4">
+                {ingredientSections.map((section, sectionIndex) => (
+                  <div key={sectionIndex}>
+                    {section.title && (
+                      <h5 className="px-5 pb-1.5 text-[11px] font-black uppercase tracking-widest text-gray-400">
+                        {section.title}
+                      </h5>
+                    )}
+
+                    <ul className="divide-y divide-gray-50">
+                      {section.items.map((item, itemIndex) => {
+                        const id = `section-${sectionIndex}-ingredient-${itemIndex}`;
+
+                        return (
+                          <IngredientRow
+                            key={id}
+                            id={id}
+                            raw={item}
+                            servingScale={servingScale}
+                            scaleQuantity={scaleQuantity}
+                            checked={checkedIds.has(id)}
+                            onToggle={toggleIngredient}
+                            useMetric={useMetric}
+                            parseRawIngredient={parseRawIngredient}
+                            formatQty={formatQty}
+                            assumedLabel={assumedLabel}
+                          />
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {hasSteps && (
+            <section className="px-5 py-5">
+              <h4 className="pb-4 text-sm font-black tracking-tight text-gray-950">Steps</h4>
+              <RecipeStepsPanel
+                instructionSections={instructionSections}
+                checkedSteps={checkedSteps}
+                toggleStep={toggleStep}
+              />
+            </section>
+          )}
+        </div>
+
+        {secondaryTabs.length > 0 && (
           <div className="bg-gray-50 px-3 py-3">
             <div
               className="grid gap-1 rounded-2xl bg-gray-100 p-1 text-[12px] font-black"
-              style={{ gridTemplateColumns: `repeat(${recipeTabs.length}, minmax(0, 1fr))` }}
+              style={{ gridTemplateColumns: `repeat(${secondaryTabs.length}, minmax(0, 1fr))` }}
             >
-              {recipeTabs.map((tab) => {
-                const active = visibleRecipeTab === tab.key;
+              {secondaryTabs.map((tab) => {
+                const active = visibleSecondaryTab === tab.key;
 
                 return (
                   <button
                     key={tab.key}
                     type="button"
-                    onClick={() => setActiveRecipeTab(tab.key)}
+                    onClick={() => setActiveSecondaryTab((current) => (current === tab.key ? null : tab.key))}
                     className={`rounded-xl px-2 py-2.5 transition-all ${
                       active
                         ? 'bg-white text-violet-600 shadow-sm'
@@ -471,56 +526,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
         )}
 
-        {visibleRecipeTab === 'ingredients' && hasIngredients && (
-          <div className="py-3">
-            <div className="space-y-4">
-              {ingredientSections.map((section, sectionIndex) => (
-                <div key={sectionIndex}>
-                  {section.title && (
-                    <h4 className="px-5 pb-1.5 text-[11px] font-black uppercase tracking-widest text-gray-400">
-                      {section.title}
-                    </h4>
-                  )}
-
-                  <ul className="divide-y divide-gray-50">
-                    {section.items.map((item, itemIndex) => {
-                      const id = `section-${sectionIndex}-ingredient-${itemIndex}`;
-
-                      return (
-                        <IngredientRow
-                          key={id}
-                          id={id}
-                          raw={item}
-                          servingScale={servingScale}
-                          scaleQuantity={scaleQuantity}
-                          checked={checkedIds.has(id)}
-                          onToggle={toggleIngredient}
-                          useMetric={useMetric}
-                          parseRawIngredient={parseRawIngredient}
-                          formatQty={formatQty}
-                          assumedLabel={assumedLabel}
-                        />
-                      );
-                    })}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {visibleRecipeTab === 'steps' && hasSteps && (
-          <div className="px-5 py-5 border-t border-gray-50">
-            <RecipeStepsPanel
-              instructionSections={instructionSections}
-              checkedSteps={checkedSteps}
-              toggleStep={toggleStep}
-            />
-          </div>
-        )}
-
-        {visibleRecipeTab === 'nutrition' && hasIngredients && (
-          <div className="px-5 py-5 border-t border-gray-50">
+        {visibleSecondaryTab === 'nutrition' && hasIngredients && (
+          <div className="border-t border-gray-50">
             <RecipeNutritionSummary
               ingredients={allIngredients}
               servings={getServings(recipe)}
@@ -529,7 +536,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
         )}
 
-        {visibleRecipeTab === 'ask' && (
+        {visibleSecondaryTab === 'ask' && (
           <div className="px-5 py-5 border-t border-gray-50">
             <RecipeAskPanel
               question={askQuestion}
