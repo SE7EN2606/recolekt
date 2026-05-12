@@ -132,3 +132,24 @@ Never include shell comments inside commands intended for the user's terminal.
 Never include shebangs in snippets the user will paste directly into Zsh.
 Avoid multiline sed/perl regex patches for JSX.
 Prefer Python scripts or direct file edits for complex changes.
+
+## Local backend environment rule
+
+The backend is already configured locally with an existing virtual environment.
+
+Local backend path:
+`/Users/greg/Downloads/Apps/recolekt-app/backend/api-flask`
+
+Normal local backend command:
+`cd /Users/greg/Downloads/Apps/recolekt-app/backend/api-flask`
+`source venv/bin/activate`
+`python app.py`
+
+Do not run `pip install`, `pip install -r`, dependency upgrades, dependency cleanup, or Python package installs locally unless the user explicitly asks.
+
+For local backend validation, prefer:
+`cd /Users/greg/Downloads/Apps/recolekt-app/backend/api-flask`
+`source venv/bin/activate`
+`python -m py_compile app.py`
+
+If port 5001 is already in use, assume the backend may already be running in another terminal. Do not kill processes unless the user explicitly asks.
