@@ -102,7 +102,6 @@ export function useRecipeCookState(
     }));
     setStatus('saving');
 
-    console.info('marking cooked', { reelId });
     markRecipeCooked(reelId)
       .then((data) => {
         setCookStatus(serializeCookState(data));
@@ -123,7 +122,6 @@ export function useRecipeCookState(
     setCookStatus(EMPTY_COOK_STATUS);
     setStatus('saving');
 
-    console.info('resetting cook state', { reelId });
     resetRecipeCookState(reelId)
       .then((data) => {
         setCookStatus(serializeCookState(data));

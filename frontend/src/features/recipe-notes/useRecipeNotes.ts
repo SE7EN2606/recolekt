@@ -67,7 +67,6 @@ export function useRecipeNotes(
 
     const timer = window.setTimeout(async () => {
       try {
-        console.info('saving note', { reelId });
         const data = await saveRecipeNote(reelId, note);
         const savedNote = String(data?.noteText ?? note);
 
@@ -98,7 +97,6 @@ export function useRecipeNotes(
     setStatus('saving');
 
     try {
-      console.info('saving note', { reelId });
       const data = await saveRecipeNote(reelId, note);
       const savedNote = String(data?.noteText ?? note);
       setLastSavedNote(savedNote);
