@@ -286,6 +286,8 @@ type LocalCookStatus = {
   lastCookedLabel: string;
 };
 
+type RecipeNoteStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
+
 function getRecipeMetaChips(recipe: any, video?: any): RecipeMetaChip[] {
   const read = (...values: any[]) =>
     values
@@ -371,26 +373,6 @@ function getTodayCookedLabel(): string {
   return 'today';
 }
 
-function getRecipeNotesPreview(video: any, recipe: any): string {
-  const notes = [
-    video?.personalNotes,
-    video?.personal_notes,
-    video?.notes,
-    recipe?.personalNotes,
-    recipe?.personal_notes,
-    recipe?.notes,
-  ].find((value) =>
-    (typeof value === 'string' && value.trim()) ||
-    (Array.isArray(value) && value.length > 0)
-  );
-
-  if (Array.isArray(notes)) {
-    return notes.map((note) => String(note || '').trim()).filter(Boolean).join('\n');
-  }
-
-  return String(notes || '').trim();
-}
-
 function getInitialCookStatus(video: any): LocalCookStatus {
   const cookedCount = Number(
     video?.cookedCount ??
@@ -442,10 +424,23 @@ function RecipeRailCard({
 function RecipeNotesCard({
   note,
   onChange,
+  status,
 }: {
   note: string;
   onChange: (value: string) => void;
+  status: RecipeNoteStatus;
 }) {
+  const statusLabel =
+    status === 'loading'
+      ? 'Loading note...'
+      : status === 'saving'
+        ? 'Saving...'
+        : status === 'saved'
+          ? 'Saved'
+          : status === 'error'
+            ? 'Could not save'
+            : 'Saved automatically';
+
   return (
     <div className="bg-amber-50/70 border border-amber-100 rounded-2xl shadow-sm p-5">
       <div className="flex items-center gap-2 mb-3">
@@ -462,8 +457,12 @@ function RecipeNotesCard({
         placeholder="Add a note for next time..."
         className="min-h-[132px] w-full resize-none rounded-xl border border-amber-100 bg-white/80 px-3 py-3 text-sm font-medium leading-relaxed text-gray-800 placeholder:text-amber-700/45 focus:border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-100"
       />
-      <div className="mt-2 text-[11px] font-medium text-amber-800/50">
-        Saved locally for now.
+      <div
+        className={`mt-2 text-[11px] font-medium ${
+          status === 'error' ? 'text-rose-600' : 'text-amber-800/50'
+        }`}
+      >
+        {statusLabel}
       </div>
     </div>
   );
@@ -575,6 +574,7 @@ function RecipeCookbookRail({
   t,
   note,
   onNoteChange,
+  noteStatus,
   cookStatus,
   onMarkCooked,
   onResetCookStatus,
@@ -588,6 +588,7 @@ function RecipeCookbookRail({
   t: any;
   note: string;
   onNoteChange: (value: string) => void;
+  noteStatus: RecipeNoteStatus;
   cookStatus: LocalCookStatus;
   onMarkCooked: () => void;
   onResetCookStatus: () => void;
@@ -611,7 +612,7 @@ function RecipeCookbookRail({
         onReset={onResetCookStatus}
       />
 
-      <RecipeNotesCard note={note} onChange={onNoteChange} />
+      <RecipeNotesCard note={note} onChange={onNoteChange} status={noteStatus} />
 
       {originalUrl && (
         <OriginalLink url={originalUrl} platform={platform} t={t} />
@@ -668,13 +669,15 @@ export const VideoDetail: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedVideo, setEditedVideo] = useState<any>(null);
   const [recipeNote, setRecipeNote] = useState('');
+  const [recipeNoteStatus, setRecipeNoteStatus] = useState<RecipeNoteStatus>('idle');
+  const [lastSavedRecipeNote, setLastSavedRecipeNote] = useState('');
   const [localCookStatus, setLocalCookStatus] = useState<LocalCookStatus>({
     cookedCount: 0,
     lastCookedLabel: '',
   });
   const [servingScale, setServingScale] = useState(1);
   const richRecipeRef = useRef<any>(null);
-  const recipeNoteVideoIdRef = useRef<string | null>(null);
+  const recipeNoteLoadKeyRef = useRef<string | null>(null);
   const cookStatusVideoIdRef = useRef<string | null>(null);
   const [useMetric, setUseMetric] = useState(true);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
@@ -691,8 +694,10 @@ export const VideoDetail: React.FC = () => {
     setServingScale(1);
     setIsEditing(false);
     setRecipeNote('');
+    setLastSavedRecipeNote('');
+    setRecipeNoteStatus('idle');
     setLocalCookStatus({ cookedCount: 0, lastCookedLabel: '' });
-    recipeNoteVideoIdRef.current = null;
+    recipeNoteLoadKeyRef.current = null;
     cookStatusVideoIdRef.current = null;
   }, [id]);
 
@@ -797,18 +802,118 @@ export const VideoDetail: React.FC = () => {
   );
 
   useEffect(() => {
-    if (!currentVideoId || !video || recipeNoteVideoIdRef.current === currentVideoId) return;
-
-    recipeNoteVideoIdRef.current = currentVideoId;
-    setRecipeNote(getRecipeNotesPreview(video, parseRecipePayload((video as any)?.recipe)));
-  }, [currentVideoId, video]);
-
-  useEffect(() => {
     if (!currentVideoId || !video || cookStatusVideoIdRef.current === currentVideoId) return;
 
     cookStatusVideoIdRef.current = currentVideoId;
     setLocalCookStatus(getInitialCookStatus(video));
   }, [currentVideoId, video]);
+
+  const hasRecipeForNotes = useMemo(() => {
+    if (!video) return false;
+    const candidate = parseRecipePayload((video as any)?.recipe || (video as any)?.__raw?.recipe);
+    return Boolean(candidate && hasUsableRecipeContent(candidate));
+  }, [video]);
+
+  useEffect(() => {
+    if (!currentVideoId || !hasRecipeForNotes) return;
+    if (recipeNoteLoadKeyRef.current === currentVideoId) return;
+
+    let cancelled = false;
+    recipeNoteLoadKeyRef.current = currentVideoId;
+    setRecipeNoteStatus('loading');
+
+    const loadRecipeNote = async () => {
+      try {
+        const token = getAuthToken();
+        const res = await fetch(
+          apiUrl(`api/reel/${encodeURIComponent(currentVideoId)}/notes`),
+          {
+            method: 'GET',
+            headers: {
+              Accept: 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            credentials: 'include',
+            cache: 'no-store',
+          }
+        );
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(data?.error || `HTTP ${res.status}`);
+        }
+
+        const nextNote = String(data?.noteText || '');
+
+        if (!cancelled) {
+          setRecipeNote(nextNote);
+          setLastSavedRecipeNote(nextNote);
+          setRecipeNoteStatus(nextNote ? 'saved' : 'idle');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setRecipeNoteStatus('error');
+        }
+      }
+    };
+
+    loadRecipeNote();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentVideoId, hasRecipeForNotes]);
+
+  useEffect(() => {
+    if (!currentVideoId || !hasRecipeForNotes) return;
+    if (recipeNoteLoadKeyRef.current !== currentVideoId) return;
+    if (recipeNote === lastSavedRecipeNote) return;
+
+    let cancelled = false;
+    setRecipeNoteStatus('saving');
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const token = getAuthToken();
+        const res = await fetch(
+          apiUrl(`api/reel/${encodeURIComponent(currentVideoId)}/notes`),
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            credentials: 'include',
+            body: JSON.stringify({ noteText: recipeNote }),
+          }
+        );
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          throw new Error(data?.error || `HTTP ${res.status}`);
+        }
+
+        const savedNote = String(data?.noteText ?? recipeNote);
+
+        if (!cancelled) {
+          setLastSavedRecipeNote(savedNote);
+          setRecipeNoteStatus('saved');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setRecipeNoteStatus('error');
+        }
+      }
+    }, 800);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [currentVideoId, hasRecipeForNotes, recipeNote, lastSavedRecipeNote]);
 
   const handleMarkCookedLocal = () => {
     setLocalCookStatus((current) => ({
@@ -1358,6 +1463,7 @@ export const VideoDetail: React.FC = () => {
             t={t}
             note={recipeNote}
             onNoteChange={setRecipeNote}
+            noteStatus={recipeNoteStatus}
             cookStatus={localCookStatus}
             onMarkCooked={handleMarkCookedLocal}
             onResetCookStatus={handleResetCookStatusLocal}
