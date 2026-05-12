@@ -196,6 +196,16 @@ def _serialize_reel_row(row) -> dict:
         "error_message": row_dict.get("error_message"),
     }
 
+    if payload["content_type"] == "recipe":
+        payload["recipe_user_state"] = {
+            "cookCount": int(row_dict.get("recipe_cook_count") or 0),
+            "lastCookedAt": row_dict.get("recipe_last_cooked_at"),
+            "hasActiveSession": bool(row_dict.get("recipe_has_active_session")),
+            "activeSessionId": row_dict.get("recipe_active_session_id"),
+            "hasNote": bool(row_dict.get("recipe_has_note")),
+            "noteUpdatedAt": row_dict.get("recipe_note_updated_at"),
+        }
+
     payload["summary"] = _build_summary(row_dict)
     payload = _apply_media_aliases(payload)
 
@@ -219,29 +229,44 @@ def saved_reels():
     rows = fetch_all(
         """
         SELECT
-            id,
-            user_id,
-            source_url,
-            folder_id,
-            is_favorite,
-            status,
-            content_type,
-            created_at,
-            caption,
-            author_name,
-            duration,
-            transcription,
-            recipe,
-            workout,
+            r.id,
+            r.user_id,
+            r.source_url,
+            r.folder_id,
+            r.is_favorite,
+            r.status,
+            r.content_type,
+            r.created_at,
+            r.caption,
+            r.author_name,
+            r.duration,
+            r.transcription,
+            r.recipe,
+            r.workout,
             NULL::jsonb AS tools_list,
             NULL::jsonb AS location,
-            gcs_urls,
-            summary_title,
-            summary_text,
-            error_message
-        FROM reels
-        WHERE user_id = %s
-        ORDER BY created_at DESC NULLS LAST
+            r.gcs_urls,
+            r.summary_title,
+            r.summary_text,
+            r.error_message,
+            rcs.cook_count AS recipe_cook_count,
+            rcs.last_cooked_at AS recipe_last_cooked_at,
+            rcs.has_active_session AS recipe_has_active_session,
+            rcs.active_session_id AS recipe_active_session_id,
+            (
+                rpn.id IS NOT NULL
+                AND LENGTH(TRIM(COALESCE(rpn.note_text, ''))) > 0
+            ) AS recipe_has_note,
+            rpn.updated_at AS recipe_note_updated_at
+        FROM reels r
+        LEFT JOIN recipe_cook_summaries rcs
+          ON rcs.user_id = r.user_id
+         AND rcs.reel_id = r.id
+        LEFT JOIN recipe_personal_notes rpn
+          ON rpn.user_id = r.user_id
+         AND rpn.reel_id = r.id
+        WHERE r.user_id = %s
+        ORDER BY r.created_at DESC NULLS LAST
         LIMIT %s OFFSET %s
         """,
         (user_id, per_page, offset),
@@ -292,43 +317,58 @@ def search_saved_reels():
 
     sql = """
         SELECT
-            id,
-            user_id,
-            source_url,
-            folder_id,
-            is_favorite,
-            status,
-            content_type,
-            created_at,
-            caption,
-            author_name,
-            duration,
-            transcription,
-            recipe,
-            workout,
+            r.id,
+            r.user_id,
+            r.source_url,
+            r.folder_id,
+            r.is_favorite,
+            r.status,
+            r.content_type,
+            r.created_at,
+            r.caption,
+            r.author_name,
+            r.duration,
+            r.transcription,
+            r.recipe,
+            r.workout,
             NULL::jsonb AS tools_list,
             NULL::jsonb AS location,
-            gcs_urls,
-            summary_title,
-            summary_text,
-            error_message,
+            r.gcs_urls,
+            r.summary_title,
+            r.summary_text,
+            r.error_message,
+            rcs.cook_count AS recipe_cook_count,
+            rcs.last_cooked_at AS recipe_last_cooked_at,
+            rcs.has_active_session AS recipe_has_active_session,
+            rcs.active_session_id AS recipe_active_session_id,
+            (
+                rpn.id IS NOT NULL
+                AND LENGTH(TRIM(COALESCE(rpn.note_text, ''))) > 0
+            ) AS recipe_has_note,
+            rpn.updated_at AS recipe_note_updated_at,
             CASE
-                WHEN LOWER(COALESCE(content_type, '')) = 'recipe'
-                     AND LOWER(COALESCE(recipe::text, '')) LIKE %s THEN 4
-                WHEN LOWER(COALESCE(summary_title, '')) LIKE %s THEN 3
-                WHEN LOWER(COALESCE(caption, '')) LIKE %s THEN 2
+                WHEN LOWER(COALESCE(r.content_type, '')) = 'recipe'
+                     AND LOWER(COALESCE(r.recipe::text, '')) LIKE %s THEN 4
+                WHEN LOWER(COALESCE(r.summary_title, '')) LIKE %s THEN 3
+                WHEN LOWER(COALESCE(r.caption, '')) LIKE %s THEN 2
                 ELSE 1
             END AS search_rank
-        FROM reels
-        WHERE user_id = %s
+        FROM reels r
+        LEFT JOIN recipe_cook_summaries rcs
+          ON rcs.user_id = r.user_id
+         AND rcs.reel_id = r.id
+        LEFT JOIN recipe_personal_notes rpn
+          ON rpn.user_id = r.user_id
+         AND rpn.reel_id = r.id
+        WHERE r.user_id = %s
           AND (
-            LOWER(COALESCE(summary_title, '')) LIKE %s
-            OR LOWER(COALESCE(caption, '')) LIKE %s
-            OR LOWER(COALESCE(author_name, '')) LIKE %s
-            OR LOWER(COALESCE(recipe::text, '')) LIKE %s
-            OR LOWER(COALESCE(workout::text, '')) LIKE %s
-            OR LOWER(COALESCE(transcription::text, '')) LIKE %s
-            OR LOWER(COALESCE(summary_text::text, '')) LIKE %s
+            LOWER(COALESCE(r.summary_title, '')) LIKE %s
+            OR LOWER(COALESCE(r.caption, '')) LIKE %s
+            OR LOWER(COALESCE(r.author_name, '')) LIKE %s
+            OR LOWER(COALESCE(r.recipe::text, '')) LIKE %s
+            OR LOWER(COALESCE(r.workout::text, '')) LIKE %s
+            OR LOWER(COALESCE(r.transcription::text, '')) LIKE %s
+            OR LOWER(COALESCE(r.summary_text::text, '')) LIKE %s
           )
     """
 
@@ -340,14 +380,14 @@ def search_saved_reels():
 
     if folder_id and folder_id != "all":
         if folder_id == "favorites":
-            sql += " AND is_favorite = TRUE"
+            sql += " AND r.is_favorite = TRUE"
         elif folder_id == "unsorted":
-            sql += " AND (folder_id IS NULL OR folder_id = 'unsorted')"
+            sql += " AND (r.folder_id IS NULL OR r.folder_id = 'unsorted')"
         else:
-            sql += " AND folder_id = %s"
+            sql += " AND r.folder_id = %s"
             params.append(folder_id)
 
-    sql += " ORDER BY search_rank DESC, created_at DESC NULLS LAST LIMIT 100"
+    sql += " ORDER BY search_rank DESC, r.created_at DESC NULLS LAST LIMIT 100"
 
     rows = fetch_all(sql, tuple(params))
 
@@ -365,4 +405,3 @@ def search_saved_reels():
             logger.exception("Failed to serialize search reel row id=%s", bad_id)
 
     return jsonify(results)
-

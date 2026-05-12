@@ -158,6 +158,20 @@ function normalizeSummary(summaryRaw: unknown): any {
   return summary;
 }
 
+function normalizeRecipeUserState(raw: any) {
+  const source = raw?.recipe_user_state ?? raw?.recipeUserState ?? raw ?? {};
+  const cookCount = Number(source?.cookCount ?? source?.cook_count ?? 0);
+
+  return {
+    cookCount: Number.isFinite(cookCount) && cookCount > 0 ? cookCount : 0,
+    lastCookedAt: source?.lastCookedAt ?? source?.last_cooked_at ?? null,
+    hasActiveSession: Boolean(source?.hasActiveSession ?? source?.has_active_session),
+    activeSessionId: source?.activeSessionId ?? source?.active_session_id ?? null,
+    hasNote: Boolean(source?.hasNote ?? source?.has_note),
+    noteUpdatedAt: source?.noteUpdatedAt ?? source?.note_updated_at ?? null,
+  };
+}
+
 function stripRawForCache(videos: any[]): any[] {
   return (videos || []).map((v) => {
     const { __raw, ...rest } = v || {};
@@ -290,6 +304,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 ...v,
                 content_type: normalizeContentType(v?.content_type),
                 duration: formatVideoDuration(v?.duration, v?.duration_seconds),
+                recipeUserState: v?.recipeUserState
+                  ? normalizeRecipeUserState(v.recipeUserState)
+                  : v?.recipe_user_state
+                    ? normalizeRecipeUserState(v.recipe_user_state)
+                    : null,
               }))
             : [];
         } catch {
@@ -439,6 +458,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 ...v,
                 content_type: normalizeContentType(v?.content_type),
                 duration: formatVideoDuration(v?.duration, v?.duration_seconds),
+                recipeUserState: v?.recipeUserState
+                  ? normalizeRecipeUserState(v.recipeUserState)
+                  : v?.recipe_user_state
+                    ? normalizeRecipeUserState(v.recipe_user_state)
+                    : null,
               })),
             );
           }
@@ -766,6 +790,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             location: r.location,
             status: r.status,
             errorMessage: r.error_message || null,
+            recipeUserState: normalizeRecipeUserState(r.recipe_user_state),
+            recipe_user_state: normalizeRecipeUserState(r.recipe_user_state),
             __raw: r,
           } as any as Video;
         });
@@ -802,7 +828,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 prev.category !== v.category ||
                 prev.folderId !== v.folderId ||
                 prev.thumbnailUrl !== v.thumbnailUrl ||
-                prev.content_type !== v.content_type
+                prev.content_type !== v.content_type ||
+                JSON.stringify((prev as any).recipeUserState || null) !== JSON.stringify((v as any).recipeUserState || null)
               ) {
                 changed = true;
                 break;

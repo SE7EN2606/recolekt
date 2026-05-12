@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { VideoCard } from '../components/VideoCard';
 import { Button } from '../components/Button';
-import { Search, Settings2, Trash2, CircleX, MoreVertical, Pencil, FolderInput } from 'lucide-react';
+import { Search, Settings2, Trash2, CircleX, MoreVertical, Pencil, FolderInput, ChefHat } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +24,19 @@ const PROCESSING_MESSAGES = [
   'msg_ideating', 'msg_curating', 'msg_refining', 'msg_tuning',
   'msg_optimizing', 'msg_polishing', 'msg_finalizing'
 ];
+
+type GalleryContentFilter = 'all' | 'recipes';
+
+function getVideoContentType(video: any): string {
+  return String(
+    video?.content_type ??
+    video?.contentType ??
+    video?.contenttype ??
+    video?.raw?.content_type ??
+    video?.__raw?.content_type ??
+    ''
+  ).toLowerCase();
+}
 
 
 function useSearch(query: string, folderId: string | undefined) {
@@ -163,6 +176,7 @@ export const Gallery: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [contentFilter, setContentFilter] = useState<GalleryContentFilter>('all');
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
 
   const [msgIndex, setMsgIndex] = useState(0);
@@ -193,6 +207,7 @@ export const Gallery: React.FC = () => {
     setSelectedIds(new Set());
     setShowFolderMenu(false);
     setSearchQuery('');
+    setContentFilter('all');
   }, [folderId, location.pathname, location.key]);
 
   useEffect(() => {
@@ -245,14 +260,20 @@ export const Gallery: React.FC = () => {
   }, [videos]);
 
   const displayedVideos = useMemo(() => {
-    if (searchResults !== null) return searchResults;
-    let filtered = videos.filter((v: any) => {
-      if (isFavoritesView) return v.isFavorite;
-      if (isAllView)       return true;
-      if (isUnsortedView)  return !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all';
-      return v.folderId === folderId;
-    });
-    if (searchQuery) {
+    let filtered = searchResults !== null
+      ? searchResults
+      : videos.filter((v: any) => {
+          if (isFavoritesView) return v.isFavorite;
+          if (isAllView)       return true;
+          if (isUnsortedView)  return !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all';
+          return v.folderId === folderId;
+        });
+
+    if (contentFilter === 'recipes') {
+      filtered = filtered.filter((v: any) => getVideoContentType(v) === 'recipe');
+    }
+
+    if (searchResults === null && searchQuery) {
       const q = searchQuery.toLowerCase().trim();
       filtered = filtered.filter((v: any) => {
         const videoId = v?.id ?? v?.process_id ?? v?.processId ?? '';
@@ -269,7 +290,7 @@ export const Gallery: React.FC = () => {
       const dB = new Date(b.savedAt || b.created_at || 0).getTime();
       return sortOrder === 'desc' ? dB - dA : dA - dB;
     });
-  }, [videos, searchResults, folderId, isFavoritesView, isAllView, isUnsortedView, searchQuery, sortOrder, searchIndex]);
+  }, [videos, searchResults, folderId, isFavoritesView, isAllView, isUnsortedView, searchQuery, sortOrder, searchIndex, contentFilter]);
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -370,6 +391,13 @@ export const Gallery: React.FC = () => {
   if (!user) return null;
 
   const folderTitle = getFolderTitle();
+  const recipeCount = videos.filter((v: any) => {
+    if (getVideoContentType(v) !== 'recipe') return false;
+    if (isFavoritesView) return v.isFavorite;
+    if (isAllView) return true;
+    if (isUnsortedView) return !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all';
+    return v.folderId === folderId;
+  }).length;
 
   return (
     <div className="w-full pt-4 md:pt-0 pb-0 md:pb-6 animate-fade-in">
@@ -511,6 +539,35 @@ export const Gallery: React.FC = () => {
             title={sortOrder === 'desc' ? 'Newest first' : 'Oldest first'}
           >
             {sortOrder === 'desc' ? <CalendarArrowUp size={20} /> : <CalendarArrowDown size={20} />}
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
+          <button
+            type="button"
+            onClick={() => setContentFilter('all')}
+            className={`shrink-0 rounded-full px-3.5 py-2 text-[12px] font-black transition-colors ${
+              contentFilter === 'all'
+                ? 'bg-gray-950 text-white'
+                : 'bg-white/70 text-gray-600 border border-gray-100 hover:bg-white'
+            }`}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            onClick={() => setContentFilter('recipes')}
+            className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-black transition-colors ${
+              contentFilter === 'recipes'
+                ? 'bg-amber-600 text-white'
+                : 'bg-amber-50 text-amber-800 border border-amber-100 hover:bg-amber-100'
+            }`}
+          >
+            <ChefHat size={14} aria-hidden="true" />
+            Recipes
+            <span className={contentFilter === 'recipes' ? 'text-white/75' : 'text-amber-700/60'}>
+              {recipeCount}
+            </span>
           </button>
         </div>
       </div>

@@ -189,7 +189,18 @@ export interface Video {
   gcs_urls?: GcsUrls;
   status?: string;
   errorMessage?: string | null;
+  recipeUserState?: RecipeUserState | null;
+  recipe_user_state?: RecipeUserState | null;
   __raw?: any;
+}
+
+export interface RecipeUserState {
+  cookCount: number;
+  lastCookedAt: string | null;
+  hasActiveSession: boolean;
+  activeSessionId: number | string | null;
+  hasNote: boolean;
+  noteUpdatedAt: string | null;
 }
 
 export interface Folder {

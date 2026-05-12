@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Heart, Loader2, CheckCircle2, AlertCircle, RefreshCw, Trash2,
-  CircleSlash2, Folder as FolderIcon, Globe,
+  CircleSlash2, Folder as FolderIcon, Globe, StickyNote, Clock3, ChefHat,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useData } from '../context/DataContext';
@@ -135,6 +135,17 @@ function getToolsSubtypeForBadge(video: any): ToolsSubtype {
   return isToolsSubtype(derived) ? derived : 'picks';
 }
 
+function getRecipeUserState(video: any) {
+  const raw = video?.recipeUserState ?? video?.recipe_user_state ?? video?.raw?.recipe_user_state ?? {};
+  const cookCount = Number(raw?.cookCount ?? raw?.cook_count ?? 0);
+
+  return {
+    cookCount: Number.isFinite(cookCount) && cookCount > 0 ? cookCount : 0,
+    hasNote: Boolean(raw?.hasNote ?? raw?.has_note),
+    hasActiveSession: Boolean(raw?.hasActiveSession ?? raw?.has_active_session),
+  };
+}
+
 const PROCESSING_MESSAGES = [
   'msg_indexing', 'msg_parsing', 'msg_visual', 'msg_auditory',
   'msg_analysing', 'msg_decoding', 'msg_semantic', 'msg_contextual',
@@ -207,6 +218,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
   const displayTitle = useMemo(() => resolveTitle(video, t), [video, t]);
   const originalTitle = useMemo(() => resolveOriginalTitle(video), [video]);
   const contentType = useMemo(() => resolveVideoContentType(video), [video]);
+  const recipeState = useMemo(() => getRecipeUserState(video), [video]);
   const toolsSubtype = useMemo(
     () => (contentType === 'products' || contentType === 'software' || contentType === 'finance')
       ? getToolsSubtypeForBadge(video)
@@ -448,6 +460,28 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
             </button>
           )}
         </div>
+        {contentType === 'recipe' && !isDisabled && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {recipeState.hasActiveSession && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700 ring-1 ring-amber-100">
+                <Clock3 size={10} aria-hidden="true" />
+                Cooking
+              </span>
+            )}
+            {recipeState.cookCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700 ring-1 ring-emerald-100">
+                <ChefHat size={10} aria-hidden="true" />
+                Cooked {recipeState.cookCount}×
+              </span>
+            )}
+            {recipeState.hasNote && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-1 text-[10px] font-black text-stone-600">
+                <StickyNote size={10} aria-hidden="true" />
+                Note
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <ConfirmModal
