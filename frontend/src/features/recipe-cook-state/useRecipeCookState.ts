@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { LocalCookStatus } from '../recipe-detail/RecipeCookbookRail';
 import {
   getRecipeCookState,
@@ -56,8 +56,10 @@ export function useRecipeCookState(
 } {
   const [cookStatus, setCookStatus] = useState<LocalCookStatus>(EMPTY_COOK_STATUS);
   const [status, setStatus] = useState<CookStateStatus>('idle');
+  const cookStateGenerationRef = useRef(0);
 
   useEffect(() => {
+    cookStateGenerationRef.current += 1;
     setCookStatus(EMPTY_COOK_STATUS);
     setStatus('idle');
   }, [reelId]);
@@ -66,19 +68,20 @@ export function useRecipeCookState(
     if (!reelId || !enabled) return;
 
     let cancelled = false;
+    const generation = cookStateGenerationRef.current;
     setStatus('loading');
 
     const loadCookState = async () => {
       try {
         const data = await getRecipeCookState(reelId);
 
-        if (!cancelled) {
+        if (!cancelled && generation === cookStateGenerationRef.current) {
           setCookStatus(serializeCookState(data));
           setStatus('idle');
         }
       } catch (err) {
         console.warn('Recipe cook state load failed', err);
-        if (!cancelled) {
+        if (!cancelled && generation === cookStateGenerationRef.current) {
           setStatus('error');
         }
       }
@@ -95,6 +98,7 @@ export function useRecipeCookState(
     if (!reelId || !enabled) return;
 
     const previous = cookStatus;
+    const generation = cookStateGenerationRef.current;
 
     setCookStatus((current) => ({
       cookedCount: current.cookedCount + 1,
@@ -104,13 +108,17 @@ export function useRecipeCookState(
 
     markRecipeCooked(reelId)
       .then((data) => {
-        setCookStatus(serializeCookState(data));
-        setStatus('idle');
+        if (generation === cookStateGenerationRef.current) {
+          setCookStatus(serializeCookState(data));
+          setStatus('idle');
+        }
       })
       .catch((err) => {
         console.warn('Recipe mark cooked failed', err);
-        setCookStatus(previous);
-        setStatus('error');
+        if (generation === cookStateGenerationRef.current) {
+          setCookStatus(previous);
+          setStatus('error');
+        }
       });
   };
 
@@ -118,6 +126,8 @@ export function useRecipeCookState(
     if (!reelId || !enabled) return;
 
     const previous = cookStatus;
+    cookStateGenerationRef.current += 1;
+    const generation = cookStateGenerationRef.current;
 
     setCookStatus(EMPTY_COOK_STATUS);
     setStatus('saving');
@@ -129,13 +139,17 @@ export function useRecipeCookState(
 
     resetRecipeCookState(reelId)
       .then((data) => {
-        setCookStatus(serializeCookState(data));
-        setStatus('idle');
+        if (generation === cookStateGenerationRef.current) {
+          setCookStatus(serializeCookState(data));
+          setStatus('idle');
+        }
       })
       .catch((err) => {
         console.warn('Recipe cook state reset failed', err);
-        setCookStatus(previous);
-        setStatus('error');
+        if (generation === cookStateGenerationRef.current) {
+          setCookStatus(previous);
+          setStatus('error');
+        }
       });
   };
 
