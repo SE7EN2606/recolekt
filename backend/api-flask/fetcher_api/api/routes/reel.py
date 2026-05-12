@@ -1117,6 +1117,26 @@ def _serialize_recipe_note(row) -> dict:
     }
 
 
+def _serialize_cook_summary(row) -> dict:
+    if not row:
+        return {
+            "cookCount": 0,
+            "lastCookedAt": None,
+            "verifiedByUser": False,
+            "hasActiveSession": False,
+            "activeSessionId": None,
+        }
+
+    d = dict(row) if hasattr(row, "keys") else row._asdict()
+    return {
+        "cookCount": int(d.get("cook_count") or 0),
+        "lastCookedAt": d.get("last_cooked_at").isoformat() if d.get("last_cooked_at") else None,
+        "verifiedByUser": bool(d.get("verified_by_user")),
+        "hasActiveSession": bool(d.get("has_active_session")),
+        "activeSessionId": d.get("active_session_id"),
+    }
+
+
 @reel_bp.route("/reel/<process_id>/notes", methods=["GET", "PUT", "OPTIONS"])
 def recipe_personal_notes(process_id):
     if request.method == "OPTIONS":
@@ -1181,6 +1201,150 @@ def recipe_personal_notes(process_id):
     except Exception as e:
         logger.error("Error handling recipe note for reel %s: %s", process_id, e, exc_info=True)
         return jsonify({"error": "Recipe note failed"}), 500
+
+
+@reel_bp.route("/reel/<process_id>/cook-state", methods=["GET", "OPTIONS"])
+def get_recipe_cook_state(process_id):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        if not _reel_exists(process_id, user_id):
+            return jsonify({"error": "Reel not found"}), 404
+
+        row = fetch_one(
+            """
+            SELECT
+                cook_count,
+                last_cooked_at,
+                verified_by_user,
+                has_active_session,
+                active_session_id
+            FROM recipe_cook_summaries
+            WHERE user_id = %s AND reel_id = %s
+            LIMIT 1
+            """,
+            (user_id, process_id),
+        )
+        return add_no_cache_headers(jsonify(_serialize_cook_summary(row)))
+
+    except Exception as e:
+        logger.error("Error fetching cook state for reel %s: %s", process_id, e, exc_info=True)
+        return jsonify({"error": "Cook state fetch failed"}), 500
+
+
+@reel_bp.route("/reel/<process_id>/mark-cooked", methods=["POST", "OPTIONS"])
+def mark_recipe_cooked(process_id):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        if not _reel_exists(process_id, user_id):
+            return jsonify({"error": "Reel not found"}), 404
+
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO recipe_cook_summaries (
+                        user_id,
+                        reel_id,
+                        cook_count,
+                        last_cooked_at,
+                        verified_by_user,
+                        has_active_session,
+                        active_session_id,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (%s, %s, 1, NOW(), FALSE, FALSE, NULL, NOW(), NOW())
+                    ON CONFLICT (user_id, reel_id) DO UPDATE SET
+                        cook_count = recipe_cook_summaries.cook_count + 1,
+                        last_cooked_at = NOW(),
+                        updated_at = NOW()
+                    RETURNING
+                        cook_count,
+                        last_cooked_at,
+                        verified_by_user,
+                        has_active_session,
+                        active_session_id
+                    """,
+                    (user_id, process_id),
+                )
+                row = cur.fetchone()
+            conn.commit()
+
+        return add_no_cache_headers(jsonify(_serialize_cook_summary(row)))
+
+    except Exception as e:
+        logger.error("Error marking recipe cooked for reel %s: %s", process_id, e, exc_info=True)
+        return jsonify({"error": "Mark cooked failed"}), 500
+
+
+@reel_bp.route("/reel/<process_id>/reset-cook-state", methods=["POST", "OPTIONS"])
+def reset_recipe_cook_state(process_id):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        if not _reel_exists(process_id, user_id):
+            return jsonify({"error": "Reel not found"}), 404
+
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO recipe_cook_summaries (
+                        user_id,
+                        reel_id,
+                        cook_count,
+                        last_cooked_at,
+                        verified_by_user,
+                        has_active_session,
+                        active_session_id,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (%s, %s, 0, NULL, FALSE, FALSE, NULL, NOW(), NOW())
+                    ON CONFLICT (user_id, reel_id) DO UPDATE SET
+                        cook_count = 0,
+                        last_cooked_at = NULL,
+                        verified_by_user = FALSE,
+                        has_active_session = FALSE,
+                        active_session_id = NULL,
+                        updated_at = NOW()
+                    RETURNING
+                        cook_count,
+                        last_cooked_at,
+                        verified_by_user,
+                        has_active_session,
+                        active_session_id
+                    """,
+                    (user_id, process_id),
+                )
+                row = cur.fetchone()
+            conn.commit()
+
+        return add_no_cache_headers(jsonify(_serialize_cook_summary(row)))
+
+    except Exception as e:
+        logger.error("Error resetting cook state for reel %s: %s", process_id, e, exc_info=True)
+        return jsonify({"error": "Reset cook state failed"}), 500
 
 
 
