@@ -1310,6 +1310,20 @@ def mark_recipe_cooked(process_id):
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     """
+                    UPDATE recipe_cook_sessions
+                    SET
+                        status = 'completed',
+                        completed_at = NOW(),
+                        last_active_at = NOW(),
+                        updated_at = NOW()
+                    WHERE user_id = %s
+                      AND reel_id = %s
+                      AND status = 'active'
+                    """,
+                    (user_id, process_id),
+                )
+                cur.execute(
+                    """
                     INSERT INTO recipe_cook_summaries (
                         user_id,
                         reel_id,
@@ -1325,6 +1339,8 @@ def mark_recipe_cooked(process_id):
                     ON CONFLICT (user_id, reel_id) DO UPDATE SET
                         cook_count = recipe_cook_summaries.cook_count + 1,
                         last_cooked_at = NOW(),
+                        has_active_session = FALSE,
+                        active_session_id = NULL,
                         updated_at = NOW()
                     RETURNING
                         cook_count,
@@ -1497,6 +1513,25 @@ def recipe_cook_session(process_id):
                         ),
                     )
                 else:
+                    cur.execute(
+                        """
+                        SELECT updated_at
+                        FROM recipe_cook_summaries
+                        WHERE user_id = %s
+                          AND reel_id = %s
+                          AND has_active_session = FALSE
+                          AND active_session_id IS NULL
+                          AND updated_at > NOW() - INTERVAL '2 seconds'
+                        LIMIT 1
+                        """,
+                        (user_id, process_id),
+                    )
+                    recently_cleared = cur.fetchone()
+
+                    if recently_cleared and payload["status"] == "active":
+                        conn.rollback()
+                        return add_no_cache_headers(jsonify(_serialize_cook_session(None)))
+
                     cur.execute(
                         """
                         INSERT INTO recipe_cook_sessions (

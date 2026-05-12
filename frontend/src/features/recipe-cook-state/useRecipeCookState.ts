@@ -6,6 +6,7 @@ import {
   RecipeCookStateResponse,
   resetRecipeCookState,
 } from './recipeCookStateApi';
+import { resetRecipeCookSession } from '../recipe-cook-session/recipeCookSessionApi';
 
 type CookStateStatus = 'idle' | 'loading' | 'saving' | 'error';
 
@@ -105,6 +106,11 @@ export function useRecipeCookState(
       lastCookedLabel: getTodayCookedLabel(),
     }));
     setStatus('saving');
+    window.dispatchEvent(
+      new CustomEvent('recolekt:recipe-cook-session-reset', {
+        detail: { reelId },
+      })
+    );
 
     markRecipeCooked(reelId)
       .then((data) => {
@@ -137,7 +143,8 @@ export function useRecipeCookState(
       })
     );
 
-    resetRecipeCookState(reelId)
+    resetRecipeCookSession(reelId)
+      .then(() => resetRecipeCookState(reelId))
       .then((data) => {
         if (generation === cookStateGenerationRef.current) {
           setCookStatus(serializeCookState(data));

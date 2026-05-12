@@ -16,12 +16,14 @@ export function useRecipeNotes(
   const [status, setStatus] = useState<RecipeNoteStatus>('idle');
   const [lastSavedNote, setLastSavedNote] = useState('');
   const loadKeyRef = useRef<string | null>(null);
+  const dirtyRef = useRef(false);
 
   useEffect(() => {
     setNote('');
     setLastSavedNote('');
     setStatus('idle');
     loadKeyRef.current = null;
+    dirtyRef.current = false;
   }, [reelId]);
 
   useEffect(() => {
@@ -38,9 +40,11 @@ export function useRecipeNotes(
         const nextNote = String(data?.noteText || '');
 
         if (!cancelled) {
-          setNote(nextNote);
           setLastSavedNote(nextNote);
-          setStatus(nextNote ? 'saved' : 'idle');
+          if (!dirtyRef.current) {
+            setNote(nextNote);
+            setStatus(nextNote ? 'saved' : 'idle');
+          }
         }
       } catch (err) {
         console.warn('Recipe note load failed', err);
@@ -107,9 +111,14 @@ export function useRecipeNotes(
     }
   };
 
+  const setDirtyNote = (value: string) => {
+    dirtyRef.current = true;
+    setNote(value);
+  };
+
   return {
     note,
-    setNote,
+    setNote: setDirtyNote,
     status,
     saveNote,
   };
