@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { VideoCard } from '../components/VideoCard';
 import { Button } from '../components/Button';
-import { Search, Settings2, Trash2, CircleX, MoreVertical, Pencil, FolderInput, ChefHat } from 'lucide-react';
+import { Search, Settings2, Trash2, CircleX, MoreVertical, Pencil, FolderInput, ChefHat, Clock3, StickyNote } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -37,6 +37,160 @@ function getVideoContentType(video: any): string {
     ''
   ).toLowerCase();
 }
+
+function getVideoId(video: any): string {
+  return String(video?.id ?? video?.process_id ?? video?.processId ?? '');
+}
+
+function parseObject(value: unknown): any {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try { return JSON.parse(value); } catch { return {}; }
+  }
+  return typeof value === 'object' ? value : {};
+}
+
+function getRecipeTitle(video: any): string {
+  const summary = parseObject(video?.summary ?? video?.summarytext ?? video?.raw?.summary);
+  const recipeRoot = parseObject(video?.recipe ?? video?.raw?.recipe);
+  const recipe = recipeRoot?.recipe ?? recipeRoot;
+
+  return String(
+    summary?.english?.title ??
+    recipe?.english?.title ??
+    video?.summaryTitle ??
+    video?.summarytitle ??
+    video?.title ??
+    video?.caption?.split?.('\n')?.[0] ??
+    'Recipe'
+  ).trim();
+}
+
+function getRecipeUserState(video: any) {
+  const raw = video?.recipeUserState ?? video?.recipe_user_state ?? video?.raw?.recipe_user_state ?? {};
+  const cookCount = Number(raw?.cookCount ?? raw?.cook_count ?? 0);
+  const lastCookedAt = raw?.lastCookedAt ?? raw?.last_cooked_at ?? null;
+
+  return {
+    cookCount: Number.isFinite(cookCount) && cookCount > 0 ? cookCount : 0,
+    lastCookedAt,
+    hasActiveSession: Boolean(raw?.hasActiveSession ?? raw?.has_active_session),
+    hasNote: Boolean(raw?.hasNote ?? raw?.has_note),
+  };
+}
+
+function getRecipeThumbnail(video: any): string {
+  return String(
+    video?.posterUrl ||
+    video?.coverUrl ||
+    video?.gcsurls?.poster ||
+    video?.thumbnailUrl ||
+    video?.thumbnailurl ||
+    video?.gcsurls?.previewthumbnail ||
+    video?.gcsUrls?.previewThumbnail ||
+    video?.previewthumbnail ||
+    video?.gcs_urls?.preview_thumbnail ||
+    ''
+  );
+}
+
+const CookbookRecipeCard: React.FC<{
+  video: any;
+  label: string;
+  accent: 'active' | 'cooked';
+  onOpen: () => void;
+}> = ({ video, label, accent, onOpen }) => {
+  const title = getRecipeTitle(video);
+  const thumbnail = getRecipeThumbnail(video);
+  const state = getRecipeUserState(video);
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`Open ${title || 'recipe'}`}
+      className="group w-[180px] shrink-0 text-left"
+    >
+      <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-stone-100 shadow-sm ring-1 ring-black/5">
+        {thumbnail ? (
+          <img
+            src={thumbnail}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-amber-50 text-amber-700">
+            <ChefHat size={28} aria-hidden="true" />
+          </div>
+        )}
+        <div className="absolute inset-0 bg-linear-to-t from-black/75 via-black/10 to-transparent" />
+        <div className="absolute left-2.5 top-2.5">
+          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black shadow-sm ${
+            accent === 'active'
+              ? 'bg-amber-50 text-amber-800'
+              : 'bg-emerald-50 text-emerald-800'
+          }`}>
+            {accent === 'active' ? <Clock3 size={10} aria-hidden="true" /> : <ChefHat size={10} aria-hidden="true" />}
+            {label}
+          </span>
+        </div>
+        <div className="absolute inset-x-0 bottom-0 p-3">
+          <p className="line-clamp-2 text-sm font-black leading-tight text-white drop-shadow-sm">
+            {title || 'Recipe'}
+          </p>
+          {(state.cookCount > 0 || state.hasNote) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {state.cookCount > 0 && (
+                <span className="rounded-full bg-white/18 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur-sm">
+                  {state.cookCount}×
+                </span>
+              )}
+              {state.hasNote && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/18 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur-sm">
+                  <StickyNote size={9} aria-hidden="true" />
+                  Note
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+};
+
+const CookbookSection: React.FC<{
+  title: string;
+  subtitle: string;
+  videos: any[];
+  accent: 'active' | 'cooked';
+  getLabel: (video: any) => string;
+  onOpen: (video: any) => void;
+}> = ({ title, subtitle, videos, accent, getLabel, onOpen }) => {
+  if (videos.length === 0) return null;
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-base font-black text-gray-950">{title}</h2>
+        <p className="text-xs font-medium text-gray-500">{subtitle}</p>
+      </div>
+      <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0">
+        {videos.map((video: any) => (
+          <CookbookRecipeCard
+            key={getVideoId(video)}
+            video={video}
+            label={getLabel(video)}
+            accent={accent}
+            onOpen={() => onOpen(video)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+};
 
 
 function useSearch(query: string, folderId: string | undefined) {
@@ -259,15 +413,19 @@ export const Gallery: React.FC = () => {
     return map;
   }, [videos]);
 
+  const folderScopedVideos = useMemo(() => {
+    return videos.filter((v: any) => {
+      if (isFavoritesView) return v.isFavorite;
+      if (isAllView)       return true;
+      if (isUnsortedView)  return !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all';
+      return v.folderId === folderId;
+    });
+  }, [videos, folderId, isFavoritesView, isAllView, isUnsortedView]);
+
   const displayedVideos = useMemo(() => {
     let filtered = searchResults !== null
       ? searchResults
-      : videos.filter((v: any) => {
-          if (isFavoritesView) return v.isFavorite;
-          if (isAllView)       return true;
-          if (isUnsortedView)  return !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all';
-          return v.folderId === folderId;
-        });
+      : folderScopedVideos;
 
     if (contentFilter === 'recipes') {
       filtered = filtered.filter((v: any) => getVideoContentType(v) === 'recipe');
@@ -290,7 +448,50 @@ export const Gallery: React.FC = () => {
       const dB = new Date(b.savedAt || b.created_at || 0).getTime();
       return sortOrder === 'desc' ? dB - dA : dA - dB;
     });
-  }, [videos, searchResults, folderId, isFavoritesView, isAllView, isUnsortedView, searchQuery, sortOrder, searchIndex, contentFilter]);
+  }, [searchResults, folderScopedVideos, searchQuery, sortOrder, searchIndex, contentFilter]);
+
+  const recipeHomeVideos = useMemo(() => {
+    return folderScopedVideos.filter((v: any) => getVideoContentType(v) === 'recipe');
+  }, [folderScopedVideos]);
+
+  const continueCookingVideos = useMemo(() => {
+    return recipeHomeVideos
+      .filter((v: any) => getRecipeUserState(v).hasActiveSession)
+      .slice(0, 10);
+  }, [recipeHomeVideos]);
+
+  const recentlyCookedVideos = useMemo(() => {
+    return recipeHomeVideos
+      .filter((v: any) => Boolean(getRecipeUserState(v).lastCookedAt))
+      .sort((a: any, b: any) => {
+        const aTime = new Date(getRecipeUserState(a).lastCookedAt || 0).getTime();
+        const bTime = new Date(getRecipeUserState(b).lastCookedAt || 0).getTime();
+        return bTime - aTime;
+      })
+      .slice(0, 10);
+  }, [recipeHomeVideos]);
+
+  const showCookbookSections = !selectionMode && !searchQuery.trim();
+
+  const openVideo = (video: any) => {
+    const videoId = getVideoId(video);
+    if (videoId) navigate(`/video/${videoId}`);
+  };
+
+  const formatLastCookedLabel = (video: any): string => {
+    const rawDate = getRecipeUserState(video).lastCookedAt;
+    const date = rawDate ? new Date(rawDate) : null;
+    if (!date || Number.isNaN(date.getTime())) return 'Recently cooked';
+
+    const now = new Date();
+    const dateDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const dayDiff = Math.round((today - dateDay) / 86400000);
+
+    if (dayDiff === 0) return 'Cooked today';
+    if (dayDiff === 1) return 'Cooked yesterday';
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -391,13 +592,7 @@ export const Gallery: React.FC = () => {
   if (!user) return null;
 
   const folderTitle = getFolderTitle();
-  const recipeCount = videos.filter((v: any) => {
-    if (getVideoContentType(v) !== 'recipe') return false;
-    if (isFavoritesView) return v.isFavorite;
-    if (isAllView) return true;
-    if (isUnsortedView) return !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all';
-    return v.folderId === folderId;
-  }).length;
+  const recipeCount = recipeHomeVideos.length;
 
   return (
     <div className="w-full pt-4 md:pt-0 pb-0 md:pb-6 animate-fade-in">
@@ -572,9 +767,30 @@ export const Gallery: React.FC = () => {
         </div>
       </div>
 
+      {showCookbookSections && (
+        <div className="mb-8 flex flex-col gap-7">
+          <CookbookSection
+            title="Continue Cooking"
+            subtitle="Pick up recipes with active cook sessions"
+            videos={continueCookingVideos}
+            accent="active"
+            getLabel={() => 'In progress'}
+            onOpen={openVideo}
+          />
+          <CookbookSection
+            title="Recently Cooked"
+            subtitle="Recipes you have made most recently"
+            videos={recentlyCookedVideos}
+            accent="cooked"
+            getLabel={formatLastCookedLabel}
+            onOpen={openVideo}
+          />
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-24 md:mb-12">
         {displayedVideos.map((video: any) => {
-          const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
+          const videoId = getVideoId(video);
           return (
             <div
               key={videoId}
