@@ -121,16 +121,16 @@ export function useRecipeCookState(
 
     setCookStatus(EMPTY_COOK_STATUS);
     setStatus('saving');
+    window.dispatchEvent(
+      new CustomEvent('recolekt:recipe-cook-session-reset', {
+        detail: { reelId },
+      })
+    );
 
     resetRecipeCookState(reelId)
       .then((data) => {
         setCookStatus(serializeCookState(data));
         setStatus('idle');
-        window.dispatchEvent(
-          new CustomEvent('recolekt:recipe-cook-session-reset', {
-            detail: { reelId },
-          })
-        );
       })
       .catch((err) => {
         console.warn('Recipe cook state reset failed', err);

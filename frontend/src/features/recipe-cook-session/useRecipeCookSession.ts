@@ -40,8 +40,10 @@ export function useRecipeCookSession(
   const [status, setStatus] = useState<CookSessionStatus>('idle');
   const [loaded, setLoaded] = useState(false);
   const lastSavedRef = useRef('');
+  const sessionGenerationRef = useRef(0);
 
   useEffect(() => {
+    sessionGenerationRef.current += 1;
     setSession(createEmptyCookSession());
     setStatus('idle');
     setLoaded(false);
@@ -54,8 +56,10 @@ export function useRecipeCookSession(
       if (!detail?.reelId || detail.reelId !== reelId) return;
 
       const emptySession = createEmptyCookSession();
+      sessionGenerationRef.current += 1;
       setSession(emptySession);
       lastSavedRef.current = serializeSession(emptySession);
+      setLoaded(true);
       setStatus('idle');
     };
 
@@ -69,13 +73,14 @@ export function useRecipeCookSession(
     if (!reelId || !enabled) return;
 
     let cancelled = false;
+    const generation = sessionGenerationRef.current;
     setStatus('loading');
 
     const loadSession = async () => {
       try {
         const nextSession = await getRecipeCookSession(reelId);
 
-        if (!cancelled) {
+        if (!cancelled && generation === sessionGenerationRef.current) {
           setSession(nextSession);
           lastSavedRef.current = serializeSession(nextSession);
           setLoaded(true);
@@ -83,7 +88,7 @@ export function useRecipeCookSession(
         }
       } catch (err) {
         console.warn('Recipe cook session load failed', err);
-        if (!cancelled) {
+        if (!cancelled && generation === sessionGenerationRef.current) {
           setLoaded(true);
           setStatus('error');
         }
@@ -104,19 +109,20 @@ export function useRecipeCookSession(
     if (serialized === lastSavedRef.current) return;
 
     let cancelled = false;
+    const generation = sessionGenerationRef.current;
     setStatus('saving');
 
     const timer = window.setTimeout(async () => {
       try {
         const savedSession = await saveRecipeCookSession(reelId, session);
-        if (!cancelled) {
+        if (!cancelled && generation === sessionGenerationRef.current) {
           setSession(savedSession);
           lastSavedRef.current = serializeSession(savedSession);
           setStatus('idle');
         }
       } catch (err) {
         console.warn('Recipe cook session save failed', err);
-        if (!cancelled) {
+        if (!cancelled && generation === sessionGenerationRef.current) {
           setStatus('error');
         }
       }
