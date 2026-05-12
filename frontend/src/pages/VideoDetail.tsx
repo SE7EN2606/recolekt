@@ -437,6 +437,36 @@ function RecipeRailCard({
   );
 }
 
+function RecipeNotesCard({
+  note,
+  onChange,
+}: {
+  note: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="bg-amber-50/70 border border-amber-100 rounded-2xl shadow-sm p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="p-1.5 bg-white/80 text-amber-700 rounded-md">
+          <StickyNote size={16} aria-hidden="true" />
+        </div>
+        <span className="text-[11px] font-black text-amber-700/70 uppercase tracking-widest">
+          Personal notes
+        </span>
+      </div>
+      <textarea
+        value={note}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Add a note for next time..."
+        className="min-h-[132px] w-full resize-none rounded-xl border border-amber-100 bg-white/80 px-3 py-3 text-sm font-medium leading-relaxed text-gray-800 placeholder:text-amber-700/45 focus:border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-100"
+      />
+      <div className="mt-2 text-[11px] font-medium text-amber-800/50">
+        Saved locally for now.
+      </div>
+    </div>
+  );
+}
+
 function SourceDetailsContent({
   caption,
   transcript,
@@ -484,26 +514,27 @@ function SourceDetailsContent({
 function RecipeCookbookRail({
   folderName,
   video,
-  recipe,
   metaChips,
   caption,
   transcript,
   originalUrl,
   platform,
   t,
+  note,
+  onNoteChange,
 }: {
   folderName: string | null;
   video: any;
-  recipe: any;
   metaChips: RecipeMetaChip[];
   caption?: string;
   transcript?: string;
   originalUrl?: string;
   platform: string;
   t: any;
+  note: string;
+  onNoteChange: (value: string) => void;
 }) {
   const cookStatus = getCookStatus(video);
-  const notesPreview = getRecipeNotesPreview(video, recipe);
   const category = metaChips.find((chip) => chip.label === 'Category')?.value;
   const topic = metaChips.find((chip) => chip.label === 'Topic')?.value;
   const hasSourceDetails = Boolean(caption || transcript || originalUrl);
@@ -525,13 +556,7 @@ function RecipeCookbookRail({
         {cookStatus.detail}
       </RecipeRailCard>
 
-      <RecipeRailCard
-        icon={<StickyNote size={16} aria-hidden="true" />}
-        label="Personal notes"
-        title={notesPreview ? 'Saved notes' : 'No notes yet'}
-      >
-        {notesPreview || 'Notes will make this feel like your version of the recipe.'}
-      </RecipeRailCard>
+      <RecipeNotesCard note={note} onChange={onNoteChange} />
 
       {originalUrl && (
         <OriginalLink url={originalUrl} platform={platform} t={t} />
@@ -587,8 +612,10 @@ export const VideoDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editedVideo, setEditedVideo] = useState<any>(null);
+  const [recipeNote, setRecipeNote] = useState('');
   const [servingScale, setServingScale] = useState(1);
   const richRecipeRef = useRef<any>(null);
+  const recipeNoteVideoIdRef = useRef<string | null>(null);
   const [useMetric, setUseMetric] = useState(true);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
@@ -603,6 +630,8 @@ export const VideoDetail: React.FC = () => {
   useEffect(() => {
     setServingScale(1);
     setIsEditing(false);
+    setRecipeNote('');
+    recipeNoteVideoIdRef.current = null;
   }, [id]);
 
   // Push ingredients into the shared GroceryList via DataContext
@@ -704,6 +733,13 @@ export const VideoDetail: React.FC = () => {
     () => video?.id || video?.process_id || id || '',
     [video?.id, video?.process_id, id],
   );
+
+  useEffect(() => {
+    if (!currentVideoId || !video || recipeNoteVideoIdRef.current === currentVideoId) return;
+
+    recipeNoteVideoIdRef.current = currentVideoId;
+    setRecipeNote(getRecipeNotesPreview(video, parseRecipePayload((video as any)?.recipe)));
+  }, [currentVideoId, video]);
 
   const handleToggleFavorite = () => {
     if (currentVideoId) toggleFavorite(currentVideoId);
@@ -1232,13 +1268,14 @@ export const VideoDetail: React.FC = () => {
           <RecipeCookbookRail
             folderName={folderName}
             video={video}
-            recipe={stableRecipeForCard}
             metaChips={recipeMetaChips}
             caption={viewModel.caption}
             transcript={viewModel.transcript}
             originalUrl={viewModel.originalUrl}
             platform={viewModel.platform}
             t={t}
+            note={recipeNote}
+            onNoteChange={setRecipeNote}
           />
         ) : (
           <div className="hidden md:flex flex-col w-full gap-5 mt-0">
