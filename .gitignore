@@ -34,3 +34,7 @@ saved_places_backend.txt
 *.pyc
 __pycache__/
 *.pyc
+
+*.bak
+
+.agents/settings.json
