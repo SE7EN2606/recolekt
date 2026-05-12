@@ -25,6 +25,13 @@ import { apiUrl, fetchGcsJson, HASHTAG_STYLE } from '../utils/videoDetailUtils';
 import { scaleQuantity } from '../utils/videoUtils';
 import { CustomMessageSquareMoreIcon, IOSShareIcon, PlatformIconAuthor } from '../components/CustomIcons';
 import {
+  buildRecipeForCard,
+  hasUsableRecipeContent,
+  parseRecipePayload,
+  recipeIngredientCount,
+  recipeInstructionCount,
+} from '../features/recipe-core/recipePayload';
+import {
   mergeVideoPayload,
   buildViewModel,
   getToolsCategoriesForLanguage,
@@ -45,159 +52,6 @@ const ReportModalExt = ReportModal as React.ComponentType<{
   onClose: () => void;
   videoId?: string;
 }>;
-
-const parseRecipePayload = (recipe: any): any => {
-  if (!recipe) return null;
-
-  if (typeof recipe === 'string') {
-    try {
-      return JSON.parse(recipe);
-    } catch {
-      return null;
-    }
-  }
-
-  if (typeof recipe.recipe === 'string') {
-    try {
-      return JSON.parse(recipe.recipe);
-    } catch {
-      return recipe;
-    }
-  }
-
-  if (recipe.recipe && typeof recipe.recipe === 'object') {
-    return recipe.recipe;
-  }
-
-  return recipe;
-};
-
-const hasItems = (sections: any[], itemKeys: string[]): boolean =>
-  sections.some((section: any) =>
-    itemKeys.some((key) => Array.isArray(section?.[key]) && section[key].length > 0)
-  );
-
-const recipeInstructionCount = (recipe: any): number => {
-  const parsed = parseRecipePayload(recipe);
-
-  if (!parsed) return 0;
-
-  const flatCount = [
-    parsed.instructions,
-    parsed.steps,
-    parsed.directions,
-    parsed.method,
-  ]
-    .filter(Array.isArray)
-    .flat().length;
-
-  const sectionCount = [
-    parsed.instructionSections,
-    parsed.instructionsSections,
-    parsed.instruction_sections,
-    parsed.instructions_sections,
-    parsed.method_sections,
-    parsed.step_sections,
-    parsed.steps_sections,
-  ]
-    .filter(Array.isArray)
-    .flat()
-    .reduce((total: number, section: any) => {
-      const items = [
-        section?.instructions,
-        section?.steps,
-        section?.items,
-        section?.children,
-      ]
-        .filter(Array.isArray)
-        .flat();
-
-      return total + items.length;
-    }, 0);
-
-  return flatCount + sectionCount;
-};
-
-const recipeIngredientCount = (recipe: any): number => {
-  const parsed = parseRecipePayload(recipe);
-
-  if (!parsed) return 0;
-
-  const flatCount = Array.isArray(parsed.ingredients) ? parsed.ingredients.length : 0;
-
-  const sectionCount = [
-    parsed.ingredientSections,
-    parsed.ingredientsSections,
-    parsed.ingredient_sections,
-    parsed.ingredients_sections,
-    parsed.ingredient_groups,
-    parsed.ingredients_groups,
-  ]
-    .filter(Array.isArray)
-    .flat()
-    .reduce((total: number, section: any) => {
-      const items = [
-        section?.items,
-        section?.ingredients,
-        section?.children,
-      ]
-        .filter(Array.isArray)
-        .flat();
-
-      return total + items.length;
-    }, 0);
-
-  return Math.max(flatCount, sectionCount);
-};
-
-const firstNonEmptyArray = (...values: any[]): any[] | undefined => {
-  for (const value of values) {
-    if (Array.isArray(value) && value.length > 0) return value;
-  }
-
-  return undefined;
-};
-
-const hasUsableRecipeContent = (recipe: any): boolean => {
-  const parsed = parseRecipePayload(recipe);
-
-  if (!parsed || parsed.is_compilation) return false;
-
-  const ingredientSectionSources = [
-    parsed.ingredientSections,
-    parsed.ingredientsSections,
-    parsed.ingredient_sections,
-    parsed.ingredients_sections,
-    parsed.ingredient_groups,
-    parsed.ingredients_groups,
-  ].filter(Array.isArray) as any[][];
-
-  const instructionSectionSources = [
-    parsed.instructionSections,
-    parsed.instructionsSections,
-    parsed.instruction_sections,
-    parsed.instructions_sections,
-    parsed.method_sections,
-    parsed.step_sections,
-    parsed.steps_sections,
-  ].filter(Array.isArray) as any[][];
-
-  const hasSectionIngredients = ingredientSectionSources.some((sections) =>
-    hasItems(sections, ['items', 'ingredients', 'children'])
-  );
-
-  const hasSectionInstructions = instructionSectionSources.some((sections) =>
-    hasItems(sections, ['instructions', 'steps', 'items', 'children'])
-  );
-
-  const hasFlatIngredients = Array.isArray(parsed.ingredients) && parsed.ingredients.length > 0;
-  const hasFlatInstructions = Array.isArray(parsed.instructions) && parsed.instructions.length > 0;
-  const hasFlatSteps = Array.isArray(parsed.steps) && parsed.steps.length > 0;
-  const hasFlatDirections = Array.isArray(parsed.directions) && parsed.directions.length > 0;
-  const hasFlatMethod = Array.isArray(parsed.method) && parsed.method.length > 0;
-
-  return hasSectionIngredients || hasSectionInstructions || hasFlatIngredients || hasFlatInstructions || hasFlatSteps || hasFlatDirections || hasFlatMethod;
-};
 
 const getAuthToken = (): string => {
   try {
@@ -1052,62 +906,7 @@ export const VideoDetail: React.FC = () => {
     hasToolsList &&
     (viewModel.isStructuredTools || !!viewModel.structuredType || !hasBullets);
 
-  const rawVideoRecipe = parseRecipePayload((video as any)?.recipe);
-  const viewModelRecipe = parseRecipePayload(viewModel.recipe);
-
-  const recipeForCard = viewModelRecipe || rawVideoRecipe
-    ? {
-        ...(rawVideoRecipe || {}),
-        ...(viewModelRecipe || {}),
-        ingredients:
-          firstNonEmptyArray(
-            viewModelRecipe?.ingredients,
-            rawVideoRecipe?.ingredients
-          ),
-        ingredient_sections:
-          firstNonEmptyArray(
-            viewModelRecipe?.ingredient_sections,
-            rawVideoRecipe?.ingredient_sections,
-            viewModelRecipe?.ingredients_sections,
-            rawVideoRecipe?.ingredients_sections,
-            viewModelRecipe?.ingredient_groups,
-            rawVideoRecipe?.ingredient_groups,
-            viewModelRecipe?.ingredients_groups,
-            rawVideoRecipe?.ingredients_groups
-          ),
-        instructions:
-          firstNonEmptyArray(
-            viewModelRecipe?.instructions,
-            rawVideoRecipe?.instructions,
-            viewModelRecipe?.steps,
-            rawVideoRecipe?.steps,
-            viewModelRecipe?.directions,
-            rawVideoRecipe?.directions,
-            viewModelRecipe?.method,
-            rawVideoRecipe?.method
-          ),
-        instructions_sections:
-          firstNonEmptyArray(
-            viewModelRecipe?.instructions_sections,
-            rawVideoRecipe?.instructions_sections,
-            viewModelRecipe?.instruction_sections,
-            rawVideoRecipe?.instruction_sections,
-            viewModelRecipe?.method_sections,
-            rawVideoRecipe?.method_sections,
-            viewModelRecipe?.step_sections,
-            rawVideoRecipe?.step_sections,
-            viewModelRecipe?.steps_sections,
-            rawVideoRecipe?.steps_sections
-          ),
-        instructionSections:
-          firstNonEmptyArray(
-            viewModelRecipe?.instructionSections,
-            rawVideoRecipe?.instructionSections,
-            viewModelRecipe?.instructionsSections,
-            rawVideoRecipe?.instructionsSections
-          ),
-      }
-    : null;
+  const recipeForCard = buildRecipeForCard(viewModel.recipe, (video as any)?.recipe);
 
   const currentInstructionCount = recipeInstructionCount(recipeForCard);
   const currentIngredientCount = recipeIngredientCount(recipeForCard);
