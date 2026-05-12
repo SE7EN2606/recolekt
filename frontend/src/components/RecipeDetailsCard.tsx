@@ -374,6 +374,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const allInstructions = useMemo(() => instructionSections.flatMap((section) => section.instructions), [instructionSections]);
   const hasIngredients = allIngredients.length > 0;
   const hasSteps = allInstructions.length > 0;
+  const ingredientCountLabel = `${allIngredients.length} ${allIngredients.length === 1 ? 'item' : 'items'}`;
+  const stepCountLabel = `${allInstructions.length} ${allInstructions.length === 1 ? 'step' : 'steps'}`;
 
   const secondaryTabs = useMemo(() => {
     const tabs: { key: RecipeSecondaryTabKey; label: string }[] = [];
@@ -408,10 +410,12 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
   return (
     <>
-      <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
-        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-rose-100 bg-rose-50/70">
+      <div className="bg-white border border-gray-200 rounded-[22px] shadow-sm overflow-hidden mt-3 mb-6">
+        <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-5 border-b border-gray-100 bg-white">
           <div className="flex items-center gap-2.5 min-w-0">
-            <ChefHat size={18} className="text-rose-500 shrink-0" />
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+              <ChefHat size={17} aria-hidden="true" />
+            </span>
             <h3 className="font-bold text-gray-900 text-base tracking-tight truncate">
               {t('videoDetail:recipeDetails', 'Recipe Details')}
             </h3>
@@ -422,7 +426,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               <button
                 type="button"
                 onClick={() => onToggleMetric(!useMetric)}
-                className="px-3 py-1.5 bg-white/90 border border-rose-100 text-gray-700 rounded-xl text-[11px] font-bold shadow-sm hover:bg-white transition-colors"
+                className="px-3 py-1.5 bg-gray-50 border border-gray-200 text-gray-700 rounded-xl text-[11px] font-bold hover:bg-white transition-colors"
               >
                 {useMetric ? 'Imperial' : 'Metric'}
               </button>
@@ -431,11 +435,11 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         </div>
 
         {hasSteps && (
-          <div className="px-5 py-4 bg-white border-b border-gray-100">
+          <div className="px-4 py-4 sm:px-5 bg-stone-50 border-b border-gray-100">
             <button
               type="button"
               onClick={() => setIsCookModeOpen(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gray-950 px-5 py-4 text-sm font-black text-white shadow-sm transition-colors hover:bg-gray-800 active:bg-gray-900"
+              className="flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-gray-950 px-5 py-4 text-[15px] font-black text-white shadow-sm transition-colors hover:bg-gray-800 active:bg-gray-900"
             >
               <ChefHat size={18} aria-hidden="true" />
               Cook this recipe
@@ -445,21 +449,24 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
         <div className="divide-y divide-gray-100">
           {hasIngredients && (
-            <section className="py-4">
-              <div className="px-5 pb-3">
-                <h4 className="text-sm font-black tracking-tight text-gray-950">Ingredients</h4>
+            <section className="py-5">
+              <div className="px-4 sm:px-5 pb-3 flex items-center justify-between gap-3">
+                <h4 className="text-[15px] font-black tracking-tight text-gray-950">Ingredients</h4>
+                <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-bold text-gray-500">
+                  {ingredientCountLabel}
+                </span>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {ingredientSections.map((section, sectionIndex) => (
                   <div key={sectionIndex}>
                     {section.title && (
-                      <h5 className="px-5 pb-1.5 text-[11px] font-black uppercase tracking-widest text-gray-400">
+                      <h5 className="px-4 sm:px-5 pb-1.5 text-[11px] font-black uppercase tracking-widest text-gray-400">
                         {section.title}
                       </h5>
                     )}
 
-                    <ul className="divide-y divide-gray-50">
+                    <ul className="divide-y divide-gray-100">
                       {section.items.map((item, itemIndex) => {
                         const id = `section-${sectionIndex}-ingredient-${itemIndex}`;
 
@@ -487,21 +494,28 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           )}
 
           {hasSteps && (
-            <section className="px-5 py-5">
-              <h4 className="pb-4 text-sm font-black tracking-tight text-gray-950">Steps</h4>
-              <RecipeStepsPanel
-                instructionSections={instructionSections}
-                checkedSteps={checkedSteps}
-                toggleStep={toggleStep}
-              />
+            <section className="bg-amber-50/45 px-4 py-5 sm:px-5">
+              <div className="pb-4 flex items-center justify-between gap-3">
+                <h4 className="text-[15px] font-black tracking-tight text-gray-950">Steps</h4>
+                <span className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-bold text-amber-700 ring-1 ring-amber-100">
+                  {stepCountLabel}
+                </span>
+              </div>
+              <div className="rounded-2xl bg-white/80 p-4 ring-1 ring-amber-100/80">
+                <RecipeStepsPanel
+                  instructionSections={instructionSections}
+                  checkedSteps={checkedSteps}
+                  toggleStep={toggleStep}
+                />
+              </div>
             </section>
           )}
         </div>
 
         {secondaryTabs.length > 0 && (
-          <div className="bg-gray-50 px-3 py-3">
+          <div className="bg-gray-50 px-3 py-3 border-t border-gray-100">
             <div
-              className="grid gap-1 rounded-2xl bg-gray-100 p-1 text-[12px] font-black"
+              className="grid gap-1 rounded-2xl bg-gray-100 p-1 text-[12px] font-bold"
               style={{ gridTemplateColumns: `repeat(${secondaryTabs.length}, minmax(0, 1fr))` }}
             >
               {secondaryTabs.map((tab) => {
