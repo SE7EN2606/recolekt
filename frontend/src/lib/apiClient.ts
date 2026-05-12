@@ -1,9 +1,21 @@
-import { apiUrl } from '../utils/videoDetailUtils';
+import { API_BASE } from '../utils/api';
 
 type ApiRequestOptions = {
   body?: unknown;
   cache?: RequestCache;
 };
+
+function apiUrl(path: string) {
+  const clean = String(path || '').replace(/^\/+/, '');
+  const base = String(API_BASE || '').replace(/\/+$/, '');
+
+  if (!base) return `/${clean}`;
+  if (base.endsWith('/api') && clean.startsWith('api/')) {
+    return `${base}/${clean.slice(4)}`;
+  }
+
+  return `${base}/${clean}`;
+}
 
 export function getAuthToken(): string {
   try {

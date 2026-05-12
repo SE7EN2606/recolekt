@@ -27,7 +27,6 @@ import { CustomMessageSquareMoreIcon, IOSShareIcon, PlatformIconAuthor } from '.
 import {
   buildRecipeForCard,
   hasUsableRecipeContent,
-  parseRecipePayload,
   recipeIngredientCount,
   recipeInstructionCount,
 } from '../features/recipe-core/recipePayload';
@@ -352,24 +351,6 @@ export const VideoDetail: React.FC = () => {
     [video?.id, video?.process_id, id],
   );
 
-  const hasRecipeForNotes = useMemo(() => {
-    if (!video) return false;
-    const candidate = parseRecipePayload((video as any)?.recipe || (video as any)?.__raw?.recipe);
-    return Boolean(candidate && hasUsableRecipeContent(candidate));
-  }, [video]);
-
-  const {
-    note: recipeNote,
-    setNote: setRecipeNote,
-    status: recipeNoteStatus,
-  } = useRecipeNotes(currentVideoId, hasRecipeForNotes);
-
-  const {
-    cookStatus,
-    markCooked,
-    resetCookState,
-  } = useRecipeCookState(currentVideoId, hasRecipeForNotes);
-
   const handleToggleFavorite = () => {
     if (currentVideoId) toggleFavorite(currentVideoId);
   };
@@ -425,6 +406,45 @@ export const VideoDetail: React.FC = () => {
     const source = isEditing && editedVideo ? editedVideo : video;
     return buildViewModel(source, showOriginal, galleryThumbnail);
   }, [video, editedVideo, isEditing, showOriginal, galleryThumbnail]);
+
+  const recipeForCard = buildRecipeForCard(viewModel?.recipe, (video as any)?.recipe);
+  const currentInstructionCount = recipeInstructionCount(recipeForCard);
+  const currentIngredientCount = recipeIngredientCount(recipeForCard);
+  const storedInstructionCount = recipeInstructionCount(richRecipeRef.current);
+  const storedIngredientCount = recipeIngredientCount(richRecipeRef.current);
+
+  if (
+    recipeForCard &&
+    (
+      currentInstructionCount > storedInstructionCount ||
+      (
+        currentInstructionCount === storedInstructionCount &&
+        currentIngredientCount > storedIngredientCount
+      )
+    )
+  ) {
+    richRecipeRef.current = recipeForCard;
+  }
+
+  const stableRecipeForCard =
+    richRecipeRef.current && recipeInstructionCount(richRecipeRef.current) > currentInstructionCount
+      ? richRecipeRef.current
+      : recipeForCard;
+
+  const showRecipeCard = Boolean(stableRecipeForCard && hasUsableRecipeContent(stableRecipeForCard));
+
+  const {
+    note: recipeNote,
+    setNote: setRecipeNote,
+    status: recipeNoteStatus,
+    saveNote: saveRecipeNote,
+  } = useRecipeNotes(currentVideoId, showRecipeCard);
+
+  const {
+    cookStatus,
+    markCooked,
+    resetCookState,
+  } = useRecipeCookState(currentVideoId, showRecipeCard);
 
   if (loading || !viewModel) return <Skeleton />;
 
@@ -493,32 +513,6 @@ export const VideoDetail: React.FC = () => {
     hasToolsList &&
     (viewModel.isStructuredTools || !!viewModel.structuredType || !hasBullets);
 
-  const recipeForCard = buildRecipeForCard(viewModel.recipe, (video as any)?.recipe);
-
-  const currentInstructionCount = recipeInstructionCount(recipeForCard);
-  const currentIngredientCount = recipeIngredientCount(recipeForCard);
-  const storedInstructionCount = recipeInstructionCount(richRecipeRef.current);
-  const storedIngredientCount = recipeIngredientCount(richRecipeRef.current);
-
-  if (
-    recipeForCard &&
-    (
-      currentInstructionCount > storedInstructionCount ||
-      (
-        currentInstructionCount === storedInstructionCount &&
-        currentIngredientCount > storedIngredientCount
-      )
-    )
-  ) {
-    richRecipeRef.current = recipeForCard;
-  }
-
-  const stableRecipeForCard =
-    richRecipeRef.current && recipeInstructionCount(richRecipeRef.current) > currentInstructionCount
-      ? richRecipeRef.current
-      : recipeForCard;
-
-  const showRecipeCard = Boolean(stableRecipeForCard && hasUsableRecipeContent(stableRecipeForCard));
   const showFolderBadge = Boolean(folderName && !showRecipeCard);
   const hasRecipeSourceDetails =
     showRecipeCard && Boolean(viewModel.caption || viewModel.transcript || viewModel.originalUrl);
@@ -849,6 +843,7 @@ export const VideoDetail: React.FC = () => {
             t={t}
             note={recipeNote}
             onNoteChange={setRecipeNote}
+            onNoteSave={saveRecipeNote}
             noteStatus={recipeNoteStatus}
             cookStatus={cookStatus}
             onMarkCooked={markCooked}

@@ -76,7 +76,8 @@ export function useRecipeCookState(
           setCookStatus(serializeCookState(data));
           setStatus('idle');
         }
-      } catch {
+      } catch (err) {
+        console.warn('Recipe cook state load failed', err);
         if (!cancelled) {
           setStatus('error');
         }
@@ -101,12 +102,14 @@ export function useRecipeCookState(
     }));
     setStatus('saving');
 
+    console.info('marking cooked', { reelId });
     markRecipeCooked(reelId)
       .then((data) => {
         setCookStatus(serializeCookState(data));
         setStatus('idle');
       })
-      .catch(() => {
+      .catch((err) => {
+        console.warn('Recipe mark cooked failed', err);
         setCookStatus(previous);
         setStatus('error');
       });
@@ -120,12 +123,14 @@ export function useRecipeCookState(
     setCookStatus(EMPTY_COOK_STATUS);
     setStatus('saving');
 
+    console.info('resetting cook state', { reelId });
     resetRecipeCookState(reelId)
       .then((data) => {
         setCookStatus(serializeCookState(data));
         setStatus('idle');
       })
-      .catch(() => {
+      .catch((err) => {
+        console.warn('Recipe cook state reset failed', err);
         setCookStatus(previous);
         setStatus('error');
       });

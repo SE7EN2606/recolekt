@@ -42,10 +42,12 @@ function RecipeRailCard({
 function RecipeNotesCard({
   note,
   onChange,
+  onSave,
   status,
 }: {
   note: string;
   onChange: (value: string) => void;
+  onSave: () => void;
   status: RecipeNoteStatus;
 }) {
   const statusLabel =
@@ -75,12 +77,22 @@ function RecipeNotesCard({
         placeholder="Add a note for next time..."
         className="min-h-[132px] w-full resize-none rounded-xl border border-amber-100 bg-white/80 px-3 py-3 text-sm font-medium leading-relaxed text-gray-800 placeholder:text-amber-700/45 focus:border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-100"
       />
-      <div
-        className={`mt-2 text-[11px] font-medium ${
-          status === 'error' ? 'text-rose-600' : 'text-amber-800/50'
-        }`}
-      >
-        {statusLabel}
+      <div className="mt-2 flex items-center justify-between gap-3">
+        <div
+          className={`text-[11px] font-medium ${
+            status === 'error' ? 'text-rose-600' : 'text-amber-800/50'
+          }`}
+        >
+          {statusLabel}
+        </div>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={status === 'loading'}
+          className="rounded-lg border border-amber-200 bg-white/80 px-3 py-1.5 text-[11px] font-black text-amber-800 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Save
+        </button>
       </div>
     </div>
   );
@@ -114,7 +126,7 @@ function RecipeCookStatusCard({
       <div className="mt-2 text-sm text-gray-500 leading-relaxed">
         {hasCooked
           ? `Last cooked ${status.lastCookedLabel || 'today'}`
-          : 'Track this locally when you make it.'}
+          : 'Track this when you make it.'}
       </div>
 
       <div className="mt-4 flex gap-2">
@@ -192,6 +204,7 @@ export function RecipeCookbookRail({
   t,
   note,
   onNoteChange,
+  onNoteSave,
   noteStatus,
   cookStatus,
   onMarkCooked,
@@ -206,6 +219,7 @@ export function RecipeCookbookRail({
   t: any;
   note: string;
   onNoteChange: (value: string) => void;
+  onNoteSave: () => void;
   noteStatus: RecipeNoteStatus;
   cookStatus: LocalCookStatus;
   onMarkCooked: () => void;
@@ -230,7 +244,12 @@ export function RecipeCookbookRail({
         onReset={onResetCookStatus}
       />
 
-      <RecipeNotesCard note={note} onChange={onNoteChange} status={noteStatus} />
+      <RecipeNotesCard
+        note={note}
+        onChange={onNoteChange}
+        onSave={onNoteSave}
+        status={noteStatus}
+      />
 
       {originalUrl && (
         <OriginalLink url={originalUrl} platform={platform} t={t} />

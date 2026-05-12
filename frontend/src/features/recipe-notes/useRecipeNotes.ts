@@ -10,6 +10,7 @@ export function useRecipeNotes(
   note: string;
   setNote: (value: string) => void;
   status: RecipeNoteStatus;
+  saveNote: () => Promise<void>;
 } {
   const [note, setNote] = useState('');
   const [status, setStatus] = useState<RecipeNoteStatus>('idle');
@@ -41,7 +42,8 @@ export function useRecipeNotes(
           setLastSavedNote(nextNote);
           setStatus(nextNote ? 'saved' : 'idle');
         }
-      } catch {
+      } catch (err) {
+        console.warn('Recipe note load failed', err);
         if (!cancelled) {
           setStatus('error');
         }
@@ -65,6 +67,7 @@ export function useRecipeNotes(
 
     const timer = window.setTimeout(async () => {
       try {
+        console.info('saving note', { reelId });
         const data = await saveRecipeNote(reelId, note);
         const savedNote = String(data?.noteText ?? note);
 
@@ -72,7 +75,8 @@ export function useRecipeNotes(
           setLastSavedNote(savedNote);
           setStatus('saved');
         }
-      } catch {
+      } catch (err) {
+        console.warn('Recipe note autosave failed', err);
         if (!cancelled) {
           setStatus('error');
         }
@@ -85,10 +89,31 @@ export function useRecipeNotes(
     };
   }, [reelId, enabled, note, lastSavedNote]);
 
+  const saveNote = async () => {
+    if (!reelId || !enabled) {
+      setStatus('error');
+      return;
+    }
+
+    setStatus('saving');
+
+    try {
+      console.info('saving note', { reelId });
+      const data = await saveRecipeNote(reelId, note);
+      const savedNote = String(data?.noteText ?? note);
+      setLastSavedNote(savedNote);
+      setStatus('saved');
+    } catch (err) {
+      console.warn('Recipe note save failed', err);
+      setStatus('error');
+    }
+  };
+
   return {
     note,
     setNote,
     status,
+    saveNote,
   };
 }
 
