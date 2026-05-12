@@ -281,6 +281,11 @@ export type RecipeMetaChip = {
   value: string;
 };
 
+type LocalCookStatus = {
+  cookedCount: number;
+  lastCookedLabel: string;
+};
+
 function getRecipeMetaChips(recipe: any, video?: any): RecipeMetaChip[] {
   const read = (...values: any[]) =>
     values
@@ -362,6 +367,10 @@ function readFirstString(...values: any[]): string {
     .find(Boolean) || '';
 }
 
+function getTodayCookedLabel(): string {
+  return 'today';
+}
+
 function getRecipeNotesPreview(video: any, recipe: any): string {
   const notes = [
     video?.personalNotes,
@@ -382,7 +391,7 @@ function getRecipeNotesPreview(video: any, recipe: any): string {
   return String(notes || '').trim();
 }
 
-function getCookStatus(video: any) {
+function getInitialCookStatus(video: any): LocalCookStatus {
   const cookedCount = Number(
     video?.cookedCount ??
     video?.cooked_count ??
@@ -399,16 +408,9 @@ function getCookStatus(video: any) {
     video?.last_cooked
   );
 
-  if (Number.isFinite(cookedCount) && cookedCount > 0) {
-    return {
-      title: cookedCount === 1 ? 'Cooked once' : `Cooked ${cookedCount} times`,
-      detail: lastCooked ? `Last cooked ${lastCooked}` : 'Ready to cook again',
-    };
-  }
-
   return {
-    title: 'Not cooked yet',
-    detail: 'Start with Cook Mode when you are ready.',
+    cookedCount: Number.isFinite(cookedCount) && cookedCount > 0 ? cookedCount : 0,
+    lastCookedLabel: lastCooked,
   };
 }
 
@@ -467,6 +469,58 @@ function RecipeNotesCard({
   );
 }
 
+function RecipeCookStatusCard({
+  status,
+  onMarkCooked,
+  onReset,
+}: {
+  status: LocalCookStatus;
+  onMarkCooked: () => void;
+  onReset: () => void;
+}) {
+  const hasCooked = status.cookedCount > 0;
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="p-1.5 bg-stone-100 text-gray-700 rounded-md">
+          <Clock3 size={16} aria-hidden="true" />
+        </div>
+        <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest">
+          Cook status
+        </span>
+      </div>
+
+      <div className="text-base font-black text-gray-900 leading-snug">
+        {hasCooked ? `Cooked ${status.cookedCount}×` : 'Not cooked yet'}
+      </div>
+      <div className="mt-2 text-sm text-gray-500 leading-relaxed">
+        {hasCooked
+          ? `Last cooked ${status.lastCookedLabel || 'today'}`
+          : 'Track this locally when you make it.'}
+      </div>
+
+      <div className="mt-4 flex gap-2">
+        <button
+          type="button"
+          onClick={onMarkCooked}
+          className="flex-1 rounded-xl bg-gray-950 px-3 py-2.5 text-[12px] font-black text-white transition-colors hover:bg-gray-800"
+        >
+          {hasCooked ? 'Cook again' : 'Mark cooked'}
+        </button>
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={!hasCooked}
+          className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-[12px] font-bold text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Reset
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SourceDetailsContent({
   caption,
   transcript,
@@ -513,7 +567,6 @@ function SourceDetailsContent({
 
 function RecipeCookbookRail({
   folderName,
-  video,
   metaChips,
   caption,
   transcript,
@@ -522,9 +575,11 @@ function RecipeCookbookRail({
   t,
   note,
   onNoteChange,
+  cookStatus,
+  onMarkCooked,
+  onResetCookStatus,
 }: {
   folderName: string | null;
-  video: any;
   metaChips: RecipeMetaChip[];
   caption?: string;
   transcript?: string;
@@ -533,8 +588,10 @@ function RecipeCookbookRail({
   t: any;
   note: string;
   onNoteChange: (value: string) => void;
+  cookStatus: LocalCookStatus;
+  onMarkCooked: () => void;
+  onResetCookStatus: () => void;
 }) {
-  const cookStatus = getCookStatus(video);
   const category = metaChips.find((chip) => chip.label === 'Category')?.value;
   const topic = metaChips.find((chip) => chip.label === 'Topic')?.value;
   const hasSourceDetails = Boolean(caption || transcript || originalUrl);
@@ -548,13 +605,11 @@ function RecipeCookbookRail({
         title={folderName || 'Unsorted'}
       />
 
-      <RecipeRailCard
-        icon={<Clock3 size={16} aria-hidden="true" />}
-        label="Cook status"
-        title={cookStatus.title}
-      >
-        {cookStatus.detail}
-      </RecipeRailCard>
+      <RecipeCookStatusCard
+        status={cookStatus}
+        onMarkCooked={onMarkCooked}
+        onReset={onResetCookStatus}
+      />
 
       <RecipeNotesCard note={note} onChange={onNoteChange} />
 
@@ -613,9 +668,14 @@ export const VideoDetail: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedVideo, setEditedVideo] = useState<any>(null);
   const [recipeNote, setRecipeNote] = useState('');
+  const [localCookStatus, setLocalCookStatus] = useState<LocalCookStatus>({
+    cookedCount: 0,
+    lastCookedLabel: '',
+  });
   const [servingScale, setServingScale] = useState(1);
   const richRecipeRef = useRef<any>(null);
   const recipeNoteVideoIdRef = useRef<string | null>(null);
+  const cookStatusVideoIdRef = useRef<string | null>(null);
   const [useMetric, setUseMetric] = useState(true);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
@@ -631,7 +691,9 @@ export const VideoDetail: React.FC = () => {
     setServingScale(1);
     setIsEditing(false);
     setRecipeNote('');
+    setLocalCookStatus({ cookedCount: 0, lastCookedLabel: '' });
     recipeNoteVideoIdRef.current = null;
+    cookStatusVideoIdRef.current = null;
   }, [id]);
 
   // Push ingredients into the shared GroceryList via DataContext
@@ -740,6 +802,27 @@ export const VideoDetail: React.FC = () => {
     recipeNoteVideoIdRef.current = currentVideoId;
     setRecipeNote(getRecipeNotesPreview(video, parseRecipePayload((video as any)?.recipe)));
   }, [currentVideoId, video]);
+
+  useEffect(() => {
+    if (!currentVideoId || !video || cookStatusVideoIdRef.current === currentVideoId) return;
+
+    cookStatusVideoIdRef.current = currentVideoId;
+    setLocalCookStatus(getInitialCookStatus(video));
+  }, [currentVideoId, video]);
+
+  const handleMarkCookedLocal = () => {
+    setLocalCookStatus((current) => ({
+      cookedCount: current.cookedCount + 1,
+      lastCookedLabel: getTodayCookedLabel(),
+    }));
+  };
+
+  const handleResetCookStatusLocal = () => {
+    setLocalCookStatus({
+      cookedCount: 0,
+      lastCookedLabel: '',
+    });
+  };
 
   const handleToggleFavorite = () => {
     if (currentVideoId) toggleFavorite(currentVideoId);
@@ -1267,7 +1350,6 @@ export const VideoDetail: React.FC = () => {
         {showRecipeCard ? (
           <RecipeCookbookRail
             folderName={folderName}
-            video={video}
             metaChips={recipeMetaChips}
             caption={viewModel.caption}
             transcript={viewModel.transcript}
@@ -1276,6 +1358,9 @@ export const VideoDetail: React.FC = () => {
             t={t}
             note={recipeNote}
             onNoteChange={setRecipeNote}
+            cookStatus={localCookStatus}
+            onMarkCooked={handleMarkCookedLocal}
+            onResetCookStatus={handleResetCookStatusLocal}
           />
         ) : (
           <div className="hidden md:flex flex-col w-full gap-5 mt-0">
