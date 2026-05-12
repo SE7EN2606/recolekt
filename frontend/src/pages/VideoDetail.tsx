@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Trash2, Heart, FolderInput, AlertCircle, X,
   EllipsisVertical, AlignLeft, Pencil, Save, Globe, Folder, Archive,
-  MapPin,
+  MapPin, BookOpen, Clock3, StickyNote,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -356,6 +356,214 @@ function RecipeMetaPanel({ chips }: { chips: RecipeMetaChip[] }) {
   );
 }
 
+function readFirstString(...values: any[]): string {
+  return values
+    .map((value) => String(value || '').trim())
+    .find(Boolean) || '';
+}
+
+function getRecipeNotesPreview(video: any, recipe: any): string {
+  const notes = [
+    video?.personalNotes,
+    video?.personal_notes,
+    video?.notes,
+    recipe?.personalNotes,
+    recipe?.personal_notes,
+    recipe?.notes,
+  ].find((value) =>
+    (typeof value === 'string' && value.trim()) ||
+    (Array.isArray(value) && value.length > 0)
+  );
+
+  if (Array.isArray(notes)) {
+    return notes.map((note) => String(note || '').trim()).filter(Boolean).join('\n');
+  }
+
+  return String(notes || '').trim();
+}
+
+function getCookStatus(video: any) {
+  const cookedCount = Number(
+    video?.cookedCount ??
+    video?.cooked_count ??
+    video?.cookCount ??
+    video?.cook_count ??
+    video?.timesCooked ??
+    video?.times_cooked ??
+    0
+  );
+  const lastCooked = readFirstString(
+    video?.lastCookedAt,
+    video?.last_cooked_at,
+    video?.lastCooked,
+    video?.last_cooked
+  );
+
+  if (Number.isFinite(cookedCount) && cookedCount > 0) {
+    return {
+      title: cookedCount === 1 ? 'Cooked once' : `Cooked ${cookedCount} times`,
+      detail: lastCooked ? `Last cooked ${lastCooked}` : 'Ready to cook again',
+    };
+  }
+
+  return {
+    title: 'Not cooked yet',
+    detail: 'Start with Cook Mode when you are ready.',
+  };
+}
+
+function RecipeRailCard({
+  icon,
+  label,
+  title,
+  children,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  title: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="p-1.5 bg-stone-100 text-gray-700 rounded-md">{icon}</div>
+        <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest">
+          {label}
+        </span>
+      </div>
+      <div className="text-base font-black text-gray-900 leading-snug">{title}</div>
+      {children && <div className="mt-2 text-sm text-gray-500 leading-relaxed">{children}</div>}
+    </div>
+  );
+}
+
+function SourceDetailsContent({
+  caption,
+  transcript,
+  originalUrl,
+  platform,
+  t,
+}: {
+  caption?: string;
+  transcript?: string;
+  originalUrl?: string;
+  platform: string;
+  t: any;
+}) {
+  return (
+    <div className="space-y-5">
+      {caption && (
+        <div>
+          <h4 className="mb-2 text-[11px] font-black uppercase tracking-widest text-gray-400">
+            {t('videoDetail:caption', 'Caption')}
+          </h4>
+          <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+            {caption}
+          </div>
+        </div>
+      )}
+
+      {transcript && (
+        <div>
+          <h4 className="mb-2 text-[11px] font-black uppercase tracking-widest text-gray-400">
+            {t('videoDetail:transcript', 'Transcript')}
+          </h4>
+          <div className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap font-medium italic border-l-2 border-gray-100 pl-4">
+            {transcript}
+          </div>
+        </div>
+      )}
+
+      {originalUrl && (
+        <OriginalLink url={originalUrl} platform={platform} t={t} />
+      )}
+    </div>
+  );
+}
+
+function RecipeCookbookRail({
+  folderName,
+  video,
+  recipe,
+  metaChips,
+  caption,
+  transcript,
+  originalUrl,
+  platform,
+  t,
+}: {
+  folderName: string | null;
+  video: any;
+  recipe: any;
+  metaChips: RecipeMetaChip[];
+  caption?: string;
+  transcript?: string;
+  originalUrl?: string;
+  platform: string;
+  t: any;
+}) {
+  const cookStatus = getCookStatus(video);
+  const notesPreview = getRecipeNotesPreview(video, recipe);
+  const category = metaChips.find((chip) => chip.label === 'Category')?.value;
+  const topic = metaChips.find((chip) => chip.label === 'Topic')?.value;
+  const hasSourceDetails = Boolean(caption || transcript || originalUrl);
+  const contextItems = [category, topic].filter(Boolean);
+
+  return (
+    <div className="hidden md:flex flex-col w-full gap-5 mt-0">
+      <RecipeRailCard
+        icon={<Folder size={16} aria-hidden="true" />}
+        label="Collection"
+        title={folderName || 'Unsorted'}
+      />
+
+      <RecipeRailCard
+        icon={<Clock3 size={16} aria-hidden="true" />}
+        label="Cook status"
+        title={cookStatus.title}
+      >
+        {cookStatus.detail}
+      </RecipeRailCard>
+
+      <RecipeRailCard
+        icon={<StickyNote size={16} aria-hidden="true" />}
+        label="Personal notes"
+        title={notesPreview ? 'Saved notes' : 'No notes yet'}
+      >
+        {notesPreview || 'Notes will make this feel like your version of the recipe.'}
+      </RecipeRailCard>
+
+      {originalUrl && (
+        <OriginalLink url={originalUrl} platform={platform} t={t} />
+      )}
+
+      {hasSourceDetails && (
+        <Accordion
+          icon={<AlignLeft size={16} />}
+          label={t('videoDetail:sourceDetails', 'Source details')}
+        >
+          <SourceDetailsContent
+            caption={caption}
+            transcript={transcript}
+            platform={platform}
+            t={t}
+          />
+        </Accordion>
+      )}
+
+      {contextItems.length > 0 && (
+        <RecipeRailCard
+          icon={<BookOpen size={16} aria-hidden="true" />}
+          label="Recipe context"
+          title={contextItems.join(' · ')}
+        >
+          Category and topic are kept low-priority for organizing, not cooking.
+        </RecipeRailCard>
+      )}
+    </div>
+  );
+}
+
 export const VideoDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -702,6 +910,8 @@ export const VideoDetail: React.FC = () => {
 
   const showRecipeCard = Boolean(stableRecipeForCard && hasUsableRecipeContent(stableRecipeForCard));
   const showFolderBadge = Boolean(folderName && !showRecipeCard);
+  const hasRecipeSourceDetails =
+    showRecipeCard && Boolean(viewModel.caption || viewModel.transcript || viewModel.originalUrl);
 
   const actionItems = (video
     ? [
@@ -942,6 +1152,23 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
+          {hasRecipeSourceDetails && (
+            <div className="md:hidden">
+              <Accordion
+                icon={<AlignLeft size={16} />}
+                label={t('videoDetail:sourceDetails', 'Source details')}
+              >
+                <SourceDetailsContent
+                  caption={viewModel.caption}
+                  transcript={viewModel.transcript}
+                  originalUrl={viewModel.originalUrl}
+                  platform={viewModel.platform}
+                  t={t}
+                />
+              </Accordion>
+            </div>
+          )}
+
           {false && viewModel.workout && (
             <WorkoutCard workoutData={viewModel.workout} showOriginal={showOriginal} />
           )}
@@ -952,7 +1179,7 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
-          {viewModel.caption && (
+          {!showRecipeCard && viewModel.caption && (
             <Accordion icon={<AlignLeft size={16} />} label={t('videoDetail:caption', 'Caption')}>
               <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
                 {viewModel.caption}
@@ -960,7 +1187,7 @@ export const VideoDetail: React.FC = () => {
             </Accordion>
           )}
 
-          {viewModel.transcript && (
+          {!showRecipeCard && viewModel.transcript && (
             <div className="md:hidden">
               <Accordion
                 icon={<CustomMessageSquareMoreIcon size={16} />}
@@ -990,7 +1217,7 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
-          {viewModel.originalUrl && (
+          {!showRecipeCard && viewModel.originalUrl && (
             <OriginalLink
               url={viewModel.originalUrl}
               platform={viewModel.platform}
@@ -1001,34 +1228,48 @@ export const VideoDetail: React.FC = () => {
         </div>
 
         {/* Desktop right column */}
-        <div className="hidden md:flex flex-col w-full gap-5 mt-0">
-          {!showRecipeCard && <RecipeMetaPanel chips={recipeMetaChips} />}
-          <MetadataPanel
-            variant="desktop"
-            category={metadataCategory}
-            subCategory={metadataTopic}
-            tags={viewModel.tags}
-            isEditing={isEditing}
-            onEditCategory={(v: string) => handleEditField('category', v)}
-            onEditTopic={(v: string) => handleEditField('topic', v)}
-            onEditStart={() => setIsEditing(true)}
+        {showRecipeCard ? (
+          <RecipeCookbookRail
+            folderName={folderName}
+            video={video}
+            recipe={stableRecipeForCard}
+            metaChips={recipeMetaChips}
+            caption={viewModel.caption}
+            transcript={viewModel.transcript}
+            originalUrl={viewModel.originalUrl}
+            platform={viewModel.platform}
+            t={t}
           />
+        ) : (
+          <div className="hidden md:flex flex-col w-full gap-5 mt-0">
+            <RecipeMetaPanel chips={recipeMetaChips} />
+            <MetadataPanel
+              variant="desktop"
+              category={metadataCategory}
+              subCategory={metadataTopic}
+              tags={viewModel.tags}
+              isEditing={isEditing}
+              onEditCategory={(v: string) => handleEditField('category', v)}
+              onEditTopic={(v: string) => handleEditField('topic', v)}
+              onEditStart={() => setIsEditing(true)}
+            />
 
-          {viewModel.transcript && (
-            <Accordion
-              icon={<CustomMessageSquareMoreIcon size={16} />}
-              label={t('videoDetail:transcript', 'Transcript')}
-            >
-              <div className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap font-medium italic border-l-2 border-gray-100 pl-4">
-                {viewModel.transcript}
-              </div>
-            </Accordion>
-          )}
+            {viewModel.transcript && (
+              <Accordion
+                icon={<CustomMessageSquareMoreIcon size={16} />}
+                label={t('videoDetail:transcript', 'Transcript')}
+              >
+                <div className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap font-medium italic border-l-2 border-gray-100 pl-4">
+                  {viewModel.transcript}
+                </div>
+              </Accordion>
+            )}
 
-          {viewModel.originalUrl && (
-            <OriginalLink url={viewModel.originalUrl} platform={viewModel.platform} t={t} />
-          )}
-        </div>
+            {viewModel.originalUrl && (
+              <OriginalLink url={viewModel.originalUrl} platform={viewModel.platform} t={t} />
+            )}
+          </div>
+        )}
       </div>
 
       <ActionSheet
