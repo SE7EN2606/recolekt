@@ -32,10 +32,10 @@ import {
   recipeInstructionCount,
 } from '../features/recipe-core/recipePayload';
 import RecipeCookbookRail, {
-  LocalCookStatus,
   RecipeMetaChip,
   SourceDetailsContent,
 } from '../features/recipe-detail/RecipeCookbookRail';
+import useRecipeCookState from '../features/recipe-cook-state/useRecipeCookState';
 import useRecipeNotes from '../features/recipe-notes/useRecipeNotes';
 import {
   mergeVideoPayload,
@@ -211,39 +211,6 @@ function RecipeMetaPanel({ chips }: { chips: RecipeMetaChip[] }) {
   );
 }
 
-function readFirstString(...values: any[]): string {
-  return values
-    .map((value) => String(value || '').trim())
-    .find(Boolean) || '';
-}
-
-function getTodayCookedLabel(): string {
-  return 'today';
-}
-
-function getInitialCookStatus(video: any): LocalCookStatus {
-  const cookedCount = Number(
-    video?.cookedCount ??
-    video?.cooked_count ??
-    video?.cookCount ??
-    video?.cook_count ??
-    video?.timesCooked ??
-    video?.times_cooked ??
-    0
-  );
-  const lastCooked = readFirstString(
-    video?.lastCookedAt,
-    video?.last_cooked_at,
-    video?.lastCooked,
-    video?.last_cooked
-  );
-
-  return {
-    cookedCount: Number.isFinite(cookedCount) && cookedCount > 0 ? cookedCount : 0,
-    lastCookedLabel: lastCooked,
-  };
-}
-
 export const VideoDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -267,13 +234,8 @@ export const VideoDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editedVideo, setEditedVideo] = useState<any>(null);
-  const [localCookStatus, setLocalCookStatus] = useState<LocalCookStatus>({
-    cookedCount: 0,
-    lastCookedLabel: '',
-  });
   const [servingScale, setServingScale] = useState(1);
   const richRecipeRef = useRef<any>(null);
-  const cookStatusVideoIdRef = useRef<string | null>(null);
   const [useMetric, setUseMetric] = useState(true);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
@@ -288,8 +250,6 @@ export const VideoDetail: React.FC = () => {
   useEffect(() => {
     setServingScale(1);
     setIsEditing(false);
-    setLocalCookStatus({ cookedCount: 0, lastCookedLabel: '' });
-    cookStatusVideoIdRef.current = null;
   }, [id]);
 
   // Push ingredients into the shared GroceryList via DataContext
@@ -392,13 +352,6 @@ export const VideoDetail: React.FC = () => {
     [video?.id, video?.process_id, id],
   );
 
-  useEffect(() => {
-    if (!currentVideoId || !video || cookStatusVideoIdRef.current === currentVideoId) return;
-
-    cookStatusVideoIdRef.current = currentVideoId;
-    setLocalCookStatus(getInitialCookStatus(video));
-  }, [currentVideoId, video]);
-
   const hasRecipeForNotes = useMemo(() => {
     if (!video) return false;
     const candidate = parseRecipePayload((video as any)?.recipe || (video as any)?.__raw?.recipe);
@@ -411,19 +364,11 @@ export const VideoDetail: React.FC = () => {
     status: recipeNoteStatus,
   } = useRecipeNotes(currentVideoId, hasRecipeForNotes);
 
-  const handleMarkCookedLocal = () => {
-    setLocalCookStatus((current) => ({
-      cookedCount: current.cookedCount + 1,
-      lastCookedLabel: getTodayCookedLabel(),
-    }));
-  };
-
-  const handleResetCookStatusLocal = () => {
-    setLocalCookStatus({
-      cookedCount: 0,
-      lastCookedLabel: '',
-    });
-  };
+  const {
+    cookStatus,
+    markCooked,
+    resetCookState,
+  } = useRecipeCookState(currentVideoId, hasRecipeForNotes);
 
   const handleToggleFavorite = () => {
     if (currentVideoId) toggleFavorite(currentVideoId);
@@ -905,9 +850,9 @@ export const VideoDetail: React.FC = () => {
             note={recipeNote}
             onNoteChange={setRecipeNote}
             noteStatus={recipeNoteStatus}
-            cookStatus={localCookStatus}
-            onMarkCooked={handleMarkCookedLocal}
-            onResetCookStatus={handleResetCookStatusLocal}
+            cookStatus={cookStatus}
+            onMarkCooked={markCooked}
+            onResetCookStatus={resetCookState}
           />
         ) : (
           <div className="hidden md:flex flex-col w-full gap-5 mt-0">
