@@ -1137,6 +1137,60 @@ def _serialize_cook_summary(row) -> dict:
     }
 
 
+def _serialize_cook_session(row) -> dict:
+    if not row:
+        return {
+            "currentStepIndex": 0,
+            "checkedIngredientIds": [],
+            "completedStepIds": [],
+            "status": "active",
+        }
+
+    d = dict(row) if hasattr(row, "keys") else row._asdict()
+    checked = d.get("checked_ingredient_ids") or []
+    completed = d.get("completed_step_ids") or []
+
+    if isinstance(checked, str):
+        checked = json_loads_maybe(checked, default=[])
+    if isinstance(completed, str):
+        completed = json_loads_maybe(completed, default=[])
+
+    return {
+        "currentStepIndex": int(d.get("current_step_index") or 0),
+        "checkedIngredientIds": checked if isinstance(checked, list) else [],
+        "completedStepIds": completed if isinstance(completed, list) else [],
+        "status": d.get("status") or "active",
+    }
+
+
+def _sanitize_cook_session_payload(data: dict) -> dict:
+    current_step_index = data.get("currentStepIndex", data.get("current_step_index", 0))
+    try:
+        current_step_index = int(current_step_index)
+    except (TypeError, ValueError):
+        current_step_index = 0
+    current_step_index = max(0, current_step_index)
+
+    checked_ingredient_ids = data.get("checkedIngredientIds", data.get("checked_ingredient_ids", []))
+    completed_step_ids = data.get("completedStepIds", data.get("completed_step_ids", []))
+
+    if not isinstance(checked_ingredient_ids, list):
+        checked_ingredient_ids = []
+    if not isinstance(completed_step_ids, list):
+        completed_step_ids = []
+
+    status = data.get("status", "active")
+    if status not in {"active", "completed"}:
+        status = "active"
+
+    return {
+        "current_step_index": current_step_index,
+        "checked_ingredient_ids": [str(v) for v in checked_ingredient_ids if v is not None],
+        "completed_step_ids": [str(v) for v in completed_step_ids if v is not None],
+        "status": status,
+    }
+
+
 @reel_bp.route("/reel/<process_id>/notes", methods=["GET", "PUT", "OPTIONS"])
 def recipe_personal_notes(process_id):
     if request.method == "OPTIONS":
@@ -1309,6 +1363,20 @@ def reset_recipe_cook_state(process_id):
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     """
+                    UPDATE recipe_cook_sessions
+                    SET
+                        status = 'abandoned',
+                        completed_at = NULL,
+                        last_active_at = NOW(),
+                        updated_at = NOW()
+                    WHERE user_id = %s
+                      AND reel_id = %s
+                      AND status = 'active'
+                    """,
+                    (user_id, process_id),
+                )
+                cur.execute(
+                    """
                     INSERT INTO recipe_cook_summaries (
                         user_id,
                         reel_id,
@@ -1345,6 +1413,250 @@ def reset_recipe_cook_state(process_id):
     except Exception as e:
         logger.error("Error resetting cook state for reel %s: %s", process_id, e, exc_info=True)
         return jsonify({"error": "Reset cook state failed"}), 500
+
+
+@reel_bp.route("/reel/<process_id>/cook-session", methods=["GET", "PUT", "OPTIONS"])
+def recipe_cook_session(process_id):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        if not _reel_exists(process_id, user_id):
+            return jsonify({"error": "Reel not found"}), 404
+
+        if request.method == "GET":
+            row = fetch_one(
+                """
+                SELECT
+                    current_step_index,
+                    checked_ingredient_ids,
+                    completed_step_ids,
+                    status
+                FROM recipe_cook_sessions
+                WHERE user_id = %s
+                  AND reel_id = %s
+                  AND status = 'active'
+                ORDER BY last_active_at DESC
+                LIMIT 1
+                """,
+                (user_id, process_id),
+            )
+            return add_no_cache_headers(jsonify(_serialize_cook_session(row)))
+
+        payload = _sanitize_cook_session_payload(request.get_json(silent=True) or {})
+
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM recipe_cook_sessions
+                    WHERE user_id = %s
+                      AND reel_id = %s
+                      AND status = 'active'
+                    ORDER BY last_active_at DESC
+                    LIMIT 1
+                    FOR UPDATE
+                    """,
+                    (user_id, process_id),
+                )
+                existing = cur.fetchone()
+
+                if existing:
+                    cur.execute(
+                        """
+                        UPDATE recipe_cook_sessions
+                        SET
+                            status = %s,
+                            completed_at = CASE WHEN %s = 'completed' THEN NOW() ELSE NULL END,
+                            last_active_at = NOW(),
+                            current_step_index = %s,
+                            checked_ingredient_ids = %s,
+                            completed_step_ids = %s,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        RETURNING
+                            id,
+                            current_step_index,
+                            checked_ingredient_ids,
+                            completed_step_ids,
+                            status
+                        """,
+                        (
+                            payload["status"],
+                            payload["status"],
+                            payload["current_step_index"],
+                            psycopg2.extras.Json(payload["checked_ingredient_ids"]),
+                            psycopg2.extras.Json(payload["completed_step_ids"]),
+                            existing["id"],
+                        ),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO recipe_cook_sessions (
+                            user_id,
+                            reel_id,
+                            status,
+                            started_at,
+                            completed_at,
+                            last_active_at,
+                            current_step_index,
+                            checked_ingredient_ids,
+                            completed_step_ids,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (
+                            %s,
+                            %s,
+                            %s,
+                            NOW(),
+                            CASE WHEN %s = 'completed' THEN NOW() ELSE NULL END,
+                            NOW(),
+                            %s,
+                            %s,
+                            %s,
+                            NOW(),
+                            NOW()
+                        )
+                        RETURNING
+                            id,
+                            current_step_index,
+                            checked_ingredient_ids,
+                            completed_step_ids,
+                            status
+                        """,
+                        (
+                            user_id,
+                            process_id,
+                            payload["status"],
+                            payload["status"],
+                            payload["current_step_index"],
+                            psycopg2.extras.Json(payload["checked_ingredient_ids"]),
+                            psycopg2.extras.Json(payload["completed_step_ids"]),
+                        ),
+                    )
+
+                row = cur.fetchone()
+
+                if row["status"] == "active":
+                    cur.execute(
+                        """
+                        INSERT INTO recipe_cook_summaries (
+                            user_id,
+                            reel_id,
+                            cook_count,
+                            has_active_session,
+                            active_session_id,
+                            verified_by_user,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (%s, %s, 0, TRUE, %s, FALSE, NOW(), NOW())
+                        ON CONFLICT (user_id, reel_id) DO UPDATE SET
+                            has_active_session = TRUE,
+                            active_session_id = EXCLUDED.active_session_id,
+                            updated_at = NOW()
+                        """,
+                        (user_id, process_id, row["id"]),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO recipe_cook_summaries (
+                            user_id,
+                            reel_id,
+                            cook_count,
+                            has_active_session,
+                            active_session_id,
+                            verified_by_user,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (%s, %s, 0, FALSE, NULL, FALSE, NOW(), NOW())
+                        ON CONFLICT (user_id, reel_id) DO UPDATE SET
+                            has_active_session = FALSE,
+                            active_session_id = NULL,
+                            updated_at = NOW()
+                        """,
+                        (user_id, process_id),
+                    )
+
+            conn.commit()
+
+        return add_no_cache_headers(jsonify(_serialize_cook_session(row)))
+
+    except Exception as e:
+        logger.error("Error handling cook session for reel %s: %s", process_id, e, exc_info=True)
+        return jsonify({"error": "Cook session failed"}), 500
+
+
+@reel_bp.route("/reel/<process_id>/cook-session/reset", methods=["POST", "OPTIONS"])
+def reset_recipe_cook_session(process_id):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        if not _reel_exists(process_id, user_id):
+            return jsonify({"error": "Reel not found"}), 404
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE recipe_cook_sessions
+                    SET
+                        status = 'abandoned',
+                        completed_at = NULL,
+                        current_step_index = 0,
+                        checked_ingredient_ids = '[]'::jsonb,
+                        completed_step_ids = '[]'::jsonb,
+                        last_active_at = NOW(),
+                        updated_at = NOW()
+                    WHERE user_id = %s
+                      AND reel_id = %s
+                      AND status = 'active'
+                    """,
+                    (user_id, process_id),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO recipe_cook_summaries (
+                        user_id,
+                        reel_id,
+                        cook_count,
+                        has_active_session,
+                        active_session_id,
+                        verified_by_user,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (%s, %s, 0, FALSE, NULL, FALSE, NOW(), NOW())
+                    ON CONFLICT (user_id, reel_id) DO UPDATE SET
+                        has_active_session = FALSE,
+                        active_session_id = NULL,
+                        updated_at = NOW()
+                    """,
+                    (user_id, process_id),
+                )
+            conn.commit()
+
+        return add_no_cache_headers(jsonify(_serialize_cook_session(None)))
+
+    except Exception as e:
+        logger.error("Error resetting cook session for reel %s: %s", process_id, e, exc_info=True)
+        return jsonify({"error": "Reset cook session failed"}), 500
 
 
 

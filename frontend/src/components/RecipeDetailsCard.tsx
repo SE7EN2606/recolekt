@@ -15,6 +15,7 @@ import {
 } from '../features/recipe-core/recipePayload';
 import { useTranslation } from 'react-i18next';
 import CookModeModal from './CookModeModal';
+import useRecipeCookSession from '../features/recipe-cook-session/useRecipeCookSession';
 
 type RecipeSecondaryTabKey = 'nutrition' | 'ask';
 
@@ -44,11 +45,19 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   onToggleMetric,
 }) => {
   const { t } = useTranslation(['videoDetail']);
-  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
-  const [checkedSteps, setCheckedSteps] = useState<Set<number>>(new Set());
   const [isCookModeOpen, setIsCookModeOpen] = useState(false);
-  const [savedCookStep, setSavedCookStep] = useState<number | null>(null);
   const [activeSecondaryTab, setActiveSecondaryTab] = useState<RecipeSecondaryTabKey | null>(null);
+  const cookSessionEnabled = Boolean(recipeId && recipeId !== 'recipe');
+  const {
+    currentStepIndex,
+    checkedIngredientIds,
+    completedStepIds,
+    setCurrentStepIndex,
+    toggleCheckedIngredientId,
+    toggleCompletedStepId,
+    markCompletedStepId,
+    completeSession,
+  } = useRecipeCookSession(recipeId, cookSessionEnabled);
 
   const {
     askQuestion,
@@ -86,24 +95,19 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const visibleSecondaryTab = secondaryTabs.some((tab) => tab.key === activeSecondaryTab)
     ? activeSecondaryTab
     : null;
+  const checkedSteps = useMemo(
+    () =>
+      new Set(
+        [...completedStepIds]
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value))
+      ),
+    [completedStepIds]
+  );
 
   if (!recipe) return null;
   if (recipe.is_compilation) return <RecipeCompilationCard recipe={recipe} />;
   if (!hasIngredients && !hasSteps) return null;
-
-  const toggleIngredient = (id: string) =>
-    setCheckedIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-
-  const toggleStep = (index: number) =>
-    setCheckedSteps((prev) => {
-      const next = new Set(prev);
-      next.has(index) ? next.delete(index) : next.add(index);
-      return next;
-    });
 
   return (
     <>
@@ -174,8 +178,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                             raw={item}
                             servingScale={servingScale}
                             scaleQuantity={scaleQuantity}
-                            checked={checkedIds.has(id)}
-                            onToggle={toggleIngredient}
+                            checked={checkedIngredientIds.has(id)}
+                            onToggle={toggleCheckedIngredientId}
                             useMetric={useMetric}
                             parseRawIngredient={parseRawIngredient}
                             formatQty={formatQty}
@@ -202,7 +206,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                 <RecipeStepsPanel
                   instructionSections={instructionSections}
                   checkedSteps={checkedSteps}
-                  toggleStep={toggleStep}
+                  toggleStep={toggleCompletedStepId}
                 />
               </div>
             </section>
@@ -268,10 +272,11 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           recipeName={recipeName}
           instructions={allInstructions}
           ingredients={allIngredients}
-          initialStepIndex={savedCookStep || 0}
+          initialStepIndex={currentStepIndex}
           onClose={() => setIsCookModeOpen(false)}
-          onProgressChange={(stepIndex: number) => setSavedCookStep(stepIndex)}
-          onComplete={() => setSavedCookStep(null)}
+          onProgressChange={setCurrentStepIndex}
+          onStepComplete={markCompletedStepId}
+          onComplete={completeSession}
         />
       )}
     </>

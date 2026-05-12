@@ -44,6 +44,7 @@ interface CookModeModalProps {
   initialStepIndex?: number;
   onClose: () => void;
   onProgressChange?: (stepIndex: number) => void;
+  onStepComplete?: (stepIndex: number) => void;
   onComplete?: () => void;
 }
 
@@ -282,6 +283,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   initialStepIndex = 0,
   onClose,
   onProgressChange,
+  onStepComplete,
   onComplete,
 }) => {
   const steps = React.useMemo(() => instructions.map(getText).filter(Boolean), [instructions]);
@@ -378,6 +380,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   const handleDone = () => {
     setFlash(true);
     setTimeout(() => setFlash(false), 380);
+    onStepComplete?.(idx);
     if (isLast) { setDone(true); onComplete?.(); return; }
     setIdx((p) => p + 1);
   };
