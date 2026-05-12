@@ -39,7 +39,7 @@ function RecipeRailCard({
   );
 }
 
-function RecipeNotesCard({
+export function RecipeNotesCard({
   note,
   onChange,
   onSave,
@@ -98,7 +98,7 @@ function RecipeNotesCard({
   );
 }
 
-function RecipeCookStatusCard({
+export function RecipeCookStatusCard({
   status,
   onMarkCooked,
   onReset,
@@ -146,6 +146,40 @@ function RecipeCookStatusCard({
           Reset
         </button>
       </div>
+    </div>
+  );
+}
+
+export function RecipeMobileStateSection({
+  note,
+  onNoteChange,
+  onNoteSave,
+  noteStatus,
+  cookStatus,
+  onMarkCooked,
+  onResetCookStatus,
+}: {
+  note: string;
+  onNoteChange: (value: string) => void;
+  onNoteSave: () => void;
+  noteStatus: RecipeNoteStatus;
+  cookStatus: LocalCookStatus;
+  onMarkCooked: () => void;
+  onResetCookStatus: () => void;
+}) {
+  return (
+    <div className="md:hidden mb-5 space-y-4">
+      <RecipeCookStatusCard
+        status={cookStatus}
+        onMarkCooked={onMarkCooked}
+        onReset={onResetCookStatus}
+      />
+      <RecipeNotesCard
+        note={note}
+        onChange={onNoteChange}
+        onSave={onNoteSave}
+        status={noteStatus}
+      />
     </div>
   );
 }

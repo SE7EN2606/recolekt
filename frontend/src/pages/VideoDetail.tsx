@@ -31,6 +31,7 @@ import {
   recipeInstructionCount,
 } from '../features/recipe-core/recipePayload';
 import RecipeCookbookRail, {
+  RecipeMobileStateSection,
   RecipeMetaChip,
   SourceDetailsContent,
 } from '../features/recipe-detail/RecipeCookbookRail';
@@ -752,8 +753,21 @@ export const VideoDetail: React.FC = () => {
                 scaleQuantity={scaleQuantity}
                 useMetric={useMetric}
                 onToggleMetric={setUseMetric}
+                onMarkCooked={markCooked}
               />
             </div>
+          )}
+
+          {showRecipeCard && (
+            <RecipeMobileStateSection
+              note={recipeNote}
+              onNoteChange={setRecipeNote}
+              onNoteSave={saveRecipeNote}
+              noteStatus={recipeNoteStatus}
+              cookStatus={cookStatus}
+              onMarkCooked={markCooked}
+              onResetCookStatus={resetCookState}
+            />
           )}
 
           {hasRecipeSourceDetails && (

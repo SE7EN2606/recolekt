@@ -27,6 +27,7 @@ export interface RecipeDetailsCardProps {
   scaleQuantity?: (qty: string, scale: number) => string;
   useMetric?: boolean;
   onToggleMetric?: (val: boolean) => void;
+  onMarkCooked?: () => void;
 }
 
 function getServings(recipe: any) {
@@ -43,6 +44,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   scaleQuantity,
   useMetric = true,
   onToggleMetric,
+  onMarkCooked,
 }) => {
   const { t } = useTranslation(['videoDetail']);
   const [isCookModeOpen, setIsCookModeOpen] = useState(false);
@@ -104,6 +106,11 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
       ),
     [completedStepIds]
   );
+
+  const handleCookModeComplete = () => {
+    completeSession();
+    onMarkCooked?.();
+  };
 
   if (!recipe) return null;
   if (recipe.is_compilation) return <RecipeCompilationCard recipe={recipe} />;
@@ -276,7 +283,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           onClose={() => setIsCookModeOpen(false)}
           onProgressChange={setCurrentStepIndex}
           onStepComplete={markCompletedStepId}
-          onComplete={completeSession}
+          onComplete={handleCookModeComplete}
         />
       )}
     </>
