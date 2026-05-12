@@ -1101,6 +1101,88 @@ def _save_recipe_assistant_message(
     )
 
 
+def _serialize_recipe_note(row) -> dict:
+    if not row:
+        return {
+            "noteText": "",
+            "createdAt": None,
+            "updatedAt": None,
+        }
+
+    d = dict(row) if hasattr(row, "keys") else row._asdict()
+    return {
+        "noteText": d.get("note_text") or "",
+        "createdAt": d.get("created_at").isoformat() if d.get("created_at") else None,
+        "updatedAt": d.get("updated_at").isoformat() if d.get("updated_at") else None,
+    }
+
+
+@reel_bp.route("/reel/<process_id>/notes", methods=["GET", "PUT", "OPTIONS"])
+def recipe_personal_notes(process_id):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        if not _reel_exists(process_id, user_id):
+            return jsonify({"error": "Reel not found"}), 404
+
+        if request.method == "GET":
+            row = fetch_one(
+                """
+                SELECT note_text, created_at, updated_at
+                FROM recipe_personal_notes
+                WHERE user_id = %s AND reel_id = %s
+                LIMIT 1
+                """,
+                (user_id, process_id),
+            )
+            return add_no_cache_headers(jsonify(_serialize_recipe_note(row)))
+
+        data = request.get_json(silent=True) or {}
+        note_text = data.get("noteText", data.get("note_text", data.get("note", "")))
+
+        if note_text is None:
+            note_text = ""
+
+        note_text = str(note_text)
+
+        if len(note_text) > 10000:
+            return jsonify({"error": "Note is too long"}), 400
+
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO recipe_personal_notes (
+                        user_id,
+                        reel_id,
+                        note_text,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (%s, %s, %s, NOW(), NOW())
+                    ON CONFLICT (user_id, reel_id) DO UPDATE SET
+                        note_text = EXCLUDED.note_text,
+                        updated_at = NOW()
+                    RETURNING note_text, created_at, updated_at
+                    """,
+                    (user_id, process_id, note_text),
+                )
+                row = cur.fetchone()
+            conn.commit()
+
+        return add_no_cache_headers(jsonify(_serialize_recipe_note(row)))
+
+    except Exception as e:
+        logger.error("Error handling recipe note for reel %s: %s", process_id, e, exc_info=True)
+        return jsonify({"error": "Recipe note failed"}), 500
+
+
 
 @reel_bp.route("/reel/<process_id>/ask/history", methods=["GET", "OPTIONS"])
 def get_recipe_assistant_history(process_id):
