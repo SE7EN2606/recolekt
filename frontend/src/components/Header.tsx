@@ -5,8 +5,6 @@ import { Globe, Check, Search } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Button } from './Button';
 import { MobileMenu } from './MobileMenu';
-import { MobileBottomNav } from './MobileBottomNav';
-import { InputModal } from './InputModal';
 import { SearchOverlay } from './SearchOverlay';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -17,7 +15,6 @@ export const Header: React.FC = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [hoveredPath, setHoveredPath] = useState<string | null>(null);
   
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
@@ -55,11 +52,6 @@ export const Header: React.FC = () => {
 
   const showAuthedUI = !loading && isAuthenticated;
   const showSignedOutUI = !loading && !isAuthenticated;
-
-  const handleQuickAdd = (_url: string) => {
-    alert(t('header:videoSaved'));
-    setIsAddModalOpen(false);
-  };
 
   const handleLanguageChange = (lng: string) => {
     i18n.changeLanguage(lng);
@@ -243,10 +235,6 @@ export const Header: React.FC = () => {
 
       <MobileMenu isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <SearchOverlay isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
-      
-      {showAuthedUI && <MobileBottomNav onAddClick={() => setIsAddModalOpen(true)} />}
-
-      <InputModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} onSubmit={handleQuickAdd} title={t('header:saveNewVideo')} placeholder={t('header:pasteUrl')} confirmLabel={t('header:save')} />
     </>
   );
 };
