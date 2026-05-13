@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ChefHat } from 'lucide-react';
 import RecipeNutritionSummary from '../features/recipe-secondary/RecipeNutritionSummary';
 import RecipeStepsPanel from '../features/recipe-core/panels/RecipeStepsPanel';
@@ -28,6 +28,7 @@ export interface RecipeDetailsCardProps {
   useMetric?: boolean;
   onToggleMetric?: (val: boolean) => void;
   onMarkCooked?: () => void;
+  openCookModeSignal?: number;
 }
 
 function getServings(recipe: any) {
@@ -45,6 +46,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   useMetric = true,
   onToggleMetric,
   onMarkCooked,
+  openCookModeSignal = 0,
 }) => {
   const { t } = useTranslation(['videoDetail']);
   const [isCookModeOpen, setIsCookModeOpen] = useState(false);
@@ -111,6 +113,12 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     completeSession();
     onMarkCooked?.();
   };
+
+  useEffect(() => {
+    if (openCookModeSignal > 0 && hasSteps) {
+      setIsCookModeOpen(true);
+    }
+  }, [openCookModeSignal, hasSteps]);
 
   if (!recipe) return null;
   if (recipe.is_compilation) return <RecipeCompilationCard recipe={recipe} />;

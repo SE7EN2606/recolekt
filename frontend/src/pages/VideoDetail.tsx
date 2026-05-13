@@ -237,6 +237,7 @@ export const VideoDetail: React.FC = () => {
   const [servingScale, setServingScale] = useState(1);
   const richRecipeRef = useRef<any>(null);
   const [useMetric, setUseMetric] = useState(true);
+  const [cookModeOpenSignal, setCookModeOpenSignal] = useState(0);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -754,6 +755,7 @@ export const VideoDetail: React.FC = () => {
                 useMetric={useMetric}
                 onToggleMetric={setUseMetric}
                 onMarkCooked={markCooked}
+                openCookModeSignal={cookModeOpenSignal}
               />
             </div>
           )}
@@ -862,6 +864,7 @@ export const VideoDetail: React.FC = () => {
             cookStatus={cookStatus}
             onMarkCooked={markCooked}
             onResetCookStatus={resetCookState}
+            onStartCooking={() => setCookModeOpenSignal((value) => value + 1)}
           />
         ) : (
           <div className="hidden md:flex flex-col w-full gap-5 mt-0">

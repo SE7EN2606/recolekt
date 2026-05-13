@@ -38,12 +38,14 @@ function serializeCookState(data: RecipeCookStateResponse): LocalCookStatus {
   return {
     cookedCount: Number.isFinite(cookCount) && cookCount > 0 ? cookCount : 0,
     lastCookedLabel: formatCookedLabel(data?.lastCookedAt || null),
+    hasActiveSession: Boolean(data?.hasActiveSession),
   };
 }
 
 const EMPTY_COOK_STATUS: LocalCookStatus = {
   cookedCount: 0,
   lastCookedLabel: '',
+  hasActiveSession: false,
 };
 
 export function useRecipeCookState(
@@ -104,6 +106,7 @@ export function useRecipeCookState(
     setCookStatus((current) => ({
       cookedCount: current.cookedCount + 1,
       lastCookedLabel: getTodayCookedLabel(),
+      hasActiveSession: false,
     }));
     setStatus('saving');
     window.dispatchEvent(
