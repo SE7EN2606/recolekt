@@ -130,6 +130,7 @@ export const Header: React.FC = () => {
                 {showAuthedUI ? (
                   <>
                     <NavPill to="/gallery" label={t('gallery:gallery')} />
+                    <NavPill to="/cookbook" label="Cookbook" />
                     <NavPill to="/grocery-list" label="Grocery List" />
                     <NavPill to="/settings" label={t('header:settings')} />
                   </>

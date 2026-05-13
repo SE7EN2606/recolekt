@@ -2,7 +2,7 @@ import { API_BASE } from "../utils/api";
 import React, { useMemo } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  LayoutGrid, Heart, Archive,
+  LayoutGrid, Heart, Archive, BookOpen,
   Download, SquarePen, FolderPlus, CornerDownRight, FolderClosed, Inbox,
   FolderOpen, MapPin, ShoppingCart,
   Ban
@@ -171,7 +171,7 @@ export const Sidebar: React.FC = () => {
                       <>
                         <div className="flex items-center gap-3">
                           <LayoutGrid size={20} strokeWidth={2} className={active ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
-                          <span className={"text-[15px] font-semibold"}>{t('gallery:myVideos', 'All Videos')}</span>
+                          <span className={"text-[15px] font-semibold"}>{t('gallery:gallery', 'Gallery')}</span>
                         </div>
                         <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-primary-50 text-primary-600">
                           {videos.length}
@@ -179,6 +179,22 @@ export const Sidebar: React.FC = () => {
                       </>
                     );
                   }}
+                </NavLink>
+              </div>
+
+              <div className="relative">
+                <NavLink to="/cookbook" className={({ isActive }) => linkClass(isActive)}>
+                  {({ isActive }) => (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <BookOpen size={20} strokeWidth={2} className={isActive ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
+                        <span className="text-[15px] font-semibold">Cookbook</span>
+                      </div>
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700">
+                        {(videos || []).filter((v: any) => String(v?.content_type ?? v?.contentType ?? '').toLowerCase() === 'recipe').length}
+                      </span>
+                    </>
+                  )}
                 </NavLink>
               </div>
 

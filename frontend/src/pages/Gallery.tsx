@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { VideoCard } from '../components/VideoCard';
 import { Button } from '../components/Button';
-import { Search, Settings2, Trash2, CircleX, MoreVertical, Pencil, FolderInput, ChefHat, Clock3, StickyNote } from 'lucide-react';
+import { Search, Settings2, Trash2, CircleX, MoreVertical, Pencil, FolderInput, ChefHat } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -25,7 +25,7 @@ const PROCESSING_MESSAGES = [
   'msg_optimizing', 'msg_polishing', 'msg_finalizing'
 ];
 
-type GalleryContentFilter = 'all' | 'recipes' | 'cooked' | 'notes' | 'cooking';
+type GalleryContentFilter = 'all' | 'recipes';
 
 const COOKBOOK_FILTERS: Array<{
   id: GalleryContentFilter;
@@ -34,9 +34,6 @@ const COOKBOOK_FILTERS: Array<{
 }> = [
   { id: 'all', label: 'All' },
   { id: 'recipes', label: 'Recipes', icon: ChefHat },
-  { id: 'cooked', label: 'Cooked', icon: ChefHat },
-  { id: 'notes', label: 'With Notes', icon: StickyNote },
-  { id: 'cooking', label: 'Currently Cooking', icon: Clock3 },
 ];
 
 function getVideoContentType(video: any): string {
@@ -78,19 +75,6 @@ function getRecipeTitle(video: any): string {
   ).trim();
 }
 
-function getRecipeUserState(video: any) {
-  const raw = video?.recipeUserState ?? video?.recipe_user_state ?? video?.raw?.recipe_user_state ?? {};
-  const cookCount = Number(raw?.cookCount ?? raw?.cook_count ?? 0);
-  const lastCookedAt = raw?.lastCookedAt ?? raw?.last_cooked_at ?? null;
-
-  return {
-    cookCount: Number.isFinite(cookCount) && cookCount > 0 ? cookCount : 0,
-    lastCookedAt,
-    hasActiveSession: Boolean(raw?.hasActiveSession ?? raw?.has_active_session),
-    hasNote: Boolean(raw?.hasNote ?? raw?.has_note),
-  };
-}
-
 function isCookbookFilter(filter: GalleryContentFilter): boolean {
   return filter !== 'all';
 }
@@ -100,10 +84,6 @@ function matchesContentFilter(video: any, filter: GalleryContentFilter): boolean
   if (filter === 'all') return true;
   if (!isRecipe) return false;
 
-  const state = getRecipeUserState(video);
-  if (filter === 'cooked') return state.cookCount > 0;
-  if (filter === 'notes') return state.hasNote;
-  if (filter === 'cooking') return state.hasActiveSession;
   return true;
 }
 
@@ -150,120 +130,6 @@ function getRecipeSearchScore(video: any, query: string): number {
   if (caption.includes(q)) score += 10;
   return score;
 }
-
-function getRecipeThumbnail(video: any): string {
-  return String(
-    video?.posterUrl ||
-    video?.coverUrl ||
-    video?.gcsurls?.poster ||
-    video?.thumbnailUrl ||
-    video?.thumbnailurl ||
-    video?.gcsurls?.previewthumbnail ||
-    video?.gcsUrls?.previewThumbnail ||
-    video?.previewthumbnail ||
-    video?.gcs_urls?.preview_thumbnail ||
-    ''
-  );
-}
-
-const CookbookRecipeCard: React.FC<{
-  video: any;
-  label: string;
-  accent: 'active' | 'cooked';
-  onOpen: () => void;
-}> = ({ video, label, accent, onOpen }) => {
-  const title = getRecipeTitle(video);
-  const thumbnail = getRecipeThumbnail(video);
-  const state = getRecipeUserState(video);
-
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label={`Open ${title || 'recipe'}`}
-      className="group w-[180px] shrink-0 text-left"
-    >
-      <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-stone-100 shadow-sm ring-1 ring-black/5">
-        {thumbnail ? (
-          <img
-            src={thumbnail}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-amber-50 text-amber-700">
-            <ChefHat size={28} aria-hidden="true" />
-          </div>
-        )}
-        <div className="absolute inset-0 bg-linear-to-t from-black/75 via-black/10 to-transparent" />
-        <div className="absolute left-2.5 top-2.5">
-          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black shadow-sm ${
-            accent === 'active'
-              ? 'bg-amber-50 text-amber-800'
-              : 'bg-emerald-50 text-emerald-800'
-          }`}>
-            {accent === 'active' ? <Clock3 size={10} aria-hidden="true" /> : <ChefHat size={10} aria-hidden="true" />}
-            {label}
-          </span>
-        </div>
-        <div className="absolute inset-x-0 bottom-0 p-3">
-          <p className="line-clamp-2 text-sm font-black leading-tight text-white drop-shadow-sm">
-            {title || 'Recipe'}
-          </p>
-          {(state.cookCount > 0 || state.hasNote) && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {state.cookCount > 0 && (
-                <span className="rounded-full bg-white/18 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur-sm">
-                  {state.cookCount}×
-                </span>
-              )}
-              {state.hasNote && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/18 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur-sm">
-                  <StickyNote size={9} aria-hidden="true" />
-                  Note
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </button>
-  );
-};
-
-const CookbookSection: React.FC<{
-  title: string;
-  subtitle: string;
-  videos: any[];
-  accent: 'active' | 'cooked';
-  getLabel: (video: any) => string;
-  onOpen: (video: any) => void;
-}> = ({ title, subtitle, videos, accent, getLabel, onOpen }) => {
-  if (videos.length === 0) return null;
-
-  return (
-    <section className="space-y-3">
-      <div>
-        <h2 className="text-base font-black text-gray-950">{title}</h2>
-        <p className="text-xs font-medium text-gray-500">{subtitle}</p>
-      </div>
-      <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0">
-        {videos.map((video: any) => (
-          <CookbookRecipeCard
-            key={getVideoId(video)}
-            video={video}
-            label={getLabel(video)}
-            accent={accent}
-            onOpen={() => onOpen(video)}
-          />
-        ))}
-      </div>
-    </section>
-  );
-};
-
 
 function useSearch(query: string, folderId: string | undefined, recipeOnly: boolean) {
   const [results, setResults]     = useState<any[] | null>(null);
@@ -532,44 +398,97 @@ export const Gallery: React.FC = () => {
     return folderScopedVideos.filter((v: any) => getVideoContentType(v) === 'recipe');
   }, [folderScopedVideos]);
 
-  const continueCookingVideos = useMemo(() => {
-    return recipeHomeVideos
-      .filter((v: any) => getRecipeUserState(v).hasActiveSession)
-      .slice(0, 10);
-  }, [recipeHomeVideos]);
+  const renderVideoGrid = (items: any[]) => (
+    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-6">
+      {items.map((video: any) => {
+        const videoId = getVideoId(video);
+        return (
+          <div
+            key={videoId}
+            draggable={!selectionMode && video.category !== 'Processing'}
+            onDragStart={e => {
+              let idsToMove = [videoId];
+              if (selectedIds.has(videoId)) idsToMove = Array.from(selectedIds);
+              e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
 
-  const recentlyCookedVideos = useMemo(() => {
-    return recipeHomeVideos
-      .filter((v: any) => Boolean(getRecipeUserState(v).lastCookedAt))
-      .sort((a: any, b: any) => {
-        const aTime = new Date(getRecipeUserState(a).lastCookedAt || 0).getTime();
-        const bTime = new Date(getRecipeUserState(b).lastCookedAt || 0).getTime();
-        return bTime - aTime;
-      })
-      .slice(0, 10);
-  }, [recipeHomeVideos]);
+              const idsToMoveLabel = idsToMove.length === 1 ? '1 reel' : `${idsToMove.length} reels`;
+              const ghostVideos = displayedVideos
+                .filter((candidate: any) => idsToMove.includes(getVideoId(candidate)))
+                .slice(0, 4);
 
-  const showCookbookSections = !selectionMode && !searchQuery.trim() && contentFilter === 'all';
+              const dragGhost = document.createElement('div');
+              dragGhost.style.position = 'fixed';
+              dragGhost.style.top = '-1000px';
+              dragGhost.style.left = '-1000px';
+              dragGhost.style.pointerEvents = 'none';
+              dragGhost.style.transform = 'scale(0.82)';
+              dragGhost.style.zIndex = '999999';
 
-  const openVideo = (video: any) => {
-    const videoId = getVideoId(video);
-    if (videoId) navigate(`/video/${videoId}`);
-  };
+              const stack = document.createElement('div');
+              stack.style.position = 'relative';
+              stack.style.width = '104px';
+              stack.style.height = '126px';
 
-  const formatLastCookedLabel = (video: any): string => {
-    const rawDate = getRecipeUserState(video).lastCookedAt;
-    const date = rawDate ? new Date(rawDate) : null;
-    if (!date || Number.isNaN(date.getTime())) return 'Recently cooked';
+              ghostVideos.forEach((ghostVideo: any, index: number) => {
+                const img = document.createElement('img');
+                img.src = ghostVideo?.thumbnailUrl || ghostVideo?.thumbnail_url || ghostVideo?.gcs_urls?.preview_thumbnail || ghostVideo?.gcs_urls?.thumbnail || '';
+                img.style.position = 'absolute';
+                img.style.width = '62px';
+                img.style.height = '88px';
+                img.style.objectFit = 'cover';
+                img.style.borderRadius = '14px';
+                img.style.border = '2px solid white';
+                img.style.boxShadow = '0 10px 24px rgba(0,0,0,0.24)';
+                img.style.left = `${index * 11}px`;
+                img.style.top = `${index * 7}px`;
+                img.style.transform = `rotate(${(index - 1.5) * 5}deg)`;
+                img.style.background = '#e5e7eb';
+                stack.appendChild(img);
+              });
 
-    const now = new Date();
-    const dateDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const dayDiff = Math.round((today - dateDay) / 86400000);
+              const badge = document.createElement('div');
+              badge.style.position = 'absolute';
+              badge.style.left = '34px';
+              badge.style.bottom = '0';
+              badge.style.padding = '8px 13px';
+              badge.style.borderRadius = '999px';
+              badge.style.background = 'rgba(255,255,255,0.82)';
+              badge.style.boxShadow = '0 12px 30px rgba(0,0,0,0.24)';
+              badge.style.fontSize = '11px';
+              badge.style.fontWeight = '900';
+              badge.style.color = '#111827';
+              badge.style.whiteSpace = 'nowrap';
+              badge.textContent = idsToMoveLabel;
+              stack.appendChild(badge);
 
-    if (dayDiff === 0) return 'Cooked today';
-    if (dayDiff === 1) return 'Cooked yesterday';
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  };
+              dragGhost.appendChild(stack);
+              document.body.appendChild(dragGhost);
+
+              const cleanupGhost = () => {
+                dragGhost.remove();
+                window.removeEventListener('dragend', cleanupGhost);
+              };
+
+              window.addEventListener('dragend', cleanupGhost);
+              e.dataTransfer.setDragImage(dragGhost, 48, 62);
+
+              setTimeout(() => dragGhost.remove(), 0);
+              e.dataTransfer.setData('sourceId', video.folderId || 'unsorted');
+              e.dataTransfer.effectAllowed = 'move';
+            }}
+            className={!selectionMode && video.category !== 'Processing' ? 'cursor-grab active:cursor-grabbing' : ''}
+          >
+            <VideoCard
+              video={video}
+              selectionMode={selectionMode}
+              selected={selectedIds.has(videoId)}
+              onToggleSelect={() => toggleSelect(videoId)}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -642,7 +561,7 @@ export const Gallery: React.FC = () => {
 
   const getFolderTitle = (): string => {
     if (isFavoritesView) return t('gallery:favorites');
-    if (isAllView) return t('gallery:myVideos');
+    if (isAllView) return t('gallery:gallery', 'Gallery');
     if (isUnsortedView) return t('sidebar:unsorted', 'Unsorted');
     const flat = (list: any[]): any[] => list.flatMap(f => [f, ...(f.subFolders ? flat(f.subFolders) : [])]);
     const found = flat(folders).find((f: any) => f.id === folderId);
@@ -673,9 +592,6 @@ export const Gallery: React.FC = () => {
   const filterCounts: Record<GalleryContentFilter, number> = {
     all: folderScopedVideos.length,
     recipes: recipeHomeVideos.length,
-    cooked: recipeHomeVideos.filter((v: any) => getRecipeUserState(v).cookCount > 0).length,
-    notes: recipeHomeVideos.filter((v: any) => getRecipeUserState(v).hasNote).length,
-    cooking: recipeHomeVideos.filter((v: any) => getRecipeUserState(v).hasActiveSession).length,
   };
 
   return (
@@ -851,115 +767,8 @@ export const Gallery: React.FC = () => {
         </div>
       </div>
 
-      {showCookbookSections && (
-        <div className="mb-8 flex flex-col gap-7">
-          <CookbookSection
-            title="Continue Cooking"
-            subtitle="Pick up recipes with active cook sessions"
-            videos={continueCookingVideos}
-            accent="active"
-            getLabel={() => 'In progress'}
-            onOpen={openVideo}
-          />
-          <CookbookSection
-            title="Recently Cooked"
-            subtitle="Recipes you have made most recently"
-            videos={recentlyCookedVideos}
-            accent="cooked"
-            getLabel={formatLastCookedLabel}
-            onOpen={openVideo}
-          />
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-24 md:mb-12">
-        {displayedVideos.map((video: any) => {
-          const videoId = getVideoId(video);
-          return (
-            <div
-              key={videoId}
-              draggable={!selectionMode && video.category !== 'Processing'}
-              onDragStart={e => {
-                let idsToMove = [videoId];
-                if (selectedIds.has(videoId)) idsToMove = Array.from(selectedIds);
-                e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
-                
-                const idsToMoveLabel = idsToMove.length === 1 ? '1 reel' : `${idsToMove.length} reels`;
-                const ghostVideos = displayedVideos
-                  .filter((candidate: any) => idsToMove.includes(candidate?.id ?? candidate?.process_id ?? candidate?.processId ?? ''))
-                  .slice(0, 4);
-
-                const dragGhost = document.createElement('div');
-                dragGhost.style.position = 'fixed';
-                dragGhost.style.top = '-1000px';
-                dragGhost.style.left = '-1000px';
-                dragGhost.style.pointerEvents = 'none';
-                dragGhost.style.transform = 'scale(0.82)';
-                dragGhost.style.zIndex = '999999';
-
-                const stack = document.createElement('div');
-                stack.style.position = 'relative';
-                stack.style.width = '104px';
-                stack.style.height = '126px';
-
-                ghostVideos.forEach((ghostVideo: any, index: number) => {
-                  const img = document.createElement('img');
-                  img.src = ghostVideo?.thumbnailUrl || ghostVideo?.thumbnail_url || ghostVideo?.gcs_urls?.preview_thumbnail || ghostVideo?.gcs_urls?.thumbnail || '';
-                  img.style.position = 'absolute';
-                  img.style.width = '62px';
-                  img.style.height = '88px';
-                  img.style.objectFit = 'cover';
-                  img.style.borderRadius = '14px';
-                  img.style.border = '2px solid white';
-                  img.style.boxShadow = '0 10px 24px rgba(0,0,0,0.24)';
-                  img.style.left = `${index * 11}px`;
-                  img.style.top = `${index * 7}px`;
-                  img.style.transform = `rotate(${(index - 1.5) * 5}deg)`;
-                  img.style.background = '#e5e7eb';
-                  stack.appendChild(img);
-                });
-
-                const badge = document.createElement('div');
-                badge.style.position = 'absolute';
-                badge.style.left = '34px';
-                badge.style.bottom = '0';
-                badge.style.padding = '8px 13px';
-                badge.style.borderRadius = '999px';
-                badge.style.background = 'rgba(255,255,255,0.82)';
-                badge.style.boxShadow = '0 12px 30px rgba(0,0,0,0.24)';
-                badge.style.fontSize = '11px';
-                badge.style.fontWeight = '900';
-                badge.style.color = '#111827';
-                badge.style.whiteSpace = 'nowrap';
-                badge.textContent = idsToMoveLabel;
-                stack.appendChild(badge);
-
-                dragGhost.appendChild(stack);
-                document.body.appendChild(dragGhost);
-
-                    const cleanupGhost = () => {
-                      dragGhost.remove();
-                      window.removeEventListener('dragend', cleanupGhost);
-                    };
-
-                    window.addEventListener('dragend', cleanupGhost);
-                e.dataTransfer.setDragImage(dragGhost, 48, 62);
-
-                setTimeout(() => dragGhost.remove(), 0);
-e.dataTransfer.setData('sourceId', video.folderId || 'unsorted');
-                e.dataTransfer.effectAllowed = 'move';
-              }}
-              className={!selectionMode && video.category !== 'Processing' ? 'cursor-grab active:cursor-grabbing' : ''}
-            >
-              <VideoCard
-                video={video}
-                selectionMode={selectionMode}
-                selected={selectedIds.has(videoId)}
-                onToggleSelect={() => toggleSelect(videoId)}
-              />
-            </div>
-          );
-        })}
+      <div className="mb-24 md:mb-12">
+        {renderVideoGrid(displayedVideos)}
       </div>
 
       {!dataLoading && !searching && displayedVideos.length === 0 && (

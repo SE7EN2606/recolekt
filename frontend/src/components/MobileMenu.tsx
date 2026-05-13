@@ -110,8 +110,14 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                     <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-[28px] overflow-hidden shadow-sm">
                       <button onClick={() => handleNav('/gallery')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
                         <LayoutGrid size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:myVideos', 'My videos')}</span>
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('gallery:gallery', 'Gallery')}</span>
                         <span className="text-[10px] font-black bg-primary-100/80 text-primary-700 px-2 py-1 rounded-md tracking-wider">{videos.length}</span>
+                      </button>
+
+                      <button onClick={() => handleNav('/cookbook')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
+                        <BookOpen size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">Cookbook</span>
+                        <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
                       </button>
 
                       <button onClick={() => handleNav('/grocery-list')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">

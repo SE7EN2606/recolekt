@@ -8,7 +8,7 @@ interface MobileBottomNavProps {
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) => {
-  const { t } = useTranslation(['modals', 'sidebar']);
+  const { t } = useTranslation(['modals', 'sidebar', 'gallery']);
 
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 transition-transform duration-300">
@@ -52,7 +52,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
                 <path d="M10 13l5 3-5 3v-6z" fill={isActive ? 'currentColor' : 'none'} />
               </svg>
               <span className="text-[11px] font-medium tracking-wide mt-0.5">
-                {t('modals:collections', 'Collections')}
+                {t('gallery:gallery', 'Gallery')}
               </span>
             </>
           )}

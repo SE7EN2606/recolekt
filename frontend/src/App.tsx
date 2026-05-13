@@ -14,6 +14,7 @@ import { InstallPrompt } from './components/InstallPrompt';
 import { ProfileSettings } from './pages/AdminDashboard';
 
 const Gallery         = lazy(() => import('./pages/Gallery').then(m => ({ default: m.Gallery })));
+const Cookbook        = lazy(() => import('./pages/Cookbook').then(m => ({ default: m.Cookbook })));
 const VideoDetail     = lazy(() => import('./pages/VideoDetail').then(m => ({ default: m.VideoDetail })));
 const Organizer       = lazy(() => import('./pages/Organizer').then(m => ({ default: m.Organizer })));
 const AccountSettings = lazy(() => import('./pages/AccountSettings').then(m => ({ default: m.AccountSettings })));
@@ -127,6 +128,7 @@ function App() {
                   <Route path="/organizer" element={<Organizer />} />
                   <Route path="/gallery" element={<Gallery />} />
                   <Route path="/gallery/:folderId" element={<Gallery />} />
+                  <Route path="/cookbook" element={<Cookbook />} />
                   <Route path="/video/:id" element={<VideoDetail />} />
                   <Route path="/settings" element={<AccountSettings />} />
                   <Route path="/profile" element={<ProfileSettings />} />
