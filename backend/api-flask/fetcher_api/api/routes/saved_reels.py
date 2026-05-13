@@ -193,6 +193,7 @@ def _serialize_reel_row(row) -> dict:
         "location": _json_loads_maybe(row_dict.get("location"), default=row_dict.get("location")),
         "gcs_urls": _json_loads_maybe(row_dict.get("gcs_urls"), default={}) or {},
         "summary_title": row_dict.get("summary_title"),
+        "summary_topic": row_dict.get("summary_topic"),
         "error_message": row_dict.get("error_message"),
     }
 
@@ -247,6 +248,7 @@ def saved_reels():
             NULL::jsonb AS location,
             r.gcs_urls,
             r.summary_title,
+            r.summary_topic,
             r.summary_text,
             r.error_message,
             rcs.cook_count AS recipe_cook_count,
@@ -335,6 +337,7 @@ def search_saved_reels():
             NULL::jsonb AS location,
             r.gcs_urls,
             r.summary_title,
+            r.summary_topic,
             r.summary_text,
             r.error_message,
             rcs.cook_count AS recipe_cook_count,
@@ -348,7 +351,10 @@ def search_saved_reels():
             rpn.updated_at AS recipe_note_updated_at,
             CASE
                 WHEN LOWER(COALESCE(r.content_type, '')) = 'recipe'
+                     AND LOWER(COALESCE(r.summary_title, '')) LIKE %s THEN 5
+                WHEN LOWER(COALESCE(r.content_type, '')) = 'recipe'
                      AND LOWER(COALESCE(r.recipe::text, '')) LIKE %s THEN 4
+                WHEN LOWER(COALESCE(r.summary_topic, '')) LIKE %s THEN 3
                 WHEN LOWER(COALESCE(r.summary_title, '')) LIKE %s THEN 3
                 WHEN LOWER(COALESCE(r.caption, '')) LIKE %s THEN 2
                 ELSE 1
@@ -363,6 +369,7 @@ def search_saved_reels():
         WHERE r.user_id = %s
           AND (
             LOWER(COALESCE(r.summary_title, '')) LIKE %s
+            OR LOWER(COALESCE(r.summary_topic, '')) LIKE %s
             OR LOWER(COALESCE(r.caption, '')) LIKE %s
             OR LOWER(COALESCE(r.author_name, '')) LIKE %s
             OR LOWER(COALESCE(r.recipe::text, '')) LIKE %s
@@ -373,10 +380,14 @@ def search_saved_reels():
     """
 
     params = [
-        like, like, like,
+        like, like, like, like, like,
         user_id,
-        like, like, like, like, like, like, like,
+        like, like, like, like, like, like, like, like,
     ]
+
+    content_type = (request.args.get("content_type") or "").strip().lower()
+    if content_type == "recipe":
+        sql += " AND LOWER(COALESCE(r.content_type, '')) = 'recipe'"
 
     if folder_id and folder_id != "all":
         if folder_id == "favorites":

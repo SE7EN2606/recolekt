@@ -25,7 +25,19 @@ const PROCESSING_MESSAGES = [
   'msg_optimizing', 'msg_polishing', 'msg_finalizing'
 ];
 
-type GalleryContentFilter = 'all' | 'recipes';
+type GalleryContentFilter = 'all' | 'recipes' | 'cooked' | 'notes' | 'cooking';
+
+const COOKBOOK_FILTERS: Array<{
+  id: GalleryContentFilter;
+  label: string;
+  icon?: React.ElementType;
+}> = [
+  { id: 'all', label: 'All' },
+  { id: 'recipes', label: 'Recipes', icon: ChefHat },
+  { id: 'cooked', label: 'Cooked', icon: ChefHat },
+  { id: 'notes', label: 'With Notes', icon: StickyNote },
+  { id: 'cooking', label: 'Currently Cooking', icon: Clock3 },
+];
 
 function getVideoContentType(video: any): string {
   return String(
@@ -77,6 +89,66 @@ function getRecipeUserState(video: any) {
     hasActiveSession: Boolean(raw?.hasActiveSession ?? raw?.has_active_session),
     hasNote: Boolean(raw?.hasNote ?? raw?.has_note),
   };
+}
+
+function isCookbookFilter(filter: GalleryContentFilter): boolean {
+  return filter !== 'all';
+}
+
+function matchesContentFilter(video: any, filter: GalleryContentFilter): boolean {
+  const isRecipe = getVideoContentType(video) === 'recipe';
+  if (filter === 'all') return true;
+  if (!isRecipe) return false;
+
+  const state = getRecipeUserState(video);
+  if (filter === 'cooked') return state.cookCount > 0;
+  if (filter === 'notes') return state.hasNote;
+  if (filter === 'cooking') return state.hasActiveSession;
+  return true;
+}
+
+function collectStrings(value: unknown, depth = 0): string {
+  if (depth > 5 || value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(item => collectStrings(item, depth + 1)).join(' ');
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>)
+      .map(item => collectStrings(item, depth + 1))
+      .join(' ');
+  }
+  return '';
+}
+
+function getRecipeSearchScore(video: any, query: string): number {
+  const q = query.trim().toLowerCase();
+  if (!q || getVideoContentType(video) !== 'recipe') return 0;
+
+  const summary = parseObject(video?.summary ?? video?.summarytext ?? video?.raw?.summary);
+  const recipeRoot = parseObject(video?.recipe ?? video?.raw?.recipe);
+  const recipe = recipeRoot?.recipe ?? recipeRoot;
+  const title = getRecipeTitle(video).toLowerCase();
+  const ingredients = collectStrings(
+    recipe?.ingredients ??
+    recipe?.ingredientLines ??
+    recipe?.ingredient_lines ??
+    recipeRoot?.ingredients
+  ).toLowerCase();
+  const topic = String(
+    video?.summary_topic ??
+    video?.summaryTopic ??
+    summary?.topic ??
+    summary?.theme ??
+    ''
+  ).toLowerCase();
+  const caption = String(video?.caption ?? video?.raw?.caption ?? '').toLowerCase();
+
+  let score = 0;
+  if (title.includes(q)) score += 40;
+  if (ingredients.includes(q)) score += 30;
+  if (topic.includes(q)) score += 20;
+  if (caption.includes(q)) score += 10;
+  return score;
 }
 
 function getRecipeThumbnail(video: any): string {
@@ -193,7 +265,7 @@ const CookbookSection: React.FC<{
 };
 
 
-function useSearch(query: string, folderId: string | undefined) {
+function useSearch(query: string, folderId: string | undefined, recipeOnly: boolean) {
   const [results, setResults]     = useState<any[] | null>(null);
 
   const [searching, setSearching] = useState(false);
@@ -206,6 +278,7 @@ function useSearch(query: string, folderId: string | undefined) {
       try {
         const params = new URLSearchParams({ q: query.trim() });
         if (folderId) params.set('folder_id', folderId);
+        if (recipeOnly) params.set('content_type', 'recipe');
         const res = await fetch(`${API_BASE}/search?${params}`, {
           signal: controller.signal,
           credentials: 'include',
@@ -223,7 +296,7 @@ function useSearch(query: string, folderId: string | undefined) {
       }
     }, 300);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [query, folderId]);
+  }, [query, folderId, recipeOnly]);
 
   useEffect(() => { if (!query.trim()) setResults(null); }, [query]);
 
@@ -342,7 +415,7 @@ export const Gallery: React.FC = () => {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const { results: searchResults, searching } = useSearch(searchQuery, folderId);
+  const { results: searchResults, searching } = useSearch(searchQuery, folderId, isCookbookFilter(contentFilter));
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth', { replace: true });
@@ -427,8 +500,8 @@ export const Gallery: React.FC = () => {
       ? searchResults
       : folderScopedVideos;
 
-    if (contentFilter === 'recipes') {
-      filtered = filtered.filter((v: any) => getVideoContentType(v) === 'recipe');
+    if (contentFilter !== 'all') {
+      filtered = filtered.filter((v: any) => matchesContentFilter(v, contentFilter));
     }
 
     if (searchResults === null && searchQuery) {
@@ -440,6 +513,11 @@ export const Gallery: React.FC = () => {
       });
     }
     return [...filtered].sort((a: any, b: any) => {
+      if (searchQuery.trim() && isCookbookFilter(contentFilter)) {
+        const scoreDiff = getRecipeSearchScore(b, searchQuery) - getRecipeSearchScore(a, searchQuery);
+        if (scoreDiff !== 0) return scoreDiff;
+      }
+
       const aP = a.category === 'Processing' || a.status === 'processing';
       const bP = b.category === 'Processing' || b.status === 'processing';
       if (aP && !bP) return -1;
@@ -471,7 +549,7 @@ export const Gallery: React.FC = () => {
       .slice(0, 10);
   }, [recipeHomeVideos]);
 
-  const showCookbookSections = !selectionMode && !searchQuery.trim();
+  const showCookbookSections = !selectionMode && !searchQuery.trim() && contentFilter === 'all';
 
   const openVideo = (video: any) => {
     const videoId = getVideoId(video);
@@ -592,7 +670,13 @@ export const Gallery: React.FC = () => {
   if (!user) return null;
 
   const folderTitle = getFolderTitle();
-  const recipeCount = recipeHomeVideos.length;
+  const filterCounts: Record<GalleryContentFilter, number> = {
+    all: folderScopedVideos.length,
+    recipes: recipeHomeVideos.length,
+    cooked: recipeHomeVideos.filter((v: any) => getRecipeUserState(v).cookCount > 0).length,
+    notes: recipeHomeVideos.filter((v: any) => getRecipeUserState(v).hasNote).length,
+    cooking: recipeHomeVideos.filter((v: any) => getRecipeUserState(v).hasActiveSession).length,
+  };
 
   return (
     <div className="w-full pt-4 md:pt-0 pb-0 md:pb-6 animate-fade-in">
@@ -738,32 +822,32 @@ export const Gallery: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
-          <button
-            type="button"
-            onClick={() => setContentFilter('all')}
-            className={`shrink-0 rounded-full px-3.5 py-2 text-[12px] font-black transition-colors ${
-              contentFilter === 'all'
-                ? 'bg-gray-950 text-white'
-                : 'bg-white/70 text-gray-600 border border-gray-100 hover:bg-white'
-            }`}
-          >
-            All
-          </button>
-          <button
-            type="button"
-            onClick={() => setContentFilter('recipes')}
-            className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-black transition-colors ${
-              contentFilter === 'recipes'
-                ? 'bg-amber-600 text-white'
-                : 'bg-amber-50 text-amber-800 border border-amber-100 hover:bg-amber-100'
-            }`}
-          >
-            <ChefHat size={14} aria-hidden="true" />
-            Recipes
-            <span className={contentFilter === 'recipes' ? 'text-white/75' : 'text-amber-700/60'}>
-              {recipeCount}
-            </span>
-          </button>
+          {COOKBOOK_FILTERS.map(({ id, label, icon: Icon }) => {
+            const active = contentFilter === id;
+            const recipeChip = id !== 'all';
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setContentFilter(id)}
+                className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-black transition-colors ${
+                  active
+                    ? recipeChip
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-gray-950 text-white'
+                    : recipeChip
+                      ? 'bg-amber-50 text-amber-800 border border-amber-100 hover:bg-amber-100'
+                      : 'bg-white/70 text-gray-600 border border-gray-100 hover:bg-white'
+                }`}
+              >
+                {Icon && <Icon size={14} aria-hidden="true" />}
+                {label}
+                <span className={active ? 'text-white/75' : recipeChip ? 'text-amber-700/60' : 'text-gray-400'}>
+                  {filterCounts[id]}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
