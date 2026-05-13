@@ -751,6 +751,7 @@ export const VideoDetail: React.FC = () => {
                 recipeId={currentVideoId}
                 recipeName={viewModel.title ?? "Recipe"}
                 servingScale={servingScale}
+                onServingScaleChange={setServingScale}
                 scaleQuantity={scaleQuantity}
                 useMetric={useMetric}
                 onToggleMetric={setUseMetric}
@@ -769,6 +770,9 @@ export const VideoDetail: React.FC = () => {
               cookStatus={cookStatus}
               onMarkCooked={markCooked}
               onResetCookStatus={resetCookState}
+              originalUrl={viewModel.originalUrl}
+              platform={viewModel.platform}
+              t={t}
             />
           )}
 
@@ -784,6 +788,7 @@ export const VideoDetail: React.FC = () => {
                   originalUrl={viewModel.originalUrl}
                   platform={viewModel.platform}
                   t={t}
+                  showOriginalLink={!showRecipeCard}
                 />
               </Accordion>
             </div>

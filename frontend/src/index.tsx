@@ -4,6 +4,8 @@ import App from "./App";
 import "./index.css";
 import { AuthProvider } from "./context/AuthContext";
 import { DataProvider } from "./context/DataContext";
+import { TimerProvider } from "./context/TimerContext";
+import FloatingTimer from "./components/FloatingTimer";
 
 // Disable PWA/service-worker during staging tester launch.
 // Old cached bundles can keep stale auth code alive.
@@ -27,7 +29,10 @@ root.render(
   <React.StrictMode>
     <AuthProvider>
       <DataProvider>
-        <App />
+        <TimerProvider>
+          <App />
+          <FloatingTimer />
+        </TimerProvider>
       </DataProvider>
     </AuthProvider>
   </React.StrictMode>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChefHat, ChevronDown, Clock3, ExternalLink, Folder, Sparkles, StickyNote, Tags } from 'lucide-react';
+import { ChefHat, ChevronDown, Clock3, Folder, Sparkles, StickyNote, Tags } from 'lucide-react';
 import { OriginalLink } from '../../components/VideoDetailWidgets';
 
 export type RecipeMetaChip = {
@@ -162,6 +162,9 @@ export function RecipeMobileStateSection({
   cookStatus,
   onMarkCooked,
   onResetCookStatus,
+  originalUrl,
+  platform,
+  t,
 }: {
   note: string;
   onNoteChange: (value: string) => void;
@@ -170,6 +173,9 @@ export function RecipeMobileStateSection({
   cookStatus: LocalCookStatus;
   onMarkCooked: () => void;
   onResetCookStatus: () => void;
+  originalUrl?: string;
+  platform: string;
+  t: any;
 }) {
   return (
     <div className="md:hidden mb-5 space-y-4">
@@ -184,6 +190,9 @@ export function RecipeMobileStateSection({
         onSave={onNoteSave}
         status={noteStatus}
       />
+      {originalUrl && (
+        <OriginalLink url={originalUrl} platform={platform} t={t} />
+      )}
     </div>
   );
 }
@@ -194,12 +203,14 @@ export function SourceDetailsContent({
   originalUrl,
   platform,
   t,
+  showOriginalLink = true,
 }: {
   caption?: string;
   transcript?: string;
   originalUrl?: string;
   platform: string;
   t: any;
+  showOriginalLink?: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -225,7 +236,7 @@ export function SourceDetailsContent({
         </div>
       )}
 
-      {originalUrl && (
+      {showOriginalLink && originalUrl && (
         <OriginalLink url={originalUrl} platform={platform} t={t} />
       )}
     </div>
@@ -282,6 +293,10 @@ export function RecipeCookbookRail({
 
   return (
     <div className="hidden md:flex flex-col w-full gap-5 mt-0">
+      {originalUrl && (
+        <OriginalLink url={originalUrl} platform={platform} t={t} />
+      )}
+
       <button
         type="button"
         onClick={onStartCooking}
@@ -320,23 +335,6 @@ export function RecipeCookbookRail({
         onSave={onNoteSave}
         status={noteStatus}
       />
-
-      {originalUrl && (
-        <a
-          href={originalUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center justify-between gap-3 rounded-[24px] border border-gray-100 bg-white p-4 text-sm font-black text-gray-800 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)] transition-colors hover:bg-gray-50"
-        >
-          <span className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 text-gray-700">
-              <ExternalLink size={16} aria-hidden="true" />
-            </span>
-            Original source
-          </span>
-          <span className="text-xs font-bold text-gray-400">{platform}</span>
-        </a>
-      )}
 
       {tagValues.length > 0 && (
         <div className="rounded-[24px] border border-gray-100 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
@@ -391,6 +389,7 @@ export function RecipeCookbookRail({
                 originalUrl={originalUrl}
                 platform={platform}
                 t={t}
+                showOriginalLink={false}
               />
             </div>
           )}

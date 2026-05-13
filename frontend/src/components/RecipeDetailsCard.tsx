@@ -24,6 +24,7 @@ export interface RecipeDetailsCardProps {
   recipeId?: string;
   recipeName?: string;
   servingScale?: number;
+  onServingScaleChange?: (scale: number) => void;
   scaleQuantity?: (qty: string, scale: number) => string;
   useMetric?: boolean;
   onToggleMetric?: (val: boolean) => void;
@@ -42,6 +43,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   recipeId = 'recipe',
   recipeName = 'Recipe',
   servingScale = 1,
+  onServingScaleChange,
   scaleQuantity,
   useMetric = true,
   onToggleMetric,
@@ -81,6 +83,16 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   );
 
   const allIngredients = useMemo(() => ingredientSections.flatMap((section) => section.items), [ingredientSections]);
+  const cookModeIngredients = useMemo(
+    () =>
+      ingredientSections.flatMap((section, sectionIndex) =>
+        section.items.map((item, itemIndex) => {
+          const id = `section-${sectionIndex}-ingredient-${itemIndex}`;
+          return typeof item === 'string' ? { item, id } : { ...item, id };
+        })
+      ),
+    [ingredientSections]
+  );
   const allInstructions = useMemo(() => instructionSections.flatMap((section) => section.instructions), [instructionSections]);
   const hasIngredients = allIngredients.length > 0;
   const hasSteps = allInstructions.length > 0;
@@ -286,9 +298,16 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           recipeId={recipeId}
           recipeName={recipeName}
           instructions={allInstructions}
-          ingredients={allIngredients}
+          ingredients={cookModeIngredients}
+          checkedIngredientIds={checkedIngredientIds}
           initialStepIndex={currentStepIndex}
+          servingScale={servingScale}
+          onServingScaleChange={onServingScaleChange}
+          scaleQuantity={scaleQuantity}
+          useMetric={useMetric}
+          onToggleMetric={onToggleMetric}
           onClose={() => setIsCookModeOpen(false)}
+          onIngredientToggle={toggleCheckedIngredientId}
           onProgressChange={setCurrentStepIndex}
           onStepComplete={markCompletedStepId}
           onComplete={handleCookModeComplete}
