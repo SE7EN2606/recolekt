@@ -281,7 +281,7 @@ def _handle_incoming_message(sender_id: str, text: str, message: dict):
 
     logger.info(f"📨 Processing Message from {sender_id}: '{text}'")
 
-    # ── CASE 1: 6-digit PIN → link account ──
+# ── CASE 1: 6-digit PIN → link account ──
     if text.isdigit() and len(text) == 6:
         pin_row = fetch_one(
             "SELECT user_id FROM link_pins WHERE pin = %s AND expires_at > NOW()",
@@ -289,6 +289,15 @@ def _handle_incoming_message(sender_id: str, text: str, message: dict):
         )
         if pin_row:
             linked_user_id = pin_row["user_id"] if isinstance(pin_row, dict) else pin_row[0]
+            
+            # 🔥 THE PERMANENT FIX: Unlink this IG account from any previous Recolekt users first
+            execute(
+                "UPDATE users SET instagram_sender_id = NULL WHERE instagram_sender_id = %s",
+                (sender_id,),
+                commit=True
+            )
+            
+            # Now link it safely to the new user
             execute(
                 "UPDATE users SET instagram_sender_id = %s WHERE user_id = %s",
                 (sender_id, linked_user_id),
