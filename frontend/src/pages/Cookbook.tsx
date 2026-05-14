@@ -7,15 +7,17 @@ import {
   detectRecipeTechniques,
   estimateRecipeTimeMinutes,
   getRecipeCuisineLabel,
-  getRecipeTimeBand,
+  getRecipeTimeBucket,
   getRecipeTitle,
   getRecipeUserState,
   getVideoContentType,
   getVideoId,
+  isNeverCooked,
   isUntouchedSave,
   pickTodaysRecipe,
   recipeSearchScore,
-  type RecipeTimeBand,
+  RECIPE_TIME_BUCKETS,
+  type RecipeTimeBucket,
 } from '../features/cookbook/cookbookIntelligence';
 
 type CookbookFilter = 'all' | 'cooked' | 'notes' | 'cooking';
@@ -47,14 +49,19 @@ function getThumbnailUrl(video: any): string {
 }
 
 function normalizePlatform(video: any): string {
-  return String(video?.platform ?? video?.sourcePlatform ?? video?.source_platform ?? video?.raw?.platform ?? '').toLowerCase();
+  const raw = String(video?.platform ?? video?.sourcePlatform ?? video?.source_platform ?? video?.raw?.platform ?? '').toLowerCase();
+  if (raw.includes('tiktok')) return 'tiktok';
+  if (raw.includes('instagram') || raw === 'ig') return 'instagram';
+  if (raw.includes('youtube') || raw === 'yt' || raw.includes('youtu.be')) return 'youtube';
+  if (raw.includes('facebook') || raw === 'fb') return 'facebook';
+  return raw;
 }
 
-function timeBandLabel(band: RecipeTimeBand): string | null {
-  if (band === 'quick') return 'Quick';
-  if (band === 'weeknight') return 'Weeknight';
-  if (band === 'slow') return 'Slow cook';
-  if (band === 'project') return 'Project';
+function timeBucketLabel(bucket: RecipeTimeBucket): string | null {
+  if (bucket === RECIPE_TIME_BUCKETS.QUICK_MEAL) return 'Quick';
+  if (bucket === RECIPE_TIME_BUCKETS.WEEKNIGHT) return 'Weeknight';
+  if (bucket === RECIPE_TIME_BUCKETS.SLOW_MEAL) return 'Slow cook';
+  if (bucket === RECIPE_TIME_BUCKETS.PROJECT_MEAL) return 'Project';
   return null;
 }
 
@@ -112,7 +119,7 @@ const RecipeDecisionCard: React.FC<{
   const cookTime = formatCookTime(video);
   const cuisine = getRecipeCuisineLabel(video);
   const technique = detectRecipeTechniques(video)[0];
-  const band = timeBandLabel(getRecipeTimeBand(video));
+  const bucket = timeBucketLabel(getRecipeTimeBucket(video));
   const state = getRecipeUserState(video);
 
   return (
@@ -169,9 +176,9 @@ const RecipeDecisionCard: React.FC<{
           </p>
         )}
         <div className={`${featured ? 'mt-3' : 'mt-1.5'} flex flex-wrap gap-1.5`}>
-          {band && (
+          {bucket && (
             <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700 ring-1 ring-amber-100">
-              {band}
+              {bucket}
             </span>
           )}
           {cuisine && (
@@ -239,7 +246,17 @@ export const Cookbook: React.FC = () => {
   const todaysPick = useMemo(() => pickTodaysRecipe(recipes, new Date()), [recipes]);
 
   const quickWins = useMemo(
-    () => recipes.filter((video: any) => getRecipeTimeBand(video) === 'quick' && !getRecipeUserState(video).hasActiveSession),
+    () => recipes.filter((video: any) => getRecipeTimeBucket(video) === RECIPE_TIME_BUCKETS.QUICK_MEAL && !getRecipeUserState(video).hasActiveSession),
+    [recipes]
+  );
+
+  const weekendProjects = useMemo(
+    () => recipes.filter((video: any) => getRecipeTimeBucket(video) === RECIPE_TIME_BUCKETS.PROJECT_MEAL && !getRecipeUserState(video).hasActiveSession),
+    [recipes]
+  );
+
+  const neverCooked = useMemo(
+    () => recipes.filter((video: any) => isNeverCooked(video) && !getRecipeUserState(video).hasActiveSession),
     [recipes]
   );
 
@@ -255,16 +272,37 @@ export const Cookbook: React.FC = () => {
 
   const sourceRows = useMemo(() => {
     const groups = [
-      { key: 'tiktok', title: 'TikTok Finds', match: ['tiktok', 'tt'] },
-      { key: 'instagram', title: 'Instagram Saves', match: ['instagram', 'ig'] },
-      { key: 'facebook', title: 'Facebook Saves', match: ['facebook', 'fb'] },
-      { key: 'youtube', title: 'YouTube Saves', match: ['youtube', 'yt'] },
+      { key: 'tiktok', title: 'TikTok Finds' },
+      { key: 'instagram', title: 'Instagram Saves' },
+      { key: 'youtube', title: 'YouTube Saves' },
+      { key: 'facebook', title: 'Facebook Saves' },
     ];
 
     return groups
       .map((group) => ({
         ...group,
-        videos: recipes.filter((video: any) => group.match.includes(normalizePlatform(video))),
+        videos: recipes.filter((video: any) => normalizePlatform(video) === group.key),
+      }))
+      .filter((group) => group.videos.length >= 2);
+  }, [recipes]);
+
+  const techniqueRows = useMemo(() => {
+    const techniqueLabels: Record<string, string> = {
+      bake: 'Bake',
+      braise: 'Braise',
+      fry: 'Fry',
+      grill: 'Grill',
+      roast: 'Roast',
+      'air fryer': 'Air Fryer',
+      'no-cook': 'No-Cook',
+      'one-pot': 'One-Pot',
+    };
+    const techniques = ['bake', 'braise', 'fry', 'grill', 'roast', 'air fryer', 'no-cook', 'one-pot'];
+    return techniques
+      .map((technique) => ({
+        key: technique,
+        title: techniqueLabels[technique] ?? technique,
+        videos: recipes.filter((video: any) => detectRecipeTechniques(video).includes(technique)),
       }))
       .filter((group) => group.videos.length >= 2);
   }, [recipes]);
@@ -391,9 +429,11 @@ export const Cookbook: React.FC = () => {
         </CookbookSection>
       ) : (
         <div className="space-y-12">
-          <CookbookSection title="Continue Cooking" subtitle="Pick up active recipe sessions">
-            <HorizontalRecipeRow videos={continueCooking} emptyText="No active cooking sessions." reason={() => 'In progress'} />
-          </CookbookSection>
+          {continueCooking.length > 0 && (
+            <CookbookSection title="Continue Cooking" subtitle="Pick up active recipe sessions">
+              <HorizontalRecipeRow videos={continueCooking} emptyText="No active cooking sessions." reason={() => 'In progress'} />
+            </CookbookSection>
+          )}
 
           {todaysPick && (
             <CookbookSection title="Today's Pick" subtitle="One recipe worth considering now">
@@ -409,17 +449,48 @@ export const Cookbook: React.FC = () => {
             </CookbookSection>
           )}
 
-          <CookbookSection title="Quick Wins" subtitle="Fast recipes for low-friction cooking">
-            <HorizontalRecipeRow videos={quickWins} emptyText="No quick recipes found yet." reason={(video) => formatCookTime(video) || 'Quick'} />
-          </CookbookSection>
+          {quickWins.length > 0 && (
+            <CookbookSection title="Quick Wins" subtitle="Fast enough for tonight.">
+              <HorizontalRecipeRow videos={quickWins} emptyText="No quick recipes found yet." reason={(video) => formatCookTime(video) || 'Quick'} />
+            </CookbookSection>
+          )}
 
-          <CookbookSection title="You Saved These A While Ago" subtitle="You saved these a while ago.">
-            <HorizontalRecipeRow videos={untouchedSaves} emptyText="No older untouched saves right now." />
-          </CookbookSection>
+          {weekendProjects.length > 0 && (
+            <CookbookSection title="Weekend Projects" subtitle="Worth trying this weekend.">
+              <HorizontalRecipeRow videos={weekendProjects} emptyText="No weekend projects found yet." reason={(video) => formatCookTime(video) || 'Project'} />
+            </CookbookSection>
+          )}
 
-          <CookbookSection title="Cook It Again" subtitle="Recipes you have already made">
-            <HorizontalRecipeRow videos={cookItAgain} emptyText="Cooked recipes will appear here." />
-          </CookbookSection>
+          {neverCooked.length > 0 && (
+            <CookbookSection title="Never Cooked" subtitle="You haven't cooked these yet.">
+              <HorizontalRecipeRow videos={neverCooked} emptyText="No never-cooked recipes right now." reason={() => 'Never cooked'} />
+            </CookbookSection>
+          )}
+
+          {untouchedSaves.length > 0 && (
+            <CookbookSection title="You Saved These A While Ago" subtitle="You saved these a while ago.">
+              <HorizontalRecipeRow videos={untouchedSaves} emptyText="No older untouched saves right now." />
+            </CookbookSection>
+          )}
+
+          {cookItAgain.length > 0 && (
+            <CookbookSection title="Cook It Again" subtitle="Recipes you have already made">
+              <HorizontalRecipeRow videos={cookItAgain} emptyText="Cooked recipes will appear here." />
+            </CookbookSection>
+          )}
+
+          {techniqueRows.length > 0 && (
+            <CookbookSection title="By Technique">
+              <div className="space-y-7">
+                {techniqueRows.map((row) => (
+                  <div key={row.key} className="space-y-3">
+                    <h3 className="text-sm font-black text-gray-900">{row.title}</h3>
+                    <HorizontalRecipeRow videos={row.videos} emptyText="" reason={() => row.title} />
+                  </div>
+                ))}
+              </div>
+            </CookbookSection>
+          )}
 
           {sourceRows.length > 0 && (
             <CookbookSection title="By Source">

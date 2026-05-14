@@ -6,6 +6,14 @@ type RecipeUserState = {
 };
 
 export type RecipeTimeBand = 'quick' | 'weeknight' | 'slow' | 'project' | 'unknown';
+export const RECIPE_TIME_BUCKETS = {
+  QUICK_MEAL: 'QUICK_MEAL',
+  WEEKNIGHT: 'WEEKNIGHT',
+  SLOW_MEAL: 'SLOW_MEAL',
+  PROJECT_MEAL: 'PROJECT_MEAL',
+  UNKNOWN: 'UNKNOWN',
+} as const;
+export type RecipeTimeBucket = typeof RECIPE_TIME_BUCKETS[keyof typeof RECIPE_TIME_BUCKETS];
 export type TodaysPick = {
   video: any;
   reason: string;
@@ -94,6 +102,19 @@ function recipeText(video: any): string {
   ].filter(Boolean).join(' ');
 }
 
+function recipeInstructionText(video: any): string {
+  const recipe = getRecipePayload(video);
+  return collectStrings(
+    recipe?.instructions ??
+    recipe?.steps ??
+    recipe?.directions ??
+    recipe?.method ??
+    recipe?.instruction_sections ??
+    recipe?.instructions_sections ??
+    recipe?.instructionSections
+  );
+}
+
 function parseMinutes(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value);
   const text = String(value ?? '').toLowerCase();
@@ -128,16 +149,7 @@ export function estimateRecipeTimeMinutes(recipeInput: any): number | null {
     if (parsed) return parsed;
   }
 
-  const instructionText = collectStrings(
-    recipe?.instructions ??
-    recipe?.steps ??
-    recipe?.directions ??
-    recipe?.method ??
-    recipe?.instruction_sections ??
-    recipe?.instructions_sections ??
-    recipe?.instructionSections
-  );
-  return parseMinutes(instructionText);
+  return parseMinutes(recipeInstructionText(recipeInput));
 }
 
 export function getRecipeTimeBand(video: any): RecipeTimeBand {
@@ -149,19 +161,26 @@ export function getRecipeTimeBand(video: any): RecipeTimeBand {
   return 'project';
 }
 
+export function getRecipeTimeBucket(video: any): RecipeTimeBucket {
+  const minutes = estimateRecipeTimeMinutes(video);
+  if (!minutes) return RECIPE_TIME_BUCKETS.UNKNOWN;
+  if (minutes < 30) return RECIPE_TIME_BUCKETS.QUICK_MEAL;
+  if (minutes <= 60) return RECIPE_TIME_BUCKETS.WEEKNIGHT;
+  if (minutes <= 120) return RECIPE_TIME_BUCKETS.SLOW_MEAL;
+  return RECIPE_TIME_BUCKETS.PROJECT_MEAL;
+}
+
 export function detectRecipeTechniques(video: any): string[] {
-  const text = recipeText(video).toLowerCase();
+  const text = recipeInstructionText(video).toLowerCase();
   const patterns: Array<[string, RegExp]> = [
     ['bake', /\bbak(e|ed|ing)\b/],
-    ['roast', /\broast(s|ed|ing)?\b/],
-    ['grill', /\bgrill(s|ed|ing)?\b/],
-    ['fry', /\bfry|fried|frying\b/],
-    ['sauté', /\bsaut[eé](s|ed|ing)?\b/],
     ['braise', /\bbrais(e|ed|ing)\b/],
-    ['stew', /\bstew(s|ed|ing)?\b/],
-    ['slow cooker', /\bslow cooker|crockpot|crock pot\b/],
+    ['fry', /\bfry|fried|frying\b/],
+    ['grill', /\bgrill(s|ed|ing)?\b/],
+    ['roast', /\broast(s|ed|ing)?\b/],
     ['air fryer', /\bair fryer|air-fryer\b/],
     ['no-cook', /\bno cook|no-cook|without cooking|raw\b/],
+    ['one-pot', /\bone pot|one-pot|single pot|same pot|in the pot\b/],
   ];
   return patterns.filter(([, pattern]) => pattern.test(text)).map(([label]) => label);
 }
@@ -216,33 +235,63 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
 
   const isWeekend = now.getDay() === 0 || now.getDay() === 6;
   const isWeekdayEvening = !isWeekend && now.getHours() >= 16;
+  const recentCutoff = now.getTime() - 7 * 86400000;
 
   const scored = candidates.map((video) => {
     const state = getRecipeUserState(video);
-    const band = getRecipeTimeBand(video);
+    const bucket = getRecipeTimeBucket(video);
     const savedAt = new Date(video?.savedAt ?? video?.saved_at ?? video?.createdAt ?? video?.created_at ?? 0).getTime();
+    const lastCookedAt = state.lastCookedAt ? new Date(state.lastCookedAt).getTime() : 0;
+    const lastOpenedAt = new Date(
+      video?.lastOpenedAt ??
+      video?.last_opened_at ??
+      video?.openedAt ??
+      video?.opened_at ??
+      video?.viewedAt ??
+      video?.viewed_at ??
+      0
+    ).getTime();
     let score = Number.isFinite(savedAt) ? savedAt / 100000000000 : 0;
     let reason = 'Never cooked';
 
-    if (state.cookCount === 0) score += 20;
+    if (state.cookCount === 0) {
+      score += 24;
+      reason = 'Never cooked';
+    }
     if (isUntouchedSave(video, now)) {
-      score += 18;
+      score += 28;
       reason = 'You saved this a while ago';
     }
-    if (isWeekdayEvening && band === 'quick') {
-      score += 30;
-      reason = 'Quick enough for tonight';
+    if (isWeekdayEvening) {
+      if (bucket === RECIPE_TIME_BUCKETS.QUICK_MEAL) {
+        score += 34;
+        reason = 'Fast enough for tonight';
+      } else if (bucket === RECIPE_TIME_BUCKETS.WEEKNIGHT) {
+        score += 18;
+        reason = 'Weeknight-friendly';
+      }
     }
-    if (isWeekend && (band === 'slow' || band === 'project')) {
-      score += 30;
-      reason = 'Weekend project';
+    if (isWeekend) {
+      if (bucket === RECIPE_TIME_BUCKETS.PROJECT_MEAL) {
+        score += 34;
+        reason = 'Worth trying this weekend';
+      } else if (bucket === RECIPE_TIME_BUCKETS.SLOW_MEAL) {
+        score += 18;
+        reason = 'Weekend-friendly';
+      }
     }
-    if (band === 'unknown') score -= 4;
+    if (Number.isFinite(lastCookedAt) && lastCookedAt > recentCutoff) score -= 10;
+    if (Number.isFinite(lastOpenedAt) && lastOpenedAt > recentCutoff) score -= 6;
+    if (bucket === RECIPE_TIME_BUCKETS.UNKNOWN) score -= 4;
 
-    return { video, reason, score };
+    return { video, reason, savedAt, score };
   });
 
-  scored.sort((a, b) => b.score - a.score);
+  scored.sort((a, b) => {
+    const scoreDiff = b.score - a.score;
+    if (scoreDiff !== 0) return scoreDiff;
+    return b.savedAt - a.savedAt;
+  });
   const pick = scored[0];
   return pick ? { video: pick.video, reason: pick.reason } : null;
 }
