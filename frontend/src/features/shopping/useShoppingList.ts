@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   addShoppingRecipe,
+  fetchShoppingRecipePayload,
   fetchShoppingList,
   patchShoppingItemOverride,
   removeShoppingRecipe,
@@ -8,7 +9,7 @@ import {
   type ShoppingListResponse,
   type ShoppingRecipeEntry,
 } from './shoppingApi';
-import { deriveMergedShoppingItems } from './shoppingMerge';
+import { deriveMergedShoppingItems, shoppingBaseIngredientCount } from './shoppingMerge';
 import { groupShoppingItems } from './shoppingGrouping';
 
 const EMPTY_RESPONSE: ShoppingListResponse = {
@@ -17,19 +18,53 @@ const EMPTY_RESPONSE: ShoppingListResponse = {
   itemOverrides: [],
 };
 
+function attachOverrides(recipe: any, source: any) {
+  const overrides = source?.recipeUserOverrides || source?.recipe_user_overrides;
+  if (!overrides) return recipe;
+
+  return {
+    ...recipe,
+    recipeUserOverrides: overrides,
+    recipe_user_overrides: overrides,
+  };
+}
+
+async function hydrateRecipeEntries(entries: ShoppingRecipeEntry[]): Promise<ShoppingRecipeEntry[]> {
+  const hydrated = await Promise.all(
+    entries.map(async (entry) => {
+      if (shoppingBaseIngredientCount(entry.recipe) > 0 || !entry.reelId) return entry;
+
+      try {
+        const fullRecipe = await fetchShoppingRecipePayload(entry.reelId);
+        if (shoppingBaseIngredientCount(fullRecipe) === 0) return entry;
+
+        return {
+          ...entry,
+          recipe: attachOverrides(fullRecipe, entry.recipe),
+        };
+      } catch {
+        return entry;
+      }
+    })
+  );
+
+  return hydrated;
+}
+
 export default function useShoppingList() {
   const [data, setData] = useState<ShoppingListResponse>(EMPTY_RESPONSE);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     setLoading(true);
     fetchShoppingList()
-      .then((next) => {
+      .then(async (next) => {
+        const recipeEntries = await hydrateRecipeEntries(next.recipeEntries || []);
         setData({
           shoppingListId: next.shoppingListId,
-          recipeEntries: next.recipeEntries || [],
+          recipeEntries,
           itemOverrides: next.itemOverrides || [],
         });
         setError(null);
@@ -53,12 +88,26 @@ export default function useShoppingList() {
   );
 
   const groupedItems = useMemo(() => groupShoppingItems(mergedItems), [mergedItems]);
+  const excludedItems = useMemo(
+    () => mergedItems.filter((item) => item.excluded),
+    [mergedItems]
+  );
+  const groupedExcludedItems = useMemo(
+    () => groupShoppingItems(excludedItems, { includeExcluded: true }),
+    [excludedItems]
+  );
 
   const addRecipe = useCallback(async (reelId: string, servings: number | null = null) => {
     setSaving(true);
     try {
       await addShoppingRecipe(reelId, servings);
-      await fetchShoppingList().then(setData);
+      const next = await fetchShoppingList();
+      const recipeEntries = await hydrateRecipeEntries(next.recipeEntries || []);
+      setData({
+        shoppingListId: next.shoppingListId,
+        recipeEntries,
+        itemOverrides: next.itemOverrides || [],
+      });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add recipe');
@@ -128,6 +177,8 @@ export default function useShoppingList() {
     plannedRecipeIds,
     mergedItems,
     groupedItems,
+    excludedItems,
+    groupedExcludedItems,
     addRecipe,
     removeRecipe,
     patchItem,

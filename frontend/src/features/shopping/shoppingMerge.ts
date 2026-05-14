@@ -1,4 +1,9 @@
 import { normalizeIngredientSections } from '../recipe-core/recipePayload';
+import {
+  applyIngredientOverrides,
+  normalizeOverrides,
+} from '../recipe-editing/useRecipeEditing';
+import type { IngredientSection } from '../recipe-core/recipePayload';
 import { normalizeShoppingIngredient, type NormalizedShoppingIngredient } from './ingredientNormalizer';
 import type { ShoppingItemOverride, ShoppingRecipeEntry } from './shoppingApi';
 
@@ -37,6 +42,37 @@ function canMergeQuantity(target: MergedShoppingItem, ingredient: NormalizedShop
   return Boolean(target.unit && ingredient.unit && target.unit === ingredient.unit);
 }
 
+export function ingredientSectionsFromRecipe(recipe: any): IngredientSection[] {
+  const candidates = [
+    recipe?.recipe,
+    recipe,
+    recipe?.recipe?.english,
+    recipe?.recipe?.original,
+    recipe?.english,
+    recipe?.original,
+  ];
+
+  for (const candidate of candidates) {
+    const sections = normalizeIngredientSections(candidate);
+    if (sections.length > 0) return sections;
+  }
+
+  return [];
+}
+
+function effectiveIngredientSections(recipe: any) {
+  const sections = ingredientSectionsFromRecipe(recipe);
+  const overrideResponse = recipe?.recipeUserOverrides || recipe?.recipe_user_overrides;
+
+  if (!overrideResponse) return sections;
+
+  return applyIngredientOverrides(sections, normalizeOverrides(overrideResponse));
+}
+
+export function shoppingBaseIngredientCount(recipe: any): number {
+  return ingredientSectionsFromRecipe(recipe).reduce((total, section) => total + section.items.length, 0);
+}
+
 export function deriveMergedShoppingItems(
   entries: ShoppingRecipeEntry[],
   overrides: ShoppingItemOverride[]
@@ -45,7 +81,7 @@ export function deriveMergedShoppingItems(
   const byKey = new Map<string, MergedShoppingItem>();
 
   for (const entry of entries) {
-    const sections = normalizeIngredientSections(entry.recipe?.recipe || entry.recipe);
+    const sections = effectiveIngredientSections(entry.recipe);
     const sourceBase = {
       reelId: entry.reelId,
       recipeTitle: recipeTitle(entry.recipe),

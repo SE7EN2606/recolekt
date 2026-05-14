@@ -19,12 +19,12 @@ function groupForName(name: string): typeof GROUPS[number] {
   return 'Other';
 }
 
-export function groupShoppingItems(items: MergedShoppingItem[]): ShoppingGroup[] {
+export function groupShoppingItems(items: MergedShoppingItem[], options: { includeExcluded?: boolean } = {}): ShoppingGroup[] {
   const grouped = new Map<string, MergedShoppingItem[]>();
   GROUPS.forEach((group) => grouped.set(group, []));
 
   items
-    .filter((item) => !item.excluded)
+    .filter((item) => options.includeExcluded || !item.excluded)
     .forEach((item) => {
       grouped.get(groupForName(item.name))!.push(item);
     });

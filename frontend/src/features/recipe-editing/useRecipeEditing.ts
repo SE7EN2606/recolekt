@@ -31,7 +31,7 @@ const createEmptyOverrides = (): RecipeOverrideLayer => ({
   },
 });
 
-function normalizeOverrides(data?: RecipeOverridesResponse | null): RecipeOverrideLayer {
+export function normalizeOverrides(data?: RecipeOverridesResponse | null): RecipeOverrideLayer {
   const payload = data?.overridePayload || {};
   const ingredients = (payload.ingredients || {}) as Partial<RecipeOverrideLayer['ingredients']>;
   const steps = (payload.steps || {}) as Partial<RecipeOverrideLayer['steps']>;
@@ -77,6 +77,154 @@ export function getIngredientEditText(raw: RawIngredient): string {
 export function getStepEditText(raw: RawInstruction): string {
   if (typeof raw === 'string') return raw;
   return String(raw?.instruction ?? raw?.text ?? '').trim();
+}
+
+const KNOWN_UNITS = new Set([
+  'g',
+  'gram',
+  'grams',
+  'kg',
+  'ml',
+  'l',
+  'oz',
+  'ounce',
+  'ounces',
+  'lb',
+  'lbs',
+  'cup',
+  'cups',
+  'tbsp',
+  'tablespoon',
+  'tablespoons',
+  'tsp',
+  'teaspoon',
+  'teaspoons',
+]);
+
+function cloneIngredientObject(raw: Exclude<RawIngredient, string>): Exclude<RawIngredient, string> {
+  return { ...raw };
+}
+
+function findBaseIngredient(
+  sections: IngredientSection[],
+  id: string,
+  current?: RecipeOverrideLayer
+): RawIngredient | undefined {
+  const added = current?.ingredients.added.find((item) => item.id === id);
+  if (added) return added.value;
+
+  const match = id.match(/^section-(\d+)-ingredient-(\d+)$/);
+  if (!match) return undefined;
+
+  const sectionIndex = Number(match[1]);
+  const itemIndex = Number(match[2]);
+  return sections[sectionIndex]?.items[itemIndex];
+}
+
+export function parseIngredientEditValue(value: string, base?: RawIngredient): RawIngredient {
+  const text = value.trim();
+  const baseObject = base && typeof base !== 'string' ? cloneIngredientObject(base) : null;
+
+  if (!text) {
+    return baseObject ? { ...baseObject, item: '', name: '', quantity: '', unit: '' } : '';
+  }
+
+  const parsed = text.match(/^(\d+(?:[.,]\d+)?|\d+\s+\d+\/\d+|\d+\/\d+)\s+([a-zA-Z]+)\s+(.+)$/);
+  if (parsed && KNOWN_UNITS.has(parsed[2].toLowerCase())) {
+    return {
+      ...(baseObject || {}),
+      quantity: parsed[1],
+      unit: parsed[2],
+      item: parsed[3].trim(),
+      name: parsed[3].trim(),
+    };
+  }
+
+  const parsedWithoutUnit = text.match(/^(\d+(?:[.,]\d+)?|\d+\s+\d+\/\d+|\d+\/\d+)\s+(.+)$/);
+  if (parsedWithoutUnit && baseObject && !String(baseObject.unit ?? '').trim()) {
+    return {
+      ...baseObject,
+      quantity: parsedWithoutUnit[1],
+      item: parsedWithoutUnit[2].trim(),
+      name: parsedWithoutUnit[2].trim(),
+    };
+  }
+
+  if (baseObject) {
+    return {
+      ...baseObject,
+      item: text,
+      name: text,
+    };
+  }
+
+  return {
+    item: text,
+    name: text,
+  };
+}
+
+export function applyIngredientOverrides(
+  baseIngredientSections: IngredientSection[],
+  overrides: RecipeOverrideLayer
+): IngredientSection[] {
+  const removedIds = new Set(overrides.ingredients.removedIds);
+  const appliedIds = new Set<string>();
+
+  const sections = baseIngredientSections.map((section, sectionIndex) => ({
+    ...section,
+    items: section.items
+      .map((item, itemIndex) => {
+        const id = getIngredientId(sectionIndex, itemIndex);
+        appliedIds.add(id);
+        return overrides.ingredients.editedById[id] ?? item;
+      })
+      .filter((_, itemIndex) => !removedIds.has(getIngredientId(sectionIndex, itemIndex))),
+  }));
+
+  Object.entries(overrides.ingredients.editedById).forEach(([id, value]) => {
+    if (appliedIds.has(id) || removedIds.has(id)) return;
+
+    const match = id.match(/^section-(\d+)-ingredient-\d+$/);
+    const targetIndex = match
+      ? Math.min(Math.max(Number(match[1]), 0), Math.max(sections.length - 1, 0))
+      : 0;
+
+    if (!sections[targetIndex]) {
+      sections.push({ items: [] });
+    }
+
+    sections[targetIndex].items.push(value);
+  });
+
+  overrides.ingredients.added.forEach((added) => {
+    const targetIndex = Math.min(Math.max(added.sectionIndex, 0), Math.max(sections.length - 1, 0));
+
+    if (!sections[targetIndex]) {
+      sections.push({ items: [] });
+    }
+
+    if (!removedIds.has(added.id)) {
+      sections[targetIndex].items.push(added.value);
+    }
+  });
+
+  return sections.filter((section) => section.items.length > 0);
+}
+
+export function applyInstructionOverrides(
+  baseInstructionSections: InstructionSection[],
+  overrides: RecipeOverrideLayer
+): InstructionSection[] {
+  return baseInstructionSections
+    .map((section, sectionIndex) => ({
+      ...section,
+      instructions: section.instructions.map((instruction, stepIndex) => {
+        const id = getStepId(sectionIndex, stepIndex);
+        return overrides.steps.editedById[id] ?? instruction;
+      }),
+    }))
+    .filter((section) => section.instructions.length > 0);
 }
 
 export function useRecipeEditing(
@@ -173,31 +321,7 @@ export function useRecipeEditing(
   }, []);
 
   const editedIngredientSections = useMemo<IngredientSection[]>(() => {
-    const removedIds = new Set(overrides.ingredients.removedIds);
-
-    const sections = baseIngredientSections.map((section, sectionIndex) => ({
-      ...section,
-      items: section.items
-        .map((item, itemIndex) => {
-          const id = getIngredientId(sectionIndex, itemIndex);
-          return overrides.ingredients.editedById[id] ?? item;
-        })
-        .filter((_, itemIndex) => !removedIds.has(getIngredientId(sectionIndex, itemIndex))),
-    }));
-
-    overrides.ingredients.added.forEach((added) => {
-      const targetIndex = Math.min(Math.max(added.sectionIndex, 0), Math.max(sections.length - 1, 0));
-
-      if (!sections[targetIndex]) {
-        sections.push({ items: [] });
-      }
-
-      if (!removedIds.has(added.id)) {
-        sections[targetIndex].items.push(added.value);
-      }
-    });
-
-    return sections.filter((section) => section.items.length > 0);
+    return applyIngredientOverrides(baseIngredientSections, overrides);
   }, [baseIngredientSections, overrides.ingredients]);
 
   const editableIngredientSections = useMemo(() => {
@@ -232,16 +356,8 @@ export function useRecipeEditing(
   }, [baseIngredientSections, overrides.ingredients]);
 
   const editedInstructionSections = useMemo<InstructionSection[]>(() => {
-    return baseInstructionSections
-      .map((section, sectionIndex) => ({
-        ...section,
-        instructions: section.instructions.map((instruction, stepIndex) => {
-          const id = getStepId(sectionIndex, stepIndex);
-          return overrides.steps.editedById[id] ?? instruction;
-        }),
-      }))
-      .filter((section) => section.instructions.length > 0);
-  }, [baseInstructionSections, overrides.steps.editedById]);
+    return applyInstructionOverrides(baseInstructionSections, overrides);
+  }, [baseInstructionSections, overrides]);
 
   const editableInstructionSections = useMemo(() => {
     return baseInstructionSections.map((section, sectionIndex) => ({
@@ -258,8 +374,10 @@ export function useRecipeEditing(
 
   const updateIngredient = (id: string, value: string) => {
     updateOverrides((current) => {
+      const baseIngredient = findBaseIngredient(baseIngredientSections, id, current);
+      const nextValue = parseIngredientEditValue(value, baseIngredient);
       const added = current.ingredients.added.map((item) =>
-        item.id === id ? { ...item, value } : item
+        item.id === id ? { ...item, value: nextValue } : item
       );
 
       return {
@@ -269,7 +387,7 @@ export function useRecipeEditing(
           added,
           editedById: current.ingredients.added.some((item) => item.id === id)
             ? current.ingredients.editedById
-            : { ...current.ingredients.editedById, [id]: value },
+            : { ...current.ingredients.editedById, [id]: nextValue },
         },
       };
     });
@@ -285,7 +403,7 @@ export function useRecipeEditing(
           {
             id: `added-ingredient-${Date.now()}-${current.ingredients.added.length}`,
             sectionIndex,
-            value: '',
+            value: { item: '', name: '' },
           },
         ],
       },

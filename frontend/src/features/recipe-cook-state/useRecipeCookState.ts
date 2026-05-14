@@ -59,12 +59,14 @@ export function useRecipeCookState(
 } {
   const [cookStatus, setCookStatus] = useState<LocalCookStatus>(EMPTY_COOK_STATUS);
   const [status, setStatus] = useState<CookStateStatus>('idle');
+  const [loaded, setLoaded] = useState(false);
   const cookStateGenerationRef = useRef(0);
 
   useEffect(() => {
     cookStateGenerationRef.current += 1;
     setCookStatus(EMPTY_COOK_STATUS);
     setStatus('idle');
+    setLoaded(false);
   }, [reelId]);
 
   useEffect(() => {
@@ -80,11 +82,13 @@ export function useRecipeCookState(
 
         if (!cancelled && generation === cookStateGenerationRef.current) {
           setCookStatus(serializeCookState(data));
+          setLoaded(true);
           setStatus('idle');
         }
       } catch (err) {
         console.warn('Recipe cook state load failed', err);
         if (!cancelled && generation === cookStateGenerationRef.current) {
+          setLoaded(true);
           setStatus('error');
         }
       }
@@ -165,7 +169,7 @@ export function useRecipeCookState(
 
   return {
     cookStatus,
-    status,
+    status: enabled && Boolean(reelId) && !loaded ? 'loading' : status,
     markCooked,
     resetCookState,
   };

@@ -115,11 +115,13 @@ export function useRecipeNotes(
     dirtyRef.current = true;
     setNote(value);
   };
+  const effectiveStatus: RecipeNoteStatus =
+    enabled && Boolean(reelId) && loadKeyRef.current !== reelId ? 'loading' : status;
 
   return {
     note,
     setNote: setDirtyNote,
-    status,
+    status: effectiveStatus,
     saveNote,
   };
 }

@@ -300,10 +300,24 @@ def _serialize_shopping_entry(row) -> dict:
     entry_id = d.pop("entry_id", None)
     servings = d.pop("entry_servings", None)
     added_at = d.pop("entry_added_at", None)
+    recipe_override_payload = d.pop("recipe_override_payload", None) or {}
+    recipe_verified_by_user = d.pop("recipe_verified_by_user", False)
+    recipe_override_updated_at = d.pop("recipe_override_updated_at", None)
     d.pop("shopping_list_id", None)
+    if isinstance(recipe_override_payload, str):
+        recipe_override_payload = json_loads_maybe(recipe_override_payload, default={})
+    if not isinstance(recipe_override_payload, dict):
+        recipe_override_payload = {}
     reel = _normalize_row_for_api(d, include_prompt=False)
     reel = _merge_row_location_from_db(reel, reel.get("id"), reel.get("user_id"))
     reel["process_id"] = reel.get("id")
+    recipe_overrides = {
+        "verifiedByUser": bool(recipe_verified_by_user),
+        "overridePayload": recipe_override_payload,
+        "updatedAt": recipe_override_updated_at.isoformat() if recipe_override_updated_at else None,
+    }
+    reel["recipeUserOverrides"] = recipe_overrides
+    reel["recipe_user_overrides"] = recipe_overrides
     return {
         "id": entry_id,
         "reelId": reel.get("id"),
@@ -1464,11 +1478,17 @@ def get_shopping_list():
                         r.content_type, r.created_at, r.caption, r.author_name,
                         r.is_long_video, r.duration, r.recipe, r.workout, r.transcription,
                         r.tools_list, r.location, r.is_list, r.list_subtype, r.list_count, r.list_type,
-                        r.gcs_urls
+                        r.gcs_urls,
+                        ruo.override_payload AS recipe_override_payload,
+                        ruo.verified_by_user AS recipe_verified_by_user,
+                        ruo.updated_at AS recipe_override_updated_at
                     FROM shopping_recipe_entries sre
                     JOIN reels r
                       ON r.id = sre.reel_id
                      AND r.user_id = %s
+                    LEFT JOIN recipe_user_overrides ruo
+                      ON ruo.reel_id = r.id
+                     AND ruo.user_id = r.user_id
                     WHERE sre.shopping_list_id = %s
                       AND sre.user_id = %s
                     ORDER BY sre.added_at DESC

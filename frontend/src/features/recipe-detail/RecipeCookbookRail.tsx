@@ -51,10 +51,23 @@ export function RecipeNotesCard({
   onSave: () => void;
   status: RecipeNoteStatus;
 }) {
+  if (status === 'loading') {
+    return (
+      <div className="rounded-[24px] border border-amber-100/80 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
+        <div className="mb-3 flex items-center gap-2">
+          <div className="h-8 w-8 animate-pulse rounded-xl bg-amber-50" />
+          <div className="space-y-1.5">
+            <div className="h-3 w-24 animate-pulse rounded-full bg-amber-100" />
+            <div className="h-3 w-36 animate-pulse rounded-full bg-gray-100" />
+          </div>
+        </div>
+        <div className="h-[132px] animate-pulse rounded-2xl bg-amber-50/55" />
+      </div>
+    );
+  }
+
   const statusLabel =
-    status === 'loading'
-      ? 'Loading note...'
-      : status === 'saving'
+    status === 'saving'
         ? 'Saving...'
         : status === 'saved'
           ? 'Saved'
@@ -92,7 +105,6 @@ export function RecipeNotesCard({
         <button
           type="button"
           onClick={onSave}
-          disabled={status === 'loading'}
           className="rounded-xl border border-amber-200 bg-white px-3 py-1.5 text-[11px] font-black text-amber-800 transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Save
@@ -104,14 +116,30 @@ export function RecipeNotesCard({
 
 export function RecipeCookStatusCard({
   status,
+  loading = false,
   onMarkCooked,
   onReset,
 }: {
   status: LocalCookStatus;
+  loading?: boolean;
   onMarkCooked: () => void;
   onReset: () => void;
 }) {
   const hasCooked = status.cookedCount > 0;
+
+  if (loading) {
+    return (
+      <div className="rounded-[24px] border border-gray-100 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
+        <div className="mb-3 flex items-center gap-2">
+          <div className="h-8 w-8 animate-pulse rounded-xl bg-emerald-50" />
+          <div className="h-3 w-24 animate-pulse rounded-full bg-gray-100" />
+        </div>
+        <div className="h-5 w-32 animate-pulse rounded-full bg-gray-100" />
+        <div className="mt-3 h-4 w-44 animate-pulse rounded-full bg-gray-100" />
+        <div className="mt-4 h-10 animate-pulse rounded-2xl bg-gray-100" />
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-[24px] border border-gray-100 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
@@ -160,6 +188,7 @@ export function RecipeMobileStateSection({
   onNoteSave,
   noteStatus,
   cookStatus,
+  cookStatusLoading = false,
   onMarkCooked,
   onResetCookStatus,
   originalUrl,
@@ -171,6 +200,7 @@ export function RecipeMobileStateSection({
   onNoteSave: () => void;
   noteStatus: RecipeNoteStatus;
   cookStatus: LocalCookStatus;
+  cookStatusLoading?: boolean;
   onMarkCooked: () => void;
   onResetCookStatus: () => void;
   originalUrl?: string;
@@ -181,6 +211,7 @@ export function RecipeMobileStateSection({
     <div className="md:hidden mb-5 space-y-4">
       <RecipeCookStatusCard
         status={cookStatus}
+        loading={cookStatusLoading}
         onMarkCooked={onMarkCooked}
         onReset={onResetCookStatus}
       />
@@ -256,10 +287,12 @@ export function RecipeCookbookRail({
   onNoteSave,
   noteStatus,
   cookStatus,
+  cookStatusLoading = false,
   onMarkCooked,
   onResetCookStatus,
   onStartCooking,
   shoppingPlanned = false,
+  shoppingLoading = false,
   shoppingSaving = false,
   onAddToShoppingList,
   onRemoveFromShoppingList,
@@ -276,10 +309,12 @@ export function RecipeCookbookRail({
   onNoteSave: () => void;
   noteStatus: RecipeNoteStatus;
   cookStatus: LocalCookStatus;
+  cookStatusLoading?: boolean;
   onMarkCooked: () => void;
   onResetCookStatus: () => void;
   onStartCooking: () => void;
   shoppingPlanned?: boolean;
+  shoppingLoading?: boolean;
   shoppingSaving?: boolean;
   onAddToShoppingList?: () => void;
   onRemoveFromShoppingList?: () => void;
@@ -306,6 +341,17 @@ export function RecipeCookbookRail({
       )}
 
       {(onAddToShoppingList || onRemoveFromShoppingList) && (
+        shoppingLoading ? (
+          <div className="rounded-[24px] border border-gray-100 bg-white p-4 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 animate-pulse rounded-2xl bg-emerald-50" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="h-4 w-44 animate-pulse rounded-full bg-gray-100" />
+                <div className="h-3 w-36 animate-pulse rounded-full bg-gray-100" />
+              </div>
+            </div>
+          </div>
+        ) : (
         <button
           type="button"
           onClick={shoppingPlanned ? onRemoveFromShoppingList : onAddToShoppingList}
@@ -330,27 +376,40 @@ export function RecipeCookbookRail({
             </span>
           </div>
         </button>
+        )
       )}
 
-      <button
-        type="button"
-        onClick={onStartCooking}
-        className="group rounded-[28px] bg-emerald-600 p-5 text-left text-white shadow-[0_24px_54px_-28px_rgba(5,150,105,0.9)] transition-colors hover:bg-emerald-700"
-      >
-        <div className="flex items-center gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20">
-            <ChefHat size={22} aria-hidden="true" />
-          </span>
-          <span className="min-w-0">
-            <span className="block text-lg font-black leading-tight">
-              {cookStatus.hasActiveSession ? 'Continue Cooking' : 'Start Cooking'}
-            </span>
-            <span className="mt-0.5 block text-sm font-medium text-emerald-50/85">
-              {cookStatus.hasActiveSession ? 'Pick up your saved cook session.' : 'Open guided Cook Mode.'}
-            </span>
-          </span>
+      {cookStatusLoading ? (
+        <div className="rounded-[28px] bg-emerald-600/85 p-5 shadow-[0_24px_54px_-28px_rgba(5,150,105,0.9)]">
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 animate-pulse rounded-2xl bg-white/15" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="h-5 w-40 animate-pulse rounded-full bg-white/25" />
+              <div className="h-4 w-48 animate-pulse rounded-full bg-white/20" />
+            </div>
+          </div>
         </div>
-      </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onStartCooking}
+          className="group rounded-[28px] bg-emerald-600 p-5 text-left text-white shadow-[0_24px_54px_-28px_rgba(5,150,105,0.9)] transition-colors hover:bg-emerald-700"
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20">
+              <ChefHat size={22} aria-hidden="true" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-lg font-black leading-tight">
+                {cookStatus.hasActiveSession ? 'Continue Cooking' : 'Start Cooking'}
+              </span>
+              <span className="mt-0.5 block text-sm font-medium text-emerald-50/85">
+                {cookStatus.hasActiveSession ? 'Pick up your saved cook session.' : 'Open guided Cook Mode.'}
+              </span>
+            </span>
+          </div>
+        </button>
+      )}
 
       <RecipeRailCard
         icon={<Folder size={16} aria-hidden="true" />}
@@ -360,6 +419,7 @@ export function RecipeCookbookRail({
 
       <RecipeCookStatusCard
         status={cookStatus}
+        loading={cookStatusLoading}
         onMarkCooked={onMarkCooked}
         onReset={onResetCookStatus}
       />

@@ -446,14 +446,17 @@ export const VideoDetail: React.FC = () => {
 
   const {
     cookStatus,
+    status: cookStatusStatus,
     markCooked,
     resetCookState,
   } = useRecipeCookState(currentVideoId, showRecipeCard);
+  const cookStatusLoading = cookStatusStatus === 'loading';
 
   const {
     plannedRecipeIds,
     addRecipe: addRecipeToShoppingList,
     removeRecipe: removeRecipeFromShoppingList,
+    loading: shoppingLoading,
     saving: shoppingSaving,
   } = useShoppingList();
 
@@ -686,7 +689,7 @@ export const VideoDetail: React.FC = () => {
             )}
           </div>
 
-          {showRecipeCard && cookStatus.hasActiveSession && (
+          {showRecipeCard && !cookStatusLoading && cookStatus.hasActiveSession && (
             <div className="mb-5 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
               Active cook session saved. Use Resume cooking to pick up where you left off.
             </div>
@@ -787,6 +790,7 @@ export const VideoDetail: React.FC = () => {
                 onToggleMetric={setUseMetric}
                 onMarkCooked={markCooked}
                 hasActiveSession={cookStatus.hasActiveSession}
+                cookStatusLoading={cookStatusLoading}
                 openCookModeSignal={cookModeOpenSignal}
               />
             </div>
@@ -799,6 +803,7 @@ export const VideoDetail: React.FC = () => {
               onNoteSave={saveRecipeNote}
               noteStatus={recipeNoteStatus}
               cookStatus={cookStatus}
+              cookStatusLoading={cookStatusLoading}
               onMarkCooked={markCooked}
               onResetCookStatus={resetCookState}
               originalUrl={viewModel.originalUrl}
@@ -898,10 +903,12 @@ export const VideoDetail: React.FC = () => {
             onNoteSave={saveRecipeNote}
             noteStatus={recipeNoteStatus}
             cookStatus={cookStatus}
+            cookStatusLoading={cookStatusLoading}
             onMarkCooked={markCooked}
             onResetCookStatus={resetCookState}
             onStartCooking={() => setCookModeOpenSignal((value) => value + 1)}
             shoppingPlanned={plannedRecipeIds.has(currentVideoId)}
+            shoppingLoading={shoppingLoading}
             shoppingSaving={shoppingSaving}
             onAddToShoppingList={() => addRecipeToShoppingList(currentVideoId, null)}
             onRemoveFromShoppingList={() => removeRecipeFromShoppingList(currentVideoId)}

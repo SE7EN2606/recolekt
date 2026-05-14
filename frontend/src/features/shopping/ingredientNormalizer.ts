@@ -82,7 +82,7 @@ function normalizeUnit(unit: unknown): string | null {
 
 export function normalizeShoppingIngredient(raw: any): NormalizedShoppingIngredient | null {
   const parsed = parseRawIngredient(raw);
-  let name = String(parsed?.name || parsed?.item || '').trim();
+  let name = String(parsed?.name || parsed?.item || raw?.text || raw?.value || '').trim();
   let quantity = parseNumber(parsed?.quantity);
   let unit = normalizeUnit(parsed?.unit);
 
@@ -90,8 +90,11 @@ export function normalizeShoppingIngredient(raw: any): NormalizedShoppingIngredi
     name = raw.trim();
   }
 
-  if (typeof raw === 'string' && quantity === null) {
-    const match = raw.trim().match(/^(\d+(?:[.,]\d+)?|\d+\s+\d+\/\d+|\d+\/\d+)\s+([a-zA-Z]+)\s+(.+)$/);
+  if (quantity === null) {
+    const sourceText = typeof raw === 'string'
+      ? raw.trim()
+      : String(raw?.text || raw?.value || raw?.label || '').trim();
+    const match = sourceText.match(/^(\d+(?:[.,]\d+)?|\d+\s+\d+\/\d+|\d+\/\d+)\s+([a-zA-Z]+)\s+(.+)$/);
     if (match) {
       quantity = parseNumber(match[1]);
       unit = normalizeUnit(match[2]);

@@ -35,6 +35,7 @@ export interface RecipeDetailsCardProps {
   onToggleMetric?: (val: boolean) => void;
   onMarkCooked?: () => void;
   hasActiveSession?: boolean;
+  cookStatusLoading?: boolean;
   openCookModeSignal?: number;
 }
 
@@ -55,6 +56,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   onToggleMetric,
   onMarkCooked,
   hasActiveSession = false,
+  cookStatusLoading = false,
   openCookModeSignal = 0,
 }) => {
   const { t } = useTranslation(['videoDetail']);
@@ -135,6 +137,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const hasSteps = allInstructions.length > 0;
   const ingredientCountLabel = `${allIngredients.length} ${allIngredients.length === 1 ? 'item' : 'items'}`;
   const stepCountLabel = `${allInstructions.length} ${allInstructions.length === 1 ? 'step' : 'steps'}`;
+  const recipeBodyLoading = loadingOverrides && !isEditing;
+  const cookModeLoading = recipeBodyLoading || cookStatusLoading;
 
   const secondaryTabs = useMemo(() => {
     const tabs: { key: RecipeSecondaryTabKey; label: string }[] = [];
@@ -164,10 +168,10 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   };
 
   useEffect(() => {
-    if (openCookModeSignal > 0 && hasSteps) {
+    if (openCookModeSignal > 0 && hasSteps && !cookModeLoading) {
       setIsCookModeOpen(true);
     }
-  }, [openCookModeSignal, hasSteps]);
+  }, [openCookModeSignal, hasSteps, cookModeLoading]);
 
   if (!recipe) return null;
   if (recipe.is_compilation) return <RecipeCompilationCard recipe={recipe} />;
@@ -218,10 +222,11 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
             <button
               type="button"
               onClick={() => setIsCookModeOpen(true)}
+              disabled={cookModeLoading}
               className="flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-gray-950 px-5 py-4 text-[15px] font-black text-white shadow-sm transition-colors hover:bg-gray-800 active:bg-gray-900"
             >
               <ChefHat size={18} aria-hidden="true" />
-              {hasActiveSession ? 'Resume cooking' : 'Cook this recipe'}
+              {cookModeLoading ? 'Loading recipe state...' : hasActiveSession ? 'Resume cooking' : 'Cook this recipe'}
             </button>
           </div>
         )}
@@ -259,6 +264,32 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
         )}
 
+        {recipeBodyLoading ? (
+          <div className="space-y-5 px-4 py-5 sm:px-5" aria-label="Loading your recipe edits">
+            <div>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="h-4 w-24 animate-pulse rounded-full bg-gray-100" />
+                <div className="h-6 w-16 animate-pulse rounded-full bg-gray-100" />
+              </div>
+              <div className="space-y-2">
+                {[0, 1, 2].map((item) => (
+                  <div key={item} className="h-11 animate-pulse rounded-2xl bg-gray-100" />
+                ))}
+              </div>
+            </div>
+            <div className="rounded-2xl bg-amber-50/60 p-4">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="h-4 w-16 animate-pulse rounded-full bg-amber-100" />
+                <div className="h-6 w-14 animate-pulse rounded-full bg-white/80" />
+              </div>
+              <div className="space-y-3">
+                {[0, 1].map((item) => (
+                  <div key={item} className="h-16 animate-pulse rounded-2xl bg-white/80" />
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="divide-y divide-gray-100">
           {hasIngredients && (
             <section className="py-5">
@@ -381,8 +412,9 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
             </section>
           )}
         </div>
+        )}
 
-        {secondaryTabs.length > 0 && (
+        {!recipeBodyLoading && secondaryTabs.length > 0 && (
           <div className="bg-gray-50 px-3 py-3 border-t border-gray-100">
             <div
               className="grid gap-1 rounded-2xl bg-gray-100 p-1 text-[12px] font-bold"
@@ -410,7 +442,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
         )}
 
-        {visibleSecondaryTab === 'nutrition' && hasIngredients && (
+        {!recipeBodyLoading && visibleSecondaryTab === 'nutrition' && hasIngredients && (
           <div className="border-t border-gray-50">
             <RecipeNutritionSummary
               ingredients={allIngredients}
@@ -420,7 +452,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
         )}
 
-        {visibleSecondaryTab === 'ask' && (
+        {!recipeBodyLoading && visibleSecondaryTab === 'ask' && (
           <div className="px-5 py-5 border-t border-gray-50">
             <RecipeAskPanel
               question={askQuestion}
