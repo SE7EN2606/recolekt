@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChefHat } from 'lucide-react';
+import { CheckCircle2, ChefHat, Pencil, Plus, Trash2, X } from 'lucide-react';
 import RecipeNutritionSummary from '../features/recipe-secondary/RecipeNutritionSummary';
 import RecipeStepsPanel from '../features/recipe-core/panels/RecipeStepsPanel';
 import RecipeAskPanel from '../features/recipe-core/panels/RecipeAskPanel';
@@ -16,6 +16,11 @@ import {
 import { useTranslation } from 'react-i18next';
 import CookModeModal from './CookModeModal';
 import useRecipeCookSession from '../features/recipe-cook-session/useRecipeCookSession';
+import {
+  getIngredientEditText,
+  getStepEditText,
+  useRecipeEditing,
+} from '../features/recipe-editing/useRecipeEditing';
 
 type RecipeSecondaryTabKey = 'nutrition' | 'ask';
 
@@ -74,15 +79,30 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     handleAskRecipe,
   } = useRecipeAssistant({ recipeId });
 
-  const ingredientSections = useMemo(
+  const baseIngredientSections = useMemo(
     () => (!recipe || recipe.is_compilation ? [] : normalizeIngredientSections(recipe)),
     [recipe]
   );
 
-  const instructionSections = useMemo(
+  const baseInstructionSections = useMemo(
     () => (!recipe || recipe.is_compilation ? [] : normalizeInstructionSections(recipe)),
     [recipe]
   );
+
+  const {
+    isEditing,
+    setIsEditing,
+    overrides: recipeOverrides,
+    editedIngredientSections: ingredientSections,
+    editedInstructionSections: instructionSections,
+    editableIngredientSections,
+    editableInstructionSections,
+    updateIngredient,
+    addIngredient,
+    removeIngredient,
+    updateStep,
+    toggleVerified,
+  } = useRecipeEditing(recipeId, baseIngredientSections, baseInstructionSections);
 
   const allIngredients = useMemo(() => ingredientSections.flatMap((section) => section.items), [ingredientSections]);
   const cookModeIngredients = useMemo(
@@ -163,6 +183,20 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {recipeOverrides.verifiedByUser && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700 ring-1 ring-emerald-100">
+                <CheckCircle2 size={13} aria-hidden="true" />
+                Verified
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsEditing((value) => !value)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-[11px] font-bold text-gray-700 transition-colors hover:bg-white"
+            >
+              {isEditing ? <X size={13} aria-hidden="true" /> : <Pencil size={13} aria-hidden="true" />}
+              {isEditing ? 'Done' : 'Edit recipe'}
+            </button>
             {onToggleMetric && hasIngredients && (
               <button
                 type="button"
@@ -188,6 +222,31 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
         )}
 
+        {isEditing && (
+          <div className="border-b border-amber-100 bg-amber-50/55 px-4 py-3 sm:px-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[12px] font-black uppercase tracking-widest text-amber-700">Personal recipe edits</p>
+                <p className="mt-0.5 text-xs font-medium text-amber-800/75">
+                  Local override layer for now. The extracted recipe stays unchanged.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={toggleVerified}
+                className={`inline-flex items-center justify-center gap-2 rounded-2xl px-3.5 py-2 text-xs font-black transition-colors ${
+                  recipeOverrides.verifiedByUser
+                    ? 'bg-emerald-600 text-white'
+                    : 'border border-emerald-100 bg-white text-emerald-700 hover:bg-emerald-50'
+                }`}
+              >
+                <CheckCircle2 size={15} aria-hidden="true" />
+                {recipeOverrides.verifiedByUser ? 'Verified by me' : 'Mark verified by me'}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="divide-y divide-gray-100">
           {hasIngredients && (
             <section className="py-5">
@@ -199,7 +258,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               </div>
 
               <div className="space-y-3">
-                {ingredientSections.map((section, sectionIndex) => (
+                {(isEditing ? editableIngredientSections : ingredientSections).map((section, sectionIndex) => (
                   <div key={sectionIndex}>
                     {section.title && (
                       <h5 className="px-4 sm:px-5 pb-1.5 text-[11px] font-black uppercase tracking-widest text-gray-400">
@@ -207,27 +266,58 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                       </h5>
                     )}
 
-                    <ul className="divide-y divide-gray-100">
-                      {section.items.map((item, itemIndex) => {
-                        const id = `section-${sectionIndex}-ingredient-${itemIndex}`;
+                    {isEditing ? (
+                      <div className="space-y-2 px-4 sm:px-5">
+                        {section.items.map((entry: any) => (
+                          <div key={entry.id} className="flex items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50/70 p-2">
+                            <input
+                              value={getIngredientEditText(entry.value)}
+                              onChange={(event) => updateIngredient(entry.id, event.target.value)}
+                              className="min-w-0 flex-1 rounded-xl border border-transparent bg-white px-3 py-2 text-sm font-medium text-gray-800 outline-none transition-colors focus:border-amber-200 focus:ring-2 focus:ring-amber-100"
+                              placeholder="Add ingredient"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeIngredient(entry.id)}
+                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                              aria-label="Remove ingredient"
+                            >
+                              <Trash2 size={15} aria-hidden="true" />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => addIngredient(sectionIndex)}
+                          className="inline-flex items-center gap-2 rounded-2xl border border-dashed border-amber-200 bg-white px-3.5 py-2 text-xs font-black text-amber-700 transition-colors hover:bg-amber-50"
+                        >
+                          <Plus size={14} aria-hidden="true" />
+                          Add ingredient
+                        </button>
+                      </div>
+                    ) : (
+                      <ul className="divide-y divide-gray-100">
+                        {section.items.map((item, itemIndex) => {
+                          const id = `section-${sectionIndex}-ingredient-${itemIndex}`;
 
-                        return (
-                          <IngredientRow
-                            key={id}
-                            id={id}
-                            raw={item}
-                            servingScale={servingScale}
-                            scaleQuantity={scaleQuantity}
-                            checked={checkedIngredientIds.has(id)}
-                            onToggle={toggleCheckedIngredientId}
-                            useMetric={useMetric}
-                            parseRawIngredient={parseRawIngredient}
-                            formatQty={formatQty}
-                            assumedLabel={assumedLabel}
-                          />
-                        );
-                      })}
-                    </ul>
+                          return (
+                            <IngredientRow
+                              key={id}
+                              id={id}
+                              raw={item}
+                              servingScale={servingScale}
+                              scaleQuantity={scaleQuantity}
+                              checked={checkedIngredientIds.has(id)}
+                              onToggle={toggleCheckedIngredientId}
+                              useMetric={useMetric}
+                              parseRawIngredient={parseRawIngredient}
+                              formatQty={formatQty}
+                              assumedLabel={assumedLabel}
+                            />
+                          );
+                        })}
+                      </ul>
+                    )}
                   </div>
                 ))}
               </div>
@@ -242,13 +332,40 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                   {stepCountLabel}
                 </span>
               </div>
-              <div className="rounded-2xl bg-white/80 p-4 ring-1 ring-amber-100/80">
-                <RecipeStepsPanel
-                  instructionSections={instructionSections}
-                  checkedSteps={checkedSteps}
-                  toggleStep={toggleCompletedStepId}
-                />
-              </div>
+              {isEditing ? (
+                <div className="space-y-4 rounded-2xl bg-white/80 p-4 ring-1 ring-amber-100/80">
+                  {editableInstructionSections.map((section, sectionIndex) => (
+                    <div key={sectionIndex} className="space-y-3">
+                      {section.title && (
+                        <h5 className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+                          {section.title}
+                        </h5>
+                      )}
+                      {section.instructions.map((entry: any, stepIndex: number) => (
+                        <label key={entry.id} className="flex gap-3">
+                          <span className="mt-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[11px] font-black text-amber-700">
+                            {stepIndex + 1}
+                          </span>
+                          <textarea
+                            value={getStepEditText(entry.value)}
+                            onChange={(event) => updateStep(entry.id, event.target.value)}
+                            className="min-h-[74px] flex-1 resize-y rounded-2xl border border-amber-100 bg-white px-3 py-2 text-sm font-medium leading-relaxed text-gray-800 outline-none transition-colors focus:border-amber-300 focus:ring-2 focus:ring-amber-100"
+                            placeholder="Edit step"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-white/80 p-4 ring-1 ring-amber-100/80">
+                  <RecipeStepsPanel
+                    instructionSections={instructionSections}
+                    checkedSteps={checkedSteps}
+                    toggleStep={toggleCompletedStepId}
+                  />
+                </div>
+              )}
             </section>
           )}
         </div>
