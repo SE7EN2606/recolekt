@@ -1,12 +1,18 @@
 import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Globe, Video, LogOut, HelpCircle, Info, Moon, Sun, Check, Zap, Infinity, ChartPie, Activity, AlertTriangle, BarChart3, Instagram, CheckCircle, Loader2, Unlink, Youtube, Smartphone, Facebook } from 'lucide-react';
+import { Globe, Video, LogOut, HelpCircle, Info, Moon, Sun, Check, Zap, Infinity, ChartPie, Activity, AlertTriangle, BarChart3, Instagram, CheckCircle, Loader2, Unlink, Youtube, Smartphone, Facebook, ShoppingBasket } from 'lucide-react';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { InstagramLink } from '../components/InstagramLink'; 
+import {
+  readShoppingPreferences,
+  saveShoppingPreferences,
+  type ShoppingPreferences,
+  type UnitPreference,
+} from '../features/shopping/shoppingPreferences';
 
 interface MistralLimits {
   status: string;
@@ -30,11 +36,19 @@ export const AccountSettings: React.FC = () => {
   const { user, signOut } = useAuth();
   const { t, i18n } = useTranslation(['settings', 'common']);
   const [darkMode, setDarkMode] = useState(false);
+  const [shoppingPreferences, setShoppingPreferences] = useState<ShoppingPreferences>(() => readShoppingPreferences());
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [mistralLimits, setMistralLimits] = useState<MistralLimits | null>(null);
   const [loadingLimits, setLoadingLimits] = useState(true);
 
   const lang = i18n.language.toUpperCase().startsWith('FR') ? 'FR' : 'EN';
+  const updateShoppingPreferences = (patch: Partial<ShoppingPreferences>) => {
+    setShoppingPreferences((current) => {
+      const next = { ...current, ...patch };
+      saveShoppingPreferences(next);
+      return next;
+    });
+  };
 
   // ─── INSTAGRAM DROP BOX STATE ───
   const [igLinked, setIgLinked] = useState(false);
@@ -352,7 +366,7 @@ export const AccountSettings: React.FC = () => {
               </div>
 
               {/* Dark Mode Toggle */}
-              <div className="w-full flex items-center justify-between p-5 transition-colors rounded-xl mb-1">
+              <div className="w-full flex items-center justify-between p-5 transition-colors border-b border-gray-50 rounded-xl mb-1">
                 <div className="flex items-center gap-4">
                   <div className="p-2.5 rounded-xl bg-gray-50 text-gray-500">
                     {darkMode ? <Moon size={20} /> : <Sun size={20} />}
@@ -365,6 +379,60 @@ export const AccountSettings: React.FC = () => {
                 >
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${darkMode ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
+              </div>
+
+              <div className="w-full p-5 transition-colors rounded-xl mb-1">
+                <div className="mb-4 flex items-center gap-4">
+                  <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-700">
+                    <ShoppingBasket size={20} />
+                  </div>
+                  <div>
+                    <span className="font-bold text-sm">Recipe & grocery units</span>
+                    <p className="mt-0.5 text-xs font-medium text-gray-400">Used for shopping list display only.</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Unit preference</div>
+                    <div className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1">
+                      {[
+                        ['metric', 'Metric'],
+                        ['us', 'US'],
+                        ['imperial', 'Imperial'],
+                      ].map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => updateShoppingPreferences({ unitPreference: value as UnitPreference })}
+                          className={`rounded-lg px-2 py-2 text-xs font-black transition-all ${
+                            shoppingPreferences.unitPreference === value
+                              ? 'bg-white text-emerald-700 shadow-sm'
+                              : 'text-gray-500'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-bold text-gray-900">Secondary measures</div>
+                      <div className="text-xs font-medium text-gray-400">Show safe equivalents like tbsp to grams.</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => updateShoppingPreferences({ showSecondaryMeasures: !shoppingPreferences.showSecondaryMeasures })}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                        shoppingPreferences.showSecondaryMeasures ? 'bg-emerald-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        shoppingPreferences.showSecondaryMeasures ? 'translate-x-6' : 'translate-x-1'
+                      }`} />
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="hidden md:block p-5">

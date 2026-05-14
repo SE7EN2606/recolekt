@@ -42,6 +42,14 @@ function canMergeQuantity(target: MergedShoppingItem, ingredient: NormalizedShop
   return Boolean(target.unit && ingredient.unit && target.unit === ingredient.unit);
 }
 
+function displayNameForQuantity(key: string, quantity: number | null, fallback: string): string {
+  if (key === 'onion' && quantity !== null) {
+    return quantity === 1 ? 'onion' : 'onions';
+  }
+
+  return fallback;
+}
+
 export function ingredientSectionsFromRecipe(recipe: any): IngredientSection[] {
   const candidates = [
     recipe?.recipe,
@@ -112,6 +120,13 @@ export function deriveMergedShoppingItems(
       existing.sources.push(source);
       if (canMergeQuantity(existing, ingredient)) {
         existing.quantity = Number((existing.quantity! + ingredient.quantity!).toFixed(3));
+        existing.name = displayNameForQuantity(existing.key, existing.quantity, existing.name);
+      } else if (existing.quantity !== null && ingredient.quantity === null) {
+        existing.name = displayNameForQuantity(existing.key, existing.quantity, existing.name);
+      } else if (existing.quantity === null && ingredient.quantity !== null) {
+        existing.quantity = ingredient.quantity;
+        existing.unit = ingredient.unit;
+        existing.name = displayNameForQuantity(existing.key, existing.quantity, ingredient.name);
       } else {
         existing.quantity = null;
         existing.unit = null;

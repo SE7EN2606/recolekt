@@ -5,17 +5,18 @@ export type ShoppingGroup = {
   items: MergedShoppingItem[];
 };
 
-const GROUPS = ['Produce', 'Meat & Fish', 'Dairy', 'Pantry', 'Spices', 'Bakery', 'Frozen', 'Other'] as const;
+const GROUPS = ['Produce', 'Meat & Fish', 'Dairy', 'Pantry', 'Spices & Condiments', 'Bakery', 'Frozen', 'Other'] as const;
 
 function groupForName(name: string): typeof GROUPS[number] {
   const text = name.toLowerCase();
-  if (/apple|avocado|banana|basil|berry|broccoli|carrot|cilantro|cucumber|garlic|herb|lemon|lime|onion|parsley|pepper|potato|spinach|tomato|zucchini/.test(text)) return 'Produce';
+  if (/frozen|ice cream/.test(text) || (/peas|carrot/.test(text) && /frozen/.test(text))) return 'Frozen';
+  if (/quark|cottage cheese|heavy cream|parmesan|shredded cheese|butter|cheese|cream|egg|feta|milk|mozzarella|yogurt/.test(text)) return 'Dairy';
+  if (/beef broth|beef stock|chicken broth|vegetable broth|\bbroth\b|\bstock\b|baking powder|baking soda|flour|shelf stable gnocchi|gnocchi|whole almonds|almonds|burgundy wine|dry red wine|\bwine\b/.test(text)) return 'Pantry';
+  if (/lemon juice|lime juice|worcestershire sauce|dijon mustard|mustard|salt|pepper|black pepper|red pepper flakes|curry|paprika|cumin|bay leaves?|oregano|thyme|rosemary|cinnamon|nutmeg|vanilla extract|tomato paste|soy sauce|vinegar|oil|olive oil|honey|spice|seasoning/.test(text)) return 'Spices & Condiments';
   if (/beef|chicken|cod|fish|lamb|meat|pork|salmon|sausage|shrimp|tuna|turkey/.test(text)) return 'Meat & Fish';
-  if (/butter|cheese|cream|egg|feta|milk|mozzarella|parmesan|yogurt/.test(text)) return 'Dairy';
-  if (/basil|cinnamon|cumin|oregano|paprika|pepper|salt|spice|thyme/.test(text)) return 'Spices';
+  if (/apple|avocado|banana|basil|berry|broccoli|carrots?|cilantro|cucumber|garlic|herb|lettuce|lemon zest|orange zest|lemon|lime|mushrooms?|onions?|parsley|potatoes|potato|spinach|tomato|zucchini/.test(text)) return 'Produce';
   if (/bagel|bread|bun|pita|tortilla/.test(text)) return 'Bakery';
-  if (/frozen|ice cream|peas/.test(text)) return 'Frozen';
-  if (/bean|flour|honey|lentil|oil|pasta|rice|sauce|sugar|vinegar/.test(text)) return 'Pantry';
+  if (/bean|lentil|pasta|rice|sauce|sugar/.test(text)) return 'Pantry';
   return 'Other';
 }
 

@@ -1,9 +1,14 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, ChevronRight, PackageCheck, ShoppingBasket, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, PackageCheck, ShoppingBasket, Trash2 } from 'lucide-react';
 import useShoppingList from '../features/shopping/useShoppingList';
 import type { MergedShoppingItem } from '../features/shopping/shoppingMerge';
 import type { ShoppingGroup } from '../features/shopping/shoppingGrouping';
+import { formatShoppingQuantity } from '../features/shopping/shoppingDisplay';
+import {
+  readShoppingPreferences,
+  type ShoppingPreferences,
+} from '../features/shopping/shoppingPreferences';
 
 function recipeTitle(recipe: any): string {
   return String(recipe?.title || recipe?.summary_title || recipe?.summaryTitle || recipe?.caption?.split?.('\n')?.[0] || 'Recipe').trim();
@@ -13,23 +18,21 @@ function recipeThumbnail(recipe: any): string {
   return String(recipe?.posterUrl || recipe?.thumbnailUrl || recipe?.gcs_urls?.preview_thumbnail || recipe?.gcsurls?.previewthumbnail || '');
 }
 
-function formatQuantity(item: MergedShoppingItem): string {
-  if (item.quantity === null) return '';
-  const rounded = Number.isInteger(item.quantity) ? String(item.quantity) : String(Number(item.quantity.toFixed(2)));
-  return item.unit ? `${rounded} ${item.unit}` : rounded;
-}
-
 function ShoppingItemRow({
   item,
   onPatch,
+  preferences,
   excludedView = false,
 }: {
   item: MergedShoppingItem;
   onPatch: (ingredientKey: string, patch: { checked?: boolean; excluded?: boolean }) => void;
+  preferences: ShoppingPreferences;
   excludedView?: boolean;
 }) {
+  const quantity = formatShoppingQuantity(item, preferences);
+
   return (
-    <div className="border-b border-gray-100 p-4 last:border-b-0">
+    <div className="border-b border-gray-100 p-3.5 last:border-b-0">
       <div className="flex items-start gap-3">
         <button
           type="button"
@@ -43,9 +46,9 @@ function ShoppingItemRow({
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            {formatQuantity(item) && (
+            {quantity && (
               <span className={`text-sm font-black ${excludedView ? 'text-gray-400' : 'text-emerald-700'}`}>
-                {formatQuantity(item)}
+                {quantity}
               </span>
             )}
             <span className={`text-sm font-black ${
@@ -85,15 +88,17 @@ function ShoppingItemRow({
 function ShoppingGroupSection({
   group,
   onPatch,
+  preferences,
   excludedView = false,
 }: {
   group: ShoppingGroup;
   onPatch: (ingredientKey: string, patch: { checked?: boolean; excluded?: boolean }) => void;
+  preferences: ShoppingPreferences;
   excludedView?: boolean;
 }) {
   return (
-    <section className="space-y-3">
-      <h3 className="text-sm font-black uppercase tracking-widest text-gray-400">{group.title}</h3>
+    <section className="space-y-2.5">
+      <h3 className="text-xs font-black uppercase tracking-widest text-gray-400">{group.title}</h3>
       <div className={`overflow-hidden rounded-[24px] border bg-white shadow-sm ${
         excludedView ? 'border-gray-200 opacity-90' : 'border-gray-100'
       }`}>
@@ -102,6 +107,7 @@ function ShoppingGroupSection({
             key={item.key}
             item={item}
             onPatch={onPatch}
+            preferences={preferences}
             excludedView={excludedView}
           />
         ))}
@@ -112,16 +118,32 @@ function ShoppingGroupSection({
 
 export const ShoppingList: React.FC = () => {
   const navigate = useNavigate();
+  const [alreadyHaveOpen, setAlreadyHaveOpen] = useState(false);
+  const [preferences, setPreferences] = useState<ShoppingPreferences>(() => readShoppingPreferences());
   const {
     loading,
     saving,
     error,
     recipeEntries,
+    mergedItems,
     groupedItems,
+    excludedItems,
     groupedExcludedItems,
     removeRecipe,
     patchItem,
   } = useShoppingList();
+  const activeItems = useMemo(() => mergedItems.filter((item) => !item.excluded), [mergedItems]);
+  const checkedActiveCount = activeItems.filter((item) => item.checked).length;
+
+  useEffect(() => {
+    const handlePreferenceChange = () => setPreferences(readShoppingPreferences());
+    window.addEventListener('recolekt:shopping-preferences-changed', handlePreferenceChange);
+    window.addEventListener('storage', handlePreferenceChange);
+    return () => {
+      window.removeEventListener('recolekt:shopping-preferences-changed', handlePreferenceChange);
+      window.removeEventListener('storage', handlePreferenceChange);
+    };
+  }, []);
 
   return (
     <div className="w-full animate-fade-in pb-24 pt-4 md:pb-12 md:pt-0">
@@ -192,8 +214,21 @@ export const ShoppingList: React.FC = () => {
             )}
           </aside>
 
-          <main className="space-y-6">
-            <h2 className="text-lg font-black text-gray-950">Groceries</h2>
+          <main className="space-y-5">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-black text-gray-950">Groceries</h2>
+                <p className="mt-0.5 text-sm font-medium text-gray-500">
+                  {activeItems.length} to buy
+                  {activeItems.length > 0 ? ` · ${checkedActiveCount} of ${activeItems.length} checked` : ''}
+                </p>
+              </div>
+              {excludedItems.length > 0 && (
+                <span className="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-black text-gray-500">
+                  Already have {excludedItems.length}
+                </span>
+              )}
+            </div>
             {groupedItems.length === 0 ? (
               <div className="rounded-[28px] border border-dashed border-gray-200 bg-white/60 p-8 text-center">
                 <PackageCheck className="mx-auto mb-3 text-gray-300" size={28} />
@@ -208,26 +243,44 @@ export const ShoppingList: React.FC = () => {
               </div>
             ) : (
               groupedItems.map((group) => (
-                <ShoppingGroupSection key={group.title} group={group} onPatch={patchItem} />
+                <ShoppingGroupSection
+                  key={group.title}
+                  group={group}
+                  onPatch={patchItem}
+                  preferences={preferences}
+                />
               ))
             )}
 
             {groupedExcludedItems.length > 0 && (
-              <div className="space-y-4 border-t border-gray-100 pt-6">
-                <div>
-                  <h2 className="text-lg font-black text-gray-950">Already have</h2>
-                  <p className="mt-1 text-sm font-medium text-gray-500">
-                    These are hidden from the active grocery list. Restore anything you still need.
-                  </p>
-                </div>
-                {groupedExcludedItems.map((group) => (
-                  <ShoppingGroupSection
-                    key={`excluded-${group.title}`}
-                    group={group}
-                    onPatch={patchItem}
-                    excludedView
+              <div className="space-y-3 border-t border-gray-100 pt-5">
+                <button
+                  type="button"
+                  onClick={() => setAlreadyHaveOpen((open) => !open)}
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 text-left ring-1 ring-gray-100 transition-colors hover:bg-gray-50"
+                  aria-expanded={alreadyHaveOpen}
+                >
+                  <span>
+                    <span className="block text-sm font-black text-gray-950">Already have · {excludedItems.length}</span>
+                    <span className="mt-0.5 block text-xs font-medium text-gray-500">
+                      Hidden from the active grocery list.
+                    </span>
+                  </span>
+                  <ChevronDown
+                    size={18}
+                    className={`shrink-0 text-gray-400 transition-transform ${alreadyHaveOpen ? 'rotate-180' : ''}`}
+                    aria-hidden="true"
                   />
-                ))}
+                </button>
+                {alreadyHaveOpen && groupedExcludedItems.map((group) => (
+                    <ShoppingGroupSection
+                      key={`excluded-${group.title}`}
+                      group={group}
+                      onPatch={patchItem}
+                      preferences={preferences}
+                      excludedView
+                    />
+                  ))}
               </div>
             )}
           </main>
