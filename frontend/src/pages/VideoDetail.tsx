@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, Trash2, Heart, FolderInput, AlertCircle, X,
   EllipsisVertical, AlignLeft, Pencil, Save, Globe, Folder, Archive,
@@ -214,6 +214,7 @@ function RecipeMetaPanel({ chips }: { chips: RecipeMetaChip[] }) {
 export const VideoDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const {
     videos,
@@ -549,6 +550,8 @@ export const VideoDetail: React.FC = () => {
       ]
     : []) as unknown as ActionItem[];
 
+  const cameFromCookbook = (location.state as any)?.from === 'cookbook';
+
   return (
     <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
       <style>{HASHTAG_STYLE}</style>
@@ -557,7 +560,20 @@ export const VideoDetail: React.FC = () => {
         <div className="min-w-0 w-full flex flex-col">
 
           {/* Thumbnail */}
-          <div className="relative z-0 w-full aspect-9/8 bg-black rounded-2xl overflow-hidden shadow-sm mb-5 group mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0">
+          {showRecipeCard && cameFromCookbook && (
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="mb-3 inline-flex w-fit items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-black text-amber-800 ring-1 ring-amber-100 transition-colors hover:bg-white"
+            >
+              <ArrowLeft size={14} aria-hidden="true" />
+              Back to Cookbook
+            </button>
+          )}
+
+          <div className={`relative z-0 w-full aspect-9/8 bg-black overflow-hidden shadow-sm group mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0 ${
+            showRecipeCard ? 'mb-6 rounded-[26px]' : 'mb-5 rounded-2xl'
+          }`}>
             {viewModel.thumbnailUrl && (
               <img
                 src={viewModel.thumbnailUrl}
@@ -633,7 +649,7 @@ export const VideoDetail: React.FC = () => {
           </div>
 
           {/* Title */}
-          <div className="mb-3">
+          <div className={showRecipeCard ? 'mb-2 px-0.5 md:mb-3' : 'mb-3'}>
             <EditableTitle
               title={viewModel.title}
               isEditMode={isEditing}
@@ -643,7 +659,7 @@ export const VideoDetail: React.FC = () => {
           </div>
 
           {/* Author + date */}
-          <div className="mb-6 flex items-center justify-between">
+          <div className={`flex items-center justify-between ${showRecipeCard ? 'mb-5 px-0.5' : 'mb-6'}`}>
             <a
               href={viewModel.originalUrl}
               target="_blank"
@@ -661,6 +677,12 @@ export const VideoDetail: React.FC = () => {
               </div>
             )}
           </div>
+
+          {showRecipeCard && cookStatus.hasActiveSession && (
+            <div className="mb-5 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+              Active cook session saved. Use Resume cooking to pick up where you left off.
+            </div>
+          )}
 
           {/* Metadata (mobile) */}
           {!showRecipeCard && (
@@ -756,6 +778,7 @@ export const VideoDetail: React.FC = () => {
                 useMetric={useMetric}
                 onToggleMetric={setUseMetric}
                 onMarkCooked={markCooked}
+                hasActiveSession={cookStatus.hasActiveSession}
                 openCookModeSignal={cookModeOpenSignal}
               />
             </div>

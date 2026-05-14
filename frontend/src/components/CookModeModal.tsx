@@ -31,12 +31,18 @@ export type CookModeIngredient =
       id?: string | null;
     };
 
+export type CookModeIngredientSection = {
+  title?: string;
+  items: CookModeIngredient[];
+};
+
 interface CookModeModalProps {
   isOpen: boolean;
   recipeId: string;
   recipeName: string;
   instructions: CookModeInstruction[];
   ingredients?: CookModeIngredient[];
+  ingredientSections?: CookModeIngredientSection[];
   checkedIngredientIds?: Set<string>;
   initialStepIndex?: number;
   servingScale?: number;
@@ -392,6 +398,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   recipeName,
   instructions,
   ingredients = [],
+  ingredientSections,
   checkedIngredientIds = new Set(),
   initialStepIndex = 0,
   servingScale = 1,
@@ -427,6 +434,12 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   const checkedCount = React.useMemo(
     () => ingredients.filter((ingredient, index) => checkedIngredientIds.has(ingId(ingredient, index))).length,
     [checkedIngredientIds, ingredients],
+  );
+  const displayIngredientSections = React.useMemo(
+    () => ingredientSections && ingredientSections.length > 0
+      ? ingredientSections
+      : [{ items: ingredients }],
+    [ingredientSections, ingredients],
   );
   const ingredientProgress = ingredients.length > 0 ? Math.round((checkedCount / ingredients.length) * 100) : 0;
   const stepProgress = steps.length > 0 ? Math.round(((idx + 1) / steps.length) * 100) : 0;
@@ -522,25 +535,15 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
 
         <main className="flex-1 overflow-y-auto px-4 py-5 pb-28 md:px-7 md:py-8 md:pb-28">
           {phase === 'prep' && (
-            <div className="mx-auto flex min-h-full max-w-4xl flex-col gap-6">
-              <section className="rounded-[28px] border border-white/10 bg-slate-800/70 p-5 shadow-2xl shadow-black/20 md:p-7">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-emerald-300">Prep</p>
-                    <h3 className="mt-2 text-3xl font-black tracking-tight text-white md:text-4xl">Prep & Ingredients</h3>
-                    <p className="mt-2 max-w-xl text-sm font-medium leading-relaxed text-white/60">
-                      Check off what is ready, then start the step-by-step flow.
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-slate-950/35 px-4 py-3 text-left sm:text-right">
-                    {ingredients.length > 0 && (
-                      <>
-                      <p className="text-2xl font-black tabular-nums text-white">{checkedCount}/{ingredients.length}</p>
-                      <p className="text-[11px] font-bold uppercase tracking-widest text-white/45">ready</p>
-                      </>
-                    )}
-                  </div>
+            <div className="relative mx-auto flex min-h-full w-full max-w-3xl flex-col gap-5 overflow-hidden">
+              <section className="rounded-[28px] border border-slate-700 bg-slate-900/80 p-5 text-center shadow-2xl shadow-black/20 md:p-7">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-300 ring-1 ring-emerald-300/20">
+                  <ChefHat size={28} aria-hidden="true" />
                 </div>
+                <h3 className="mt-4 text-3xl font-black tracking-tight text-white md:text-4xl">Prep & Ingredients</h3>
+                <p className="mx-auto mt-2 max-w-md text-sm font-medium leading-relaxed text-white/60">
+                  Check off what is ready, then start the step-by-step flow.
+                </p>
 
                 {ingredients.length > 0 && (
                   <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
@@ -549,88 +552,101 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
                 )}
               </section>
 
-              <section className="grid gap-3 rounded-[24px] border border-white/10 bg-slate-800/70 p-3 sm:grid-cols-[1fr_auto] sm:items-center">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Servings</p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => changeServingScale(servingScale - 0.5)}
-                      disabled={!onServingScaleChange || servingScale <= 0.5}
-                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label="Decrease servings"
-                    >
-                      <Minus size={16} />
-                    </button>
-                    <div className="min-w-[86px] rounded-xl bg-slate-950/35 px-4 py-2 text-center text-sm font-black tabular-nums text-white">
-                      {servingScale}×
+              <section className="rounded-[24px] border border-slate-700 bg-slate-900/80 p-4">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="text-center">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Servings</p>
+                    <div className="mt-2 flex items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => changeServingScale(servingScale - 0.5)}
+                        disabled={!onServingScaleChange || servingScale <= 0.5}
+                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label="Decrease servings"
+                      >
+                        <Minus size={16} />
+                      </button>
+                      <div className="min-w-[86px] rounded-xl bg-slate-950/35 px-4 py-2 text-center text-sm font-black tabular-nums text-white">
+                        {servingScale}×
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => changeServingScale(servingScale + 0.5)}
+                        disabled={!onServingScaleChange || servingScale >= 6}
+                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label="Increase servings"
+                      >
+                        <Plus size={16} />
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => changeServingScale(servingScale + 0.5)}
-                      disabled={!onServingScaleChange || servingScale >= 6}
-                      className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label="Increase servings"
-                    >
-                      <Plus size={16} />
-                    </button>
                   </div>
-                </div>
 
-                {onToggleMetric && (
-                  <div className="grid grid-cols-2 rounded-2xl bg-slate-950/35 p-1 text-xs font-black">
-                    <button
-                      type="button"
-                      onClick={() => onToggleMetric(true)}
-                      className={`rounded-xl px-3 py-2 transition-colors ${useMetric ? 'bg-emerald-400 text-emerald-950' : 'text-white/60 hover:text-white'}`}
-                    >
-                      Metric
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onToggleMetric(false)}
-                      className={`rounded-xl px-3 py-2 transition-colors ${!useMetric ? 'bg-emerald-400 text-emerald-950' : 'text-white/60 hover:text-white'}`}
-                    >
-                      Imperial
-                    </button>
-                  </div>
-                )}
+                  {onToggleMetric && (
+                    <div className="grid w-full max-w-xs grid-cols-2 rounded-2xl bg-slate-950/50 p-1 text-xs font-black">
+                      <button
+                        type="button"
+                        onClick={() => onToggleMetric(true)}
+                        className={`rounded-xl px-3 py-2 transition-colors ${useMetric ? 'bg-emerald-400 text-emerald-950' : 'text-white/60 hover:text-white'}`}
+                      >
+                        Metric
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onToggleMetric(false)}
+                        className={`rounded-xl px-3 py-2 transition-colors ${!useMetric ? 'bg-emerald-400 text-emerald-950' : 'text-white/60 hover:text-white'}`}
+                      >
+                        Imperial
+                      </button>
+                    </div>
+                  )}
+                </div>
               </section>
 
-              <section className="rounded-[28px] border border-white/10 bg-slate-950/25 p-3 md:p-4">
+              <section className="rounded-[28px] border border-slate-700 bg-slate-950/25 p-3 md:p-4">
                 {ingredients.length > 0 ? (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {ingredients.map((ingredient, index) => {
-                      const id = ingId(ingredient, index);
-                      const checked = checkedIngredientIds.has(id);
-                      const qty = formatIngredientQuantity(ingredient, servingScale, scaleQuantity, useMetric);
-                      const emoji = ingEmoji(ingredient);
+                  <div className="space-y-5">
+                    {displayIngredientSections.map((section, sectionIndex) => (
+                      <div key={section.title || sectionIndex} className="space-y-2.5">
+                        {section.title && (
+                          <h4 className="px-1 text-[11px] font-black uppercase tracking-widest text-slate-400">
+                            {section.title}
+                          </h4>
+                        )}
+                        <div className="grid gap-2">
+                          {section.items.map((ingredient, index) => {
+                            const id = ingId(ingredient, index);
+                            const checked = checkedIngredientIds.has(id);
+                            const qty = formatIngredientQuantity(ingredient, servingScale, scaleQuantity, useMetric);
+                            const emoji = ingEmoji(ingredient);
 
-                      return (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => onIngredientToggle?.(id)}
-                          className={`flex min-h-[64px] items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
-                            checked
-                              ? 'border-emerald-300/45 bg-emerald-400/15 text-white'
-                              : 'border-white/10 bg-slate-800/70 text-white/80 hover:bg-slate-700/70'
-                          }`}
-                          aria-pressed={checked}
-                        >
-                          <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border ${
-                            checked ? 'border-emerald-300 bg-emerald-400 text-emerald-950' : 'border-white/20 bg-slate-950/35 text-transparent'
-                          }`}>
-                            <Check size={15} strokeWidth={3} />
-                          </span>
-                          {emoji && <span className="text-xl leading-none">{emoji}</span>}
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-sm font-bold leading-snug">{ingName(ingredient)}</span>
-                            {qty && <span className="mt-0.5 block text-xs font-black text-emerald-200/85">{qty}</span>}
-                          </span>
-                        </button>
-                      );
-                    })}
+                            return (
+                              <button
+                                key={id}
+                                type="button"
+                                onClick={() => onIngredientToggle?.(id)}
+                                className={`flex min-h-[58px] items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
+                                  checked
+                                    ? 'border-emerald-300/45 bg-emerald-400/15 text-white'
+                                    : 'border-slate-700 bg-slate-800 text-white/85 hover:bg-slate-700/80'
+                                }`}
+                                aria-pressed={checked}
+                              >
+                                <span className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border ${
+                                  checked ? 'border-emerald-300 bg-emerald-400 text-emerald-950' : 'border-white/20 bg-slate-950/35 text-transparent'
+                                }`}>
+                                  <Check size={13} strokeWidth={3} />
+                                </span>
+                                {emoji && <span className="text-lg leading-none">{emoji}</span>}
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-sm font-bold leading-snug">{ingName(ingredient)}</span>
+                                </span>
+                                {qty && <span className="ml-2 shrink-0 text-right text-sm font-black text-emerald-300">{qty}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-white/10 bg-slate-800/70 px-5 py-8 text-center">
@@ -643,7 +659,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
           )}
 
           {phase === 'cook' && (
-            <div className="mx-auto flex min-h-full max-w-4xl flex-col gap-5">
+            <div className="relative mx-auto flex min-h-full w-full max-w-3xl flex-col gap-5 overflow-hidden">
               <section className="rounded-[28px] border border-white/10 bg-slate-800/75 p-4 shadow-2xl shadow-slate-950/20 md:p-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -730,7 +746,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
 
         {phase === 'prep' && (
           <footer className="flex-shrink-0 border-t border-white/10 bg-slate-950/55 px-4 py-4 backdrop-blur md:px-7">
-            <div className="mx-auto flex max-w-4xl items-center gap-3">
+            <div className="mx-auto flex w-full max-w-3xl items-center gap-3">
               <button
                 type="button"
                 onClick={startCooking}
@@ -746,7 +762,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
 
         {phase === 'cook' && (
           <footer className="flex-shrink-0 border-t border-white/10 bg-slate-950/35 px-4 py-4 backdrop-blur md:px-7">
-            <div className="mx-auto flex max-w-4xl items-center gap-3">
+            <div className="mx-auto flex w-full max-w-3xl items-center gap-3">
               <button
                 type="button"
                 onClick={() => setIdx((p) => Math.max(p - 1, 0))}

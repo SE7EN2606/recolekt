@@ -29,6 +29,7 @@ export interface RecipeDetailsCardProps {
   useMetric?: boolean;
   onToggleMetric?: (val: boolean) => void;
   onMarkCooked?: () => void;
+  hasActiveSession?: boolean;
   openCookModeSignal?: number;
 }
 
@@ -48,6 +49,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   useMetric = true,
   onToggleMetric,
   onMarkCooked,
+  hasActiveSession = false,
   openCookModeSignal = 0,
 }) => {
   const { t } = useTranslation(['videoDetail']);
@@ -91,6 +93,17 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           return typeof item === 'string' ? { item, id } : { ...item, id };
         })
       ),
+    [ingredientSections]
+  );
+  const cookModeIngredientSections = useMemo(
+    () =>
+      ingredientSections.map((section, sectionIndex) => ({
+        title: section.title,
+        items: section.items.map((item, itemIndex) => {
+          const id = `section-${sectionIndex}-ingredient-${itemIndex}`;
+          return typeof item === 'string' ? { item, id } : { ...item, id };
+        }),
+      })),
     [ingredientSections]
   );
   const allInstructions = useMemo(() => instructionSections.flatMap((section) => section.instructions), [instructionSections]);
@@ -170,7 +183,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               className="flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-gray-950 px-5 py-4 text-[15px] font-black text-white shadow-sm transition-colors hover:bg-gray-800 active:bg-gray-900"
             >
               <ChefHat size={18} aria-hidden="true" />
-              Cook this recipe
+              {hasActiveSession ? 'Resume cooking' : 'Cook this recipe'}
             </button>
           </div>
         )}
@@ -299,6 +312,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           recipeName={recipeName}
           instructions={allInstructions}
           ingredients={cookModeIngredients}
+          ingredientSections={cookModeIngredientSections}
           checkedIngredientIds={checkedIngredientIds}
           initialStepIndex={currentStepIndex}
           servingScale={servingScale}

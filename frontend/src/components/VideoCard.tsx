@@ -1,6 +1,6 @@
 import { API_BASE } from "../utils/api";
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Heart, Loader2, CheckCircle2, AlertCircle, RefreshCw, Trash2,
   CircleSlash2, Folder as FolderIcon, Globe, StickyNote, Clock3, ChefHat,
@@ -190,6 +190,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
   variant = 'gallery',
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation(['videoCard', 'gallery', 'common']);
   const { toggleFavorite, addVideo, deleteVideos, folders } = useData();
 
@@ -300,7 +301,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
   const handleCardClick = (e: React.MouseEvent) => {
     if (isDisabled) { e.preventDefault(); e.stopPropagation(); return; }
     if (selectionMode) { e.preventDefault(); e.stopPropagation(); onToggleSelect?.(); }
-    else { navigate(`/video/${videoId}`); }
+    else { navigate(`/video/${videoId}`, { state: location.pathname === '/cookbook' ? { from: 'cookbook' } : undefined }); }
   };
 
   const handleRetry = async (e: React.MouseEvent) => {
