@@ -37,6 +37,7 @@ import RecipeCookbookRail, {
 } from '../features/recipe-detail/RecipeCookbookRail';
 import useRecipeCookState from '../features/recipe-cook-state/useRecipeCookState';
 import useRecipeNotes from '../features/recipe-notes/useRecipeNotes';
+import useShoppingList from '../features/shopping/useShoppingList';
 import {
   mergeVideoPayload,
   buildViewModel,
@@ -448,6 +449,13 @@ export const VideoDetail: React.FC = () => {
     markCooked,
     resetCookState,
   } = useRecipeCookState(currentVideoId, showRecipeCard);
+
+  const {
+    plannedRecipeIds,
+    addRecipe: addRecipeToShoppingList,
+    removeRecipe: removeRecipeFromShoppingList,
+    saving: shoppingSaving,
+  } = useShoppingList();
 
   if (loading || !viewModel) return <Skeleton />;
 
@@ -893,6 +901,10 @@ export const VideoDetail: React.FC = () => {
             onMarkCooked={markCooked}
             onResetCookStatus={resetCookState}
             onStartCooking={() => setCookModeOpenSignal((value) => value + 1)}
+            shoppingPlanned={plannedRecipeIds.has(currentVideoId)}
+            shoppingSaving={shoppingSaving}
+            onAddToShoppingList={() => addRecipeToShoppingList(currentVideoId, null)}
+            onRemoveFromShoppingList={() => removeRecipeFromShoppingList(currentVideoId)}
           />
         ) : (
           <div className="hidden md:flex flex-col w-full gap-5 mt-0">

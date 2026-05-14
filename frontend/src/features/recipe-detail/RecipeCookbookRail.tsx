@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChefHat, ChevronDown, Clock3, Folder, Sparkles, StickyNote, Tags } from 'lucide-react';
+import { ChefHat, ChevronDown, Clock3, Folder, ShoppingBasket, Sparkles, StickyNote, Tags } from 'lucide-react';
 import { OriginalLink } from '../../components/VideoDetailWidgets';
 
 export type RecipeMetaChip = {
@@ -259,6 +259,10 @@ export function RecipeCookbookRail({
   onMarkCooked,
   onResetCookStatus,
   onStartCooking,
+  shoppingPlanned = false,
+  shoppingSaving = false,
+  onAddToShoppingList,
+  onRemoveFromShoppingList,
 }: {
   folderName: string | null;
   metaChips: RecipeMetaChip[];
@@ -275,6 +279,10 @@ export function RecipeCookbookRail({
   onMarkCooked: () => void;
   onResetCookStatus: () => void;
   onStartCooking: () => void;
+  shoppingPlanned?: boolean;
+  shoppingSaving?: boolean;
+  onAddToShoppingList?: () => void;
+  onRemoveFromShoppingList?: () => void;
 }) {
   const [sourceOpen, setSourceOpen] = React.useState(false);
   const hasSourceDetails = Boolean(caption || transcript || originalUrl);
@@ -295,6 +303,33 @@ export function RecipeCookbookRail({
     <div className="hidden md:flex flex-col w-full gap-5 mt-0">
       {originalUrl && (
         <OriginalLink url={originalUrl} platform={platform} t={t} />
+      )}
+
+      {(onAddToShoppingList || onRemoveFromShoppingList) && (
+        <button
+          type="button"
+          onClick={shoppingPlanned ? onRemoveFromShoppingList : onAddToShoppingList}
+          disabled={shoppingSaving}
+          className={`group rounded-[24px] border p-4 text-left shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+            shoppingPlanned
+              ? 'border-emerald-100 bg-emerald-50/80 hover:bg-emerald-50'
+              : 'border-gray-100 bg-white hover:bg-emerald-50/50'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
+              <ShoppingBasket size={19} aria-hidden="true" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-black text-gray-950">
+                {shoppingPlanned ? 'Remove from shopping list' : 'Add ingredients to shopping list'}
+              </span>
+              <span className="mt-0.5 block text-xs font-medium text-gray-500">
+                {shoppingPlanned ? 'This recipe is in your cooking plan.' : 'Plan this recipe and derive groceries.'}
+              </span>
+            </span>
+          </div>
+        </button>
       )}
 
       <button

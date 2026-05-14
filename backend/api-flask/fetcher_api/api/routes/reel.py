@@ -272,6 +272,47 @@ def _reel_exists(process_id: str, user_id: str) -> bool:
     return bool(row)
 
 
+def _ensure_shopping_list(cur, user_id: str) -> int:
+    cur.execute(
+        """
+        INSERT INTO shopping_lists (user_id, created_at, updated_at)
+        VALUES (%s, NOW(), NOW())
+        ON CONFLICT (user_id) DO UPDATE SET updated_at = shopping_lists.updated_at
+        RETURNING id
+        """,
+        (user_id,),
+    )
+    return int(cur.fetchone()["id"])
+
+
+def _serialize_shopping_override(row) -> dict:
+    d = dict(row) if hasattr(row, "keys") else row._asdict()
+    return {
+        "ingredientKey": d.get("ingredient_key") or "",
+        "checked": bool(d.get("checked")),
+        "excluded": bool(d.get("excluded")),
+        "updatedAt": d.get("updated_at").isoformat() if d.get("updated_at") else None,
+    }
+
+
+def _serialize_shopping_entry(row) -> dict:
+    d = dict(row) if hasattr(row, "keys") else row._asdict()
+    entry_id = d.pop("entry_id", None)
+    servings = d.pop("entry_servings", None)
+    added_at = d.pop("entry_added_at", None)
+    d.pop("shopping_list_id", None)
+    reel = _normalize_row_for_api(d, include_prompt=False)
+    reel = _merge_row_location_from_db(reel, reel.get("id"), reel.get("user_id"))
+    reel["process_id"] = reel.get("id")
+    return {
+        "id": entry_id,
+        "reelId": reel.get("id"),
+        "servings": float(servings) if servings is not None else None,
+        "addedAt": added_at.isoformat() if added_at else None,
+        "recipe": _json_safe_value(reel),
+    }
+
+
 def _fill_place_locality_from_reverse(place: dict) -> dict:
     if not isinstance(place, dict):
         return place
@@ -1117,6 +1158,81 @@ def _serialize_recipe_note(row) -> dict:
     }
 
 
+def _serialize_recipe_overrides(row) -> dict:
+    if not row:
+        return {
+            "verifiedByUser": False,
+            "overridePayload": {},
+            "createdAt": None,
+            "updatedAt": None,
+        }
+
+    d = dict(row) if hasattr(row, "keys") else row._asdict()
+    payload = d.get("override_payload") or {}
+    if isinstance(payload, str):
+        payload = json_loads_maybe(payload, default={})
+    if not isinstance(payload, dict):
+        payload = {}
+
+    return {
+        "verifiedByUser": bool(d.get("verified_by_user")),
+        "overridePayload": payload,
+        "createdAt": d.get("created_at").isoformat() if d.get("created_at") else None,
+        "updatedAt": d.get("updated_at").isoformat() if d.get("updated_at") else None,
+    }
+
+
+def _sanitize_recipe_override_payload(data: dict) -> tuple[dict, bool]:
+    override_payload = data.get("overridePayload", data.get("override_payload", data.get("overrides", {})))
+    if not isinstance(override_payload, dict):
+        override_payload = {}
+
+    ingredients = override_payload.get("ingredients") if isinstance(override_payload.get("ingredients"), dict) else {}
+    steps = override_payload.get("steps") if isinstance(override_payload.get("steps"), dict) else {}
+
+    edited_ingredients = ingredients.get("editedById", ingredients.get("edited_by_id", {}))
+    removed_ingredient_ids = ingredients.get("removedIds", ingredients.get("removed_ids", []))
+    added_ingredients = ingredients.get("added", [])
+    edited_steps = steps.get("editedById", steps.get("edited_by_id", {}))
+
+    if not isinstance(edited_ingredients, dict):
+        edited_ingredients = {}
+    if not isinstance(removed_ingredient_ids, list):
+        removed_ingredient_ids = []
+    if not isinstance(added_ingredients, list):
+        added_ingredients = []
+    if not isinstance(edited_steps, dict):
+        edited_steps = {}
+
+    sanitized_added = []
+    for item in added_ingredients:
+        if not isinstance(item, dict):
+            continue
+        try:
+            section_index = int(item.get("sectionIndex") or item.get("section_index") or 0)
+        except (TypeError, ValueError):
+            section_index = 0
+        sanitized_added.append({
+            "id": str(item.get("id") or ""),
+            "sectionIndex": max(0, section_index),
+            "value": item.get("value") if item.get("value") is not None else "",
+        })
+
+    sanitized_payload = {
+        "ingredients": {
+            "editedById": {str(k): v for k, v in edited_ingredients.items()},
+            "removedIds": [str(v) for v in removed_ingredient_ids if v is not None],
+            "added": sanitized_added,
+        },
+        "steps": {
+            "editedById": {str(k): v for k, v in edited_steps.items()},
+        },
+    }
+
+    verified_by_user = bool(data.get("verifiedByUser", data.get("verified_by_user", False)))
+    return sanitized_payload, verified_by_user
+
+
 def _serialize_cook_summary(row) -> dict:
     if not row:
         return {
@@ -1255,6 +1371,291 @@ def recipe_personal_notes(process_id):
     except Exception as e:
         logger.error("Error handling recipe note for reel %s: %s", process_id, e, exc_info=True)
         return jsonify({"error": "Recipe note failed"}), 500
+
+
+@reel_bp.route("/reel/<process_id>/recipe-overrides", methods=["GET", "PUT", "OPTIONS"])
+def recipe_user_overrides(process_id):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        if not _reel_exists(process_id, user_id):
+            return jsonify({"error": "Reel not found"}), 404
+
+        if request.method == "GET":
+            row = fetch_one(
+                """
+                SELECT override_payload, verified_by_user, created_at, updated_at
+                FROM recipe_user_overrides
+                WHERE user_id = %s AND reel_id = %s
+                LIMIT 1
+                """,
+                (user_id, process_id),
+            )
+            return add_no_cache_headers(jsonify(_serialize_recipe_overrides(row)))
+
+        payload, verified_by_user = _sanitize_recipe_override_payload(request.get_json(silent=True) or {})
+
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO recipe_user_overrides (
+                        user_id,
+                        reel_id,
+                        override_payload,
+                        verified_by_user,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, NOW(), NOW())
+                    ON CONFLICT (user_id, reel_id) DO UPDATE SET
+                        override_payload = EXCLUDED.override_payload,
+                        verified_by_user = EXCLUDED.verified_by_user,
+                        updated_at = NOW()
+                    RETURNING override_payload, verified_by_user, created_at, updated_at
+                    """,
+                    (
+                        user_id,
+                        process_id,
+                        psycopg2.extras.Json(payload),
+                        verified_by_user,
+                    ),
+                )
+                row = cur.fetchone()
+            conn.commit()
+
+        return add_no_cache_headers(jsonify(_serialize_recipe_overrides(row)))
+
+    except Exception as e:
+        logger.error("Error handling recipe overrides for reel %s: %s", process_id, e, exc_info=True)
+        return jsonify({"error": "Recipe override save failed"}), 500
+
+
+@reel_bp.route("/shopping-list", methods=["GET", "OPTIONS"])
+def get_shopping_list():
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                shopping_list_id = _ensure_shopping_list(cur, user_id)
+                cur.execute(
+                    """
+                    SELECT
+                        sre.id AS entry_id,
+                        sre.shopping_list_id,
+                        sre.servings AS entry_servings,
+                        sre.added_at AS entry_added_at,
+                        r.id, r.user_id, r.source_url, r.folder_id, r.is_favorite, r.status,
+                        r.summary_category, r.summary_title, r.summary_topic, r.summary_text,
+                        r.summary_bullets, r.summary_hashtags, r.summary_emojis,
+                        r.content_type, r.created_at, r.caption, r.author_name,
+                        r.is_long_video, r.duration, r.recipe, r.workout, r.transcription,
+                        r.tools_list, r.location, r.is_list, r.list_subtype, r.list_count, r.list_type,
+                        r.gcs_urls
+                    FROM shopping_recipe_entries sre
+                    JOIN reels r
+                      ON r.id = sre.reel_id
+                     AND r.user_id = %s
+                    WHERE sre.shopping_list_id = %s
+                      AND sre.user_id = %s
+                    ORDER BY sre.added_at DESC
+                    """,
+                    (user_id, shopping_list_id, user_id),
+                )
+                entry_rows = cur.fetchall()
+                cur.execute(
+                    """
+                    SELECT ingredient_key, checked, excluded, updated_at
+                    FROM shopping_item_overrides
+                    WHERE shopping_list_id = %s
+                      AND user_id = %s
+                    ORDER BY updated_at DESC
+                    """,
+                    (shopping_list_id, user_id),
+                )
+                override_rows = cur.fetchall()
+            conn.commit()
+
+        return add_no_cache_headers(jsonify({
+            "shoppingListId": shopping_list_id,
+            "recipeEntries": [_serialize_shopping_entry(row) for row in entry_rows],
+            "itemOverrides": [_serialize_shopping_override(row) for row in override_rows],
+        }))
+
+    except Exception as e:
+        logger.error("Error fetching shopping list: %s", e, exc_info=True)
+        return jsonify({"error": "Shopping list fetch failed"}), 500
+
+
+@reel_bp.route("/shopping-list/recipes", methods=["POST", "OPTIONS"])
+def add_shopping_recipe():
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        data = request.get_json(silent=True) or {}
+        reel_id = str(data.get("reelId", data.get("reel_id", ""))).strip()
+        servings_raw = data.get("servings")
+
+        if not reel_id:
+            return jsonify({"error": "reelId is required"}), 400
+        if not _reel_exists(reel_id, user_id):
+            return jsonify({"error": "Reel not found"}), 404
+
+        try:
+            servings = float(servings_raw) if servings_raw is not None else None
+        except (TypeError, ValueError):
+            servings = None
+
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                shopping_list_id = _ensure_shopping_list(cur, user_id)
+                cur.execute(
+                    """
+                    INSERT INTO shopping_recipe_entries (
+                        shopping_list_id,
+                        user_id,
+                        reel_id,
+                        servings,
+                        added_at
+                    )
+                    VALUES (%s, %s, %s, %s, NOW())
+                    ON CONFLICT (shopping_list_id, reel_id) DO UPDATE SET
+                        servings = EXCLUDED.servings,
+                        added_at = shopping_recipe_entries.added_at
+                    RETURNING id, reel_id, servings, added_at
+                    """,
+                    (shopping_list_id, user_id, reel_id, servings),
+                )
+                row = cur.fetchone()
+            conn.commit()
+
+        return add_no_cache_headers(jsonify({
+            "id": row.get("id"),
+            "reelId": row.get("reel_id"),
+            "servings": float(row.get("servings")) if row.get("servings") is not None else None,
+            "addedAt": row.get("added_at").isoformat() if row.get("added_at") else None,
+        }))
+
+    except Exception as e:
+        logger.error("Error adding shopping recipe: %s", e, exc_info=True)
+        return jsonify({"error": "Shopping recipe add failed"}), 500
+
+
+@reel_bp.route("/shopping-list/recipes/<reel_id>", methods=["DELETE", "OPTIONS"])
+def remove_shopping_recipe(reel_id):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        if not _reel_exists(reel_id, user_id):
+            return jsonify({"error": "Reel not found"}), 404
+
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                shopping_list_id = _ensure_shopping_list(cur, user_id)
+                cur.execute(
+                    """
+                    DELETE FROM shopping_recipe_entries
+                    WHERE shopping_list_id = %s
+                      AND user_id = %s
+                      AND reel_id = %s
+                    """,
+                    (shopping_list_id, user_id, reel_id),
+                )
+            conn.commit()
+
+        return add_no_cache_headers(jsonify({"ok": True, "reelId": reel_id}))
+
+    except Exception as e:
+        logger.error("Error removing shopping recipe %s: %s", reel_id, e, exc_info=True)
+        return jsonify({"error": "Shopping recipe remove failed"}), 500
+
+
+@reel_bp.route("/shopping-list/items/<path:ingredient_key>", methods=["PATCH", "OPTIONS"])
+def patch_shopping_item(ingredient_key):
+    if request.method == "OPTIONS":
+        return "", 200
+
+    try:
+        try:
+            user_id = get_user_id_from_request()
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        key = str(ingredient_key or "").strip()
+        if not key:
+            return jsonify({"error": "ingredient_key is required"}), 400
+
+        data = request.get_json(silent=True) or {}
+        checked = data.get("checked")
+        excluded = data.get("excluded")
+        if checked is None and excluded is None:
+            return jsonify({"error": "checked or excluded is required"}), 400
+        has_checked = checked is not None
+        has_excluded = excluded is not None
+
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                shopping_list_id = _ensure_shopping_list(cur, user_id)
+                cur.execute(
+                    """
+                    INSERT INTO shopping_item_overrides (
+                        shopping_list_id,
+                        user_id,
+                        ingredient_key,
+                        checked,
+                        excluded,
+                        updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (shopping_list_id, ingredient_key) DO UPDATE SET
+                        checked = CASE WHEN %s THEN EXCLUDED.checked ELSE shopping_item_overrides.checked END,
+                        excluded = CASE WHEN %s THEN EXCLUDED.excluded ELSE shopping_item_overrides.excluded END,
+                        updated_at = NOW()
+                    RETURNING ingredient_key, checked, excluded, updated_at
+                    """,
+                    (
+                        shopping_list_id,
+                        user_id,
+                        key,
+                        bool(checked) if has_checked else False,
+                        bool(excluded) if has_excluded else False,
+                        has_checked,
+                        has_excluded,
+                    ),
+                )
+                row = cur.fetchone()
+            conn.commit()
+
+        return add_no_cache_headers(jsonify(_serialize_shopping_override(row)))
+
+    except Exception as e:
+        logger.error("Error updating shopping item %s: %s", ingredient_key, e, exc_info=True)
+        return jsonify({"error": "Shopping item update failed"}), 500
 
 
 @reel_bp.route("/reel/<process_id>/cook-state", methods=["GET", "OPTIONS"])
