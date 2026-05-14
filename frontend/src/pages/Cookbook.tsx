@@ -15,10 +15,10 @@ import {
   isNeverCooked,
   isUntouchedSave,
   pickTodaysRecipe,
-  recipeSearchScore,
   RECIPE_TIME_BUCKETS,
   type RecipeTimeBucket,
 } from '../features/cookbook/cookbookIntelligence';
+import { searchCookbookRecipes, type CookbookSearchResult } from '../features/cookbook/cookbookSearch';
 
 type CookbookFilter = 'all' | 'cooked' | 'notes' | 'cooking';
 
@@ -109,10 +109,11 @@ const CookbookEmptyState: React.FC<{ children: React.ReactNode }> = ({ children 
 const RecipeDecisionCard: React.FC<{
   video: any;
   reason?: string;
+  searchLabels?: string[];
   compact?: boolean;
   fill?: boolean;
   featured?: boolean;
-}> = ({ video, reason, compact = false, fill = false, featured = false }) => {
+}> = ({ video, reason, searchLabels = [], compact = false, fill = false, featured = false }) => {
   const navigate = useNavigate();
   const title = getRecipeTitle(video);
   const thumbnailUrl = getThumbnailUrl(video);
@@ -176,17 +177,22 @@ const RecipeDecisionCard: React.FC<{
           </p>
         )}
         <div className={`${featured ? 'mt-3' : 'mt-1.5'} flex flex-wrap gap-1.5`}>
-          {bucket && (
+          {searchLabels.slice(0, 3).map((label) => (
+            <span key={label} className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-600">
+              {label}
+            </span>
+          ))}
+          {searchLabels.length === 0 && bucket && (
             <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700 ring-1 ring-amber-100">
               {bucket}
             </span>
           )}
-          {cuisine && (
+          {searchLabels.length === 0 && cuisine && (
             <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[10px] font-black text-stone-600">
               {cuisine}
             </span>
           )}
-          {technique && !featured && (
+          {searchLabels.length === 0 && technique && !featured && (
             <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700 ring-1 ring-emerald-100">
               {technique}
             </span>
@@ -318,7 +324,7 @@ export const Cookbook: React.FC = () => {
     cooking: currentlyCooking.length,
   };
 
-  const filteredRecipes = useMemo(() => {
+  const filteredRecipeResults = useMemo<CookbookSearchResult[]>(() => {
     const byFilter = recipes.filter((video: any) => {
       const state = getRecipeUserState(video);
       if (activeFilter === 'cooked') return state.cookCount > 0;
@@ -327,7 +333,8 @@ export const Cookbook: React.FC = () => {
       return true;
     });
 
-    return byFilter.filter((video: any) => !query.trim() || recipeSearchScore(video, query) > 0);
+    if (query.trim()) return searchCookbookRecipes(byFilter, query);
+    return byFilter.map((video: any) => ({ video, score: 1, labels: [] }));
   }, [activeFilter, query, recipes]);
 
   if (loading || (isLoading && videos.length === 0)) {
@@ -412,11 +419,20 @@ export const Cookbook: React.FC = () => {
       </div>
 
       {searchActive ? (
-        <CookbookSection title={showAllRecipes && activeFilter === 'all' && !query.trim() ? 'All Recipes' : 'Search Results'} subtitle={`${filteredRecipes.length} recipe${filteredRecipes.length === 1 ? '' : 's'}`}>
-          {filteredRecipes.length > 0 ? (
+        <CookbookSection
+          title={query.trim() ? 'Top matches' : showAllRecipes && activeFilter === 'all' ? 'All Recipes' : 'Search Results'}
+          subtitle={query.trim() ? `Ranked for "${query.trim()}"` : `${filteredRecipeResults.length} recipe${filteredRecipeResults.length === 1 ? '' : 's'}`}
+        >
+          {filteredRecipeResults.length > 0 ? (
             <div className="grid grid-cols-2 gap-x-4 gap-y-7 md:grid-cols-3 lg:grid-cols-4 md:gap-x-6 md:gap-y-9">
-              {filteredRecipes.map((video: any) => (
-                <RecipeDecisionCard key={getVideoId(video)} video={video} compact fill />
+              {filteredRecipeResults.map((result) => (
+                <RecipeDecisionCard
+                  key={getVideoId(result.video)}
+                  video={result.video}
+                  searchLabels={query.trim() ? result.labels : []}
+                  compact
+                  fill
+                />
               ))}
             </div>
           ) : (
