@@ -93,6 +93,10 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     isEditing,
     setIsEditing,
     overrides: recipeOverrides,
+    loadingOverrides,
+    savingOverrides,
+    overridesSaved,
+    overrideError,
     editedIngredientSections: ingredientSections,
     editedInstructionSections: instructionSections,
     editableIngredientSections,
@@ -228,7 +232,15 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               <div>
                 <p className="text-[12px] font-black uppercase tracking-widest text-amber-700">Personal recipe edits</p>
                 <p className="mt-0.5 text-xs font-medium text-amber-800/75">
-                  Local override layer for now. The extracted recipe stays unchanged.
+                  {loadingOverrides
+                    ? 'Loading your recipe edits...'
+                    : overrideError
+                      ? overrideError
+                      : savingOverrides
+                        ? 'Saving edits...'
+                        : overridesSaved
+                          ? 'Saved. The extracted recipe stays unchanged.'
+                          : 'Your changes save as personal overrides. The extracted recipe stays unchanged.'}
                 </p>
               </div>
               <button
