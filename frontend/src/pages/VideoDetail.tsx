@@ -38,6 +38,7 @@ import RecipeCookbookRail, {
 import useRecipeCookState from '../features/recipe-cook-state/useRecipeCookState';
 import useRecipeNotes from '../features/recipe-notes/useRecipeNotes';
 import useShoppingList from '../features/shopping/useShoppingList';
+import { readShoppingPreferences } from '../features/shopping/shoppingPreferences';
 import {
   mergeVideoPayload,
   buildViewModel,
@@ -238,7 +239,40 @@ export const VideoDetail: React.FC = () => {
   const [editedVideo, setEditedVideo] = useState<any>(null);
   const [servingScale, setServingScale] = useState(1);
   const richRecipeRef = useRef<any>(null);
-  const [useMetric, setUseMetric] = useState(true);
+  const [useMetric, setUseMetric] = useState(() => {
+    const p = readShoppingPreferences();
+    return p.unitPreference === 'metric';
+  });
+
+  const [temperatureUnit, setTemperatureUnit] = useState<'celsius' | 'fahrenheit'>(() => {
+    const p = readShoppingPreferences();
+    return p.temperatureUnit === 'fahrenheit' ? 'fahrenheit' : 'celsius';
+  });
+  const [recipeConversion, setRecipeConversion] = useState<'do_not_convert' | 'smart' | 'always'>(() => {
+    const p = readShoppingPreferences();
+    return p.recipeConversion === 'always' || p.recipeConversion === 'smart' ? p.recipeConversion : 'do_not_convert';
+  });
+  const [volumePreference, setVolumePreference] = useState<'metric' | 'us'>(() => {
+    const p = readShoppingPreferences();
+    return p.volumePreference === 'us' ? 'us' : 'metric';
+  });
+  const [rounding, setRounding] = useState<'rounded' | 'exact'>(() => {
+    const p = readShoppingPreferences();
+    return p.rounding === 'exact' ? 'exact' : 'rounded';
+  });
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const p = (e as CustomEvent).detail || readShoppingPreferences();
+      setUseMetric(p.unitPreference === 'metric');
+      setTemperatureUnit(p.temperatureUnit === 'fahrenheit' ? 'fahrenheit' : 'celsius');
+      setRecipeConversion(p.recipeConversion === 'always' || p.recipeConversion === 'smart' ? p.recipeConversion : 'do_not_convert');
+      setVolumePreference(p.volumePreference === 'us' ? 'us' : 'metric');
+      setRounding(p.rounding === 'exact' ? 'exact' : 'rounded');
+    };
+    window.addEventListener('recolekt:shopping-preferences-changed', handler);
+    return () => window.removeEventListener('recolekt:shopping-preferences-changed', handler);
+  }, []);
   const [cookModeOpenSignal, setCookModeOpenSignal] = useState(0);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
@@ -411,7 +445,11 @@ export const VideoDetail: React.FC = () => {
     return buildViewModel(source, showOriginal, galleryThumbnail);
   }, [video, editedVideo, isEditing, showOriginal, galleryThumbnail]);
 
-  const recipeForCard = buildRecipeForCard(viewModel?.recipe, (video as any)?.recipe);
+  const recipeForCard = buildRecipeForCard(viewModel?.recipe, (video as any)?.recipe, [
+    (video as any)?.gcs?.recipe,
+    (video as any)?.raw?.recipe,
+    (video as any)?.__raw?.recipe,
+  ]);
   const currentInstructionCount = recipeInstructionCount(recipeForCard);
   const currentIngredientCount = recipeIngredientCount(recipeForCard);
   const storedInstructionCount = recipeInstructionCount(richRecipeRef.current);
@@ -435,7 +473,23 @@ export const VideoDetail: React.FC = () => {
       ? richRecipeRef.current
       : recipeForCard;
 
-  const showRecipeCard = Boolean(stableRecipeForCard && hasUsableRecipeContent(stableRecipeForCard));
+  const rawContentType = String(
+    (video as any)?.content_type ||
+    (video as any)?.contentType ||
+    (video as any)?.__raw?.content_type ||
+    ''
+  ).toLowerCase();
+  const recipeContentAvailable = [
+    stableRecipeForCard,
+    recipeForCard,
+    viewModel?.recipe,
+    (video as any)?.recipe,
+    richRecipeRef.current,
+  ].some(hasUsableRecipeContent);
+  const showRecipeCard = Boolean(
+    recipeContentAvailable ||
+    (rawContentType === 'recipe' && stableRecipeForCard)
+  );
 
   const {
     note: recipeNote,
@@ -472,7 +526,7 @@ export const VideoDetail: React.FC = () => {
     : undefined;
   const derivedSubtype = deriveToolsSubtype(viewModel.toolsList);
   const safeDerivedSubtype = isBadgeToolsSubtype(derivedSubtype) ? derivedSubtype : 'picks';
-  const recipeMetaChips = getRecipeMetaChips(viewModel.recipe, viewModel);
+  const recipeMetaChips = getRecipeMetaChips(stableRecipeForCard || viewModel.recipe, viewModel);
 
   const cleanMetadataValue = (value: any) => {
     const text = String(value || '').trim();
@@ -788,6 +842,10 @@ export const VideoDetail: React.FC = () => {
                 scaleQuantity={scaleQuantity}
                 useMetric={useMetric}
                 onToggleMetric={setUseMetric}
+                temperatureUnit={temperatureUnit}
+                recipeConversion={recipeConversion}
+                volumePreference={volumePreference}
+                rounding={rounding}
                 onMarkCooked={markCooked}
                 hasActiveSession={cookStatus.hasActiveSession}
                 cookStatusLoading={cookStatusLoading}

@@ -173,3 +173,24 @@ FOR EACH ROW EXECUTE FUNCTION update_reels_search_vector();
 -- MIGRATION 009 — Add xyz column to reels
 -- ALTER TABLE reels ADD COLUMN IF NOT EXISTS xyz TEXT;
 -- -----------------------------------------------------------------------------
+
+-- -----------------------------------------------------------------------------
+-- MIGRATION 010 — User preferences for UI and measurements
+-- -----------------------------------------------------------------------------
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS dark_mode BOOLEAN DEFAULT FALSE;
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS measurement_system TEXT DEFAULT 'metric';
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS temperature_unit TEXT DEFAULT 'celsius';
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS volume_preference TEXT DEFAULT 'metric';
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS recipe_conversion TEXT DEFAULT 'do_not_convert';
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS rounding TEXT DEFAULT 'rounded';

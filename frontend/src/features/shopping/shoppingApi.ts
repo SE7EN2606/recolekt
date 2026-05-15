@@ -45,7 +45,7 @@ export async function fetchShoppingRecipePayload(reelId: string): Promise<any> {
 
   merged.id = db?.id || db?.process_id || gcs?.id || gcs?.process_id || reelId;
   merged.process_id = db?.process_id || db?.id || gcs?.process_id || gcs?.id || reelId;
-  if (gcs?.recipe) {
+  if (gcs?.recipe && !db?.recipe) {
     merged.recipe = gcs.recipe;
   }
 

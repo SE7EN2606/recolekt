@@ -18,6 +18,7 @@ const Cookbook        = lazy(() => import('./pages/Cookbook').then(m => ({ defau
 const VideoDetail     = lazy(() => import('./pages/VideoDetail').then(m => ({ default: m.VideoDetail })));
 const Organizer       = lazy(() => import('./pages/Organizer').then(m => ({ default: m.Organizer })));
 const AccountSettings = lazy(() => import('./pages/AccountSettings').then(m => ({ default: m.AccountSettings })));
+const OnboardingFlow  = lazy(() => import('./pages/OnboardingFlow').then(m => ({ default: m.OnboardingFlow })));
 const BillingPage     = lazy(() => import('./pages/BillingPage').then(m => ({ default: m.BillingPage })));
 const SubscribePage   = lazy(() => import('./pages/SubscribePage').then(m => ({ default: m.SubscribePage })));
 const Features        = lazy(() => import('./pages/Features').then(m => ({ default: m.Features })));
@@ -131,6 +132,7 @@ function App() {
                   <Route path="/cookbook" element={<Cookbook />} />
                   <Route path="/video/:id" element={<VideoDetail />} />
                   <Route path="/settings" element={<AccountSettings />} />
+                  <Route path="/onboarding" element={<OnboardingFlow />} />
                   <Route path="/profile" element={<ProfileSettings />} />
                   <Route path="/places" element={<SavedPlaces />} />
                   <Route path="/grocery-list" element={<ShoppingList />} />

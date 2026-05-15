@@ -33,6 +33,10 @@ export interface RecipeDetailsCardProps {
   scaleQuantity?: (qty: string, scale: number) => string;
   useMetric?: boolean;
   onToggleMetric?: (val: boolean) => void;
+  temperatureUnit?: 'celsius' | 'fahrenheit';
+  recipeConversion?: 'do_not_convert' | 'smart' | 'always';
+  volumePreference?: 'metric' | 'us';
+  rounding?: 'rounded' | 'exact';
   onMarkCooked?: () => void;
   hasActiveSession?: boolean;
   cookStatusLoading?: boolean;
@@ -54,6 +58,10 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   scaleQuantity,
   useMetric = true,
   onToggleMetric,
+  temperatureUnit = 'celsius',
+  recipeConversion = 'smart',
+  volumePreference = 'metric',
+  rounding = 'rounded',
   onMarkCooked,
   hasActiveSession = false,
   cookStatusLoading = false,
@@ -353,6 +361,9 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                               checked={checkedIngredientIds.has(id)}
                               onToggle={toggleCheckedIngredientId}
                               useMetric={useMetric}
+                              recipeConversion={recipeConversion}
+                              volumePreference={volumePreference}
+                              rounding={rounding}
                               parseRawIngredient={parseRawIngredient}
                               formatQty={formatQty}
                               assumedLabel={assumedLabel}
@@ -406,6 +417,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                     instructionSections={instructionSections}
                     checkedSteps={checkedSteps}
                     toggleStep={toggleCompletedStepId}
+                    temperatureUnit={temperatureUnit}
                   />
                 </div>
               )}

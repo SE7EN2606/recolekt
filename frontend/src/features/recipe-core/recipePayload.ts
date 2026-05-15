@@ -1,3 +1,4 @@
+import { convertToImperial, convertToMetric } from "../../utils/conversionUtils";
 import type { RawIngredient, RawInstruction } from './types';
 
 export type IngredientSection = {
@@ -42,6 +43,61 @@ export function firstNonEmptyArray(...values: any[]): any[] | undefined {
   }
 
   return undefined;
+}
+
+function longestArray(...values: any[]): any[] | undefined {
+  let best: any[] | undefined;
+
+  for (const value of values) {
+    if (!Array.isArray(value) || value.length === 0) continue;
+    if (!best || value.length > best.length) best = value;
+  }
+
+  return best;
+}
+
+function sectionItemCount(sections: any): number {
+  if (!Array.isArray(sections)) return 0;
+
+  return sections.reduce((total, section) => {
+    const items = [
+      section?.items,
+      section?.ingredients,
+      section?.instructions,
+      section?.steps,
+      section?.children,
+    ]
+      .filter(Array.isArray)
+      .flat();
+
+    return total + items.length;
+  }, 0);
+}
+
+function richestSectionArray(...values: any[]): any[] | undefined {
+  let best: any[] | undefined;
+  let bestCount = 0;
+
+  for (const value of values) {
+    const count = sectionItemCount(value);
+    if (count > bestCount) {
+      best = value;
+      bestCount = count;
+    }
+  }
+
+  return best;
+}
+
+function recipeContentCandidates(recipe: any): any[] {
+  const parsed = parseRecipePayload(recipe);
+  if (!parsed) return [];
+
+  return [
+    parsed,
+    parsed.english,
+    parsed.original,
+  ].filter((candidate) => candidate && typeof candidate === 'object');
 }
 
 function hasItems(sections: any[], itemKeys: string[]): boolean {
@@ -94,7 +150,14 @@ function ingredientSignature(item: RawIngredient) {
 function instructionSignature(item: RawInstruction) {
   if (typeof item === 'string') return normalizeSignatureValue(item);
 
-  return normalizeSignatureValue(item?.instruction || item?.text || '');
+  return normalizeSignatureValue(
+    item?.instruction ||
+    item?.text ||
+    (item as any)?.step ||
+    (item as any)?.description ||
+    (item as any)?.body ||
+    ''
+  );
 }
 
 function uniqueBy<T>(items: T[], getKey: (item: T) => string) {
@@ -114,184 +177,198 @@ function uniqueBy<T>(items: T[], getKey: (item: T) => string) {
 }
 
 export function hasUsableRecipeContent(recipe: any): boolean {
-  const parsed = parseRecipePayload(recipe);
+  const candidates = recipeContentCandidates(recipe);
 
-  if (!parsed || parsed.is_compilation) return false;
+  if (!candidates.length || candidates[0]?.is_compilation) return false;
 
-  const ingredientSectionSources = [
-    parsed.ingredientSections,
-    parsed.ingredientsSections,
-    parsed.ingredient_sections,
-    parsed.ingredients_sections,
-    parsed.ingredient_groups,
-    parsed.ingredients_groups,
-  ].filter(Array.isArray) as any[][];
+  return candidates.some((parsed) => {
+    const ingredientSectionSources = [
+      parsed.ingredientSections,
+      parsed.ingredientsSections,
+      parsed.ingredient_sections,
+      parsed.ingredients_sections,
+      parsed.ingredient_groups,
+      parsed.ingredients_groups,
+    ].filter(Array.isArray) as any[][];
 
-  const instructionSectionSources = [
-    parsed.instructionSections,
-    parsed.instructionsSections,
-    parsed.instruction_sections,
-    parsed.instructions_sections,
-    parsed.method_sections,
-    parsed.step_sections,
-    parsed.steps_sections,
-  ].filter(Array.isArray) as any[][];
+    const instructionSectionSources = [
+      parsed.instructionSections,
+      parsed.instructionsSections,
+      parsed.instruction_sections,
+      parsed.instructions_sections,
+      parsed.methodSections,
+      parsed.method_sections,
+      parsed.stepSections,
+      parsed.step_sections,
+      parsed.steps_sections,
+    ].filter(Array.isArray) as any[][];
 
-  const hasSectionIngredients = ingredientSectionSources.some((sections) =>
-    hasItems(sections, ['items', 'ingredients', 'children'])
-  );
+    const hasSectionIngredients = ingredientSectionSources.some((sections) =>
+      hasItems(sections, ['items', 'ingredients', 'children'])
+    );
 
-  const hasSectionInstructions = instructionSectionSources.some((sections) =>
-    hasItems(sections, ['instructions', 'steps', 'items', 'children'])
-  );
+    const hasSectionInstructions = instructionSectionSources.some((sections) =>
+      hasItems(sections, ['instructions', 'steps', 'items', 'children'])
+    );
 
-  const hasFlatIngredients = Array.isArray(parsed.ingredients) && parsed.ingredients.length > 0;
-  const hasFlatInstructions = Array.isArray(parsed.instructions) && parsed.instructions.length > 0;
-  const hasFlatSteps = Array.isArray(parsed.steps) && parsed.steps.length > 0;
-  const hasFlatDirections = Array.isArray(parsed.directions) && parsed.directions.length > 0;
-  const hasFlatMethod = Array.isArray(parsed.method) && parsed.method.length > 0;
+    const hasFlatIngredients = Array.isArray(parsed.ingredients) && parsed.ingredients.length > 0;
+    const hasFlatInstructions = Array.isArray(parsed.instructions) && parsed.instructions.length > 0;
+    const hasFlatSteps = Array.isArray(parsed.steps) && parsed.steps.length > 0;
+    const hasFlatDirections = Array.isArray(parsed.directions) && parsed.directions.length > 0;
+    const hasFlatMethod = Array.isArray(parsed.method) && parsed.method.length > 0;
 
-  return hasSectionIngredients || hasSectionInstructions || hasFlatIngredients || hasFlatInstructions || hasFlatSteps || hasFlatDirections || hasFlatMethod;
+    return hasSectionIngredients || hasSectionInstructions || hasFlatIngredients || hasFlatInstructions || hasFlatSteps || hasFlatDirections || hasFlatMethod;
+  });
 }
 
 export function recipeInstructionCount(recipe: any): number {
-  const parsed = parseRecipePayload(recipe);
-
-  if (!parsed) return 0;
-
-  const flatCount = [
-    parsed.instructions,
-    parsed.steps,
-    parsed.directions,
-    parsed.method,
-  ]
-    .filter(Array.isArray)
-    .flat().length;
-
-  const sectionCount = [
-    parsed.instructionSections,
-    parsed.instructionsSections,
-    parsed.instruction_sections,
-    parsed.instructions_sections,
-    parsed.method_sections,
-    parsed.step_sections,
-    parsed.steps_sections,
-  ]
-    .filter(Array.isArray)
-    .flat()
-    .reduce((total: number, section: any) => {
-      const items = [
-        section?.instructions,
-        section?.steps,
-        section?.items,
-        section?.children,
+  return Math.max(
+    0,
+    ...recipeContentCandidates(recipe).map((parsed) => {
+      const flatCount = [
+        parsed.instructions,
+        parsed.steps,
+        parsed.directions,
+        parsed.method,
       ]
         .filter(Array.isArray)
-        .flat();
+        .flat().length;
 
-      return total + items.length;
-    }, 0);
+      const sectionCount = [
+        parsed.instructionSections,
+        parsed.instructionsSections,
+        parsed.instruction_sections,
+        parsed.instructions_sections,
+        parsed.methodSections,
+        parsed.method_sections,
+        parsed.stepSections,
+        parsed.step_sections,
+        parsed.steps_sections,
+      ]
+        .filter(Array.isArray)
+        .flat()
+        .reduce((total: number, section: any) => {
+          const items = [
+            section?.instructions,
+            section?.steps,
+            section?.items,
+            section?.children,
+          ]
+            .filter(Array.isArray)
+            .flat();
 
-  return flatCount + sectionCount;
+          return total + items.length;
+        }, 0);
+
+      return flatCount + sectionCount;
+    })
+  );
 }
 
 export function recipeIngredientCount(recipe: any): number {
-  const parsed = parseRecipePayload(recipe);
+  return Math.max(
+    0,
+    ...recipeContentCandidates(recipe).map((parsed) => {
+      const flatCount = Array.isArray(parsed.ingredients) ? parsed.ingredients.length : 0;
 
-  if (!parsed) return 0;
-
-  const flatCount = Array.isArray(parsed.ingredients) ? parsed.ingredients.length : 0;
-
-  const sectionCount = [
-    parsed.ingredientSections,
-    parsed.ingredientsSections,
-    parsed.ingredient_sections,
-    parsed.ingredients_sections,
-    parsed.ingredient_groups,
-    parsed.ingredients_groups,
-  ]
-    .filter(Array.isArray)
-    .flat()
-    .reduce((total: number, section: any) => {
-      const items = [
-        section?.items,
-        section?.ingredients,
-        section?.children,
+      const sectionCount = [
+        parsed.ingredientSections,
+        parsed.ingredientsSections,
+        parsed.ingredient_sections,
+        parsed.ingredients_sections,
+        parsed.ingredient_groups,
+        parsed.ingredients_groups,
       ]
         .filter(Array.isArray)
-        .flat();
+        .flat()
+        .reduce((total: number, section: any) => {
+          const items = [
+            section?.items,
+            section?.ingredients,
+            section?.children,
+          ]
+            .filter(Array.isArray)
+            .flat();
 
-      return total + items.length;
-    }, 0);
+          return total + items.length;
+        }, 0);
 
-  return Math.max(flatCount, sectionCount);
+      return Math.max(flatCount, sectionCount);
+    })
+  );
 }
 
-export function buildRecipeForCard(viewModelRecipeInput: any, rawVideoRecipeInput: any): any {
+export function buildRecipeForCard(viewModelRecipeInput: any, rawVideoRecipeInput: any, extraRecipeInputs: any[] = []): any {
   const rawVideoRecipe = parseRecipePayload(rawVideoRecipeInput);
   const viewModelRecipe = parseRecipePayload(viewModelRecipeInput);
+  const extraRecipes = extraRecipeInputs.map(parseRecipePayload).filter(Boolean);
+  const candidates = [
+    viewModelRecipe,
+    rawVideoRecipe,
+    viewModelRecipe?.english,
+    rawVideoRecipe?.english,
+    viewModelRecipe?.original,
+    rawVideoRecipe?.original,
+    ...extraRecipes,
+    ...extraRecipes.map((recipe) => recipe?.english),
+    ...extraRecipes.map((recipe) => recipe?.original),
+  ];
 
-  return viewModelRecipe || rawVideoRecipe
+  return viewModelRecipe || rawVideoRecipe || extraRecipes.length
     ? {
+        ...(extraRecipes[0] || {}),
         ...(rawVideoRecipe || {}),
         ...(viewModelRecipe || {}),
         ingredients:
-          firstNonEmptyArray(
-            viewModelRecipe?.ingredients,
-            rawVideoRecipe?.ingredients
+          longestArray(
+            ...candidates.map((candidate) => candidate?.ingredients)
           ),
         ingredient_sections:
-          firstNonEmptyArray(
-            viewModelRecipe?.ingredient_sections,
-            rawVideoRecipe?.ingredient_sections,
-            viewModelRecipe?.ingredients_sections,
-            rawVideoRecipe?.ingredients_sections,
-            viewModelRecipe?.ingredient_groups,
-            rawVideoRecipe?.ingredient_groups,
-            viewModelRecipe?.ingredients_groups,
-            rawVideoRecipe?.ingredients_groups
+          richestSectionArray(
+            ...candidates.flatMap((candidate) => [
+              candidate?.ingredient_sections,
+              candidate?.ingredients_sections,
+              candidate?.ingredient_groups,
+              candidate?.ingredients_groups,
+            ])
           ),
         instructions:
-          firstNonEmptyArray(
-            viewModelRecipe?.instructions,
-            rawVideoRecipe?.instructions,
-            viewModelRecipe?.steps,
-            rawVideoRecipe?.steps,
-            viewModelRecipe?.directions,
-            rawVideoRecipe?.directions,
-            viewModelRecipe?.method,
-            rawVideoRecipe?.method
+          longestArray(
+            ...candidates.flatMap((candidate) => [
+              candidate?.instructions,
+              candidate?.steps,
+              candidate?.directions,
+              candidate?.method,
+            ])
           ),
         instructions_sections:
-          firstNonEmptyArray(
-            viewModelRecipe?.instructions_sections,
-            rawVideoRecipe?.instructions_sections,
-            viewModelRecipe?.instruction_sections,
-            rawVideoRecipe?.instruction_sections,
-            viewModelRecipe?.method_sections,
-            rawVideoRecipe?.method_sections,
-            viewModelRecipe?.step_sections,
-            rawVideoRecipe?.step_sections,
-            viewModelRecipe?.steps_sections,
-            rawVideoRecipe?.steps_sections
+          richestSectionArray(
+            ...candidates.flatMap((candidate) => [
+              candidate?.instructions_sections,
+              candidate?.instruction_sections,
+              candidate?.methodSections,
+              candidate?.method_sections,
+              candidate?.stepSections,
+              candidate?.step_sections,
+              candidate?.steps_sections,
+            ])
           ),
         instructionSections:
-          firstNonEmptyArray(
-            viewModelRecipe?.instructionSections,
-            rawVideoRecipe?.instructionSections,
-            viewModelRecipe?.instructionsSections,
-            rawVideoRecipe?.instructionsSections
+          richestSectionArray(
+            ...candidates.flatMap((candidate) => [
+              candidate?.instructionSections,
+              candidate?.instructionsSections,
+            ])
           ),
       }
     : null;
 }
 
 export function normalizeIngredientSections(recipe: any): IngredientSection[] {
-  const parsed = parseRecipePayload(recipe);
+  const candidates = recipeContentCandidates(recipe);
 
-  if (!parsed) return [];
-
-  const sectionSources = [
+  for (const parsed of candidates) {
+    const sectionSources = [
     parsed.ingredientSections,
     parsed.ingredientsSections,
     parsed.ingredient_sections,
@@ -347,21 +424,23 @@ export function normalizeIngredientSections(recipe: any): IngredientSection[] {
   if (flatIngredients.length > 0) {
     return [{ items: flatIngredients }];
   }
+  }
 
   return [];
 }
 
 export function normalizeInstructionSections(recipe: any): InstructionSection[] {
-  const parsed = parseRecipePayload(recipe);
+  const candidates = recipeContentCandidates(recipe);
 
-  if (!parsed) return [];
-
-  const sectionSources = [
+  for (const parsed of candidates) {
+    const sectionSources = [
     parsed.instructionSections,
     parsed.instructionsSections,
     parsed.instruction_sections,
     parsed.instructions_sections,
+    parsed.methodSections,
     parsed.method_sections,
+    parsed.stepSections,
     parsed.step_sections,
     parsed.steps_sections,
   ].filter(Array.isArray) as any[][];
@@ -401,6 +480,7 @@ export function normalizeInstructionSections(recipe: any): InstructionSection[] 
 
   if (dedupedInstructions.length > 0) {
     return [{ instructions: dedupedInstructions }];
+  }
   }
 
   return [];
@@ -449,14 +529,35 @@ export function parseRawIngredient(raw: any) {
   };
 }
 
-export function formatQty(qty: any, unit?: any) {
-  if (qty === null || qty === undefined || qty === '') return '';
+export function formatQty(
+  qty: string | null,
+  unit: string | null,
+  scale: number = 1,
+  scaleQty: ((q: string, s: number) => string) | undefined = undefined,
+  useMetric: boolean = true,
+  recipeConversion: 'do_not_convert' | 'smart' | 'always' = 'smart',
+  volumePreference: 'metric' | 'us' = 'metric',
+  rounding: 'rounded' | 'exact' = 'rounded',
+  _name?: string
+): string {
+  if (qty === null || qty === undefined || (qty as any) === '') return '';
 
-  const quantity = String(qty).trim();
+  const scaledQty = scaleQty ? scaleQty(String(qty).trim(), scale) : String(qty).trim();
+  const raw = unit ? `${scaledQty} ${unit}` : scaledQty;
 
-  if (!unit) return quantity;
+  if (recipeConversion === 'do_not_convert') return raw;
 
-  return `${quantity} ${unit}`;
+  const normalizedUnit = String(unit || '').trim().toLowerCase();
+  const isVolume = [
+    'ml', 'milliliter', 'milliliters',
+    'l', 'liter', 'liters',
+    'cup', 'cups',
+    'tablespoon', 'tablespoons', 'tbsp',
+    'teaspoon', 'teaspoons', 'tsp',
+  ].includes(normalizedUnit);
+  const preferMetric = isVolume ? volumePreference === 'metric' : useMetric;
+
+  return preferMetric ? convertToMetric(raw, rounding) : convertToImperial(raw, rounding);
 }
 
 export function assumedLabel(name: string) {

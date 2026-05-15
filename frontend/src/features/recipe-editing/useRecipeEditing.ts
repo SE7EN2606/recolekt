@@ -31,10 +31,42 @@ const createEmptyOverrides = (): RecipeOverrideLayer => ({
   },
 });
 
+function legacyIngredientRows(payload: any): RawIngredient[] {
+  const direct = payload?.ingredients;
+  if (Array.isArray(direct)) return direct;
+  if (Array.isArray(direct?.items)) return direct.items;
+
+  const sectionSources = [
+    payload?.ingredient_sections,
+    payload?.ingredients_sections,
+    payload?.ingredientSections,
+    payload?.ingredientsSections,
+  ].filter(Array.isArray);
+
+  return sectionSources
+    .flat()
+    .flatMap((section: any) =>
+      [section?.items, section?.ingredients, section?.children]
+        .filter(Array.isArray)
+        .flat()
+    );
+}
+
 export function normalizeOverrides(data?: RecipeOverridesResponse | null): RecipeOverrideLayer {
   const payload = data?.overridePayload || {};
-  const ingredients = (payload.ingredients || {}) as Partial<RecipeOverrideLayer['ingredients']>;
-  const steps = (payload.steps || {}) as Partial<RecipeOverrideLayer['steps']>;
+  const legacyIngredientArray = legacyIngredientRows(payload);
+  const ingredients = (
+    payload.ingredients && typeof payload.ingredients === 'object' && !Array.isArray(payload.ingredients)
+      ? payload.ingredients
+      : (payload as any).editedById
+        ? payload
+        : {}
+  ) as Partial<RecipeOverrideLayer['ingredients']>;
+  const steps = (
+    payload.steps && typeof payload.steps === 'object' && !Array.isArray(payload.steps)
+      ? payload.steps
+      : {}
+  ) as Partial<RecipeOverrideLayer['steps']>;
 
   return {
     verifiedByUser: Boolean(data?.verifiedByUser),
@@ -47,7 +79,11 @@ export function normalizeOverrides(data?: RecipeOverridesResponse | null): Recip
             sectionIndex: Number.isFinite(Number(item?.sectionIndex)) ? Number(item.sectionIndex) : 0,
             value: item?.value ?? '',
           })).filter((item) => item.id)
-        : [],
+        : legacyIngredientArray.map((value: RawIngredient, index: number) => ({
+            id: `legacy-added-ingredient-${index}`,
+            sectionIndex: 0,
+            value,
+          })),
     },
     steps: {
       editedById: steps.editedById && typeof steps.editedById === 'object' ? steps.editedById : {},
@@ -76,7 +112,14 @@ export function getIngredientEditText(raw: RawIngredient): string {
 
 export function getStepEditText(raw: RawInstruction): string {
   if (typeof raw === 'string') return raw;
-  return String(raw?.instruction ?? raw?.text ?? '').trim();
+  return String(
+    raw?.instruction ??
+    raw?.text ??
+    (raw as any)?.step ??
+    (raw as any)?.description ??
+    (raw as any)?.body ??
+    ''
+  ).trim();
 }
 
 const KNOWN_UNITS = new Set([
@@ -103,6 +146,79 @@ const KNOWN_UNITS = new Set([
 
 function cloneIngredientObject(raw: Exclude<RawIngredient, string>): Exclude<RawIngredient, string> {
   return { ...raw };
+}
+
+function normalizedIngredientName(raw: RawIngredient): string {
+  if (typeof raw === 'string') return raw.trim().toLowerCase().replace(/\s+/g, ' ');
+
+  return String(
+    raw?.item ||
+    raw?.name ||
+    (raw as any)?.label ||
+    (raw as any)?.originalItem ||
+    (raw as any)?.original_item ||
+    ''
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function explicitIngredientId(raw: RawIngredient): string {
+  if (!raw || typeof raw === 'string') return '';
+
+  return String(
+    (raw as any).id ||
+    (raw as any).ingredientId ||
+    (raw as any).ingredient_id ||
+    (raw as any).originalId ||
+    (raw as any).original_id ||
+    ''
+  ).trim();
+}
+
+function ingredientIdAt(sectionIndex: number, itemIndex: number): string {
+  return getIngredientId(sectionIndex, itemIndex);
+}
+
+function findFallbackIngredientId(
+  sections: IngredientSection[],
+  editedId: string,
+  value: RawIngredient,
+  blockedIds: Set<string>
+): string | null {
+  const explicitId = explicitIngredientId(value);
+
+  if (explicitId) {
+    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
+      const section = sections[sectionIndex];
+      for (let itemIndex = 0; itemIndex < section.items.length; itemIndex += 1) {
+        const id = ingredientIdAt(sectionIndex, itemIndex);
+        if (blockedIds.has(id)) continue;
+        if (id === explicitId || explicitIngredientId(section.items[itemIndex]) === explicitId) {
+          return id;
+        }
+      }
+    }
+  }
+
+  const editedName = normalizedIngredientName(value);
+  if (!editedName) return null;
+
+  const matches: string[] = [];
+
+  for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex += 1) {
+    const section = sections[sectionIndex];
+    for (let itemIndex = 0; itemIndex < section.items.length; itemIndex += 1) {
+      const id = ingredientIdAt(sectionIndex, itemIndex);
+      if (blockedIds.has(id) || id === editedId) continue;
+      if (normalizedIngredientName(section.items[itemIndex]) === editedName) {
+        matches.push(id);
+      }
+    }
+  }
+
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function findBaseIngredient(
@@ -170,6 +286,19 @@ export function applyIngredientOverrides(
 ): IngredientSection[] {
   const removedIds = new Set(overrides.ingredients.removedIds);
   const appliedIds = new Set<string>();
+  const fallbackEdits = new Map<string, RawIngredient>();
+  const consumedEditIds = new Set<string>();
+
+  Object.entries(overrides.ingredients.editedById).forEach(([id, value]) => {
+    if (removedIds.has(id)) return;
+    if (id.match(/^section-\d+-ingredient-\d+$/)) return;
+
+    const fallbackId = findFallbackIngredientId(baseIngredientSections, id, value, removedIds);
+    if (fallbackId && !overrides.ingredients.editedById[fallbackId]) {
+      fallbackEdits.set(fallbackId, value);
+      consumedEditIds.add(id);
+    }
+  });
 
   const sections = baseIngredientSections.map((section, sectionIndex) => ({
     ...section,
@@ -177,13 +306,13 @@ export function applyIngredientOverrides(
       .map((item, itemIndex) => {
         const id = getIngredientId(sectionIndex, itemIndex);
         appliedIds.add(id);
-        return overrides.ingredients.editedById[id] ?? item;
+        return overrides.ingredients.editedById[id] ?? fallbackEdits.get(id) ?? item;
       })
       .filter((_, itemIndex) => !removedIds.has(getIngredientId(sectionIndex, itemIndex))),
   }));
 
   Object.entries(overrides.ingredients.editedById).forEach(([id, value]) => {
-    if (appliedIds.has(id) || removedIds.has(id)) return;
+    if (appliedIds.has(id) || removedIds.has(id) || consumedEditIds.has(id)) return;
 
     const match = id.match(/^section-(\d+)-ingredient-\d+$/);
     const targetIndex = match

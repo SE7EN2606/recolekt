@@ -4,8 +4,9 @@ from decimal import Decimal
 
 from flask import Blueprint, jsonify, request
 
-from fetcher_api.adapters.db import fetch_all
+from fetcher_api.adapters.db import fetch_all, fetch_one
 from fetcher_api.api.helpers.auth import get_user_id_from_request
+from fetcher_api.api.helpers.recipe_formatters import normalize_recipe_for_display
 
 logger = logging.getLogger("saved_reels")
 
@@ -170,8 +171,34 @@ def _apply_media_aliases(payload: dict) -> dict:
     return payload
 
 
-def _serialize_reel_row(row) -> dict:
+def _measurement_system_for_user(user_id: str | None) -> str:
+    if not user_id:
+        return "metric"
+
+    try:
+        row = fetch_one(
+            "SELECT measurement_system FROM users WHERE user_id = %s LIMIT 1",
+            (user_id,),
+        )
+        value = row.get("measurement_system") if hasattr(row, "get") else None
+    except Exception:
+        logger.warning("Failed to load measurement preference for user %s", user_id, exc_info=True)
+        value = None
+
+    value = (value or "metric").strip().lower()
+    return value if value in {"metric", "us", "imperial"} else "metric"
+
+
+def _serialize_reel_row(row, measurement_system: str | None = None) -> dict:
     row_dict = dict(row) if hasattr(row, "keys") else row._asdict()
+    caption = row_dict.get("caption") or ""
+    recipe = _json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe"))
+    if isinstance(recipe, dict):
+        recipe = normalize_recipe_for_display(
+            recipe,
+            caption,
+            measurement_system or "metric",
+        )
 
     payload = {
         "id": row_dict.get("id"),
@@ -187,7 +214,7 @@ def _serialize_reel_row(row) -> dict:
         "author_name": row_dict.get("author_name") or "Unknown",
         "duration": row_dict.get("duration"),
         "transcription": _json_loads_maybe(row_dict.get("transcription"), default=row_dict.get("transcription")),
-        "recipe": _json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe")),
+        "recipe": recipe,
         "workout": _json_loads_maybe(row_dict.get("workout"), default=row_dict.get("workout")),
         "tools_list": _json_loads_maybe(row_dict.get("tools_list"), default=row_dict.get("tools_list")),
         "location": _json_loads_maybe(row_dict.get("location"), default=row_dict.get("location")),
@@ -223,6 +250,7 @@ def saved_reels():
     except ValueError:
         return jsonify({"error": "Authentication required"}), 401
 
+    measurement_system = _measurement_system_for_user(user_id)
     page = max(int(request.args.get("page", 1) or 1), 1)
     per_page = min(max(int(request.args.get("per_page", 100) or 100), 1), 1000)
     offset = (page - 1) * per_page
@@ -278,7 +306,7 @@ def saved_reels():
 
     for r in rows:
         try:
-            reels.append(_serialize_reel_row(r))
+            reels.append(_serialize_reel_row(r, measurement_system))
         except Exception:
             try:
                 row_dict = dict(r) if hasattr(r, "keys") else {}
@@ -305,6 +333,7 @@ def search_saved_reels():
     except ValueError:
         return jsonify({"error": "Authentication required"}), 401
 
+    measurement_system = _measurement_system_for_user(user_id)
     raw_q = (request.args.get("q") or "").strip()
     folder_id = (request.args.get("folder_id") or "").strip() or None
 
@@ -405,7 +434,7 @@ def search_saved_reels():
     results = []
     for r in rows:
         try:
-            results.append(_serialize_reel_row(r))
+            results.append(_serialize_reel_row(r, measurement_system))
         except Exception:
             try:
                 row_dict = dict(r) if hasattr(r, "keys") else {}

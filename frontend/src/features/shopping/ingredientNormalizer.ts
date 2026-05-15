@@ -5,6 +5,7 @@ export type NormalizedShoppingIngredient = {
   name: string;
   quantity: number | null;
   unit: string | null;
+  quantityType: string;
   original: any;
 };
 
@@ -153,6 +154,9 @@ export function normalizeShoppingIngredient(raw: any): NormalizedShoppingIngredi
   let name = String(parsed?.name || parsed?.item || raw?.text || raw?.value || '').trim();
   let quantity = parseNumber(parsed?.quantity);
   let unit = normalizeUnit(parsed?.unit);
+  const quantityType = String(parsed?.quantity_type || parsed?.quantityType || 'unspecified')
+    .trim()
+    .toLowerCase() || 'unspecified';
 
   if (!name && typeof raw === 'string') {
     name = raw.trim();
@@ -178,6 +182,7 @@ export function normalizeShoppingIngredient(raw: any): NormalizedShoppingIngredi
     name: canonical.displayName,
     quantity,
     unit: canonical.unit,
+    quantityType,
     original: raw,
   };
 }

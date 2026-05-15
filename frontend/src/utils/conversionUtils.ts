@@ -1,4 +1,3 @@
-import { API_BASE } from "../utils/api";
 export const parseQuantity = (qty: string) => {
   if (!qty) return { val: '', unit: '' };
   
@@ -64,10 +63,16 @@ export const evalFraction = (val: string): number => {
   return numValue;
 };
 
-// ... keep convertToMetric, convertToImperial, scaleQuantity as defined before, 
-// they rely on parseQuantity which is now fixed.
-// JUST ONE UPDATE: Add 'g' and 'ml' to convertToImperial
-export const convertToImperial = (quantity: string): string => {
+const formatConvertedValue = (value: number, rounding: 'rounded' | 'exact'): string => {
+  if (!Number.isFinite(value)) return '';
+  if (rounding === 'exact') return Number(value.toFixed(2)).toString();
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(1)));
+};
+
+export const convertToImperial = (
+  quantity: string,
+  rounding: 'rounded' | 'exact' = 'rounded'
+): string => {
   const conversions: Record<string, { unit: string; factor: number }> = {
     'ml': { unit: 'cups', factor: 1 / 240 },
     'l': { unit: 'cups', factor: 1 / 0.24 },
@@ -84,21 +89,22 @@ export const convertToImperial = (quantity: string): string => {
   const numValue = evalFraction(val);
   const converted = numValue * conv.factor;
   
-  // Smart rounding
   let rounded;
   if (conv.unit === 'cups') {
-     // Quarter cup increments logic could go here, but simple rounding for now
-     rounded = Math.round(converted * 4) / 4; 
+     rounded = rounding === 'exact' ? Number(converted.toFixed(2)) : Math.round(converted * 4) / 4;
   } else {
-     rounded = converted >= 10 ? Math.round(converted) : Math.round(converted * 10) / 10;
+     rounded = rounding === 'exact'
+       ? Number(converted.toFixed(2))
+       : converted >= 10 ? Math.round(converted) : Math.round(converted * 10) / 10;
   }
   
   return `${rounded} ${conv.unit}`;
 };
 
-export const convertToMetric = (quantity: string): string => {
-  // ... existing metric conversion logic ...
-  // Ensure 'oz' -> 'g' maps correctly
+export const convertToMetric = (
+  quantity: string,
+  rounding: 'rounded' | 'exact' = 'rounded'
+): string => {
   const conversions: Record<string, { unit: string; factor: number }> = {
     'cup': { unit: 'ml', factor: 240 }, 'cups': { unit: 'ml', factor: 240 },
     'tablespoon': { unit: 'ml', factor: 15 }, 'tbsp': { unit: 'ml', factor: 15 },
@@ -114,7 +120,7 @@ export const convertToMetric = (quantity: string): string => {
 
   const numValue = evalFraction(val);
   const converted = numValue * conv.factor;
-  const rounded = converted >= 100 ? Math.round(converted) : Math.round(converted);
+  const rounded = rounding === 'exact' ? formatConvertedValue(converted, rounding) : String(Math.round(converted));
   return `${rounded} ${conv.unit}`;
 };
 
@@ -128,4 +134,48 @@ export const scaleQuantity = (quantity: string, scale: number): string => {
   // Format nicely (remove trailing zeros)
   const formatted = parseFloat(scaled.toFixed(2)).toString();
   return `${formatted} ${unit}`.trim();
+};
+const celsiusToFahrenheit = (celsius: string): number =>
+  Math.round(parseFloat(celsius) * 9 / 5 + 32);
+
+const fahrenheitToCelsius = (fahrenheit: string): number =>
+  Math.round((parseFloat(fahrenheit) - 32) * 5 / 9);
+
+export const convertTemperatureInText = (text: string, targetUnit: 'celsius' | 'fahrenheit'): string => {
+  let result = String(text || '');
+  const numberPattern = '-?\\d+(?:\\.\\d+)?';
+
+  if (targetUnit === 'celsius') {
+    result = result.replace(
+      new RegExp(`(${numberPattern})\\s*°?\\s*C\\s*\\(\\s*(${numberPattern})\\s*°?\\s*F\\s*\\)`, 'gi'),
+      (_match, c) => `${Math.round(parseFloat(c))}°C`
+    );
+    result = result.replace(
+      new RegExp(`(${numberPattern})\\s*°?\\s*F\\s*\\(\\s*(${numberPattern})\\s*°?\\s*C\\s*\\)`, 'gi'),
+      (_match, _f, c) => `${Math.round(parseFloat(c))}°C`
+    );
+    result = result.replace(new RegExp(`(${numberPattern})\\s*°?\\s*F\\b`, 'gi'), (_match, f) => (
+      `${fahrenheitToCelsius(f)}°C`
+    ));
+    result = result.replace(new RegExp(`(${numberPattern})\\s*°?\\s*C\\b`, 'gi'), (_match, c) => (
+      `${Math.round(parseFloat(c))}°C`
+    ));
+  } else {
+    result = result.replace(
+      new RegExp(`(${numberPattern})\\s*°?\\s*C\\s*\\(\\s*(${numberPattern})\\s*°?\\s*F\\s*\\)`, 'gi'),
+      (_match, _c, f) => `${Math.round(parseFloat(f))}°F`
+    );
+    result = result.replace(
+      new RegExp(`(${numberPattern})\\s*°?\\s*F\\s*\\(\\s*(${numberPattern})\\s*°?\\s*C\\s*\\)`, 'gi'),
+      (_match, f) => `${Math.round(parseFloat(f))}°F`
+    );
+    result = result.replace(new RegExp(`(${numberPattern})\\s*°?\\s*C\\b`, 'gi'), (_match, c) => (
+      `${celsiusToFahrenheit(c)}°F`
+    ));
+    result = result.replace(new RegExp(`(${numberPattern})\\s*°?\\s*F\\b`, 'gi'), (_match, f) => (
+      `${Math.round(parseFloat(f))}°F`
+    ));
+  }
+
+  return result.replace(/\s{2,}/g, ' ').trim();
 };

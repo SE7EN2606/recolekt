@@ -163,15 +163,85 @@ def cleanup_errors():
         return jsonify({"error": str(e)}), 500
 
 
-@admin_bp.route("/user/preferences", methods=["PATCH"])
+def _normalize_measurement_system(value):
+    cleaned = (value or "metric").strip().lower()
+    return cleaned if cleaned in {"metric", "us", "imperial"} else "metric"
+
+
+def _normalize_temperature_unit(value):
+    cleaned = (value or "celsius").strip().lower()
+    return cleaned if cleaned in {"celsius", "fahrenheit"} else "celsius"
+
+
+def _normalize_volume_preference(value):
+    cleaned = (value or "metric").strip().lower()
+    return cleaned if cleaned in {"metric", "us"} else "metric"
+
+
+def _normalize_recipe_conversion(value):
+    cleaned = (value or "do_not_convert").strip().lower()
+    return cleaned if cleaned in {"do_not_convert", "smart", "always"} else "do_not_convert"
+
+
+def _normalize_rounding(value):
+    cleaned = (value or "rounded").strip().lower()
+    return cleaned if cleaned in {"rounded", "exact"} else "rounded"
+
+
+@admin_bp.route("/user/preferences", methods=["GET", "PATCH"])
 def update_user_preferences():
     try:
         user_id = get_user_id_from_request()
+        if request.method == "GET":
+            user = fetch_one(
+                """
+                SELECT language, dark_mode, measurement_system, temperature_unit, volume_preference, recipe_conversion, rounding
+                FROM users
+                WHERE user_id = %s
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            return jsonify({
+                "language": (user or {}).get("language") or "en",
+                "darkMode": bool((user or {}).get("dark_mode")),
+                "measurementSystem": _normalize_measurement_system((user or {}).get("measurement_system")),
+                "temperatureUnit": _normalize_temperature_unit((user or {}).get("temperature_unit")),
+                "volumePreference": _normalize_volume_preference((user or {}).get("volume_preference")),
+                "recipeConversion": _normalize_recipe_conversion((user or {}).get("recipe_conversion")),
+                "rounding": _normalize_rounding((user or {}).get("rounding")),
+            })
+
         data = request.get_json(silent=True) or {}
         if "language" in data:
             execute("UPDATE users SET language = %s WHERE user_id = %s", (data["language"], user_id))
         if "darkMode" in data:
             execute("UPDATE users SET dark_mode = %s WHERE user_id = %s", (data["darkMode"], user_id))
+        if "measurementSystem" in data:
+            execute(
+                "UPDATE users SET measurement_system = %s WHERE user_id = %s",
+                (_normalize_measurement_system(data["measurementSystem"]), user_id),
+            )
+        if "temperatureUnit" in data:
+            execute(
+                "UPDATE users SET temperature_unit = %s WHERE user_id = %s",
+                (_normalize_temperature_unit(data["temperatureUnit"]), user_id),
+            )
+        if "volumePreference" in data:
+            execute(
+                "UPDATE users SET volume_preference = %s WHERE user_id = %s",
+                (_normalize_volume_preference(data["volumePreference"]), user_id),
+            )
+        if "recipeConversion" in data:
+            execute(
+                "UPDATE users SET recipe_conversion = %s WHERE user_id = %s",
+                (_normalize_recipe_conversion(data["recipeConversion"]), user_id),
+            )
+        if "rounding" in data:
+            execute(
+                "UPDATE users SET rounding = %s WHERE user_id = %s",
+                (_normalize_rounding(data["rounding"]), user_id),
+            )
         return jsonify({"success": True})
     except ValueError:
         return jsonify({"error": "Authentication required"}), 401

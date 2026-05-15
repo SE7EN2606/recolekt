@@ -19,6 +19,7 @@ export type MergedShoppingItem = {
   name: string;
   quantity: number | null;
   unit: string | null;
+  quantityType: string;
   sources: ShoppingIngredientSource[];
   checked: boolean;
   excluded: boolean;
@@ -48,6 +49,12 @@ function displayNameForQuantity(key: string, quantity: number | null, fallback: 
   }
 
   return fallback;
+}
+
+function mergeQuantityType(current: string, next: string): string {
+  if (!current || current === 'unspecified') return next || 'unspecified';
+  if (!next || next === 'unspecified' || next === current) return current;
+  return current;
 }
 
 export function ingredientSectionsFromRecipe(recipe: any): IngredientSection[] {
@@ -110,6 +117,7 @@ export function deriveMergedShoppingItems(
           name: ingredient.name,
           quantity: ingredient.quantity,
           unit: ingredient.unit,
+          quantityType: ingredient.quantityType,
           sources: [source],
           checked: Boolean(override?.checked),
           excluded: Boolean(override?.excluded),
@@ -118,6 +126,7 @@ export function deriveMergedShoppingItems(
       }
 
       existing.sources.push(source);
+      existing.quantityType = mergeQuantityType(existing.quantityType, ingredient.quantityType);
       if (canMergeQuantity(existing, ingredient)) {
         existing.quantity = Number((existing.quantity! + ingredient.quantity!).toFixed(3));
         existing.name = displayNameForQuantity(existing.key, existing.quantity, existing.name);

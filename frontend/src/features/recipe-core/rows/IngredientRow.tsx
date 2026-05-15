@@ -1,6 +1,19 @@
 import React from 'react';
 import { Check } from 'lucide-react';
 
+const QUANTITY_TYPE_LABELS: Record<string, string> = {
+  to_taste: 'to taste',
+  as_needed: 'as needed',
+  optional: 'optional',
+  garnish: 'garnish',
+  unspecified: 'quantity not specified',
+};
+
+function quantityTypeLabel(quantityType: unknown): string {
+  const key = String(quantityType || 'unspecified').trim().toLowerCase();
+  return QUANTITY_TYPE_LABELS[key] || QUANTITY_TYPE_LABELS.unspecified;
+}
+
 type Props = {
   id: string;
   raw: any;
@@ -9,6 +22,9 @@ type Props = {
   checked: boolean;
   onToggle?: (id: string) => void;
   useMetric: boolean;
+  recipeConversion?: 'do_not_convert' | 'smart' | 'always';
+  volumePreference?: 'metric' | 'us';
+  rounding?: 'rounded' | 'exact';
   parseRawIngredient: (raw: any) => any;
   formatQty: (
     qty: string | null,
@@ -16,6 +32,9 @@ type Props = {
     scale: number,
     scaleQty: ((q: string, s: number) => string) | undefined,
     useMetric: boolean,
+    recipeConversion?: 'do_not_convert' | 'smart' | 'always',
+    volumePreference?: 'metric' | 'us',
+    rounding?: 'rounded' | 'exact',
     name?: string
   ) => string;
   assumedLabel: (name: string) => string | null;
@@ -29,6 +48,9 @@ const IngredientRow: React.FC<Props> = ({
   checked,
   onToggle,
   useMetric,
+  recipeConversion = 'smart',
+  volumePreference = 'metric',
+  rounding = 'rounded',
   parseRawIngredient,
   formatQty,
   assumedLabel,
@@ -42,6 +64,8 @@ const IngredientRow: React.FC<Props> = ({
     needsReview,
     isApprox,
     qtyRange,
+    quantity_type,
+    quantityType,
   } = parseRawIngredient(raw);
 
   let displayQty = '';
@@ -57,6 +81,9 @@ const IngredientRow: React.FC<Props> = ({
       servingScale,
       scaleQuantity,
       useMetric,
+      recipeConversion,
+      volumePreference,
+      rounding,
       name
     );
 
@@ -67,6 +94,7 @@ const IngredientRow: React.FC<Props> = ({
   }
 
   const hasMeasurement = Boolean(displayQty);
+  const quantityTypeText = hasMeasurement ? '' : quantityTypeLabel(quantity_type || quantityType);
   const assumed = needsReview ? assumedLabel(name) : null;
   const interactive = Boolean(onToggle);
 
@@ -120,6 +148,12 @@ const IngredientRow: React.FC<Props> = ({
         {needsReview && assumed && !checked && (
           <span className="text-[12px] text-gray-400 italic font-normal">
             {assumed}
+          </span>
+        )}
+
+        {!hasMeasurement && !needsReview && quantityTypeText && !checked && (
+          <span className="text-[12px] text-gray-400 italic font-normal">
+            {quantityTypeText}
           </span>
         )}
 

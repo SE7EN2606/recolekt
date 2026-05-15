@@ -787,15 +787,15 @@ def _build_recipe_block() -> str:
      "cook_time_meta": {"source": "caption|transcript|caption_transcript|ai_estimated", "confidence": "high|medium|low"}
      "rest_time_meta": {"source": "caption|transcript|caption_transcript|ai_estimated", "confidence": "high|medium|low"}
      "total_time_meta": {"source": "computed|ai_estimated", "confidence": "high|medium|low"}
-   - **ingredients**: (For single recipes) ARRAY OF OBJECTS. Each must have: "item", "quantity", "unit", "emoji".
+   - **ingredients**: (For single recipes) ARRAY OF OBJECTS. Each must have: "item", "quantity", "unit", "quantity_type", "emoji".
    - **ingredient_sections**: If the source splits ingredients into named parts such as base, dough, filling, frosting, sauce, topping, marinade, dressing, or glaze, ALSO output:
-     [{"title": "Section name", "items": [{"item": "...", "quantity": "...", "unit": "...", "emoji": "..."}]}]
+     [{"title": "Section name", "items": [{"item": "...", "quantity": "...", "unit": "...", "quantity_type": "...", "emoji": "..."}]}]
      Keep **ingredients** as the flat concatenation of all section items in the same order. Do not drop any ingredient.
    - If quantity is not specified, set "quantity": null. Do not invent a quantity.
    - If the source gives a range such as "320-350g" or "2-3 tbsp", preserve it as "quantityRange": {"min": 320, "max": 350, "unit": "g"} and use the lower bound as the default "quantity".
    - If the source says "about", "around", "roughly", "environ", or similar, set "approximate": true.
    - LIQUID QUANTITY RULE: If water, broth, stock, wine, milk, cream, oil, or any liquid is mentioned without exact amount or explicit level, keep quantity null. Do NOT invent "to cover" or "enough to cover".
-   - If an ingredient quantity is missing, add "needs_review": true and "missing_reason": "quantity_not_specified".
+   - **quantity_type** MUST be one of: "exact" | "estimated" | "to_taste" | "as_needed" | "garnish" | "optional" | "unspecified". Use "exact" for clear amounts. Use "to_taste" for salt/pepper/spices. Use "as_needed" for oils/liquids with no amount. Use "garnish" for decorative-only items. Use "optional" when source says optional. Use "estimated" for vague amounts like "a handful". Use "unspecified" when no quantity context exists at all. NEVER invent a quantity — set quantity: null and use the correct quantity_type instead.
    - **instructions**: (For single recipes) Detailed, actionable steps. Prefer ARRAY OF OBJECTS:
      [{"instruction": "Step text", "source": "caption|transcript|caption_transcript|ai_inferred", "confidence": "high|medium|low"}]
    - **instructions_sections**: If the method is split into named phases, ALSO output:
@@ -852,15 +852,15 @@ def _build_general_block() -> str:
      "rest_time_meta": {"source": "caption|transcript|caption_transcript|ai_estimated", "confidence": "high|medium|low"}
      "total_time_meta": {"source": "computed|ai_estimated", "confidence": "high|medium|low"}
    - If prep time is not explicitly stated, estimate it but mark prep_time_meta.source as "ai_estimated".
-   - **ingredients**: ARRAY OF OBJECTS with "item", "quantity", "unit", "emoji".
+   - **ingredients**: ARRAY OF OBJECTS with "item", "quantity", "unit", "quantity_type", "emoji".
    - **ingredient_sections**: If the source splits ingredients into named parts such as base, dough, filling, frosting, sauce, topping, marinade, dressing, or glaze, ALSO output:
-     [{"title": "Section name", "items": [{"item": "...", "quantity": "...", "unit": "...", "emoji": "..."}]}]
+     [{"title": "Section name", "items": [{"item": "...", "quantity": "...", "unit": "...", "quantity_type": "...", "emoji": "..."}]}]
      Keep **ingredients** as the flat concatenation of all section items in the same order. Do not drop any ingredient.
    - For any ingredient where quantity is not specified, set "quantity": null. Do not invent a quantity.
    - If the source gives a quantity range such as "320-350g", "2-3 tbsp", or "10–12 minutes", preserve the range using "quantityRange": {"min": 320, "max": 350, "unit": "g"} and set "quantity" to the lower bound only as the default display value.
    - If the source says "about", "around", "roughly", "environ", or similar, set "approximate": true.
    - LIQUID QUANTITY RULE: If water, broth, stock, wine, milk, cream, oil, or any other liquid is mentioned without an exact amount or explicit level, keep quantity null. Do NOT write "to cover", "until covered", "enough to cover", or similar unless the source explicitly says that.
-   - If an ingredient quantity is missing, add metadata when possible: "needs_review": true and "missing_reason": "quantity_not_specified".
+   - **quantity_type** MUST be one of: "exact" | "estimated" | "to_taste" | "as_needed" | "garnish" | "optional" | "unspecified". Use "exact" for clear amounts. Use "to_taste" for salt/pepper/spices. Use "as_needed" for oils/liquids with no amount. Use "garnish" for decorative-only items. Use "optional" when source says optional. Use "estimated" for vague amounts like "a handful". Use "unspecified" when no quantity context exists at all. NEVER invent a quantity — set quantity: null and use the correct quantity_type instead.
    - **instructions**: Detailed, actionable steps. Prefer ARRAY OF OBJECTS:
      [{"instruction": "Step text", "source": "caption|transcript|caption_transcript|ai_inferred", "confidence": "high|medium|low"}]
    - **instructions_sections**: If the method is split into named phases, ALSO output:

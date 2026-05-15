@@ -15,6 +15,19 @@ type SecondaryEquivalent = {
   unit: 'g' | 'ml';
 };
 
+const QUANTITY_TYPE_LABELS: Record<string, string> = {
+  to_taste: 'to taste',
+  as_needed: 'as needed',
+  optional: 'optional',
+  garnish: 'garnish',
+  unspecified: 'quantity not specified',
+};
+
+export function quantityTypeLabel(quantityType: unknown): string {
+  const key = String(quantityType || 'unspecified').trim().toLowerCase();
+  return QUANTITY_TYPE_LABELS[key] || QUANTITY_TYPE_LABELS.unspecified;
+}
+
 function secondaryEquivalentPerUnit(item: MergedShoppingItem): SecondaryEquivalent | null {
   const name = item.name.toLowerCase();
   const unit = String(item.unit || '').toLowerCase();
@@ -48,7 +61,7 @@ export function formatShoppingQuantity(
   item: MergedShoppingItem,
   preferences: ShoppingPreferences
 ): string {
-  if (item.quantity === null) return '';
+  if (item.quantity === null) return quantityTypeLabel(item.quantityType);
 
   const primary = item.unit
     ? `${formatNumber(item.quantity)} ${formatUnit(item.unit, item.quantity)}`

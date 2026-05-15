@@ -7,9 +7,14 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { InstagramLink } from '../components/InstagramLink'; 
+import { apiGet, apiPatch } from '../lib/apiClient';
 import {
   readShoppingPreferences,
   saveShoppingPreferences,
+  type TemperatureUnit,
+  type VolumePreference,
+  type RecipeConversion,
+  type RoundingMode,
   type ShoppingPreferences,
   type UnitPreference,
 } from '../features/shopping/shoppingPreferences';
@@ -31,23 +36,87 @@ interface PlatformStats {
   facebook: number;
 }
 
+type UserPreferencesResponse = {
+  language?: string;
+  darkMode?: boolean;
+  measurementSystem?: UnitPreference;
+  temperatureUnit?: TemperatureUnit;
+  volumePreference?: VolumePreference;
+  recipeConversion?: RecipeConversion;
+  rounding?: RoundingMode;
+};
+
+type UserPreferencePatch = {
+  language?: string;
+  darkMode?: boolean;
+  measurementSystem?: UnitPreference;
+  temperatureUnit?: TemperatureUnit;
+  volumePreference?: VolumePreference;
+  recipeConversion?: RecipeConversion;
+  rounding?: RoundingMode;
+};
+
+function normalizeUnitPreference(value: unknown): UnitPreference {
+  return value === 'us' || value === 'imperial' || value === 'metric' ? value : 'metric';
+}
+
+function normalizeTemperatureUnit(value: unknown): TemperatureUnit {
+  return value === 'fahrenheit' || value === 'celsius' ? value : 'celsius';
+}
+
+function normalizeVolumePreference(value: unknown): VolumePreference {
+  return value === 'us' || value === 'metric' ? value : 'metric';
+}
+
+function normalizeRecipeConversion(value: unknown): RecipeConversion {
+  return value === 'always' || value === 'smart' || value === 'do_not_convert' ? value : 'do_not_convert';
+}
+
+function normalizeRounding(value: unknown): RoundingMode {
+  return value === 'exact' || value === 'rounded' ? value : 'rounded';
+}
+
 export const AccountSettings: React.FC = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const { t, i18n } = useTranslation(['settings', 'common']);
   const [darkMode, setDarkMode] = useState(false);
+
+
+  const savePreferences = async (patch: UserPreferencePatch) => {
+    try {
+      await apiPatch<{ success: boolean }>('api/user/preferences', patch);
+      return true;
+    } catch (e) {
+      console.error('Failed to save preference', e);
+      return false;
+    }
+  };
   const [shoppingPreferences, setShoppingPreferences] = useState<ShoppingPreferences>(() => readShoppingPreferences());
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [mistralLimits, setMistralLimits] = useState<MistralLimits | null>(null);
   const [loadingLimits, setLoadingLimits] = useState(true);
 
   const lang = i18n.language.toUpperCase().startsWith('FR') ? 'FR' : 'EN';
-  const updateShoppingPreferences = (patch: Partial<ShoppingPreferences>) => {
+  const updateShoppingPreferences = async (patch: Partial<ShoppingPreferences>) => {
     setShoppingPreferences((current) => {
       const next = { ...current, ...patch };
       saveShoppingPreferences(next);
       return next;
     });
+
+    const backendPatch: UserPreferencePatch = {};
+    if (patch.unitPreference) {
+      backendPatch.measurementSystem = patch.unitPreference;
+    }
+    if (patch.temperatureUnit) backendPatch.temperatureUnit = patch.temperatureUnit;
+    if (patch.volumePreference) backendPatch.volumePreference = patch.volumePreference;
+    if (patch.recipeConversion) backendPatch.recipeConversion = patch.recipeConversion;
+    if (patch.rounding) backendPatch.rounding = patch.rounding;
+
+    if (Object.keys(backendPatch).length > 0) {
+      await savePreferences(backendPatch);
+    }
   };
 
   // ─── INSTAGRAM DROP BOX STATE ───
@@ -87,6 +156,27 @@ export const AccountSettings: React.FC = () => {
   }, []);
 
   useEffect(() => { window.scrollTo(0, 0); }, []);
+
+  useEffect(() => {
+    apiGet<UserPreferencesResponse>('api/user/preferences')
+      .then((prefs) => {
+        const measurementSystem = normalizeUnitPreference(prefs.measurementSystem);
+        const nextShoppingPreferences = {
+          ...readShoppingPreferences(),
+          unitPreference: measurementSystem,
+          temperatureUnit: normalizeTemperatureUnit(prefs.temperatureUnit),
+          volumePreference: normalizeVolumePreference(prefs.volumePreference),
+          recipeConversion: normalizeRecipeConversion(prefs.recipeConversion),
+          rounding: normalizeRounding(prefs.rounding),
+        };
+        setShoppingPreferences(nextShoppingPreferences);
+        saveShoppingPreferences(nextShoppingPreferences);
+        setDarkMode(Boolean(prefs.darkMode));
+      })
+      .catch(() => {
+        setShoppingPreferences(readShoppingPreferences());
+      });
+  }, []);
 
   // Fetch initial IG Link Status
   useEffect(() => {
@@ -351,13 +441,13 @@ export const AccountSettings: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
                   <button
-                    onClick={() => i18n.changeLanguage('en')}
+                    onClick={() => { i18n.changeLanguage('en'); savePreferences({ language: 'en' }); }}
                     className={`px-3 py-1.5 rounded-md text-xs font-black transition-all ${lang === 'EN' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'}`}
                   >
                     English
                   </button>
                   <button
-                    onClick={() => i18n.changeLanguage('fr')}
+                    onClick={() => { i18n.changeLanguage('fr'); savePreferences({ language: 'fr' }); }}
                     className={`px-3 py-1.5 rounded-md text-xs font-black transition-all ${lang === 'FR' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'}`}
                   >
                     Français
@@ -374,7 +464,7 @@ export const AccountSettings: React.FC = () => {
                   <span className="font-bold text-sm">{t('settings:darkMode', 'Dark Mode')}</span>
                 </div>
                 <button
-                  onClick={() => setDarkMode(!darkMode)}
+                  onClick={() => { const next = !darkMode; setDarkMode(next); savePreferences({ darkMode: next }); }}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${darkMode ? 'bg-primary-600' : 'bg-gray-300'}`}
                 >
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${darkMode ? 'translate-x-6' : 'translate-x-1'}`} />
@@ -388,7 +478,7 @@ export const AccountSettings: React.FC = () => {
                   </div>
                   <div>
                     <span className="font-bold text-sm">Recipe & grocery units</span>
-                    <p className="mt-0.5 text-xs font-medium text-gray-400">Used for shopping list display only.</p>
+                    <p className="mt-0.5 text-xs font-medium text-gray-400">Used for recipe and shopping list display.</p>
                   </div>
                 </div>
                 <div className="space-y-3">
@@ -431,6 +521,86 @@ export const AccountSettings: React.FC = () => {
                         shoppingPreferences.showSecondaryMeasures ? 'translate-x-6' : 'translate-x-1'
                       }`} />
                     </button>
+                  </div>
+
+                  <div>
+                    <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Temperature</div>
+                    <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1">
+                      {([['celsius', '°C Celsius'], ['fahrenheit', '°F Fahrenheit']] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => updateShoppingPreferences({ temperatureUnit: value })}
+                          className={`rounded-lg px-2 py-2 text-xs font-black transition-all ${
+                            shoppingPreferences.temperatureUnit === value
+                              ? 'bg-white text-emerald-700 shadow-sm'
+                              : 'text-gray-500'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Volume display</div>
+                    <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1">
+                      {([['metric', 'ml / L'], ['us', 'tsp, tbsp, cups']] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => updateShoppingPreferences({ volumePreference: value })}
+                          className={`rounded-lg px-2 py-2 text-xs font-black transition-all ${
+                            shoppingPreferences.volumePreference === value
+                              ? 'bg-white text-emerald-700 shadow-sm'
+                              : 'text-gray-500'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Recipe conversions</div>
+                    <div className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1">
+                      {([['do_not_convert', 'Off'], ['smart', 'Smart'], ['always', 'Always']] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => updateShoppingPreferences({ recipeConversion: value })}
+                          className={`rounded-lg px-2 py-2 text-xs font-black transition-all ${
+                            shoppingPreferences.recipeConversion === value
+                              ? 'bg-white text-emerald-700 shadow-sm'
+                              : 'text-gray-500'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Rounding</div>
+                    <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1">
+                      {([['rounded', 'Rounded'], ['exact', 'Exact']] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => updateShoppingPreferences({ rounding: value })}
+                          className={`rounded-lg px-2 py-2 text-xs font-black transition-all ${
+                            shoppingPreferences.rounding === value
+                              ? 'bg-white text-emerald-700 shadow-sm'
+                              : 'text-gray-500'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>

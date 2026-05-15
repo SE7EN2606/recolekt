@@ -16,7 +16,7 @@ from fetcher_api.api.helpers.formatters import (
     build_bilingual_summary_object,
     extract_english_preview_and_title,
 )
-from fetcher_api.api.helpers.recipe_formatters import normalize_recipe
+from fetcher_api.api.helpers.recipe_formatters import normalize_recipe_for_display
 from fetcher_api.services.storage import generate_gcs_paths, platform_reels_folder
 from fetcher_api.services.recipe_assistant import answer_recipe_question
 from fetcher_api.utils.geocode import geocode_one, reverse_geocode_one
@@ -308,7 +308,11 @@ def _serialize_shopping_entry(row) -> dict:
         recipe_override_payload = json_loads_maybe(recipe_override_payload, default={})
     if not isinstance(recipe_override_payload, dict):
         recipe_override_payload = {}
-    reel = _normalize_row_for_api(d, include_prompt=False)
+    reel = _normalize_row_for_api(
+        d,
+        include_prompt=False,
+        measurement_system=_measurement_system_for_user(d.get("user_id")),
+    )
     reel = _merge_row_location_from_db(reel, reel.get("id"), reel.get("user_id"))
     reel["process_id"] = reel.get("id")
     recipe_overrides = {
@@ -510,7 +514,29 @@ def _apply_media_aliases(row_dict: dict) -> dict:
     return row_dict
 
 
-def _normalize_row_for_api(row_dict: dict, include_prompt: bool = False) -> dict:
+def _measurement_system_for_user(user_id: str | None) -> str:
+    if not user_id:
+        return "metric"
+
+    try:
+        row = fetch_one(
+            "SELECT measurement_system FROM users WHERE user_id = %s LIMIT 1",
+            (user_id,),
+        )
+        value = row.get("measurement_system") if hasattr(row, "get") else None
+    except Exception:
+        logger.warning("Failed to load measurement preference for user %s", user_id, exc_info=True)
+        value = None
+
+    value = (value or "metric").strip().lower()
+    return value if value in {"metric", "us", "imperial"} else "metric"
+
+
+def _normalize_row_for_api(
+    row_dict: dict,
+    include_prompt: bool = False,
+    measurement_system: str | None = None,
+) -> dict:
     caption = row_dict.get("caption") or ""
 
     row_dict["recipe"] = json_loads_maybe(row_dict.get("recipe"), default=row_dict.get("recipe"))
@@ -526,7 +552,11 @@ def _normalize_row_for_api(row_dict: dict, include_prompt: bool = False) -> dict
         row_dict.pop("prompt", None)
 
     if isinstance(row_dict.get("recipe"), dict):
-        row_dict["recipe"] = normalize_recipe(row_dict["recipe"], caption)
+        row_dict["recipe"] = normalize_recipe_for_display(
+            row_dict["recipe"],
+            caption,
+            measurement_system or "metric",
+        )
 
     summary_obj, summary_title_str, _ = _build_canonical_summary(row_dict, caption)
     row_dict["summary_title"] = summary_title_str
@@ -608,6 +638,7 @@ def _gcs_blob_name_from_public_url(url: str) -> str | None:
 
 
 def _build_reel_payload_for_api(process_id: str, user_id: str, include_prompt: bool = True) -> dict | None:
+    measurement_system = _measurement_system_for_user(user_id)
     row = fetch_one(
         """
         SELECT
@@ -630,7 +661,11 @@ def _build_reel_payload_for_api(process_id: str, user_id: str, include_prompt: b
         return None
 
     row_dict = dict(row) if hasattr(row, "keys") else row._asdict()
-    row_dict = _normalize_row_for_api(row_dict, include_prompt=include_prompt)
+    row_dict = _normalize_row_for_api(
+        row_dict,
+        include_prompt=include_prompt,
+        measurement_system=measurement_system,
+    )
     row_dict = _merge_row_location_from_db(row_dict, process_id, user_id)
 
     row_dict["process_id"] = row_dict.get("id")

@@ -1,5 +1,6 @@
 import React from 'react';
 import { RawInstruction } from '../types';
+import { convertTemperatureInText } from '../../../utils/conversionUtils';
 
 type InstructionSection = {
   title?: string;
@@ -10,6 +11,7 @@ type Props = {
   instructionSections: InstructionSection[];
   checkedSteps: Set<number>;
   toggleStep: (index: number) => void;
+  temperatureUnit?: 'celsius' | 'fahrenheit';
 };
 
 function getInstructionText(raw: RawInstruction): string {
@@ -31,6 +33,7 @@ const RecipeStepsPanel: React.FC<Props> = ({
   instructionSections,
   checkedSteps,
   toggleStep,
+  temperatureUnit = 'celsius',
 }) => {
   let globalIndex = 0;
 
@@ -40,7 +43,7 @@ const RecipeStepsPanel: React.FC<Props> = ({
         const visibleInstructions = (section.instructions || [])
           .map((instruction) => ({
             raw: instruction,
-            text: getInstructionText(instruction),
+            text: convertTemperatureInText(getInstructionText(instruction), temperatureUnit),
           }))
           .filter((item) => item.text.length > 0);
 
