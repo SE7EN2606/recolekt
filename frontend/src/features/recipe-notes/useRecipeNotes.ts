@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getRecipeNote, saveRecipeNote } from './recipeNotesApi';
+import { deleteRecipeNote, getRecipeNote, saveRecipeNote } from './recipeNotesApi';
 
 export type RecipeNoteStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 
@@ -11,6 +11,7 @@ export function useRecipeNotes(
   setNote: (value: string) => void;
   status: RecipeNoteStatus;
   saveNote: () => Promise<void>;
+  deleteNote: () => Promise<void>;
 } {
   const [note, setNote] = useState('');
   const [status, setStatus] = useState<RecipeNoteStatus>('idle');
@@ -111,6 +112,30 @@ export function useRecipeNotes(
     }
   };
 
+  const deleteNote = async () => {
+    if (!reelId || !enabled) {
+      setStatus('error');
+      return;
+    }
+
+    const previousNote = note;
+    const previousSaved = lastSavedNote;
+    dirtyRef.current = true;
+    setNote('');
+    setLastSavedNote('');
+    setStatus('saving');
+
+    try {
+      await deleteRecipeNote(reelId);
+      setStatus('idle');
+    } catch (err) {
+      console.warn('Recipe note delete failed', err);
+      setNote(previousNote);
+      setLastSavedNote(previousSaved);
+      setStatus('error');
+    }
+  };
+
   const setDirtyNote = (value: string) => {
     dirtyRef.current = true;
     setNote(value);
@@ -123,6 +148,7 @@ export function useRecipeNotes(
     setNote: setDirtyNote,
     status: effectiveStatus,
     saveNote,
+    deleteNote,
   };
 }
 

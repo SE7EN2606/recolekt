@@ -44,16 +44,21 @@ export function RecipeNotesCard({
   note,
   onChange,
   onSave,
+  onDelete,
   status,
 }: {
   note: string;
   onChange: (value: string) => void;
   onSave: () => void;
+  onDelete: () => void;
   status: RecipeNoteStatus;
 }) {
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const hasNote = note.trim().length > 0;
+
   if (status === 'loading') {
     return (
-      <div className="rounded-[24px] border border-amber-100/80 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
+      <div id="recipe-notes" className="scroll-mt-24 rounded-[24px] border border-amber-100/80 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
         <div className="mb-3 flex items-center gap-2">
           <div className="h-8 w-8 animate-pulse rounded-xl bg-amber-50" />
           <div className="space-y-1.5">
@@ -76,7 +81,7 @@ export function RecipeNotesCard({
             : 'Saved automatically';
 
   return (
-    <div className="rounded-[24px] border border-amber-100/80 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
+    <div id="recipe-notes" className="scroll-mt-24 rounded-[24px] border border-amber-100/80 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
       <div className="flex items-center gap-2 mb-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
           <StickyNote size={16} aria-hidden="true" />
@@ -88,10 +93,26 @@ export function RecipeNotesCard({
           <div className="text-xs font-medium text-gray-400">Your margin note for next time</div>
         </div>
       </div>
+      {!hasNote && (
+        <div className="mb-3 rounded-2xl border border-dashed border-amber-200 bg-amber-50/40 px-3 py-3">
+          <div className="text-sm font-black text-gray-800">No personal notes yet</div>
+          <div className="mt-1 text-xs font-medium leading-relaxed text-gray-500">
+            Capture substitutions, timing tweaks, mistakes, serving feedback, or what to improve next time.
+          </div>
+          <button
+            type="button"
+            onClick={() => textareaRef.current?.focus()}
+            className="mt-2 rounded-xl bg-white px-3 py-1.5 text-[11px] font-black text-amber-800 ring-1 ring-amber-100 transition-colors hover:bg-amber-50"
+          >
+            Add note
+          </button>
+        </div>
+      )}
       <textarea
+        ref={textareaRef}
         value={note}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Add a note for next time..."
+        placeholder="Substitutions, timing tweaks, mistakes, serving feedback..."
         className="min-h-[132px] w-full resize-none rounded-2xl border border-amber-100 bg-amber-50/35 px-3 py-3 text-sm font-medium leading-relaxed text-gray-800 placeholder:text-amber-700/45 focus:border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-100"
       />
       <div className="mt-2 flex items-center justify-between gap-3">
@@ -102,13 +123,24 @@ export function RecipeNotesCard({
         >
           {statusLabel}
         </div>
-        <button
-          type="button"
-          onClick={onSave}
-          className="rounded-xl border border-amber-200 bg-white px-3 py-1.5 text-[11px] font-black text-amber-800 transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Save
-        </button>
+        <div className="flex items-center gap-2">
+          {hasNote && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-black text-gray-500 transition-colors hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Delete
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onSave}
+            className="rounded-xl border border-amber-200 bg-white px-3 py-1.5 text-[11px] font-black text-amber-800 transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Save
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -186,6 +218,7 @@ export function RecipeMobileStateSection({
   note,
   onNoteChange,
   onNoteSave,
+  onNoteDelete,
   noteStatus,
   cookStatus,
   cookStatusLoading = false,
@@ -198,6 +231,7 @@ export function RecipeMobileStateSection({
   note: string;
   onNoteChange: (value: string) => void;
   onNoteSave: () => void;
+  onNoteDelete: () => void;
   noteStatus: RecipeNoteStatus;
   cookStatus: LocalCookStatus;
   cookStatusLoading?: boolean;
@@ -219,6 +253,7 @@ export function RecipeMobileStateSection({
         note={note}
         onChange={onNoteChange}
         onSave={onNoteSave}
+        onDelete={onNoteDelete}
         status={noteStatus}
       />
       {originalUrl && (
@@ -285,6 +320,7 @@ export function RecipeCookbookRail({
   note,
   onNoteChange,
   onNoteSave,
+  onNoteDelete,
   noteStatus,
   cookStatus,
   cookStatusLoading = false,
@@ -307,6 +343,7 @@ export function RecipeCookbookRail({
   note: string;
   onNoteChange: (value: string) => void;
   onNoteSave: () => void;
+  onNoteDelete: () => void;
   noteStatus: RecipeNoteStatus;
   cookStatus: LocalCookStatus;
   cookStatusLoading?: boolean;
@@ -428,6 +465,7 @@ export function RecipeCookbookRail({
         note={note}
         onChange={onNoteChange}
         onSave={onNoteSave}
+        onDelete={onNoteDelete}
         status={noteStatus}
       />
 

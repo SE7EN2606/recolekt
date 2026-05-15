@@ -1356,7 +1356,7 @@ def _sanitize_cook_session_payload(data: dict) -> dict:
     }
 
 
-@reel_bp.route("/reel/<process_id>/notes", methods=["GET", "PUT", "OPTIONS"])
+@reel_bp.route("/reel/<process_id>/notes", methods=["GET", "PUT", "DELETE", "OPTIONS"])
 def recipe_personal_notes(process_id):
     if request.method == "OPTIONS":
         return "", 200
@@ -1381,6 +1381,20 @@ def recipe_personal_notes(process_id):
                 (user_id, process_id),
             )
             return add_no_cache_headers(jsonify(_serialize_recipe_note(row)))
+
+        if request.method == "DELETE":
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        DELETE FROM recipe_personal_notes
+                        WHERE user_id = %s AND reel_id = %s
+                        """,
+                        (user_id, process_id),
+                    )
+                conn.commit()
+
+            return add_no_cache_headers(jsonify(_serialize_recipe_note(None)))
 
         data = request.get_json(silent=True) or {}
         note_text = data.get("noteText", data.get("note_text", data.get("note", "")))

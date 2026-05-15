@@ -38,6 +38,7 @@ export interface RecipeDetailsCardProps {
   volumePreference?: 'metric' | 'us';
   rounding?: 'rounded' | 'exact';
   onMarkCooked?: () => void;
+  onAddCookingNote?: () => void;
   hasActiveSession?: boolean;
   cookStatusLoading?: boolean;
   openCookModeSignal?: number;
@@ -63,6 +64,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   volumePreference = 'metric',
   rounding = 'rounded',
   onMarkCooked,
+  onAddCookingNote,
   hasActiveSession = false,
   cookStatusLoading = false,
   openCookModeSignal = 0,
@@ -502,6 +504,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           onProgressChange={setCurrentStepIndex}
           onStepComplete={markCompletedStepId}
           onComplete={handleCookModeComplete}
+          onAddCookingNote={onAddCookingNote}
         />
       )}
     </>

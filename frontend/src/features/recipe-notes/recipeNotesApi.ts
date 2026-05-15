@@ -1,4 +1,4 @@
-import { apiGet, apiPut } from '../../lib/apiClient';
+import { apiDelete, apiGet, apiPut } from '../../lib/apiClient';
 
 export type RecipeNoteResponse = {
   noteText: string;
@@ -28,6 +28,16 @@ export async function saveRecipeNote(
 
   return {
     noteText: String(data?.noteText ?? noteText),
+    createdAt: data?.createdAt,
+    updatedAt: data?.updatedAt,
+  };
+}
+
+export async function deleteRecipeNote(reelId: string): Promise<RecipeNoteResponse> {
+  const data = await apiDelete<any>(noteUrl(reelId));
+
+  return {
+    noteText: String(data?.noteText || ''),
     createdAt: data?.createdAt,
     updatedAt: data?.updatedAt,
   };

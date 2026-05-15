@@ -194,3 +194,20 @@ ALTER TABLE users
 
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS rounding TEXT DEFAULT 'rounded';
+
+
+-- -----------------------------------------------------------------------------
+-- MIGRATION 011 — Private per-user recipe notes
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS recipe_personal_notes (
+    id          SERIAL PRIMARY KEY,
+    user_id     TEXT NOT NULL,
+    reel_id     TEXT NOT NULL,
+    note_text   TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (user_id, reel_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_recipe_personal_notes_user_reel
+    ON recipe_personal_notes (user_id, reel_id);

@@ -63,6 +63,7 @@ interface CookModeModalProps {
   onProgressChange?: (stepIndex: number) => void;
   onStepComplete?: (stepIndex: number) => void;
   onComplete?: () => void;
+  onAddCookingNote?: () => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -390,6 +391,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   onProgressChange,
   onStepComplete,
   onComplete,
+  onAddCookingNote,
 }) => {
   const steps = React.useMemo(() => instructions.map(getText).filter(Boolean), [instructions]);
   const {
@@ -733,10 +735,20 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
               </p>
               <button
                 type="button"
-                onClick={close}
+                onClick={() => {
+                  close();
+                  onAddCookingNote?.();
+                }}
                 className="mt-8 flex min-h-[54px] w-full items-center justify-center gap-2 rounded-[22px] bg-emerald-400 px-5 py-4 text-sm font-black text-emerald-950 shadow-xl shadow-emerald-950/30 transition-colors hover:bg-emerald-300"
               >
                 <ChefHat size={18} />
+                Add cooking note
+              </button>
+              <button
+                type="button"
+                onClick={close}
+                className="mt-3 text-sm font-bold text-white/60 transition-colors hover:text-white"
+              >
                 Back to recipe
               </button>
             </div>
