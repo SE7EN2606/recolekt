@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { ArrowLeft, Check, ChefHat, Minus, Plus, X, HelpCircle } from 'lucide-react';
 import { useTimer } from '../context/TimerContext';
 import FloatingTimer from './FloatingTimer';
+import { formatQty } from '../features/recipe-core/recipePayload';
+import { convertTemperatureInText } from '../utils/conversionUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -26,6 +28,8 @@ export type CookModeIngredient =
       emoji?: string | null;
       quantity?: string | number | null;
       unit?: string | null;
+      quantity_type?: string | null;
+      quantityType?: string | null;
       quantityRange?: { min: number; max: number; unit?: string } | null;
       needs_review?: boolean | null;
       id?: string | null;
@@ -50,6 +54,10 @@ interface CookModeModalProps {
   scaleQuantity?: (qty: string, scale: number) => string;
   useMetric?: boolean;
   onToggleMetric?: (val: boolean) => void;
+  temperatureUnit?: 'celsius' | 'fahrenheit';
+  recipeConversion?: 'do_not_convert' | 'smart' | 'always';
+  volumePreference?: 'metric' | 'us';
+  rounding?: 'rounded' | 'exact';
   onClose: () => void;
   onIngredientToggle?: (ingredientId: string) => void;
   onProgressChange?: (stepIndex: number) => void;
@@ -119,81 +127,45 @@ const ingQty = (i: CookModeIngredient): string => {
 const ingId = (i: CookModeIngredient, index: number): string =>
   typeof i === 'string' ? `ingredient-${index}` : String((i as any)?.id || `ingredient-${index}`);
 
-const parseNumber = (value: string): number | null => {
-  const parts = value.trim().split(/\s+/);
-  let total = 0;
-  let found = false;
-
-  for (const part of parts) {
-    if (part.includes('/')) {
-      const [numerator, denominator] = part.split('/').map(Number);
-      if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
-        total += numerator / denominator;
-        found = true;
-      }
-    } else {
-      const parsed = Number(part.replace(',', '.'));
-      if (Number.isFinite(parsed)) {
-        total += parsed;
-        found = true;
-      }
-    }
-  }
-
-  return found ? total : null;
-};
-
 const prettyNumber = (value: number): string => {
   if (!Number.isFinite(value)) return '';
   if (Math.abs(value - Math.round(value)) < 0.01) return String(Math.round(value));
   return value < 10 ? String(Math.round(value * 10) / 10) : String(Math.round(value));
 };
 
-const convertIngredientUnit = (quantity: string, unit: string, useMetric: boolean) => {
-  const lower = unit.toLowerCase().trim();
-  const amount = parseNumber(quantity);
-  if (amount === null) return { quantity, unit };
+const QUANTITY_TYPE_LABELS: Record<string, string> = {
+  to_taste: 'to taste',
+  as_needed: 'as needed',
+  optional: 'optional',
+  garnish: 'garnish',
+  unspecified: 'quantity not specified',
+};
 
-  const metricMap: Record<string, { unit: string; factor: number }> = {
-    oz: { unit: 'g', factor: 28.35 },
-    ounce: { unit: 'g', factor: 28.35 },
-    ounces: { unit: 'g', factor: 28.35 },
-    lb: { unit: 'g', factor: 453.6 },
-    lbs: { unit: 'g', factor: 453.6 },
-    pound: { unit: 'g', factor: 453.6 },
-    pounds: { unit: 'g', factor: 453.6 },
-    cup: { unit: 'ml', factor: 240 },
-    cups: { unit: 'ml', factor: 240 },
-  };
-  const imperialMap: Record<string, { unit: string; factor: number }> = {
-    g: { unit: 'oz', factor: 1 / 28.35 },
-    gram: { unit: 'oz', factor: 1 / 28.35 },
-    grams: { unit: 'oz', factor: 1 / 28.35 },
-    kg: { unit: 'lb', factor: 2.20462 },
-    kilogram: { unit: 'lb', factor: 2.20462 },
-    kilograms: { unit: 'lb', factor: 2.20462 },
-    ml: { unit: 'cups', factor: 1 / 240 },
-    milliliter: { unit: 'cups', factor: 1 / 240 },
-    milliliters: { unit: 'cups', factor: 1 / 240 },
-    l: { unit: 'cups', factor: 1000 / 240 },
-    liter: { unit: 'cups', factor: 1000 / 240 },
-    liters: { unit: 'cups', factor: 1000 / 240 },
-  };
+const quantityTypeLabel = (ingredient: CookModeIngredient): string => {
+  if (typeof ingredient === 'string') return '';
+  const key = String((ingredient as any)?.quantity_type || (ingredient as any)?.quantityType || '').trim().toLowerCase();
+  return key ? QUANTITY_TYPE_LABELS[key] || QUANTITY_TYPE_LABELS.unspecified : '';
+};
 
-  const conversion = useMetric ? metricMap[lower] : imperialMap[lower];
-  if (!conversion) return { quantity, unit };
+const compactRangeQuantity = (minText: string, maxText: string): string => {
+  const minParts = minText.trim().split(/\s+/);
+  const maxParts = maxText.trim().split(/\s+/);
 
-  return {
-    quantity: prettyNumber(amount * conversion.factor),
-    unit: conversion.unit,
-  };
+  if (minParts.length >= 2 && maxParts.length >= 2 && minParts.slice(1).join(' ') === maxParts.slice(1).join(' ')) {
+    return `${minParts[0]}–${maxParts[0]} ${minParts.slice(1).join(' ')}`;
+  }
+
+  return `${minText}–${maxText}`;
 };
 
 const formatIngredientQuantity = (
   ingredient: CookModeIngredient,
   servingScale: number,
   scaleQuantity: ((qty: string, scale: number) => string) | undefined,
-  useMetric: boolean
+  useMetric: boolean,
+  recipeConversion: 'do_not_convert' | 'smart' | 'always',
+  volumePreference: 'metric' | 'us',
+  rounding: 'rounded' | 'exact'
 ): string => {
   if (typeof ingredient === 'string') return '';
   const base = ingredient as any;
@@ -203,45 +175,44 @@ const formatIngredientQuantity = (
     const min = Number(base.quantityRange.min);
     const max = Number(base.quantityRange.max);
     if (!Number.isFinite(min) || !Number.isFinite(max)) return ingQty(ingredient);
-    const convertedMin = convertIngredientUnit(prettyNumber(min * servingScale), unit, useMetric);
-    const convertedMax = convertIngredientUnit(prettyNumber(max * servingScale), unit, useMetric);
-    const displayUnit = convertedMin.unit || convertedMax.unit || unit;
-    return displayUnit
-      ? `${convertedMin.quantity}–${convertedMax.quantity} ${displayUnit}`
-      : `${convertedMin.quantity}–${convertedMax.quantity}`;
+    const minText = formatQty(
+      prettyNumber(min),
+      unit,
+      servingScale,
+      scaleQuantity,
+      useMetric,
+      recipeConversion,
+      volumePreference,
+      rounding,
+      ingName(ingredient)
+    );
+    const maxText = formatQty(
+      prettyNumber(max),
+      unit,
+      servingScale,
+      scaleQuantity,
+      useMetric,
+      recipeConversion,
+      volumePreference,
+      rounding,
+      ingName(ingredient)
+    );
+    return compactRangeQuantity(minText, maxText);
   }
 
   const rawQuantity = base.quantity != null ? String(base.quantity).trim() : '';
   if (!rawQuantity) return '';
-  const scaled = scaleQuantity ? scaleQuantity(rawQuantity, servingScale) : rawQuantity;
-  const converted = convertIngredientUnit(scaled, unit, useMetric);
-
-  return converted.unit ? `${converted.quantity} ${converted.unit}` : converted.quantity;
-};
-
-const normalizeInstructionUnits = (text: string, useMetric: boolean): string => {
-  const toC = (fahrenheit: number) => Math.round((fahrenheit - 32) * 5 / 9);
-  const toF = (celsius: number) => Math.round((celsius * 9 / 5) + 32);
-
-  let next = text;
-  next = next.replace(/\b(\d{2,3})\s*°?\s*F\s*\(\s*(\d{2,3})\s*°?\s*C\s*\)/gi, (_, f, c) =>
-    useMetric ? `${c}°C` : `${f}°F`
+  return formatQty(
+    rawQuantity,
+    unit,
+    servingScale,
+    scaleQuantity,
+    useMetric,
+    recipeConversion,
+    volumePreference,
+    rounding,
+    ingName(ingredient)
   );
-  next = next.replace(/\b(\d{2,3})\s*°?\s*C\s*\(\s*(\d{2,3})\s*°?\s*F\s*\)/gi, (_, c, f) =>
-    useMetric ? `${c}°C` : `${f}°F`
-  );
-  next = next.replace(/\b(\d{2,3})\s*°?\s*C\s*\/\s*(\d{2,3})\s*°?\s*F\b/gi, (_, c, f) =>
-    useMetric ? `${c}°C` : `${f}°F`
-  );
-  next = next.replace(/\b(\d{2,3})\s*°?\s*F\s*\/\s*(\d{2,3})\s*°?\s*C\b/gi, (_, f, c) =>
-    useMetric ? `${c}°C` : `${f}°F`
-  );
-
-  if (useMetric) {
-    return next.replace(/\b(\d{2,3})\s*°?\s*F\b/gi, (_, f) => `${toC(Number(f))}°C`);
-  }
-
-  return next.replace(/\b(\d{2,3})\s*°?\s*C\b/gi, (_, c) => `${toF(Number(c))}°F`);
 };
 
 // Stop words to exclude from matching (these appear in every French sentence)
@@ -280,6 +251,10 @@ const previewWords = (text: string, max = 14): string => {
 const RichInstruction: React.FC<{ text: string }> = ({ text }) => {
   const [tip, setTip] = React.useState<{ term: string; def: string } | null>(null);
 
+  React.useEffect(() => {
+    setTip(null);
+  }, [text]);
+
   const glossaryTerms = React.useMemo(
     () => Object.keys(GLOSSARY).sort((a, b) => b.length - a.length),
     [],
@@ -292,7 +267,7 @@ const RichInstruction: React.FC<{ text: string }> = ({ text }) => {
     const termPat = glossaryTerms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
     // Match: numbers+units OR glossary terms (word boundary)
     const rx = new RegExp(
-      `(\\b\\d+(?:[.,]\\d+)?\\s*(?:g|kg|ml|l|min(?:utes?)?|h(?:eure[s]?|ours?)?|°c|°f)\\b|\\b(?:${termPat})\\b)`,
+      `(\\b\\d+(?:[.,]\\d+)?(?:\\s*(?:-|–)\\s*\\d+(?:[.,]\\d+)?|\\s+to\\s+\\d+(?:[.,]\\d+)?)?\\s*(?:g|kg|ml|l|min(?:utes?)?|h(?:eure[s]?|ours?)?|hours?|°c|°f)\\b|\\b(?:${termPat})\\b)`,
       'gi',
     );
     let last = 0;
@@ -406,6 +381,10 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   scaleQuantity,
   useMetric = true,
   onToggleMetric,
+  temperatureUnit = 'celsius',
+  recipeConversion = 'smart',
+  volumePreference = 'metric',
+  rounding = 'rounded',
   onClose,
   onIngredientToggle,
   onProgressChange,
@@ -425,9 +404,9 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   const opened = React.useRef(false);
 
   const cur = steps[idx] || '';
-  const displayCur = React.useMemo(() => normalizeInstructionUnits(cur, useMetric), [cur, useMetric]);
+  const displayCur = React.useMemo(() => convertTemperatureInText(cur, temperatureUnit), [cur, temperatureUnit]);
   const next = idx < steps.length - 1 ? steps[idx + 1] : '';
-  const displayNext = React.useMemo(() => normalizeInstructionUnits(next, useMetric), [next, useMetric]);
+  const displayNext = React.useMemo(() => convertTemperatureInText(next, temperatureUnit), [next, temperatureUnit]);
   const isLast = idx >= steps.length - 1;
 
   const stepIngs = React.useMemo(() => matchIngs(displayCur, ingredients), [displayCur, ingredients]);
@@ -616,7 +595,16 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
                           {section.items.map((ingredient, index) => {
                             const id = ingId(ingredient, index);
                             const checked = checkedIngredientIds.has(id);
-                            const qty = formatIngredientQuantity(ingredient, servingScale, scaleQuantity, useMetric);
+                            const qty = formatIngredientQuantity(
+                              ingredient,
+                              servingScale,
+                              scaleQuantity,
+                              useMetric,
+                              recipeConversion,
+                              volumePreference,
+                              rounding
+                            );
+                            const quantityType = qty ? '' : quantityTypeLabel(ingredient);
                             const emoji = ingEmoji(ingredient);
 
                             return (
@@ -640,7 +628,11 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
                                 <span className="min-w-0 flex-1">
                                   <span className="block text-sm font-bold leading-snug">{ingName(ingredient)}</span>
                                 </span>
-                                {qty && <span className="ml-2 shrink-0 text-right text-sm font-black text-emerald-300">{qty}</span>}
+                                {(qty || quantityType) && (
+                                  <span className={`ml-2 shrink-0 text-right text-sm ${qty ? 'font-black text-emerald-300' : 'font-bold italic text-white/45'}`}>
+                                    {qty || quantityType}
+                                  </span>
+                                )}
                               </button>
                             );
                           })}
@@ -689,7 +681,16 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
                     <p className="mb-3 text-center text-[10px] font-black uppercase tracking-widest text-gray-400">For this step</p>
                     <div className="flex flex-wrap justify-center gap-2">
                       {stepIngs.map((ingredient, index) => {
-                        const qty = formatIngredientQuantity(ingredient, servingScale, scaleQuantity, useMetric);
+                        const qty = formatIngredientQuantity(
+                          ingredient,
+                          servingScale,
+                          scaleQuantity,
+                          useMetric,
+                          recipeConversion,
+                          volumePreference,
+                          rounding
+                        );
+                        const quantityType = qty ? '' : quantityTypeLabel(ingredient);
                         const emoji = ingEmoji(ingredient);
 
                         return (
@@ -699,7 +700,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
                           >
                             {emoji && <span className="text-base leading-none">{emoji}</span>}
                             {ingName(ingredient)}
-                            {qty && <span className="text-emerald-600">{qty}</span>}
+                            {(qty || quantityType) && <span className="text-emerald-600">{qty || quantityType}</span>}
                           </span>
                         );
                       })}
@@ -725,7 +726,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
               <p className="mt-7 text-[11px] font-black uppercase tracking-[0.2em] text-emerald-300">Recipe completed</p>
               <h3 className="mt-2 text-4xl font-black tracking-tight text-white">All done</h3>
               <p className="mt-3 max-w-sm text-sm font-medium leading-relaxed text-white/58">
-                {recipeName} was marked cooked. Your cook count and session state will update when you return.
+                {recipeName} was marked cooked. Add a quick note on the recipe page while the details are still fresh.
               </p>
               <p className="mt-4 rounded-full bg-white/10 px-4 py-2 text-xs font-black text-white/70">
                 Elapsed time: ~{elapsed} min
@@ -736,7 +737,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
                 className="mt-8 flex min-h-[54px] w-full items-center justify-center gap-2 rounded-[22px] bg-emerald-400 px-5 py-4 text-sm font-black text-emerald-950 shadow-xl shadow-emerald-950/30 transition-colors hover:bg-emerald-300"
               >
                 <ChefHat size={18} />
-                Close Cook Mode
+                Back to recipe
               </button>
             </div>
           )}

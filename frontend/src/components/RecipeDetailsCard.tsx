@@ -493,6 +493,10 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           scaleQuantity={scaleQuantity}
           useMetric={useMetric}
           onToggleMetric={onToggleMetric}
+          temperatureUnit={temperatureUnit}
+          recipeConversion={recipeConversion}
+          volumePreference={volumePreference}
+          rounding={rounding}
           onClose={() => setIsCookModeOpen(false)}
           onIngredientToggle={toggleCheckedIngredientId}
           onProgressChange={setCurrentStepIndex}
