@@ -6,7 +6,17 @@ export type NormalizedShoppingIngredient = {
   quantity: number | null;
   unit: string | null;
   quantityType: string;
+  interpretation: GroceryIngredientInterpretation;
   original: any;
+};
+
+export type GroceryIngredientInterpretation = {
+  originalName: string;
+  normalizedName: string;
+  groceryKey: string;
+  groceryForm: 'whole' | 'juice' | 'zest' | 'diced' | 'minced' | 'clove' | 'prepared' | 'unspecified';
+  quantityType: string;
+  interpretedCategory: 'produce' | 'herb' | 'protein' | 'dairy' | 'pantry' | 'seasoning' | 'other';
 };
 
 const UNIT_ALIASES: Record<string, string> = {
@@ -25,6 +35,10 @@ const UNIT_ALIASES: Record<string, string> = {
   oz: 'oz',
   ounce: 'oz',
   ounces: 'oz',
+  'fl oz': 'fl oz',
+  floz: 'fl oz',
+  'fluid ounce': 'fl oz',
+  'fluid ounces': 'fl oz',
   lb: 'lb',
   lbs: 'lb',
   pound: 'lb',
@@ -45,6 +59,7 @@ function parseNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   const text = String(value ?? '').trim();
   if (!text) return null;
+  if (/^(?:a\s+)?half$/i.test(text)) return 0.5;
   if (/^\d+\/\d+$/.test(text)) {
     const [a, b] = text.split('/').map(Number);
     return b ? a / b : null;
@@ -90,7 +105,20 @@ function knownUnit(unit: unknown): string | null {
 
 function parseQuantityFromText(value: string): { quantity: number | null; unit: string | null; name: string } | null {
   const text = value.trim();
-  const withUnit = text.match(/^(\d+(?:[.,]\d+)?|\d+\s+\d+\/\d+|\d+\/\d+)\s+([a-zA-Z]+)\s+(.+)$/);
+  const halfOnly = text.match(/^(?:a\s+)?half\s+(.+)$/i);
+  if (halfOnly) {
+    return {
+      quantity: 0.5,
+      unit: null,
+      name: halfOnly[1].trim(),
+    };
+  }
+
+  const unitPattern = Object.keys(UNIT_ALIASES)
+    .sort((a, b) => b.length - a.length)
+    .map((unit) => unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  const withUnit = text.match(new RegExp(`^(\\d+(?:[.,]\\d+)?|\\d+\\s+\\d+\\/\\d+|\\d+\\/\\d+)\\s+(${unitPattern})\\s+(.+)$`, 'i'));
   if (withUnit) {
     const unit = knownUnit(withUnit[2]);
     if (unit) {
@@ -114,15 +142,72 @@ function parseQuantityFromText(value: string): { quantity: number | null; unit: 
   return null;
 }
 
+function inferGroceryForm(cleaned: string, unit: string | null): GroceryIngredientInterpretation['groceryForm'] {
+  if (/\bzest\b/.test(cleaned)) return 'zest';
+  if (/\bjuice\b/.test(cleaned)) return 'juice';
+  if (/\b(diced|chopped|sliced|halved|half|quarter(?:ed)?|wedges?)\b/.test(cleaned)) return 'diced';
+  if (/\bminced\b/.test(cleaned)) return 'minced';
+  if (unit === 'clove' || /\bcloves?\b/.test(cleaned)) return 'clove';
+  if (/\b(ground|powder|paste|sauce|stock|broth|extract)\b/.test(cleaned)) return 'prepared';
+  return 'whole';
+}
+
+function interpretedCategory(cleaned: string): GroceryIngredientInterpretation['interpretedCategory'] {
+  if (/\b(lemon|lime|onion|garlic|tomato|potato|carrot|mushroom|zucchini|cucumber|avocado|apple|banana)\b/.test(cleaned)) return 'produce';
+  if (/\b(parsley|cilantro|basil|dill|mint|herb)\b/.test(cleaned)) return 'herb';
+  if (/\b(chicken|beef|pork|salmon|fish|shrimp|turkey|lamb)\b/.test(cleaned)) return 'protein';
+  if (/\b(milk|cream|butter|cheese|yogurt|egg)\b/.test(cleaned)) return 'dairy';
+  if (/\b(salt|pepper|spice|seasoning|paprika|cumin|cinnamon|oregano|thyme|rosemary)\b/.test(cleaned)) return 'seasoning';
+  if (/\b(flour|sugar|rice|pasta|oil|vinegar|mustard|honey|almond|bean|lentil)\b/.test(cleaned)) return 'pantry';
+  return 'other';
+}
+
+function interpretIngredient(
+  originalName: string,
+  quantityType: string,
+  unit: string | null
+): GroceryIngredientInterpretation {
+  const normalizedName = cleanName(originalName);
+  const formName = originalName
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  let groceryKey = normalizedName;
+
+  if (/\b(lemon zest|lemon juice|lemons?|half lemon)\b/.test(normalizedName)) {
+    groceryKey = 'lemon';
+  } else if (/\b(lime zest|lime juice|limes?|half lime)\b/.test(normalizedName)) {
+    groceryKey = 'lime';
+  } else if (/\b(yellow onion|white onion|red onion|onions?|bulb onion|half onion)\b/.test(normalizedName)) {
+    groceryKey = 'onion';
+  } else if (/\bgarlic\b/.test(normalizedName) || /\bcloves? garlic\b/.test(normalizedName)) {
+    groceryKey = 'garlic';
+  }
+
+  return {
+    originalName: originalName.trim(),
+    normalizedName,
+    groceryKey: groceryKey || normalizedName || originalName.trim().toLowerCase(),
+    groceryForm: inferGroceryForm(formName, unit),
+    quantityType,
+    interpretedCategory: interpretedCategory(normalizedName),
+  };
+}
+
 function canonicalIngredient(
   name: string,
   quantity: number | null,
   unit: string | null
-): { keyName: string; displayName: string; unit: string | null } {
+): { keyName: string; displayName: string; unit: string | null; interpretation: GroceryIngredientInterpretation } {
   const cleaned = cleanName(name);
+  const baseInterpretation = interpretIngredient(name, 'unspecified', unit);
 
   if (/\b(green onion|green onions|scallion|scallions)\b/.test(cleaned)) {
-    return { keyName: cleaned, displayName: name.trim(), unit };
+    return { keyName: cleaned, displayName: name.trim(), unit, interpretation: baseInterpretation };
   }
 
   if (/\bgarlic\b/.test(cleaned) || /\bcloves? garlic\b/.test(cleaned)) {
@@ -131,6 +216,12 @@ function canonicalIngredient(
       keyName: 'garlic',
       displayName: 'garlic',
       unit: usesClove ? 'clove' : unit,
+      interpretation: {
+        ...baseInterpretation,
+        groceryKey: 'garlic',
+        groceryForm: usesClove ? 'clove' : baseInterpretation.groceryForm,
+        interpretedCategory: 'produce',
+      },
     };
   }
 
@@ -139,6 +230,37 @@ function canonicalIngredient(
       keyName: 'onion',
       displayName: quantity !== null && quantity !== 1 ? 'onions' : 'onion',
       unit,
+      interpretation: {
+        ...baseInterpretation,
+        groceryKey: 'onion',
+        interpretedCategory: 'produce',
+      },
+    };
+  }
+
+  if (/\b(lemon zest|lemon juice|lemons?)\b/.test(cleaned)) {
+    return {
+      keyName: 'lemon',
+      displayName: quantity !== null && quantity !== 1 ? 'lemons' : 'lemon',
+      unit,
+      interpretation: {
+        ...baseInterpretation,
+        groceryKey: 'lemon',
+        interpretedCategory: 'produce',
+      },
+    };
+  }
+
+  if (/\b(lime zest|lime juice|limes?)\b/.test(cleaned)) {
+    return {
+      keyName: 'lime',
+      displayName: quantity !== null && quantity !== 1 ? 'limes' : 'lime',
+      unit,
+      interpretation: {
+        ...baseInterpretation,
+        groceryKey: 'lime',
+        interpretedCategory: 'produce',
+      },
     };
   }
 
@@ -146,6 +268,7 @@ function canonicalIngredient(
     keyName: cleaned || name,
     displayName: name.trim(),
     unit,
+    interpretation: baseInterpretation,
   };
 }
 
@@ -176,13 +299,25 @@ export function normalizeShoppingIngredient(raw: any): NormalizedShoppingIngredi
 
   if (!name) return null;
   const canonical = canonicalIngredient(name, quantity, unit);
+  const interpretation = {
+    ...canonical.interpretation,
+    quantityType,
+  };
+  const keyName =
+    ['lemon', 'lime'].includes(interpretation.groceryKey) &&
+    interpretation.groceryForm === 'juice' &&
+    canonical.unit
+      ? `${interpretation.groceryKey} juice`
+      : interpretation.groceryKey || canonical.keyName;
+  const displayName = keyName.endsWith(' juice') ? name.trim() : canonical.displayName;
 
   return {
-    key: stableKey(canonical.keyName),
-    name: canonical.displayName,
+    key: stableKey(keyName),
+    name: displayName,
     quantity,
     unit: canonical.unit,
     quantityType,
+    interpretation,
     original: raw,
   };
 }
