@@ -25,6 +25,7 @@ interface User {
   name: string;
   picture?: string;
   language?: string;
+  country?: string;
 }
 
 interface AuthContextType {
@@ -219,6 +220,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(data.user);
       setIsAuthenticated(true);
       saveCachedUser(data.user);
+      if (!localStorage.getItem('onboarding_complete')) { window.location.href = '/onboarding'; }
       if (data.user.language) i18n.changeLanguage(data.user.language);
       return data.user;
     } catch (err: any) {

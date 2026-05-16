@@ -1,164 +1,75 @@
-# Fusion Starter
+# Recolekt Backend Rules
 
-A production-ready full-stack React application template with integrated Express server, featuring React Router 6 SPA mode, TypeScript, Vitest, Zod and modern tooling.
+## Stack assumptions
 
-While the starter comes with a express server, only create endpoint when strictly neccesary, for example to encapsulate logic that must leave in the server, such as private keys handling, or certain DB operations, db...
+This is the Recolekt backend. It includes a Flask API under api-flask.
 
-## Tech Stack
+Always inspect backend files before assuming framework, database layer, migration tool, or test command.
 
-- **PNPM**: Prefer pnpm
-- **Frontend**: React 18 + React Router 6 (spa) + TypeScript + Vite + TailwindCSS 3
-- **Backend**: Express server integrated with Vite dev server
-- **Testing**: Vitest
-- **UI**: Radix UI + TailwindCSS 3 + Lucide React icons
+## Backend priorities
 
-## Project Structure
+Current backend work should support retention loops:
 
-```
-client/                   # React SPA frontend
-├── pages/                # Route components (Index.tsx = home)
-├── components/ui/        # Pre-built UI component library
-├── App.tsx                # App entry point and with SPA routing setup
-└── global.css            # TailwindCSS 3 theming and global styles
+1. Personal notes.
+2. Cooking sessions.
+3. Cooking history.
+4. Return-to-recipe summaries.
+5. Collections/folders.
+6. Search indexes.
+7. User edits/overrides.
+8. Shopping list persistence.
 
-server/                   # Express API backend
-├── index.ts              # Main server setup (express config + routes)
-└── routes/               # API handlers
+## Data principles
 
-shared/                   # Types used by both client & server
-└── api.ts                # Example of how to share api interfaces
-```
+Do not destroy original AI extraction.
+Store user edits/overrides separately where practical.
+Support user-specific state:
+- notes
+- cook sessions
+- checked ingredients
+- current step
+- completed_at
+- verified_by_user
+- collections
+- search metadata
 
-## Key Features
+## API principles
 
-## SPA Routing System
+APIs should be simple and demo-safe.
+Prefer stable JSON contracts.
+Return derived summary fields for frontend use where helpful:
+- cook_count
+- last_cooked_at
+- has_active_session
+- active_session_id
+- user_note_count
+- verified_by_user
 
-The routing system is powered by React Router 6:
+## Validation
 
-- `client/pages/Index.tsx` represents the home page.
-- Routes are defined in `client/App.tsx` using the `react-router-dom` import
-- Route files are located in the `client/pages/` directory
+After backend changes:
+- Run existing backend tests if available.
+- Run syntax/import checks on changed files.
+- Check whether database migrations are required.
+- Document any required Railway environment variables.
 
-For example, routes can be defined with:
+## Local backend environment rule
 
-```typescript
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+The backend is already configured locally with an existing virtual environment.
 
-<Routes>
-  <Route path="/" element={<Index />} />
-  {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-  <Route path="*" element={<NotFound />} />
-</Routes>;
-```
+Local backend path:
+`/Users/greg/Downloads/Apps/recolekt-app/backend/api-flask`
 
-### Styling System
+Normal local backend command:
+`cd /Users/greg/Downloads/Apps/recolekt-app/backend/api-flask`
+`source venv/bin/activate`
+`python app.py`
 
-- **Primary**: TailwindCSS 3 utility classes
-- **Theme and design tokens**: Configure in `client/global.css` 
-- **UI components**: Pre-built library in `client/components/ui/`
-- **Utility**: `cn()` function combines `clsx` + `tailwind-merge` for conditional classes
+Do not run `pip install`, `pip install -r`, dependency upgrades, dependency cleanup, or Python package installs locally unless the user explicitly asks.
 
-```typescript
-// cn utility usage
-className={cn(
-  "base-classes",
-  { "conditional-class": condition },
-  props.className  // User overrides
-)}
-```
+For local backend validation, prefer:
+`cd /Users/greg/Downloads/Apps/recolekt-app/backend/api-flask`
+`source venv/bin/activate`
+`python -m py_compile app.py`
 
-### Express Server Integration
-
-- **Development**: Single port (8080) for both frontend/backend
-- **Hot reload**: Both client and server code
-- **API endpoints**: Prefixed with `/api/`
-
-#### Example API Routes
-- `GET /api/ping` - Simple ping api
-- `GET /api/demo` - Demo endpoint  
-
-### Shared Types
-Import consistent types in both client and server:
-```typescript
-import { DemoResponse } from '@shared/api';
-```
-
-Path aliases:
-- `@shared/*` - Shared folder
-- `@/*` - Client folder
-
-## Development Commands
-
-```bash
-pnpm dev        # Start dev server (client + server)
-pnpm build      # Production build
-pnpm start      # Start production server
-pnpm typecheck  # TypeScript validation
-pnpm test          # Run Vitest tests
-```
-
-## Adding Features
-
-### Add new colors to the theme
-
-Open `client/global.css` and `tailwind.config.ts` and add new tailwind colors.
-
-### New API Route
-1. **Optional**: Create a shared interface in `shared/api.ts`:
-```typescript
-export interface MyRouteResponse {
-  message: string;
-  // Add other response properties here
-}
-```
-
-2. Create a new route handler in `server/routes/my-route.ts`:
-```typescript
-import { RequestHandler } from "express";
-import { MyRouteResponse } from "@shared/api"; // Optional: for type safety
-
-export const handleMyRoute: RequestHandler = (req, res) => {
-  const response: MyRouteResponse = {
-    message: 'Hello from my endpoint!'
-  };
-  res.json(response);
-};
-```
-
-3. Register the route in `server/index.ts`:
-```typescript
-import { handleMyRoute } from "./routes/my-route";
-
-// Add to the createServer function:
-app.get("/api/my-endpoint", handleMyRoute);
-```
-
-4. Use in React components with type safety:
-```typescript
-import { MyRouteResponse } from '@shared/api'; // Optional: for type safety
-
-const response = await fetch('/api/my-endpoint');
-const data: MyRouteResponse = await response.json();
-```
-
-### New Page Route
-1. Create component in `client/pages/MyPage.tsx`
-2. Add route in `client/App.tsx`:
-```typescript
-<Route path="/my-page" element={<MyPage />} />
-```
-
-## Production Deployment
-
-- **Standard**: `pnpm build`
-- **Binary**: Self-contained executables (Linux, macOS, Windows)
-- **Cloud Deployment**: Use either Netlify or Vercel via their MCP integrations for easy deployment. Both providers work well with this starter template.
-
-## Architecture Notes
-
-- Single-port development with Vite + Express integration
-- TypeScript throughout (client, server, shared)
-- Full hot reload for rapid development
-- Production-ready with multiple deployment options
-- Comprehensive UI component library included
-- Type-safe API communication via shared interfaces
+If port 5001 is already in use, assume the backend may already be running in another terminal. Do not kill processes unless the user explicitly asks.

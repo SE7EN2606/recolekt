@@ -451,13 +451,13 @@ def background_process(
         dl_result = {}
         if not os.path.exists(video_path):
             if is_tiktok:
-                dl_result = ensure_dict(download_instagram_video(url, video_path))
-            else:
                 if str(os.getenv("TIKTOK_TRY_VIDEO_DOWNLOAD", "")).lower() not in {"1", "true", "yes"}:
                     logger.info("TikTok video download skipped; using caption/thumbnail fallback")
                     dl_result = {"ok": False, "path": None, "error": "tiktok_video_download_disabled"}
                 else:
                     dl_result = ensure_dict(meta_client.download_video(url, video_path))
+            else:
+                dl_result = ensure_dict(download_instagram_video(url, video_path))
 
             if not dl_result.get("success"):
                 meta = ensure_dict(dl_result.get("metadata", {}))

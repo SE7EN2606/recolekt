@@ -1,9 +1,9 @@
 import { API_BASE } from "../utils/api";
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Heart, Loader2, CheckCircle2, AlertCircle, RefreshCw, Trash2,
-  CircleSlash2, Folder as FolderIcon, Globe,
+  CircleSlash2, Folder as FolderIcon, Globe, StickyNote, Clock3, ChefHat,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useData } from '../context/DataContext';
@@ -21,6 +21,7 @@ interface VideoCardProps {
   selected?: boolean;
   onToggleSelect?: () => void;
   selectionMode?: boolean;
+  variant?: 'gallery' | 'cookbook';
 }
 
 const safeStr = (v: any): string => {
@@ -135,6 +136,41 @@ function getToolsSubtypeForBadge(video: any): ToolsSubtype {
   return isToolsSubtype(derived) ? derived : 'picks';
 }
 
+function getRecipeUserState(video: any) {
+  const raw = video?.recipeUserState ?? video?.recipe_user_state ?? video?.raw?.recipe_user_state ?? {};
+  const cookCount = Number(raw?.cookCount ?? raw?.cook_count ?? 0);
+
+  return {
+    cookCount: Number.isFinite(cookCount) && cookCount > 0 ? cookCount : 0,
+    hasNote: Boolean(raw?.hasNote ?? raw?.has_note),
+    hasActiveSession: Boolean(raw?.hasActiveSession ?? raw?.has_active_session),
+  };
+}
+
+function getRecipeIdentityChips(video: any): string[] {
+  const chips: string[] = [];
+  const addChip = (value: unknown) => {
+    const label = safeStr(value).trim();
+    if (!label) return;
+    const normalized = label.toLowerCase();
+    if (chips.some(chip => chip.toLowerCase() === normalized)) return;
+    chips.push(label);
+  };
+
+  const summaryObj = parseMaybeJson<any>(video?.summary ?? video?.summarytext ?? video?.raw?.summary, {});
+  let recipeObj = parseMaybeJson<any>(video?.recipe ?? video?.raw?.recipe, {});
+  if (recipeObj?.recipe) recipeObj = recipeObj.recipe;
+
+  addChip(recipeObj?.cuisine);
+  addChip(recipeObj?.cuisine_type);
+  addChip(recipeObj?.method);
+  addChip(recipeObj?.cooking_method);
+  addChip(video?.summary_topic ?? video?.summaryTopic ?? summaryObj?.topic ?? summaryObj?.theme);
+  addChip(video?.category !== 'Processing' && video?.category !== 'Failed' ? video?.category : '');
+
+  return chips.slice(0, 2);
+}
+
 const PROCESSING_MESSAGES = [
   'msg_indexing', 'msg_parsing', 'msg_visual', 'msg_auditory',
   'msg_analysing', 'msg_decoding', 'msg_semantic', 'msg_contextual',
@@ -151,8 +187,10 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
   selected,
   onToggleSelect,
   selectionMode,
+  variant = 'gallery',
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation(['videoCard', 'gallery', 'common']);
   const { toggleFavorite, addVideo, deleteVideos, folders } = useData();
 
@@ -207,6 +245,8 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
   const displayTitle = useMemo(() => resolveTitle(video, t), [video, t]);
   const originalTitle = useMemo(() => resolveOriginalTitle(video), [video]);
   const contentType = useMemo(() => resolveVideoContentType(video), [video]);
+  const recipeState = useMemo(() => getRecipeUserState(video), [video]);
+  const recipeIdentityChips = useMemo(() => getRecipeIdentityChips(video), [video]);
   const toolsSubtype = useMemo(
     () => (contentType === 'products' || contentType === 'software' || contentType === 'finance')
       ? getToolsSubtypeForBadge(video)
@@ -214,7 +254,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
     [video, contentType],
   );
 
-  const showTypeBadge = !isProcessing && !hasError && contentType === 'recipe';
+  const showTypeBadge = !isProcessing && !hasError;
 
   const hasLocation = useMemo(() => {
     const loc = video?.location;
@@ -235,9 +275,10 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
     return false;
   }, [video?.location]);
 
-  const showPlacesBadge = false;
+  const showPlacesBadge = !isProcessing && !hasError && hasLocation && contentType !== 'location' && contentType !== 'places';
+  const showRecipeStateBadges = variant === 'cookbook';
 
-  const duration = video?.duration;
+  const duration = String(video?.duration ?? '').trim();
   const sourceUrl = String(video?.originalUrl ?? video?.sourceurl ?? video?.sourceUrl ?? video?.raw?.sourceurl ?? '');
 
   const handleHeartClick = async (e: React.MouseEvent) => {
@@ -260,7 +301,7 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
   const handleCardClick = (e: React.MouseEvent) => {
     if (isDisabled) { e.preventDefault(); e.stopPropagation(); return; }
     if (selectionMode) { e.preventDefault(); e.stopPropagation(); onToggleSelect?.(); }
-    else { navigate(`/video/${videoId}`); }
+    else { navigate(`/video/${videoId}`, { state: location.pathname === '/cookbook' ? { from: 'cookbook' } : undefined }); }
   };
 
   const handleRetry = async (e: React.MouseEvent) => {
@@ -318,8 +359,6 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
             )}
           </div>
         )}
-
-        <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent opacity-80 pointer-events-none z-20" />
 
         {selectionMode && selected && (
           <div className="absolute inset-0 bg-primary-600/20 z-20 pointer-events-none" />
@@ -394,13 +433,10 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
           </div>
         )}
 
-        {!selectionMode && !hasError && !isProcessing && (
+        {!selectionMode && !hasError && !isProcessing && !isSorted && (
           <div className="absolute top-3 right-3 z-30 pointer-events-none">
-            <div className="w-7 h-7 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/20 shadow-sm">
-              {isSorted
-                ? <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center"><CheckCircle2 size={12} className="text-white" /></div>
-                : <div className="w-5 h-5 bg-gray-400/80 rounded-full flex items-center justify-center"><CircleSlash2 size={12} className="text-white" /></div>
-              }
+            <div className="w-7 h-7 bg-black/35 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/15 shadow-sm">
+              <CircleSlash2 size={13} className="text-white" />
             </div>
           </div>
         )}
@@ -409,29 +445,25 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
           <div className="absolute bottom-3 left-3 z-30">
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
               <FolderIcon size={11} className="text-primary-400" strokeWidth={2.5} />
-              <span className="text-[10px] font-bold text-white uppercase tracking-wide truncate max-w-20">{folderName}</span>
+              <span className="text-[10px] font-bold text-white uppercase tracking-wide truncate max-w-[72px] md:max-w-[120px]">{folderName}</span>
             </div>
           </div>
         )}
 
-        {/* Bottom-right overlay: duration on top, content type badge below — matches detail page layout */}
-        {!hasError && !isProcessing && (
-          <div className="absolute bottom-3 right-3 z-30 flex flex-col items-end gap-1">
-            {duration && duration !== '0:00' && (
-              <div className="bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold text-white shadow-md">
-                {duration}
-              </div>
-            )}
-            {showTypeBadge && <ContentTypeBadge type={contentType} toolsSubtype={toolsSubtype} />}
-            {showPlacesBadge && <ContentTypeBadge type="places" />}
+        {!hasError && !isProcessing && duration && duration !== '0:00' && (
+          <div className="absolute bottom-3 right-3 z-30 pointer-events-none">
+            <div className="bg-black/55 backdrop-blur-sm px-2 py-1 rounded-lg text-[10px] font-bold text-white shadow-md">
+              {duration}
+            </div>
           </div>
         )}
+
       </div>
 
       {/* Title row with globe toggle (only shown when original title differs from english) */}
-      <div className="pt-3 px-0.5">
+      <div className="pt-3 px-0.5" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} style={{userSelect:"text"}}>
         <div className="flex items-start gap-2">
-          <p className="flex-1 text-sm font-bold text-gray-900 leading-snug line-clamp-2 mb-1">
+          <p className="flex-1 text-sm font-bold text-gray-900 leading-snug line-clamp-2 mb-1 select-text cursor-text">
             {isProcessing ? 'Processing…' : activeTitle}
           </p>
           {originalTitle && !isDisabled && (
@@ -448,6 +480,39 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
             </button>
           )}
         </div>
+        {!hasError && !isProcessing && (
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {showTypeBadge && <ContentTypeBadge type={contentType} toolsSubtype={toolsSubtype} />}
+            {showPlacesBadge && <ContentTypeBadge type="places" />}
+            {contentType === 'recipe' && recipeIdentityChips.map(chip => (
+              <span key={chip} className="rounded-full bg-stone-100 px-2 py-1 text-[10px] font-black text-stone-600">
+                {chip}
+              </span>
+            ))}
+          </div>
+        )}
+        {contentType === 'recipe' && !isDisabled && showRecipeStateBadges && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {recipeState.hasActiveSession && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700 ring-1 ring-amber-100">
+                <Clock3 size={10} aria-hidden="true" />
+                Cooking
+              </span>
+            )}
+            {recipeState.cookCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700 ring-1 ring-emerald-100">
+                <ChefHat size={10} aria-hidden="true" />
+                Cooked {recipeState.cookCount}×
+              </span>
+            )}
+            {recipeState.hasNote && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-1 text-[10px] font-black text-stone-600">
+                <StickyNote size={10} aria-hidden="true" />
+                Note
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <ConfirmModal

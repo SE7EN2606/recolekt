@@ -158,6 +158,20 @@ function normalizeSummary(summaryRaw: unknown): any {
   return summary;
 }
 
+function normalizeRecipeUserState(raw: any) {
+  const source = raw?.recipe_user_state ?? raw?.recipeUserState ?? raw ?? {};
+  const cookCount = Number(source?.cookCount ?? source?.cook_count ?? 0);
+
+  return {
+    cookCount: Number.isFinite(cookCount) && cookCount > 0 ? cookCount : 0,
+    lastCookedAt: source?.lastCookedAt ?? source?.last_cooked_at ?? null,
+    hasActiveSession: Boolean(source?.hasActiveSession ?? source?.has_active_session),
+    activeSessionId: source?.activeSessionId ?? source?.active_session_id ?? null,
+    hasNote: Boolean(source?.hasNote ?? source?.has_note),
+    noteUpdatedAt: source?.noteUpdatedAt ?? source?.note_updated_at ?? null,
+  };
+}
+
 function stripRawForCache(videos: any[]): any[] {
   return (videos || []).map((v) => {
     const { __raw, ...rest } = v || {};
@@ -256,6 +270,24 @@ async function fetchWithTimeout(
 
 /* ── Provider ────────────────────────────────────────────────────────────── */
 
+const formatVideoDuration = (value: any, fallbackSeconds?: any): string => {
+  const raw = value ?? fallbackSeconds;
+
+  if (raw === null || raw === undefined || raw === '') return '';
+
+  const str = String(raw).trim();
+
+  if (/^\d+:\d{2}$/.test(str)) return str;
+
+  const secs = Number(str);
+  if (!Number.isFinite(secs) || secs <= 0) return '';
+
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
+
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const userId = user?.id ? String(user.id) : '';
@@ -271,6 +303,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             ? parsed.map((v: any) => ({
                 ...v,
                 content_type: normalizeContentType(v?.content_type),
+                duration: formatVideoDuration(v?.duration, v?.duration_seconds),
+                recipeUserState: v?.recipeUserState
+                  ? normalizeRecipeUserState(v.recipeUserState)
+                  : v?.recipe_user_state
+                    ? normalizeRecipeUserState(v.recipe_user_state)
+                    : null,
               }))
             : [];
         } catch {
@@ -419,6 +457,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               parsed.map((v: any) => ({
                 ...v,
                 content_type: normalizeContentType(v?.content_type),
+                duration: formatVideoDuration(v?.duration, v?.duration_seconds),
+                recipeUserState: v?.recipeUserState
+                  ? normalizeRecipeUserState(v.recipeUserState)
+                  : v?.recipe_user_state
+                    ? normalizeRecipeUserState(v.recipe_user_state)
+                    : null,
               })),
             );
           }
@@ -725,7 +769,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             author: r.author_name || r.author || 'Unknown',
             platform,
             thumbnailUrl: r.gcs_urls?.preview_thumbnail || '',
-            duration: r.duration || '',
+            duration: formatVideoDuration(r.duration, r.duration_seconds),
             savedAt: r.created_at,
             category: finalCategory,
             topic: hydratedSummary.topic || '',
@@ -746,6 +790,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             location: r.location,
             status: r.status,
             errorMessage: r.error_message || null,
+            recipeUserState: normalizeRecipeUserState(r.recipe_user_state),
+            recipe_user_state: normalizeRecipeUserState(r.recipe_user_state),
             __raw: r,
           } as any as Video;
         });
@@ -782,7 +828,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 prev.category !== v.category ||
                 prev.folderId !== v.folderId ||
                 prev.thumbnailUrl !== v.thumbnailUrl ||
-                prev.content_type !== v.content_type
+                prev.content_type !== v.content_type ||
+                JSON.stringify((prev as any).recipeUserState || null) !== JSON.stringify((v as any).recipeUserState || null)
               ) {
                 changed = true;
                 break;

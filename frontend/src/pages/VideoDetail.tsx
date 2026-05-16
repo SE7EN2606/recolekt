@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, Trash2, Heart, FolderInput, AlertCircle, X,
   EllipsisVertical, AlignLeft, Pencil, Save, Globe, Folder, Archive,
@@ -12,7 +12,7 @@ import { MoveCollectionModal } from '../components/MoveCollectionModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ReportModal } from '../components/ReportModal';
 import { EditableTitle, EditableBullets } from '../components/VideoDetailComponents';
-import { RecipeDetailsCard, ShoppingListItem } from '../components/RecipeDetailsCard';
+import RecipeDetailsCard from "../components/RecipeDetailsCard";
 import { WorkoutCard } from '../components/WorkoutCard';
 import { ToolsListCard } from '../components/ToolsListCard';
 import { LocationCard } from '../components/LocationCard';
@@ -24,6 +24,21 @@ import { useScrollLock } from '../utils/useScrollLock';
 import { apiUrl, fetchGcsJson, HASHTAG_STYLE } from '../utils/videoDetailUtils';
 import { scaleQuantity } from '../utils/videoUtils';
 import { CustomMessageSquareMoreIcon, IOSShareIcon, PlatformIconAuthor } from '../components/CustomIcons';
+import {
+  buildRecipeForCard,
+  hasUsableRecipeContent,
+  recipeIngredientCount,
+  recipeInstructionCount,
+} from '../features/recipe-core/recipePayload';
+import RecipeCookbookRail, {
+  RecipeMobileStateSection,
+  RecipeMetaChip,
+  SourceDetailsContent,
+} from '../features/recipe-detail/RecipeCookbookRail';
+import useRecipeCookState from '../features/recipe-cook-state/useRecipeCookState';
+import useRecipeNotes from '../features/recipe-notes/useRecipeNotes';
+import useShoppingList from '../features/shopping/useShoppingList';
+import { readShoppingPreferences } from '../features/shopping/shoppingPreferences';
 import {
   mergeVideoPayload,
   buildViewModel,
@@ -123,11 +138,6 @@ const cachedLocationNeedsHydration = (candidate: any, thumb?: string) => {
   }
 };
 
-export type RecipeMetaChip = {
-  label: string;
-  value: string;
-};
-
 function getRecipeMetaChips(recipe: any, video?: any): RecipeMetaChip[] {
   const read = (...values: any[]) =>
     values
@@ -206,6 +216,7 @@ function RecipeMetaPanel({ chips }: { chips: RecipeMetaChip[] }) {
 export const VideoDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const {
     videos,
@@ -227,7 +238,43 @@ export const VideoDetail: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedVideo, setEditedVideo] = useState<any>(null);
   const [servingScale, setServingScale] = useState(1);
-  const [useMetric, setUseMetric] = useState(true);
+  const [noteFocusSignal, setNoteFocusSignal] = useState(0);
+  const richRecipeRef = useRef<any>(null);
+  const [useMetric, setUseMetric] = useState(() => {
+    const p = readShoppingPreferences();
+    return p.unitPreference === 'metric';
+  });
+
+  const [temperatureUnit, setTemperatureUnit] = useState<'celsius' | 'fahrenheit'>(() => {
+    const p = readShoppingPreferences();
+    return p.temperatureUnit === 'fahrenheit' ? 'fahrenheit' : 'celsius';
+  });
+  const [recipeConversion, setRecipeConversion] = useState<'do_not_convert' | 'smart' | 'always'>(() => {
+    const p = readShoppingPreferences();
+    return p.recipeConversion === 'always' || p.recipeConversion === 'smart' ? p.recipeConversion : 'do_not_convert';
+  });
+  const [volumePreference, setVolumePreference] = useState<'metric' | 'us'>(() => {
+    const p = readShoppingPreferences();
+    return p.volumePreference === 'us' ? 'us' : 'metric';
+  });
+  const [rounding, setRounding] = useState<'rounded' | 'exact'>(() => {
+    const p = readShoppingPreferences();
+    return p.rounding === 'exact' ? 'exact' : 'rounded';
+  });
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const p = (e as CustomEvent).detail || readShoppingPreferences();
+      setUseMetric(p.unitPreference === 'metric');
+      setTemperatureUnit(p.temperatureUnit === 'fahrenheit' ? 'fahrenheit' : 'celsius');
+      setRecipeConversion(p.recipeConversion === 'always' || p.recipeConversion === 'smart' ? p.recipeConversion : 'do_not_convert');
+      setVolumePreference(p.volumePreference === 'us' ? 'us' : 'metric');
+      setRounding(p.rounding === 'exact' ? 'exact' : 'rounded');
+    };
+    window.addEventListener('recolekt:shopping-preferences-changed', handler);
+    return () => window.removeEventListener('recolekt:shopping-preferences-changed', handler);
+  }, []);
+  const [cookModeOpenSignal, setCookModeOpenSignal] = useState(0);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -244,14 +291,6 @@ export const VideoDetail: React.FC = () => {
   }, [id]);
 
   // Push ingredients into the shared GroceryList via DataContext
-  const handleAddToShoppingList = useCallback(
-    (items: ShoppingListItem[]) => {
-      if (typeof addToGroceryList === 'function') {
-        addToGroceryList(items);
-      }
-    },
-    [addToGroceryList],
-  );
 
   const enrichVideo = useCallback(async () => {
     if (!id || !navigator.onLine) {
@@ -407,6 +446,80 @@ export const VideoDetail: React.FC = () => {
     return buildViewModel(source, showOriginal, galleryThumbnail);
   }, [video, editedVideo, isEditing, showOriginal, galleryThumbnail]);
 
+  const recipeForCard = buildRecipeForCard(viewModel?.recipe, (video as any)?.recipe, [
+    (video as any)?.gcs?.recipe,
+    (video as any)?.raw?.recipe,
+    (video as any)?.__raw?.recipe,
+  ]);
+  const currentInstructionCount = recipeInstructionCount(recipeForCard);
+  const currentIngredientCount = recipeIngredientCount(recipeForCard);
+  const storedInstructionCount = recipeInstructionCount(richRecipeRef.current);
+  const storedIngredientCount = recipeIngredientCount(richRecipeRef.current);
+
+  if (
+    recipeForCard &&
+    (
+      currentInstructionCount > storedInstructionCount ||
+      (
+        currentInstructionCount === storedInstructionCount &&
+        currentIngredientCount > storedIngredientCount
+      )
+    )
+  ) {
+    richRecipeRef.current = recipeForCard;
+  }
+
+  const stableRecipeForCard =
+    richRecipeRef.current && recipeInstructionCount(richRecipeRef.current) > currentInstructionCount
+      ? richRecipeRef.current
+      : recipeForCard;
+
+  const rawContentType = String(
+    (video as any)?.content_type ||
+    (video as any)?.contentType ||
+    (video as any)?.__raw?.content_type ||
+    ''
+  ).toLowerCase();
+  const recipeContentAvailable = [
+    stableRecipeForCard,
+    recipeForCard,
+    viewModel?.recipe,
+    (video as any)?.recipe,
+    richRecipeRef.current,
+  ].some(hasUsableRecipeContent);
+  const showRecipeCard = Boolean(
+    recipeContentAvailable ||
+    (rawContentType === 'recipe' && stableRecipeForCard)
+  );
+
+  const {
+    note: recipeNote,
+    setNote: setRecipeNote,
+    status: recipeNoteStatus,
+    saveNote: saveRecipeNote,
+    deleteNote: deleteRecipeNote,
+  } = useRecipeNotes(currentVideoId, showRecipeCard);
+
+  const openRecipeNotes = useCallback(() => {
+    setNoteFocusSignal((value) => value + 1);
+  }, []);
+
+  const {
+    cookStatus,
+    status: cookStatusStatus,
+    markCooked,
+    resetCookState,
+  } = useRecipeCookState(currentVideoId, showRecipeCard);
+  const cookStatusLoading = cookStatusStatus === 'loading';
+
+  const {
+    plannedRecipeIds,
+    addRecipe: addRecipeToShoppingList,
+    removeRecipe: removeRecipeFromShoppingList,
+    loading: shoppingLoading,
+    saving: shoppingSaving,
+  } = useShoppingList();
+
   if (loading || !viewModel) return <Skeleton />;
 
   const toolsCategories = getToolsCategoriesForLanguage(viewModel.toolsList, showOriginal);
@@ -419,7 +532,7 @@ export const VideoDetail: React.FC = () => {
     : undefined;
   const derivedSubtype = deriveToolsSubtype(viewModel.toolsList);
   const safeDerivedSubtype = isBadgeToolsSubtype(derivedSubtype) ? derivedSubtype : 'picks';
-  const recipeMetaChips = getRecipeMetaChips(viewModel.recipe, viewModel);
+  const recipeMetaChips = getRecipeMetaChips(stableRecipeForCard || viewModel.recipe, viewModel);
 
   const cleanMetadataValue = (value: any) => {
     const text = String(value || '').trim();
@@ -474,6 +587,10 @@ export const VideoDetail: React.FC = () => {
     hasToolsList &&
     (viewModel.isStructuredTools || !!viewModel.structuredType || !hasBullets);
 
+  const showFolderBadge = Boolean(folderName && !showRecipeCard);
+  const hasRecipeSourceDetails =
+    showRecipeCard && Boolean(viewModel.caption || viewModel.transcript || viewModel.originalUrl);
+
   const actionItems = (video
     ? [
         { icon: <IOSShareIcon />, label: t('videoDetail:share', 'Share'), onClick: handleShare },
@@ -504,6 +621,8 @@ export const VideoDetail: React.FC = () => {
       ]
     : []) as unknown as ActionItem[];
 
+  const cameFromCookbook = (location.state as any)?.from === 'cookbook';
+
   return (
     <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
       <style>{HASHTAG_STYLE}</style>
@@ -512,7 +631,20 @@ export const VideoDetail: React.FC = () => {
         <div className="min-w-0 w-full flex flex-col">
 
           {/* Thumbnail */}
-          <div className="relative z-0 w-full aspect-9/8 bg-black rounded-2xl overflow-hidden shadow-sm mb-5 group mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0">
+          {showRecipeCard && cameFromCookbook && (
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="mb-3 inline-flex w-fit items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-black text-amber-800 ring-1 ring-amber-100 transition-colors hover:bg-white"
+            >
+              <ArrowLeft size={14} aria-hidden="true" />
+              Back to Cookbook
+            </button>
+          )}
+
+          <div className={`relative z-0 w-full aspect-9/8 bg-black overflow-hidden shadow-sm group mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0 ${
+            showRecipeCard ? 'mb-6 rounded-[26px]' : 'mb-5 rounded-2xl'
+          }`}>
             {viewModel.thumbnailUrl && (
               <img
                 src={viewModel.thumbnailUrl}
@@ -559,7 +691,7 @@ export const VideoDetail: React.FC = () => {
 
             <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between z-30 pointer-events-none">
               <div className="flex items-center gap-2 pointer-events-auto">
-                {folderName && (
+                {showFolderBadge && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
                     <Folder size={12} className="text-primary-400" strokeWidth={2.5} />
                     <span className="text-[11px] font-bold text-white uppercase tracking-wide">
@@ -588,7 +720,7 @@ export const VideoDetail: React.FC = () => {
           </div>
 
           {/* Title */}
-          <div className="mb-3">
+          <div className={showRecipeCard ? 'mb-2 px-0.5 md:mb-3' : 'mb-3'}>
             <EditableTitle
               title={viewModel.title}
               isEditMode={isEditing}
@@ -598,7 +730,7 @@ export const VideoDetail: React.FC = () => {
           </div>
 
           {/* Author + date */}
-          <div className="mb-6 flex items-center justify-between">
+          <div className={`flex items-center justify-between ${showRecipeCard ? 'mb-5 px-0.5' : 'mb-6'}`}>
             <a
               href={viewModel.originalUrl}
               target="_blank"
@@ -617,7 +749,14 @@ export const VideoDetail: React.FC = () => {
             )}
           </div>
 
+          {showRecipeCard && !cookStatusLoading && cookStatus.hasActiveSession && (
+            <div className="mb-5 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+              Active cook session saved. Use Resume cooking to pick up where you left off.
+            </div>
+          )}
+
           {/* Metadata (mobile) */}
+          {!showRecipeCard && (
           <MetadataPanel
             variant="mobile"
             category={metadataCategory}
@@ -628,9 +767,11 @@ export const VideoDetail: React.FC = () => {
             onEditTopic={(v: string) => handleEditField('topic', v)}
             onEditStart={() => setIsEditing(true)}
           />
+          )}
 
           {/* AI Summary */}
-          <div className="bg-primary-50 rounded-2xl p-5 md:p-6 mb-6">
+          {!showRecipeCard && (
+            <div className="bg-primary-50 rounded-2xl p-5 md:p-6 mb-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-primary-700 font-bold text-sm uppercase tracking-wide">
                 {t('videoDetail:aiSummary', 'AI Summary')}
@@ -692,22 +833,67 @@ export const VideoDetail: React.FC = () => {
                 )}
               </div>
             ) : null}
-          </div>
+            </div>
+          )}
 
           {/* Recipe card */}
-          {viewModel.recipe && !viewModel.recipe.is_compilation && (
+          {showRecipeCard && stableRecipeForCard && (
             <div className="mb-5">
               <RecipeDetailsCard
-                recipe={viewModel.recipe}
+                recipe={stableRecipeForCard}
                 recipeId={currentVideoId}
-                recipeName={viewModel.title ?? 'Recipe'}
+                recipeName={viewModel.title ?? "Recipe"}
                 servingScale={servingScale}
-                scaleQuantity={scaleQuantity}
                 onServingScaleChange={setServingScale}
+                scaleQuantity={scaleQuantity}
                 useMetric={useMetric}
                 onToggleMetric={setUseMetric}
-                onAddToShoppingList={handleAddToShoppingList}
+                temperatureUnit={temperatureUnit}
+                recipeConversion={recipeConversion}
+                volumePreference={volumePreference}
+                rounding={rounding}
+                onMarkCooked={markCooked}
+                onAddCookingNote={openRecipeNotes}
+                hasActiveSession={cookStatus.hasActiveSession}
+                cookStatusLoading={cookStatusLoading}
+                openCookModeSignal={cookModeOpenSignal}
               />
+            </div>
+          )}
+
+          {showRecipeCard && (
+            <RecipeMobileStateSection
+              note={recipeNote}
+              onNoteChange={setRecipeNote}
+              onNoteSave={saveRecipeNote}
+              onNoteDelete={deleteRecipeNote}
+              noteFocusSignal={noteFocusSignal}
+              noteStatus={recipeNoteStatus}
+              cookStatus={cookStatus}
+              cookStatusLoading={cookStatusLoading}
+              onMarkCooked={markCooked}
+              onResetCookStatus={resetCookState}
+              originalUrl={viewModel.originalUrl}
+              platform={viewModel.platform}
+              t={t}
+            />
+          )}
+
+          {hasRecipeSourceDetails && (
+            <div className="md:hidden">
+              <Accordion
+                icon={<AlignLeft size={16} />}
+                label={t('videoDetail:sourceDetails', 'Source details')}
+              >
+                <SourceDetailsContent
+                  caption={viewModel.caption}
+                  transcript={viewModel.transcript}
+                  originalUrl={viewModel.originalUrl}
+                  platform={viewModel.platform}
+                  t={t}
+                  showOriginalLink={!showRecipeCard}
+                />
+              </Accordion>
             </div>
           )}
 
@@ -721,7 +907,7 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
-          {viewModel.caption && (
+          {!showRecipeCard && viewModel.caption && (
             <Accordion icon={<AlignLeft size={16} />} label={t('videoDetail:caption', 'Caption')}>
               <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
                 {viewModel.caption}
@@ -729,7 +915,7 @@ export const VideoDetail: React.FC = () => {
             </Accordion>
           )}
 
-          {viewModel.transcript && (
+          {!showRecipeCard && viewModel.transcript && (
             <div className="md:hidden">
               <Accordion
                 icon={<CustomMessageSquareMoreIcon size={16} />}
@@ -759,7 +945,7 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
-          {viewModel.originalUrl && (
+          {!showRecipeCard && viewModel.originalUrl && (
             <OriginalLink
               url={viewModel.originalUrl}
               platform={viewModel.platform}
@@ -770,35 +956,62 @@ export const VideoDetail: React.FC = () => {
         </div>
 
         {/* Desktop right column */}
-        <div className="hidden md:flex flex-col w-full gap-5 mt-0">
-          <RecipeMetaPanel chips={recipeMetaChips} />
-
-          <MetadataPanel
-            variant="desktop"
-            category={metadataCategory}
-            subCategory={metadataTopic}
-            tags={viewModel.tags}
-            isEditing={isEditing}
-            onEditCategory={(v: string) => handleEditField('category', v)}
-            onEditTopic={(v: string) => handleEditField('topic', v)}
-            onEditStart={() => setIsEditing(true)}
+        {showRecipeCard ? (
+          <RecipeCookbookRail
+            folderName={folderName}
+            metaChips={recipeMetaChips}
+            caption={viewModel.caption}
+            transcript={viewModel.transcript}
+            originalUrl={viewModel.originalUrl}
+            platform={viewModel.platform}
+            t={t}
+            note={recipeNote}
+            onNoteChange={setRecipeNote}
+            onNoteSave={saveRecipeNote}
+            onNoteDelete={deleteRecipeNote}
+            noteFocusSignal={noteFocusSignal}
+            noteStatus={recipeNoteStatus}
+            cookStatus={cookStatus}
+            cookStatusLoading={cookStatusLoading}
+            onMarkCooked={markCooked}
+            onResetCookStatus={resetCookState}
+            onStartCooking={() => setCookModeOpenSignal((value) => value + 1)}
+            shoppingPlanned={plannedRecipeIds.has(currentVideoId)}
+            shoppingLoading={shoppingLoading}
+            shoppingSaving={shoppingSaving}
+            onAddToShoppingList={() => addRecipeToShoppingList(currentVideoId, null)}
+            onRemoveFromShoppingList={() => removeRecipeFromShoppingList(currentVideoId)}
           />
+        ) : (
+          <div className="hidden md:flex flex-col w-full gap-5 mt-0">
+            <RecipeMetaPanel chips={recipeMetaChips} />
+            <MetadataPanel
+              variant="desktop"
+              category={metadataCategory}
+              subCategory={metadataTopic}
+              tags={viewModel.tags}
+              isEditing={isEditing}
+              onEditCategory={(v: string) => handleEditField('category', v)}
+              onEditTopic={(v: string) => handleEditField('topic', v)}
+              onEditStart={() => setIsEditing(true)}
+            />
 
-          {viewModel.transcript && (
-            <Accordion
-              icon={<CustomMessageSquareMoreIcon size={16} />}
-              label={t('videoDetail:transcript', 'Transcript')}
-            >
-              <div className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap font-medium italic border-l-2 border-gray-100 pl-4">
-                {viewModel.transcript}
-              </div>
-            </Accordion>
-          )}
+            {viewModel.transcript && (
+              <Accordion
+                icon={<CustomMessageSquareMoreIcon size={16} />}
+                label={t('videoDetail:transcript', 'Transcript')}
+              >
+                <div className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap font-medium italic border-l-2 border-gray-100 pl-4">
+                  {viewModel.transcript}
+                </div>
+              </Accordion>
+            )}
 
-          {viewModel.originalUrl && (
-            <OriginalLink url={viewModel.originalUrl} platform={viewModel.platform} t={t} />
-          )}
-        </div>
+            {viewModel.originalUrl && (
+              <OriginalLink url={viewModel.originalUrl} platform={viewModel.platform} t={t} />
+            )}
+          </div>
+        )}
       </div>
 
       <ActionSheet

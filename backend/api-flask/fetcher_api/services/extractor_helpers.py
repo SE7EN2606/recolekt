@@ -178,7 +178,7 @@ def normalize_ingredients(ings: Any) -> List[Dict[str, str]]:
         if isinstance(ing, str):
             body = strip_emoji(ing)
             emoji = infer_ingredient_emoji(body)
-            out.append({"item": body, "name": body, "quantity": "", "unit": "", "emoji": emoji})
+            out.append({"item": body, "name": body, "quantity": None, "unit": None, "quantity_type": "unspecified", "emoji": emoji})
             continue
 
         if isinstance(ing, dict):
@@ -188,7 +188,7 @@ def normalize_ingredients(ings: Any) -> List[Dict[str, str]]:
 
             emoji = infer_ingredient_emoji(item)
 
-            out.append({"item": item, "name": item, "quantity": qty, "unit": unit, "emoji": emoji})
+            out.append({"item": item, "name": item, "quantity": qty or None, "unit": unit or None, "quantity_type": (ing.get("quantity_type") or "unspecified").lower().strip(), "emoji": emoji})
 
     return out
 

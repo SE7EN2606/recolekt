@@ -14,16 +14,18 @@ import { InstallPrompt } from './components/InstallPrompt';
 import { ProfileSettings } from './pages/AdminDashboard';
 
 const Gallery         = lazy(() => import('./pages/Gallery').then(m => ({ default: m.Gallery })));
+const Cookbook        = lazy(() => import('./pages/Cookbook').then(m => ({ default: m.Cookbook })));
 const VideoDetail     = lazy(() => import('./pages/VideoDetail').then(m => ({ default: m.VideoDetail })));
 const Organizer       = lazy(() => import('./pages/Organizer').then(m => ({ default: m.Organizer })));
 const AccountSettings = lazy(() => import('./pages/AccountSettings').then(m => ({ default: m.AccountSettings })));
+const OnboardingFlow  = lazy(() => import('./pages/OnboardingFlow').then(m => ({ default: m.OnboardingFlow })));
 const BillingPage     = lazy(() => import('./pages/BillingPage').then(m => ({ default: m.BillingPage })));
 const SubscribePage   = lazy(() => import('./pages/SubscribePage').then(m => ({ default: m.SubscribePage })));
 const Features        = lazy(() => import('./pages/Features').then(m => ({ default: m.Features })));
 const Auth            = lazy(() => import('./pages/Auth').then(m => ({ default: m.Auth })));
 const SavedPlaces     = lazy(() => import('./pages/SavedPlaces').then(m => ({ default: m.SavedPlaces })));
 const AdminPanel      = lazy(() => import('./pages/AdminPanel').then(m => ({ default: m.AdminPanel })));
-const GroceryList     = lazy(() => import('./pages/GroceryList').then(m => ({ default: m.GroceryList })));
+const ShoppingList    = lazy(() => import('./pages/ShoppingList').then(m => ({ default: m.ShoppingList })));
 const MobileBottomNav = lazy(() => import('./components/MobileBottomNav').then(m => ({ default: m.MobileBottomNav })));
 const AddVideoModal   = lazy(() => import('./components/AddVideoModal').then(m => ({ default: m.AddVideoModal })));
 
@@ -127,11 +129,13 @@ function App() {
                   <Route path="/organizer" element={<Organizer />} />
                   <Route path="/gallery" element={<Gallery />} />
                   <Route path="/gallery/:folderId" element={<Gallery />} />
+                  <Route path="/cookbook" element={<Cookbook />} />
                   <Route path="/video/:id" element={<VideoDetail />} />
                   <Route path="/settings" element={<AccountSettings />} />
+                  <Route path="/onboarding" element={<OnboardingFlow />} />
                   <Route path="/profile" element={<ProfileSettings />} />
                   <Route path="/places" element={<SavedPlaces />} />
-                  <Route path="/grocery-list" element={<GroceryList />} />
+                  <Route path="/grocery-list" element={<ShoppingList />} />
                   <Route path="/admin" element={<AdminPanel />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

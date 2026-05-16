@@ -1,1491 +1,515 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { CheckCircle2, ChefHat, Pencil, Plus, Trash2, X } from 'lucide-react';
+import RecipeNutritionSummary from '../features/recipe-secondary/RecipeNutritionSummary';
+import RecipeStepsPanel from '../features/recipe-core/panels/RecipeStepsPanel';
+import RecipeAskPanel from '../features/recipe-core/panels/RecipeAskPanel';
+import useRecipeAssistant from '../features/recipe-assistant/useRecipeAssistant';
+import IngredientRow from '../features/recipe-core/rows/IngredientRow';
+import RecipeCompilationCard from '../features/recipe-core/cards/RecipeCompilationCard';
 import {
-  ChefHat, Clock, Flame, Moon, Lightbulb,
-  ShoppingCart, Check,
-} from 'lucide-react';
+  assumedLabel,
+  formatQty,
+  normalizeIngredientSections,
+  normalizeInstructionSections,
+  parseRawIngredient,
+} from '../features/recipe-core/recipePayload';
 import { useTranslation } from 'react-i18next';
 import CookModeModal from './CookModeModal';
-import NutritionCard from "./NutritionCard";
-import { apiUrl } from "../utils/videoDetailUtils";
+import useRecipeCookSession from '../features/recipe-cook-session/useRecipeCookSession';
+import {
+  getIngredientEditText,
+  getStepEditText,
+  useRecipeEditing,
+} from '../features/recipe-editing/useRecipeEditing';
 
-const getRecipeAssistantToken = (): string => {
-  try {
-    return String(
-      (window as any).__REKOLEKT_TOKEN__ ||
-      localStorage.getItem("auth_token") ||
-      localStorage.getItem("token") ||
-      localStorage.getItem("access_token") ||
-      localStorage.getItem("jwt") ||
-      ""
-    ).replace(/^Bearer\s+/i, "").trim();
-  } catch {
-    return "";
-  }
-};
-
-type RecipeAssistantHistoryEntry = {
-  question: string;
-  answer: string;
-  createdAt?: string;
-  created_at?: string;
-};
-
-type RecipeAssistantHistoryItem = RecipeAssistantHistoryEntry;
-
-type RecipeAssistantResponse = {
-  history?: RecipeAssistantHistoryEntry[];
-  answer?: string;
-  error?: string;
-  sourcesUsed?: string[];
-  missingInfo?: string[];
-  model?: string;
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────────────────────────────────────
-
-type RawInstruction =
-  | string
-  | {
-      instruction?: string | null;
-      text?: string | null;
-      source?: string | null;
-      confidence?: string | null;
-      needs_review?: boolean | null;
-      userEdited?: boolean | null;
-    };
-
-type RawIngredient =
-  | string
-  | {
-      item?: string | null;
-      name?: string | null;
-      quantity?: number | string | null;
-      unit?: string | null;
-      emoji?: string | null;
-      note?: string | null;
-      source?: string | null;
-      confidence?: string | null;
-      needs_review?: boolean;
-      missing_reason?: string | null;
-      approximate?: boolean;
-      quantityRange?: { min: number; max: number; unit?: string } | null;
-    };
-
-export interface PracticalSummary {
-  what_it_is?: string;
-  key_technique?: string;
-  important_notes?: string[];
-  source?: string;
-  confidence?: string;
-}
-
-export interface MissingInfoItem {
-  field?: string;
-  message: string;
-  severity?: 'low' | 'medium' | 'high';
-  suggestion?: string;
-}
-
-export interface IngredientGroup {
-  title?: string;
-  group?: string;
-  items: RawIngredient[];
-}
-
-export interface IngredientSection {
-  title?: string;
-  group?: string;
-  name?: string;
-  section?: string;
-  component?: string;
-  ingredients?: RawIngredient[];
-  items?: RawIngredient[];
-  children?: RawIngredient[];
-}
-
-export interface InstructionSection {
-  title?: string;
-  group?: string;
-  name?: string;
-  section?: string;
-  phase?: string;
-  part?: string;
-  instructions?: RawInstruction[];
-  steps?: RawInstruction[];
-  items?: RawInstruction[];
-  children?: RawInstruction[];
-}
-
-export interface RecipeForCard {
-  is_compilation?: boolean;
-  ideas?: { headline?: string; text?: string; emoji?: string }[];
-  prep_time?: string | number | null;
-  cook_time?: string | number | null;
-  rest_time?: string | number | null;
-  total_time?: string | number | null;
-  prep_time_meta?: { source?: string; confidence?: string };
-  cook_time_meta?: { source?: string; confidence?: string };
-  rest_time_meta?: { source?: string; confidence?: string };
-  total_time_meta?: { source?: string; confidence?: string };
-  servings?: string | number | null;
-  recipe_kind?: 'full_recipe' | 'technique_with_ingredients' | 'pure_technique' | string | null;
-  cuisine?: string | null;
-  style?: string | null;
-  cooking_style?: string | null;
-  ingredients_groups?: IngredientGroup[] | null;
-  ingredient_sections?: IngredientSection[] | null;
-  ingredients_sections?: IngredientSection[] | null;
-  ingredientSections?: IngredientSection[] | null;
-  ingredientsSections?: IngredientSection[] | null;
-  ingredients?: RawIngredient[] | null;
-  instruction_sections?: InstructionSection[] | null;
-  instructions_sections?: InstructionSection[] | null;
-  instructionSections?: InstructionSection[] | null;
-  instructionsSections?: InstructionSection[] | null;
-  method_sections?: InstructionSection[] | null;
-  step_sections?: InstructionSection[] | null;
-  steps_sections?: InstructionSection[] | null;
-  instructions?: RawInstruction[] | null;
-  practical_summary?: PracticalSummary | null;
-  tips?: string[];
-  notes?: string | string[];
-  missingInfo?: MissingInfoItem[] | null;
-}
-
-export interface ShoppingListItem {
-  id: string;
-  name: string;
-  quantity?: string;
-  unit?: string;
-  emoji?: string;
-  recipeTitle?: string;
-  checked: boolean;
-}
+type RecipeSecondaryTabKey = 'nutrition' | 'ask';
 
 export interface RecipeDetailsCardProps {
-  recipe: RecipeForCard;
+  recipe?: any;
   recipeId?: string;
   recipeName?: string;
   servingScale?: number;
+  onServingScaleChange?: (scale: number) => void;
   scaleQuantity?: (qty: string, scale: number) => string;
-  onServingScaleChange?: (next: number) => void;
   useMetric?: boolean;
   onToggleMetric?: (val: boolean) => void;
-  onAddToShoppingList?: (items: ShoppingListItem[]) => void;
+  temperatureUnit?: 'celsius' | 'fahrenheit';
+  recipeConversion?: 'do_not_convert' | 'smart' | 'always';
+  volumePreference?: 'metric' | 'us';
+  rounding?: 'rounded' | 'exact';
+  onMarkCooked?: () => void;
+  onAddCookingNote?: () => void;
+  hasActiveSession?: boolean;
+  cookStatusLoading?: boolean;
+  openCookModeSignal?: number;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
-
-const toStr = (v: string | number | null | undefined): string =>
-  v !== undefined && v !== null ? String(v) : '';
-
-function formatMinutes(raw: string | number | null | undefined): string | null {
-  const str = toStr(raw).trim().toLowerCase();
-  if (!str) return null;
-
-  if (typeof raw === 'number') {
-    if (!Number.isFinite(raw) || raw <= 0) return null;
-    if (raw < 60) return `${Math.round(raw)} min`;
-    const h = Math.floor(raw / 60);
-    const m = Math.round(raw % 60);
-    if (m === 0) return h === 1 ? '1 hr' : `${h} hr`;
-    return `${h} hr ${m} min`;
-  }
-
-  const hourMatch = str.match(/(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|heure|heures)/i);
-  const minuteMatch = str.match(/(\d+(?:\.\d+)?)\s*(m|min|mins|minute|minutes)/i);
-
-  if (hourMatch || minuteMatch) {
-    const hours = hourMatch ? Number(hourMatch[1]) : 0;
-    const minutes = minuteMatch ? Number(minuteMatch[1]) : 0;
-    const total = hours * 60 + minutes;
-
-    if (!Number.isFinite(total) || total <= 0) return null;
-    if (total < 60) return `${Math.round(total)} min`;
-
-    const h = Math.floor(total / 60);
-    const m = Math.round(total % 60);
-    if (m === 0) return h === 1 ? '1 hr' : `${h} hr`;
-    return `${h} hr ${m} min`;
-  }
-
-  const n = parseFloat(str);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  if (n < 60) return `${Math.round(n)} min`;
-
-  const h = Math.floor(n / 60);
-  const m = Math.round(n % 60);
-  if (m === 0) return h === 1 ? '1 hr' : `${h} hr`;
-  return `${h} hr ${m} min`;
+function getServings(recipe: any) {
+  if (typeof recipe?.servings === 'number') return recipe.servings;
+  const parsed = Number(recipe?.servings);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
-
-function splitNote(label: string): { mainLabel: string; note: string } {
-  const m = label.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
-  return m ? { mainLabel: m[1].trim(), note: m[2].trim() } : { mainLabel: label, note: '' };
-}
-
-function parseRawIngredient(raw: RawIngredient) {
-  if (typeof raw === 'string') {
-    const { mainLabel, note } = splitNote(raw.trim());
-    return { name: mainLabel, note, quantity: null as string | null, unit: null as string | null, emoji: '', needsReview: false, isApprox: false, qtyRange: null as any };
-  }
-  const base = raw as any;
-  const { mainLabel, note } = splitNote((base.item || base.name || '').trim());
-  return {
-    name: mainLabel,
-    note: base.note || note || '',
-    quantity: base.quantity !== undefined && base.quantity !== null ? String(base.quantity).trim() : null as string | null,
-    unit: base.unit ? String(base.unit).trim() : null as string | null,
-    emoji: base.emoji ? String(base.emoji) : '',
-    needsReview: Boolean(base.needs_review),
-    isApprox: Boolean(base.approximate),
-    qtyRange: base.quantityRange || null,
-  };
-}
-
-function parseInstruction(raw: RawInstruction): { text: string; isInferred: boolean } {
-  if (typeof raw === 'string') return { text: raw, isInferred: false };
-  const obj = raw as any;
-  return { text: obj.instruction || obj.text || '', isInferred: (obj.source || '') === 'ai_inferred' };
-}
-
-function normalizeForCountMatch(value: string | null | undefined): string {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim()
-    .replace(/[’']/g, ' ')
-    .replace(/\s+/g, ' ');
-}
-
-function isCountStyleIngredient(unit: string | null, name?: string): boolean {
-  const normalizedUnit = normalizeForCountMatch(unit).replace(/s$/, '');
-  const normalizedName = normalizeForCountMatch(name);
-
-  const countUnits = new Set([
-    'egg',
-    'yolk',
-    'clove',
-    'head',
-    'leaf',
-    'bay leaf',
-    'sprig',
-    'branch',
-    'bunch',
-    'piece',
-    'slice',
-  ]);
-
-  if (normalizedUnit && countUnits.has(normalizedUnit)) return true;
-
-  return /\b(egg|eggs|yolk|yolks|clove|cloves|garlic head|head of garlic|tete d ail|tetes d ail|leaf|leaves|bay leaf|bay leaves|feuille de laurier|feuilles de laurier|sprig|sprigs|branch|branches|branche de thym|branches de thym|brin de thym|brins de thym)\b/.test(normalizedName);
-}
-
-function normalizeCountQuantity(qty: string, unit: string | null, name?: string): string {
-  if (!isCountStyleIngredient(unit, name)) return qty;
-
-  const n = Number(String(qty).replace(',', '.'));
-  if (!Number.isFinite(n)) return qty;
-
-  // Kitchen count ingredients should not show values like 1.2 garlic heads or 2.4 bay leaves.
-  return String(Math.max(1, Math.round(n)));
-}
-
-
-function convertUnits(qty: string, unit: string, toMetric: boolean): { q: string; u: string } {
-  const n = parseFloat(qty.replace(',', '.'));
-  if (isNaN(n)) return { q: qty, u: unit };
-  const u = unit.toLowerCase().trim().replace(/s$/, '');
-  if (toMetric) {
-    if (u === 'cup')  return { q: String(Math.round(n * 240)), u: 'ml' };
-    if (u === 'tbsp' || u === 'tablespoon') return { q: String(Math.round(n * 15)), u: 'ml' };
-    if (u === 'tsp'  || u === 'teaspoon')  return { q: String(Math.round(n * 5)), u: 'ml' };
-    if (u === 'oz'   || u === 'ounce')     return { q: String(Math.round(n * 28.35 * 10) / 10), u: 'g' };
-    if (u === 'lb'   || u === 'pound')     return { q: String(Math.round(n * 453.6)), u: 'g' };
-  } else {
-    if (u === 'ml' || u === 'milliliter') {
-      if (n >= 240) return { q: String(Math.round(n / 240 * 10) / 10), u: 'cups' };
-      if (n >= 15)  return { q: String(Math.round(n / 15 * 10) / 10), u: 'tbsp' };
-      return { q: String(Math.round(n / 5 * 10) / 10), u: 'tsp' };
-    }
-    if (u === 'l'  || u === 'liter' || u === 'litre') return { q: String(Math.round(n * 4.23 * 10) / 10), u: 'cups' };
-    if (u === 'g'  || u === 'gram')     return { q: String(Math.round(n / 28.35 * 10) / 10), u: 'oz' };
-    if (u === 'kg' || u === 'kilogram') return { q: String(Math.round(n * 2.205 * 10) / 10), u: 'lbs' };
-  }
-  return { q: qty, u: unit };
-}
-
-function formatQty(qty: string | null, unit: string | null, scale: number, scaleQty: ((q: string, s: number) => string) | undefined, useMetric: boolean, name?: string): string {
-  if (!qty) return '';
-  let q = qty;
-  if (scale !== 1 && scaleQty) {
-    const scaled = scaleQty(qty, scale);
-    if (scaled && !scaled.includes('NaN')) q = scaled.trim();
-  }
-  q = normalizeCountQuantity(q, unit, name);
-
-  if (unit) {
-    const conv = convertUnits(q, unit, useMetric);
-    return `${conv.q} ${conv.u}`;
-  }
-  return q;
-}
-
-// Assumed quantity for ingredients whose quantity was not stated in the source
-function assumedLabel(name: string): string {
-  const n = name.toLowerCase();
-  if (n.match(/\b(salt|pepper|poivre|sel|seasoning|spice|paprika|cumin|oregano)/)) return 'to taste';
-  if (n.match(/\b(stock|broth|water|bouillon|fond|milk|cream|wine|oil|sauce|liquid)/)) return 'as needed';
-  if (n.match(/\b(thyme|rosemary|bay|parsley|herb|basilic|laurier|thym|sage)/)) return 'a few sprigs';
-  return 'to taste';
-}
-
-type NormalizedIngredientSection = { title: string; items: RawIngredient[] };
-type NormalizedInstructionSection = { title: string; instructions: RawInstruction[] };
-
-function firstArray(...values: any[]): any[] | null {
-  for (const value of values) {
-    if (Array.isArray(value)) return value;
-  }
-  return null;
-}
-
-function cleanSectionTitle(value: any): string {
-  const text = String(value ?? '').trim();
-  if (!text || text.toLowerCase() === 'general') return '';
-  return text.replace(/:$/, '').trim();
-}
-
-function objectSectionTitle(raw: any, keys: string[]): string {
-  if (!raw || typeof raw !== 'object') return '';
-  for (const key of keys) {
-    const direct = cleanSectionTitle(raw?.[key]);
-    if (direct) return direct;
-  }
-  const metaSection = cleanSectionTitle(raw?.meta?.section || raw?.metadata?.section);
-  return metaSection;
-}
-
-function possibleSectionHeading(raw: RawIngredient | RawInstruction): string {
-  if (typeof raw !== 'string') return '';
-  const text = raw.trim().replace(/:$/, '').trim();
-  if (!text || text.length > 80) return '';
-  if (/^\d+[\).\s]/.test(text)) return '';
-  if (/\b(cup|cups|tbsp|tablespoon|tsp|teaspoon|g|gram|kg|ml|l|oz|lb|pound|pinch)\b/i.test(text)) return '';
-  if (/^(for|the\s+|cream\s+cheese|frosting|dough|base|topping|filling|sauce|marinade|dressing|method|steps?|instructions?)/i.test(text)) {
-    return text;
-  }
-  return '';
-}
-
-function groupIngredientsBySection(flat: RawIngredient[]): NormalizedIngredientSection[] {
-  const sections: NormalizedIngredientSection[] = [];
-  const byKey = new Map<string, NormalizedIngredientSection>();
-  let currentTitle = '';
-
-  const getOrCreate = (title: string) => {
-    const key = title || '__default__';
-    let section = byKey.get(key);
-    if (!section) {
-      section = { title, items: [] };
-      byKey.set(key, section);
-      sections.push(section);
-    }
-    return section;
-  };
-
-  flat.filter(Boolean).forEach((item) => {
-    const heading = possibleSectionHeading(item);
-    if (heading) {
-      currentTitle = heading;
-      getOrCreate(currentTitle);
-      return;
-    }
-
-    const title =
-      objectSectionTitle(item, ['section', 'group', 'category', 'part', 'component', 'heading']) ||
-      currentTitle;
-
-    getOrCreate(title).items.push(item);
-  });
-
-  return sections.filter((section) => section.items.length > 0);
-}
-
-function normalizeIngredientSections(recipe: RecipeForCard): NormalizedIngredientSection[] {
-  const r = recipe as any;
-
-  const explicitSections = firstArray(
-    r.ingredient_sections,
-    r.ingredients_sections,
-    r.ingredientSections,
-    r.ingredientsSections,
-  );
-
-  if (explicitSections?.length) {
-    const mapped = explicitSections
-      .map((section: any) => {
-        const items = firstArray(section?.ingredients, section?.items, section?.children) ?? [];
-        return {
-          title: cleanSectionTitle(section?.title || section?.group || section?.name || section?.section || section?.component),
-          items: items.filter(Boolean) as RawIngredient[],
-        };
-      })
-      .filter((section: NormalizedIngredientSection) => section.items.length > 0);
-
-    if (mapped.length) return mapped;
-  }
-
-  const groups = Array.isArray(recipe.ingredients_groups) ? recipe.ingredients_groups : [];
-  if (groups.length) {
-    return groups
-      .map((group) => ({
-        title: cleanSectionTitle(group.title || group.group),
-        items: Array.isArray(group.items) ? group.items.filter(Boolean) : [],
-      }))
-      .filter((section) => section.items.length > 0);
-  }
-
-  const flat = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
-  return groupIngredientsBySection(flat);
-}
-
-function groupInstructionsBySection(flat: RawInstruction[]): NormalizedInstructionSection[] {
-  const sections: NormalizedInstructionSection[] = [];
-  const byKey = new Map<string, NormalizedInstructionSection>();
-  let currentTitle = '';
-
-  const getOrCreate = (title: string) => {
-    const key = title || '__default__';
-    let section = byKey.get(key);
-    if (!section) {
-      section = { title, instructions: [] };
-      byKey.set(key, section);
-      sections.push(section);
-    }
-    return section;
-  };
-
-  flat.filter(Boolean).forEach((step) => {
-    const heading = possibleSectionHeading(step);
-    if (heading) {
-      currentTitle = heading;
-      getOrCreate(currentTitle);
-      return;
-    }
-
-    const title =
-      objectSectionTitle(step, ['section', 'group', 'phase', 'part', 'stage', 'heading']) ||
-      currentTitle;
-
-    getOrCreate(title).instructions.push(step);
-  });
-
-  return sections.filter((section) => section.instructions.length > 0);
-}
-
-function normalizeInstructionSections(recipe: RecipeForCard): NormalizedInstructionSection[] {
-  const r = recipe as any;
-
-  const explicitSections = firstArray(
-    r.instruction_sections,
-    r.instructions_sections,
-    r.instructionSections,
-    r.instructionsSections,
-    r.method_sections,
-    r.step_sections,
-    r.steps_sections,
-  );
-
-  if (explicitSections?.length) {
-    const mapped = explicitSections
-      .map((section: any) => {
-        const instructions = firstArray(section?.instructions, section?.steps, section?.items, section?.children) ?? [];
-        return {
-          title: cleanSectionTitle(section?.title || section?.group || section?.name || section?.section || section?.phase || section?.part),
-          instructions: instructions.filter(Boolean) as RawInstruction[],
-        };
-      })
-      .filter((section: NormalizedInstructionSection) => section.instructions.length > 0);
-
-    if (mapped.length) return mapped;
-  }
-
-  const flat = Array.isArray(recipe.instructions) ? recipe.instructions : [];
-  return groupInstructionsBySection(flat);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// INGREDIENT ROW
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface IngRowProps {
-  id: string;
-  raw: RawIngredient;
-  servingScale: number;
-  scaleQuantity?: (q: string, s: number) => string;
-  checked: boolean;
-  onToggle?: (id: string) => void;
-  useMetric: boolean;
-}
-
-const IngredientRow: React.FC<IngRowProps> = ({
-  id, raw, servingScale, scaleQuantity, checked, onToggle, useMetric,
-}) => {
-  const { name, note, quantity, unit, emoji, needsReview, isApprox, qtyRange } = parseRawIngredient(raw);
-
-  // Build display quantity
-  let displayQty = '';
-  let displayUnit = '';
-
-  if (qtyRange) {
-    displayQty  = `${qtyRange.min}–${qtyRange.max}`;
-    displayUnit = qtyRange.unit || unit || '';
-  } else if (quantity) {
-    const fmted = formatQty(quantity, unit, servingScale, scaleQuantity, useMetric, name);
-    const parts = fmted.trim().split(/\s+/);
-    displayQty  = parts[0] || '';
-    displayUnit = parts.slice(1).join(' ') || '';
-  }
-
-  const hasMeasurement = Boolean(displayQty);
-  const assumed = needsReview ? assumedLabel(name) : null;
-  const interactive = Boolean(onToggle);
-
-  return (
-    <li
-      onClick={interactive ? () => onToggle?.(id) : undefined}
-      className={`flex items-start gap-3 px-5 py-2.5 group transition-all ${
-        interactive ? 'cursor-pointer' : ''
-      } ${
-        checked ? 'opacity-75' : interactive ? 'hover:bg-gray-50/60' : ''
-      }`}
-    >
-      {interactive && (
-        <div className="flex-shrink-0 mt-[3px]">
-          <div className={`w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center transition-all ${
-            checked
-              ? 'border-emerald-600 bg-emerald-600'
-              : 'border-gray-200 bg-transparent group-hover:border-primary-300'
-          }`}>
-            {checked && <Check size={9} className="text-white" strokeWidth={3} />}
-          </div>
-        </div>
-      )}
-
-      {/* Emoji */}
-      {emoji && (
-        <span className={`text-[15px] leading-none flex-shrink-0 mt-[1px] ${checked ? 'grayscale' : ''}`}>
-          {emoji}
-        </span>
-      )}
-
-      {/* Content */}
-      <div className="flex-1 min-w-0 flex items-baseline flex-wrap gap-x-1.5">
-
-        {/* Measured quantity */}
-        {hasMeasurement && !needsReview && (
-          <span className={`text-[13px] font-black ${checked ? 'text-gray-500' : 'text-primary-600'}`}>
-            {displayQty}
-            {displayUnit && <span className="font-bold"> {displayUnit}</span>}
-          </span>
-        )}
-
-        {/* Assumed quantity — soft gray italic, no icon, no panel */}
-        {needsReview && assumed && !checked && (
-          <span className="text-[12px] text-gray-400 italic font-normal">{assumed}</span>
-        )}
-
-        {/* Name */}
-        <span className={`text-[13px] leading-snug ${
-          checked ? 'text-gray-500 line-through decoration-gray-400' : 'text-gray-800 font-medium'
-        }`}>
-          {name}
-        </span>
-
-        {/* Approx */}
-        {isApprox && !checked && (
-          <span className="text-[10px] text-gray-400 italic">(approx.)</span>
-        )}
-
-        {/* Note */}
-        {note && !checked && (
-          <span className="text-[11px] text-gray-400 italic">({note})</span>
-        )}
-      </div>
-    </li>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// STEP ROW
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface StepRowProps {
-  index: number;
-  raw: RawInstruction;
-  checked: boolean;
-  onToggle: (i: number) => void;
-}
-
-const StepRow: React.FC<StepRowProps> = ({ index, raw, checked, onToggle }) => {
-  const { text, isInferred } = parseInstruction(raw);
-  return (
-    <div
-      onClick={() => onToggle(index)}
-      className={`flex items-start gap-3.5 cursor-pointer select-none transition-all group ${
-        checked ? 'opacity-40' : ''
-      }`}
-    >
-      <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all ${
-        checked
-          ? 'bg-emerald-600 border-2 border-emerald-600'
-          : 'bg-white border-2 border-primary-200 group-hover:border-primary-400'
-      }`}>
-        {checked
-          ? <Check size={12} className="text-white" strokeWidth={3} />
-          : <span className="text-[11px] font-black text-primary-600">{index + 1}</span>
-        }
-      </div>
-      <div className="flex-1 pt-[4px]">
-        <p className={`text-[13px] leading-relaxed ${
-          checked ? 'text-gray-300' : 'text-gray-600 font-medium'
-        }`}>
-          {/* Inferred steps get a soft tilde prefix — no label, no badge */}
-          {isInferred && !checked && (
-            <span className="text-gray-300 select-none mr-0.5">~</span>
-          )}
-          {text}
-        </p>
-      </div>
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TIME CELL
-// ─────────────────────────────────────────────────────────────────────────────
-
-const TimeCell: React.FC<{ icon: React.ReactNode; label: string; value: string | null }> = ({
-  icon, label, value,
-}) => {
-  if (!value) return null;
-  return (
-    <div className="flex flex-col items-center justify-center gap-1 py-4 px-2 text-center">
-      <div className="text-rose-500">{icon}</div>
-      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{label}</span>
-      <span className="text-[13px] font-black text-rose-600 leading-tight">{value}</span>
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// COMPILATION CARD
-// ─────────────────────────────────────────────────────────────────────────────
-
-const RecipeCompilationCard: React.FC<{ recipe: RecipeForCard }> = ({ recipe }) => {
-  const ideas = recipe.ideas ?? [];
-  if (!ideas.length) return null;
-  return (
-    <div className="mt-4 space-y-2">
-      {ideas.map((idea, i) => (
-        <div key={i} className="bg-white border border-gray-100 rounded-xl p-3.5 flex items-start gap-3 shadow-sm">
-          {idea.emoji && <span className="text-xl leading-none flex-shrink-0 mt-0.5">{idea.emoji}</span>}
-          <div>
-            <p className="font-bold text-gray-900 text-sm leading-snug">{idea.headline}</p>
-            {idea.text && <p className="text-xs text-gray-500 leading-relaxed mt-0.5">{idea.text}</p>}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN COMPONENT
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   recipe,
   recipeId = 'recipe',
   recipeName = 'Recipe',
   servingScale = 1,
-  scaleQuantity,
   onServingScaleChange,
+  scaleQuantity,
   useMetric = true,
   onToggleMetric,
-  onAddToShoppingList,
+  temperatureUnit = 'celsius',
+  recipeConversion = 'smart',
+  volumePreference = 'metric',
+  rounding = 'rounded',
+  onMarkCooked,
+  onAddCookingNote,
+  hasActiveSession = false,
+  cookStatusLoading = false,
+  openCookModeSignal = 0,
 }) => {
   const { t } = useTranslation(['videoDetail']);
+  const [isCookModeOpen, setIsCookModeOpen] = useState(false);
+  const [activeSecondaryTab, setActiveSecondaryTab] = useState<RecipeSecondaryTabKey | null>(null);
+  const cookSessionEnabled = Boolean(recipeId && recipeId !== 'recipe');
+  const {
+    currentStepIndex,
+    checkedIngredientIds,
+    completedStepIds,
+    setCurrentStepIndex,
+    toggleCheckedIngredientId,
+    setCheckedIngredientIds,
+    toggleCompletedStepId,
+    markCompletedStepId,
+    completeSession,
+  } = useRecipeCookSession(recipeId, cookSessionEnabled);
 
-  const [checkedIds,   setCheckedIds]   = React.useState<Set<string>>(() => new Set());
-  const [checkedSteps, setCheckedSteps] = React.useState<Set<number>>(() => new Set());
-  const [added, setAdded] = React.useState(false);
-  const [isCookModeOpen, setIsCookModeOpen] = React.useState(false);
-  const [savedCookStep, setSavedCookStep] = React.useState<number | null>(null);
-  type RecipeTabKey = 'ingredients' | 'steps' | 'nutrition' | 'ask';
-  const [activeRecipeTab, setActiveRecipeTab] = React.useState<RecipeTabKey>('nutrition');
-  const [askQuestion, setAskQuestion] = useState("");
-  const [askAnswer, setAskAnswer] = useState("");
-  const [askError, setAskError] = useState("");
-  const [askLoading, setAskLoading] = useState(false);
-  const [askHistory, setAskHistory] = useState<RecipeAssistantHistoryItem[]>([]);
+  const {
+    askQuestion,
+    askAnswer,
+    askLoading,
+    handleAskRecipe,
+  } = useRecipeAssistant({ recipeId });
 
+  const baseIngredientSections = useMemo(
+    () => (!recipe || recipe.is_compilation ? [] : normalizeIngredientSections(recipe)),
+    [recipe]
+  );
+
+  const baseInstructionSections = useMemo(
+    () => (!recipe || recipe.is_compilation ? [] : normalizeInstructionSections(recipe)),
+    [recipe]
+  );
+
+  const {
+    isEditing,
+    setIsEditing,
+    overrides: recipeOverrides,
+    loadingOverrides,
+    savingOverrides,
+    overridesSaved,
+    overrideError,
+    editedIngredientSections: ingredientSections,
+    editedInstructionSections: instructionSections,
+    editableIngredientSections,
+    editableInstructionSections,
+    updateIngredient,
+    addIngredient,
+    removeIngredient,
+    updateStep,
+    toggleVerified,
+  } = useRecipeEditing(recipeId, baseIngredientSections, baseInstructionSections);
+
+  const allIngredients = useMemo(() => ingredientSections.flatMap((section) => section.items), [ingredientSections]);
+  const cookModeIngredients = useMemo(
+    () =>
+      ingredientSections.flatMap((section, sectionIndex) =>
+        section.items.map((item, itemIndex) => {
+          const id = `section-${sectionIndex}-ingredient-${itemIndex}`;
+          return typeof item === 'string' ? { item, id } : { ...item, id };
+        })
+      ),
+    [ingredientSections]
+  );
+  const cookModeIngredientSections = useMemo(
+    () =>
+      ingredientSections.map((section, sectionIndex) => ({
+        title: section.title,
+        items: section.items.map((item, itemIndex) => {
+          const id = `section-${sectionIndex}-ingredient-${itemIndex}`;
+          return typeof item === 'string' ? { item, id } : { ...item, id };
+        }),
+      })),
+    [ingredientSections]
+  );
+  const allInstructions = useMemo(() => instructionSections.flatMap((section) => section.instructions), [instructionSections]);
+  const hasIngredients = allIngredients.length > 0;
+  const hasSteps = allInstructions.length > 0;
+  const ingredientCountLabel = `${allIngredients.length} ${allIngredients.length === 1 ? 'item' : 'items'}`;
+  const stepCountLabel = `${allInstructions.length} ${allInstructions.length === 1 ? 'step' : 'steps'}`;
+  const recipeBodyLoading = loadingOverrides && !isEditing;
+  const cookModeLoading = recipeBodyLoading || cookStatusLoading;
+
+  const secondaryTabs = useMemo(() => {
+    const tabs: { key: RecipeSecondaryTabKey; label: string }[] = [];
+
+    if (hasIngredients) tabs.push({ key: 'nutrition', label: 'Macro' });
+    tabs.push({ key: 'ask', label: 'Ask' });
+
+    return tabs;
+  }, [hasIngredients]);
+
+  const visibleSecondaryTab = secondaryTabs.some((tab) => tab.key === activeSecondaryTab)
+    ? activeSecondaryTab
+    : null;
+  const checkedSteps = useMemo(
+    () =>
+      new Set(
+        [...completedStepIds]
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value))
+      ),
+    [completedStepIds]
+  );
+
+  const handleCookModeComplete = () => {
+    completeSession();
+    onMarkCooked?.();
+  };
+
+  useEffect(() => {
+    if (openCookModeSignal > 0 && hasSteps && !cookModeLoading) {
+      setIsCookModeOpen(true);
+    }
+  }, [openCookModeSignal, hasSteps, cookModeLoading]);
+
+  if (!recipe) return null;
   if (recipe.is_compilation) return <RecipeCompilationCard recipe={recipe} />;
-
-  const ingredientSections = normalizeIngredientSections(recipe);
-  const hasStructuredIngredientSections =
-    ingredientSections.length > 1 || Boolean(ingredientSections[0]?.title);
-
-  const flat: RawIngredient[] = hasStructuredIngredientSections
-    ? []
-    : ingredientSections[0]?.items ?? [];
-
-  const groups: IngredientGroup[] = hasStructuredIngredientSections
-    ? ingredientSections.map((section) => ({ title: section.title, items: section.items }))
-    : [];
-
-  const hasGroups = groups.length > 0;
-
-  const instructionSections = normalizeInstructionSections(recipe);
-  const instructions: RawInstruction[] = instructionSections.flatMap((section) => section.instructions);
-  const tips:   string[]          = Array.isArray(recipe.tips)  ? recipe.tips  : [];
-
-  const notes: string[] = recipe.notes
-    ? Array.isArray(recipe.notes) ? recipe.notes : [recipe.notes]
-    : [];
-
-  const cookProgressKey = React.useMemo(
-    () => `recolekt:cook-progress:${recipeId}`,
-    [recipeId],
-  );
-
-  React.useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(cookProgressKey);
-      if (!raw) {
-        setSavedCookStep(null);
-        return;
-      }
-
-      const parsed = JSON.parse(raw) as { currentStepIndex?: number; finishedAt?: string };
-      if (parsed.finishedAt) {
-        setSavedCookStep(null);
-        return;
-      }
-
-      const idx = Number(parsed.currentStepIndex);
-      setSavedCookStep(Number.isFinite(idx) && idx > 0 ? idx : null);
-    } catch {
-      setSavedCookStep(null);
-    }
-  }, [cookProgressKey]);
-
-  const handleCookProgressChange = React.useCallback((stepIndex: number) => {
-    try {
-      const payload = {
-        recipeId,
-        currentStepIndex: stepIndex,
-        updatedAt: new Date().toISOString(),
-      };
-      window.localStorage.setItem(cookProgressKey, JSON.stringify(payload));
-      setSavedCookStep(stepIndex > 0 ? stepIndex : null);
-    } catch {
-      // localStorage can fail in private browsing; Cook Mode should still work.
-    }
-  }, [cookProgressKey, recipeId]);
-
-  const handleCookComplete = React.useCallback(() => {
-    try {
-      const payload = {
-        recipeId,
-        currentStepIndex: Math.max(0, instructions.length - 1),
-        finishedAt: new Date().toISOString(),
-      };
-      window.localStorage.setItem(cookProgressKey, JSON.stringify(payload));
-      setSavedCookStep(null);
-    } catch {
-      setSavedCookStep(null);
-    }
-  }, [cookProgressKey, recipeId, instructions.length]);
-
-  // ── Flat ingredient list (for shopping list) ─────────────────────────────
-
-  const allIngredients = React.useMemo(() => {
-    const list: { id: string; raw: RawIngredient }[] = [];
-    if (hasGroups) {
-      groups.forEach((g, gi) =>
-        (g.items ?? []).forEach((item, ii) => list.push({ id: `g${gi}-i${ii}`, raw: item }))
-      );
-    } else {
-      flat.forEach((item, i) => list.push({ id: `f${i}`, raw: item }));
-    }
-    return list;
-  }, [flat, groups, hasGroups]);
-
-  const hasServings = Boolean(toStr(recipe.servings).trim());
-
-  const ingredientQuantityCount = React.useMemo(() => {
-    return allIngredients.filter(({ raw }) => {
-      if (typeof raw === 'string') return false;
-      const item = raw as any;
-      const q = item?.quantity ?? item?.amount ?? item?.qty ?? item?.rawQuantity;
-      const hasQuantity =
-        q !== null &&
-        q !== undefined &&
-        String(q).trim() !== '' &&
-        !/^(to taste|as needed|a\/r|q\.?s\.?)$/i.test(String(q).trim());
-      const hasRange =
-        item?.quantityRange?.min !== null &&
-        item?.quantityRange?.min !== undefined &&
-        item?.quantityRange?.unit;
-      return Boolean(hasQuantity || hasRange);
-    }).length;
-  }, [allIngredients]);
-
-  const techniqueText = [
-    recipe.practical_summary?.what_it_is,
-    recipe.practical_summary?.key_technique,
-    ...(recipe.practical_summary?.important_notes ?? []),
-    ...tips,
-    ...notes,
-    recipeName,
-  ].filter(Boolean).join(' ').toLowerCase();
-
-  const looksTechnique =
-    /\b(technique|method|how to|confit|blanch|temper|slice|knife|peel|sharpen|debone|cartouche|infuse|infusion|fold|knead|emulsify|sear|braise|poach)\b/.test(techniqueText);
-
-  const hasActionableRecipe =
-    allIngredients.length >= 2 &&
-    instructions.length >= 3 &&
-    (
-      hasServings ||
-      recipe.prep_time ||
-      recipe.cook_time ||
-      recipe.total_time
-    );
-
-  const recipeKind: 'full_recipe' | 'technique_with_ingredients' | 'pure_technique' =
-    allIngredients.length <= 1 && instructions.length >= 2
-      ? 'pure_technique'
-      : ingredientQuantityCount >= 2 || hasActionableRecipe
-        ? 'full_recipe'
-        : looksTechnique || !hasServings
-          ? 'technique_with_ingredients'
-          : 'full_recipe';
-
-  const isFullRecipe = recipeKind === 'full_recipe';
-  const isTechnique = recipeKind !== 'full_recipe';
-  const isPureTechnique = recipeKind === 'pure_technique';
-
-  // Full recipes get macro/shopping support.
-  // Technique-with-ingredients should still show Ingredients + Steps;
-  // only pure techniques collapse to Ask-only when there are no ingredients.
-  const showIngredientsTab = !isPureTechnique && allIngredients.length > 0;
-  const showStepsTab = instructions.length > 0;
-  const showNutritionTab = isFullRecipe && allIngredients.length > 0;
-  const showShoppingList = isFullRecipe && Boolean(onAddToShoppingList) && allIngredients.length > 0;
-
-  const recipeTabs = [
-    ...(showNutritionTab ? [{ key: 'nutrition' as const, label: 'Macro' }] : []),
-    ...(showIngredientsTab ? [{ key: 'ingredients' as const, label: 'Ingredients' }] : []),
-    ...(showStepsTab ? [{ key: 'steps' as const, label: 'Steps' }] : []),
-    { key: 'ask' as const, label: isTechnique ? 'Ask Technique' : 'Ask' },
-  ];
-  React.useEffect(() => {
-    if (!recipeTabs.some((tab) => tab.key === activeRecipeTab)) {
-      setActiveRecipeTab(recipeTabs[0]?.key ?? 'ask');
-    }
-  }, [activeRecipeTab, recipeTabs]);
-
-  // ── Serving scale ────────────────────────────────────────────────────────
-
-  const baseServings = React.useMemo(() => {
-    const str = toStr(recipe.servings);
-    const m = str.match(/(\d+(\.\d+)?)/);
-    if (!m) return 1;
-    const n = parseFloat(m[1]);
-    return Number.isFinite(n) && n > 0 ? n : 1;
-  }, [recipe.servings]);
-
-  const currentScale    = servingScale || 1;
-  const currentServings = Math.max(1, Math.round(baseServings * currentScale));
-
-  const handleServingsDelta = (delta: number) => {
-    if (!onServingScaleChange) return;
-    const next = Math.max(1, currentServings + delta);
-    onServingScaleChange(Number((next / baseServings).toFixed(3)));
-  };
-
-  // ── Times ────────────────────────────────────────────────────────────────
-
-  const timeCells = [
-    { label: t('videoDetail:prep', 'Prep'),   value: formatMinutes(recipe.prep_time),  icon: <Clock size={14} /> },
-    { label: t('videoDetail:cook', 'Cook'),   value: formatMinutes(recipe.cook_time),  icon: <Flame size={14} /> },
-    { label: t('videoDetail:rest', 'Rest'),   value: formatMinutes(recipe.rest_time),  icon: <Moon  size={14} /> },
-    { label: t('videoDetail:total', 'Total'), value: formatMinutes(recipe.total_time), icon: <Clock size={14} /> },
-  ].filter(c => c.value);
-
-  // ── Toggles ──────────────────────────────────────────────────────────────
-
-  const toggleIngredient = (id: string) =>
-    setCheckedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-
-  const toggleStep = (i: number) =>
-    setCheckedSteps(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
-
-  // ── Add to shopping list ─────────────────────────────────────────────────
-
-  const handleAddToList = () => {
-    if (!onAddToShoppingList || allIngredients.length === 0) return;
-    const items: ShoppingListItem[] = allIngredients.map(({ id, raw }) => {
-      const { name, quantity, unit, emoji, qtyRange, needsReview } = parseRawIngredient(raw);
-      let qty = quantity || undefined;
-      let u   = unit || undefined;
-
-      if (qtyRange) {
-        qty = String(qtyRange.min);
-        u   = qtyRange.unit || unit || undefined;
-        if (qty) qty = normalizeCountQuantity(qty, u || null, name);
-      } else if (qty) {
-        if (scaleQuantity && currentScale !== 1) {
-          const scaled = scaleQuantity(qty, currentScale);
-          if (scaled && !scaled.includes('NaN')) qty = scaled;
-        }
-
-        qty = normalizeCountQuantity(qty, u || null, name);
-
-        if (u) {
-          const conv = convertUnits(qty, u, useMetric);
-          qty = conv.q; u = conv.u;
-        }
-      }
-
-      // For items with no stated quantity, pass the assumed label as the unit
-      // so the grocery list shows "to taste salt" instead of just "salt"
-      if (needsReview && !qty) {
-        u = assumedLabel(name);
-      }
-
-      return {
-        id: `${recipeId}_${id}`,
-        name,
-        quantity: qty,
-        unit: u,
-        emoji: emoji || undefined,
-        recipeTitle: recipeName,
-        checked: false,
-      };
-    });
-    onAddToShoppingList(items);
-    setAdded(true);
-    setTimeout(() => setAdded(false), 3000);
-  };
-
-  const askHistoryStorageKey = React.useMemo(
-    () => (recipeId ? `recolekt:recipe-ask:${recipeId}` : ''),
-    [recipeId],
-  );
-
-  React.useEffect(() => {
-    if (!askHistoryStorageKey || !recipeId) return;
-
-    let cancelled = false;
-
-    const loadAskHistory = async () => {
-      try {
-        const token = getRecipeAssistantToken();
-        const res = await fetch(
-          apiUrl(`api/reel/${encodeURIComponent(recipeId)}/ask/history?limit=10`),
-          {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            credentials: "include",
-          }
-        );
-
-        const data = (await res.json().catch(() => ({}))) as {
-          history?: RecipeAssistantHistoryEntry[];
-        };
-
-        if (!cancelled && res.ok && Array.isArray(data.history)) {
-          setAskHistory(data.history.slice(0, 10));
-          try {
-            localStorage.setItem(askHistoryStorageKey, JSON.stringify(data.history.slice(0, 10)));
-          } catch {
-            // Ignore localStorage sync failures.
-          }
-          return;
-        }
-      } catch {
-        // Fall back to localStorage below.
-      }
-
-      if (cancelled) return;
-
-      try {
-        const raw = localStorage.getItem(askHistoryStorageKey);
-        const parsed = raw ? JSON.parse(raw) : [];
-        setAskHistory(Array.isArray(parsed) ? parsed.slice(0, 10) : []);
-      } catch {
-        setAskHistory([]);
-      }
-    };
-
-    loadAskHistory();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [recipeId, askHistoryStorageKey]);
-
-  const handleAskRecipe = async () => {
-    const question = askQuestion.trim();
-    if (!question || !recipeId || askLoading) return;
-
-    setAskLoading(true);
-    setAskError("");
-
-    try {
-      const token = getRecipeAssistantToken();
-      const res = await fetch(
-        apiUrl(`api/reel/${encodeURIComponent(recipeId)}/ask`),
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          credentials: "include",
-          body: JSON.stringify({ question }),
-        }
-      );
-
-      const data = (await res.json().catch(() => ({}))) as RecipeAssistantResponse;
-
-      if (!res.ok) {
-        throw new Error(data?.error || `Recipe assistant failed (${res.status})`);
-      }
-
-      const nextAnswer = data.answer || "No answer returned.";
-
-
-      setAskAnswer(nextAnswer);
-
-      const fallbackEntry = {
-        question,
-        answer: nextAnswer,
-        createdAt: new Date().toISOString(),
-      };
-
-      const nextHistory =
-        Array.isArray(data.history) && data.history.length > 0
-          ? data.history.slice(0, 10)
-          : [fallbackEntry, ...askHistory].slice(0, 10);
-
-      setAskHistory(nextHistory);
-
-      if (askHistoryStorageKey) {
-        try {
-          localStorage.setItem(askHistoryStorageKey, JSON.stringify(nextHistory));
-        } catch {
-          // Ignore localStorage write failures.
-        }
-      }
-    } catch (err: any) {
-      setAskError(err?.message || "Recipe assistant failed.");
-    } finally {
-      setAskLoading(false);
-    }
-  };
-
-  // ── Render ───────────────────────────────────────────────────────────────
+  if (!hasIngredients && !hasSteps) return null;
 
   return (
-    <div className="bg-white border border-gray-100 rounded-[24px] shadow-sm overflow-hidden mt-4 mb-6">
+    <>
+      <div className="bg-white border border-gray-200 rounded-[22px] shadow-sm overflow-hidden mt-3 mb-6">
+        <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-5 border-b border-gray-100 bg-white">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+              <ChefHat size={17} aria-hidden="true" />
+            </span>
+            <h3 className="font-bold text-gray-900 text-base tracking-tight truncate">
+              {t('videoDetail:recipeDetails', 'Recipe Details')}
+            </h3>
+          </div>
 
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-rose-100 bg-rose-50/70">
-        <div className="flex items-center gap-2.5">
-          <ChefHat size={18} className="text-rose-500" />
-          <h3 className="font-bold text-gray-900 text-base tracking-tight">
-            {isTechnique ? 'Cooking Technique' : t('videoDetail:recipeDetails', 'Recipe Details')}
-          </h3>
-        </div>
-        {onToggleMetric && (
-          <button
-            onClick={() => onToggleMetric(!useMetric)}
-            className="px-3 py-1.5 bg-white/90 border border-rose-100 text-gray-700 rounded-xl text-[11px] font-bold shadow-sm hover:bg-white transition-colors"
-          >
-            {useMetric ? 'Imperial' : 'Metric'}
-          </button>
-        )}
-      </div>
-
-      {/* Time grid — dynamic columns, only renders cells with data */}
-      {timeCells.length > 0 && (
-        <div
-          className="grid border-b border-gray-50"
-          style={{ gridTemplateColumns: `repeat(${timeCells.length}, 1fr)` }}
-        >
-          {timeCells.map((cell, i) => (
-            <div key={i} className={i > 0 ? 'border-l border-gray-50' : ''}>
-              <TimeCell icon={cell.icon} label={cell.label} value={cell.value} />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Tabs */}
-      <div className="border-t border-gray-100 bg-gray-50 px-3 py-3">
-        <div className="grid gap-1 rounded-2xl bg-gray-100 p-1 text-[12px] font-black" style={{ gridTemplateColumns: `repeat(${recipeTabs.length}, minmax(0, 1fr))` }}>
-          {recipeTabs.map((tab) => {
-            const active = activeRecipeTab === tab.key;
-            return (
+          <div className="flex items-center gap-2 shrink-0">
+            {recipeOverrides.verifiedByUser && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700 ring-1 ring-emerald-100">
+                <CheckCircle2 size={13} aria-hidden="true" />
+                Verified
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsEditing((value) => !value)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-[11px] font-bold text-gray-700 transition-colors hover:bg-white"
+            >
+              {isEditing ? <X size={13} aria-hidden="true" /> : <Pencil size={13} aria-hidden="true" />}
+              {isEditing ? 'Done' : 'Edit recipe'}
+            </button>
+            {onToggleMetric && hasIngredients && (
               <button
-                key={tab.key}
                 type="button"
-                onClick={() => setActiveRecipeTab(tab.key)}
-                className={`rounded-xl px-2 py-2.5 transition-all ${
-                  active
-                    ? 'bg-white text-violet-600 shadow-sm'
-                    : 'text-gray-500 hover:bg-white/50 hover:text-gray-700'
+                onClick={() => onToggleMetric(!useMetric)}
+                className="px-3 py-1.5 bg-gray-50 border border-gray-200 text-gray-700 rounded-xl text-[11px] font-bold hover:bg-white transition-colors"
+              >
+                {useMetric ? 'Imperial' : 'Metric'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {hasSteps && (
+          <div className="px-4 py-4 sm:px-5 bg-stone-50 border-b border-gray-100">
+            <button
+              type="button"
+              onClick={() => setIsCookModeOpen(true)}
+              disabled={cookModeLoading}
+              className="flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-gray-950 px-5 py-4 text-[15px] font-black text-white shadow-sm transition-colors hover:bg-gray-800 active:bg-gray-900"
+            >
+              <ChefHat size={18} aria-hidden="true" />
+              {cookModeLoading ? 'Loading recipe state...' : hasActiveSession ? 'Resume cooking' : 'Cook this recipe'}
+            </button>
+          </div>
+        )}
+
+        {isEditing && (
+          <div className="border-b border-amber-100 bg-amber-50/55 px-4 py-3 sm:px-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[12px] font-black uppercase tracking-widest text-amber-700">Personal recipe edits</p>
+                <p className="mt-0.5 text-xs font-medium text-amber-800/75">
+                  {loadingOverrides
+                    ? 'Loading your recipe edits...'
+                    : overrideError
+                      ? overrideError
+                      : savingOverrides
+                        ? 'Saving edits...'
+                        : overridesSaved
+                          ? 'Saved. The extracted recipe stays unchanged.'
+                          : 'Your changes save as personal overrides. The extracted recipe stays unchanged.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={toggleVerified}
+                className={`inline-flex items-center justify-center gap-2 rounded-2xl px-3.5 py-2 text-xs font-black transition-colors ${
+                  recipeOverrides.verifiedByUser
+                    ? 'bg-emerald-600 text-white'
+                    : 'border border-emerald-100 bg-white text-emerald-700 hover:bg-emerald-50'
                 }`}
               >
-                {tab.label}
+                <CheckCircle2 size={15} aria-hidden="true" />
+                {recipeOverrides.verifiedByUser ? 'Verified by me' : 'Mark verified by me'}
               </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {activeRecipeTab === 'ingredients' && (flat.length > 0 || groups.length > 0) && (
-        <div className="border-t border-gray-50 pt-5 pb-4">
-          <div className="flex items-center justify-between px-5 mb-4 gap-2 flex-wrap">
-            <div className="flex items-center gap-3">
-              <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                {t('videoDetail:ingredients', 'Ingredients')}
-              </h4>
-
-              {hasServings && onServingScaleChange && (
-                <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-100 rounded-xl px-2 py-1">
-                  <button type="button" onClick={() => handleServingsDelta(-1)} className="w-5 h-5 rounded-full bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center text-[11px] font-black hover:bg-rose-100 transition">−</button>
-                  <span className="text-[13px] font-black text-rose-600 tabular-nums min-w-[16px] text-center">{currentServings}</span>
-                  <button type="button" onClick={() => handleServingsDelta(1)} className="w-5 h-5 rounded-full bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center text-[11px] font-black hover:bg-rose-100 transition">+</button>
-                  <span className="text-[10px] text-gray-400 font-medium ml-0.5">serv.</span>
-                </div>
-              )}
             </div>
-
-            {showShoppingList && (
-              <button
-                type="button"
-                onClick={handleAddToList}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all active:scale-95"
-                style={{
-                  background: added ? 'rgba(21,128,61,0.07)' : 'rgba(124,58,237,0.07)',
-                  color: added ? '#15803d' : '#7c3aed',
-                  border: added ? '1px solid rgba(21,128,61,0.18)' : '1px solid rgba(124,58,237,0.18)',
-                }}
-              >
-                {added ? <Check size={12} strokeWidth={2.5} /> : <ShoppingCart size={12} strokeWidth={2} />}
-                {added ? 'Added' : 'Add to list'}
-              </button>
-            )}
           </div>
+        )}
 
-          <div className="divide-y divide-gray-50/80">
-            {hasGroups
-              ? groups.map((group, gi) => (
-                  <div key={gi}>
-                    {(group.title || group.group) && (
-                      <div className="px-5 pt-3 pb-1.5">
-                        <h5 className="text-[11px] font-black text-gray-400 uppercase tracking-widest">
-                          {group.title || group.group}
-                        </h5>
-                      </div>
-                    )}
-                    <ul>
-                      {(group.items ?? []).map((item, ii) => {
-                        const id = `g${gi}-i${ii}`;
-                        return (
-                          <IngredientRow
-                            key={id}
-                            id={id}
-                            raw={item}
-                            servingScale={currentScale}
-                            scaleQuantity={scaleQuantity}
-                            checked={!isTechnique && checkedIds.has(id)}
-                            onToggle={isTechnique ? undefined : toggleIngredient}
-                            useMetric={useMetric}
-                          />
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ))
-              : (
-                <ul>
-                  {flat.map((item, i) => {
-                    const id = `f${i}`;
-                    return (
-                      <IngredientRow
-                        key={id}
-                        id={id}
-                        raw={item}
-                        servingScale={currentScale}
-                        scaleQuantity={scaleQuantity}
-                        checked={!isTechnique && checkedIds.has(id)}
-                        onToggle={isTechnique ? undefined : toggleIngredient}
-                        useMetric={useMetric}
-                      />
-                    );
-                  })}
-                </ul>
-              )
-            }
-          </div>
-
-          {recipeKind === 'technique_with_ingredients' && (
-            <div className="mx-5 mt-4 rounded-2xl border border-violet-100 bg-violet-50/50 p-4">
-              <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">
-                Technique note
-              </p>
-              <p className="mt-2 text-xs leading-relaxed text-gray-600">
-                This is a cooking technique, not a portioned recipe. Quantities and servings are not precise enough for reliable nutrition, so use the ingredients as a reference.
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeRecipeTab === 'steps' && (
-        <>
-          {instructions.length > 0 && (
-            <div className="border-t border-gray-50 px-5 py-5">
-              <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-5">
-                {t('videoDetail:directions', 'Directions')}
-              </h4>
-              <div className="space-y-5">
-                {(() => {
-                  let offset = 0;
-
-                  return instructionSections.map((section, sectionIndex) => {
-                    const startIndex = offset;
-                    offset += section.instructions.length;
-
-                    return (
-                      <div key={`${section.title || 'section'}-${sectionIndex}`} className={sectionIndex > 0 ? 'pt-2 border-t border-gray-50' : ''}>
-                        {section.title && (
-                          <h5 className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-3">
-                            {section.title}
-                          </h5>
-                        )}
-
-                        <div className="space-y-5">
-                          {section.instructions.map((step, stepIndex) => {
-                            const absoluteIndex = startIndex + stepIndex;
-                            return (
-                              <StepRow
-                                key={absoluteIndex}
-                                index={absoluteIndex}
-                                raw={step}
-                                checked={checkedSteps.has(absoluteIndex)}
-                                onToggle={toggleStep}
-                              />
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
+        {recipeBodyLoading ? (
+          <div className="space-y-5 px-4 py-5 sm:px-5" aria-label="Loading your recipe edits">
+            <div>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="h-4 w-24 animate-pulse rounded-full bg-gray-100" />
+                <div className="h-6 w-16 animate-pulse rounded-full bg-gray-100" />
+              </div>
+              <div className="space-y-2">
+                {[0, 1, 2].map((item) => (
+                  <div key={item} className="h-11 animate-pulse rounded-2xl bg-gray-100" />
+                ))}
               </div>
             </div>
-          )}
-        </>
-      )}
-
-      {activeRecipeTab === 'nutrition' && showNutritionTab && (
-        <div className="px-5 py-5 border-t border-gray-50">
-          <NutritionCard
-            ingredients={allIngredients.map((entry) => entry.raw)}
-            servings={hasServings ? currentServings : undefined}
-            recipeName={recipeName}
-          />
-        </div>
-      )}
-
-      {activeRecipeTab === 'ask' && (
-        <div className="border-t border-gray-50 px-5 py-5">
-          <div className="rounded-2xl border border-violet-100 bg-violet-50/50 p-4">
-            <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">
-{isTechnique ? 'Technique Assistant' : 'Recipe Assistant'}
-            </p>
-            <h4 className="mt-1 text-base font-black text-gray-950">
-{isTechnique ? 'Ask about this technique' : 'Ask about this recipe'}
-            </h4>
-            <p className="mt-1 text-xs leading-relaxed text-gray-500">
-{isTechnique
-                ? 'Uses this technique, caption, and transcript. Best for method, timing, equipment, and substitutions.'
-                : 'Uses this recipe, caption, and transcript. Best for missing quantities, substitutions, timing, and technique.'}
-            </p>
-
-            <div className="mt-4 flex gap-2">
-              <input
-                value={askQuestion}
-                onChange={(e) => setAskQuestion(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAskRecipe();
-                  }
-                }}
-                placeholder={isTechnique ? "How should I use this technique?" : "What is missing from this recipe?"}
-                className="min-w-0 flex-1 rounded-xl border border-violet-100 bg-white px-3 py-2 text-sm font-medium text-gray-800 outline-none focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
-              />
-              <button
-                type="button"
-                onClick={handleAskRecipe}
-                disabled={askLoading || !askQuestion.trim() || !recipeId}
-                className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-black text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {askLoading ? "Asking..." : "Ask"}
-              </button>
+            <div className="rounded-2xl bg-amber-50/60 p-4">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="h-4 w-16 animate-pulse rounded-full bg-amber-100" />
+                <div className="h-6 w-14 animate-pulse rounded-full bg-white/80" />
+              </div>
+              <div className="space-y-3">
+                {[0, 1].map((item) => (
+                  <div key={item} className="h-16 animate-pulse rounded-2xl bg-white/80" />
+                ))}
+              </div>
             </div>
+          </div>
+        ) : (
+        <div className="divide-y divide-gray-100">
+          {hasIngredients && (
+            <section className="py-5">
+              <div className="px-4 sm:px-5 pb-3 flex items-center justify-between gap-3">
+                <h4 className="text-[15px] font-black tracking-tight text-gray-950">Ingredients</h4>
+                <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-bold text-gray-500">
+                  {ingredientCountLabel}
+                </span>
+              </div>
 
-            {askHistory.length > 1 && (
-              <div className="mt-4 rounded-2xl border border-violet-100 bg-white/70 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-violet-600">
-                    Recent questions
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAskHistory([]);
-                      if (askHistoryStorageKey) localStorage.removeItem(askHistoryStorageKey);
-                    }}
-                    className="text-[10px] font-black uppercase tracking-wide text-gray-400 hover:text-gray-700"
-                  >
-                    Clear
-                  </button>
-                </div>
+              <div className="space-y-3">
+                {(isEditing ? editableIngredientSections : ingredientSections).map((section, sectionIndex) => (
+                  <div key={sectionIndex}>
+                    {section.title && (
+                      <h5 className="px-4 sm:px-5 pb-1.5 text-[11px] font-black uppercase tracking-widest text-gray-400">
+                        {section.title}
+                      </h5>
+                    )}
 
-                <div className="mt-3 space-y-3">
-                  {askHistory.slice(1, 5).map((entry, idx) => (
-                    <button
-                      key={`${entry.createdAt}-${idx}`}
-                      type="button"
-                      onClick={() => {
-                        setAskQuestion(entry.question);
-                        setAskAnswer(entry.answer);
-                      }}
-                      className="block w-full rounded-xl border border-gray-100 bg-white px-3 py-3 text-left transition hover:border-violet-100 hover:bg-violet-50/40"
-                    >
-                      <p className="line-clamp-1 text-xs font-black text-gray-800">
-                        {entry.question}
-                      </p>
-                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-500">
-                        {entry.answer}
-                      </p>
-                    </button>
+                    {isEditing ? (
+                      <div className="space-y-2 px-4 sm:px-5">
+                        {section.items.map((entry: any) => (
+                          <div key={entry.id} className="flex items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50/70 p-2">
+                            <input
+                              value={getIngredientEditText(entry.value)}
+                              onChange={(event) => updateIngredient(entry.id, event.target.value)}
+                              className="min-w-0 flex-1 rounded-xl border border-transparent bg-white px-3 py-2 text-sm font-medium text-gray-800 outline-none transition-colors focus:border-amber-200 focus:ring-2 focus:ring-amber-100"
+                              placeholder="Add ingredient"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeIngredient(entry.id)}
+                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                              aria-label="Remove ingredient"
+                            >
+                              <Trash2 size={15} aria-hidden="true" />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => addIngredient(sectionIndex)}
+                          className="inline-flex items-center gap-2 rounded-2xl border border-dashed border-amber-200 bg-white px-3.5 py-2 text-xs font-black text-amber-700 transition-colors hover:bg-amber-50"
+                        >
+                          <Plus size={14} aria-hidden="true" />
+                          Add ingredient
+                        </button>
+                      </div>
+                    ) : (
+                      <ul className="divide-y divide-gray-100">
+                        {section.items.map((item, itemIndex) => {
+                          const id = `section-${sectionIndex}-ingredient-${itemIndex}`;
+
+                          return (
+                            <IngredientRow
+                              key={id}
+                              id={id}
+                              raw={item}
+                              servingScale={servingScale}
+                              scaleQuantity={scaleQuantity}
+                              checked={checkedIngredientIds.has(id)}
+                              onToggle={toggleCheckedIngredientId}
+                              useMetric={useMetric}
+                              recipeConversion={recipeConversion}
+                              volumePreference={volumePreference}
+                              rounding={rounding}
+                              parseRawIngredient={parseRawIngredient}
+                              formatQty={formatQty}
+                              assumedLabel={assumedLabel}
+                            />
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {hasSteps && (
+            <section className="bg-amber-50/45 px-4 py-5 sm:px-5">
+              <div className="pb-4 flex items-center justify-between gap-3">
+                <h4 className="text-[15px] font-black tracking-tight text-gray-950">Steps</h4>
+                <span className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-bold text-amber-700 ring-1 ring-amber-100">
+                  {stepCountLabel}
+                </span>
+              </div>
+              {isEditing ? (
+                <div className="space-y-4 rounded-2xl bg-white/80 p-4 ring-1 ring-amber-100/80">
+                  {editableInstructionSections.map((section, sectionIndex) => (
+                    <div key={sectionIndex} className="space-y-3">
+                      {section.title && (
+                        <h5 className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+                          {section.title}
+                        </h5>
+                      )}
+                      {section.instructions.map((entry: any, stepIndex: number) => (
+                        <label key={entry.id} className="flex gap-3">
+                          <span className="mt-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[11px] font-black text-amber-700">
+                            {stepIndex + 1}
+                          </span>
+                          <textarea
+                            value={getStepEditText(entry.value)}
+                            onChange={(event) => updateStep(entry.id, event.target.value)}
+                            className="min-h-[74px] flex-1 resize-y rounded-2xl border border-amber-100 bg-white px-3 py-2 text-sm font-medium leading-relaxed text-gray-800 outline-none transition-colors focus:border-amber-300 focus:ring-2 focus:ring-amber-100"
+                            placeholder="Edit step"
+                          />
+                        </label>
+                      ))}
+                    </div>
                   ))}
                 </div>
-              </div>
-            )}
-
-            {askError && (
-              <p className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
-                {askError}
-              </p>
-            )}
-
-            {askAnswer && (
-              <div className="mt-4 rounded-2xl border border-gray-100 bg-white p-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-                  Answer
-                </p>
-                <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-gray-700">
-                  {askAnswer}
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Chef's Tips */}
-      {activeRecipeTab === 'steps' && (tips.length > 0 || notes.length > 0) && (
-        <div className="border-t border-amber-100 bg-amber-50/40 px-5 py-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Lightbulb size={15} className="text-amber-500" />
-            <h4 className="text-[10px] font-black text-amber-600 uppercase tracking-widest">
-              {t('videoDetail:chefsNotes', "Chef's Tips")}
-            </h4>
-          </div>
-          <ul className="space-y-2.5">
-            {tips.map((tip, i) => (
-              <li key={`tip-${i}`} className="flex items-start gap-2.5 text-[13px] text-gray-600">
-                <span className="flex-shrink-0 mt-[5px] w-1 h-1 rounded-full bg-amber-400" />
-                <span className="leading-relaxed">{tip}</span>
-              </li>
-            ))}
-          </ul>
-          {notes.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-amber-100/80">
-              {notes.map((note, i) => (
-                <p key={i} className="text-[12px] text-gray-400 leading-relaxed">
-                  <span className="font-bold text-gray-500">Note: </span>{note}
-                </p>
-              ))}
-            </div>
+              ) : (
+                <div className="rounded-2xl bg-white/80 p-4 ring-1 ring-amber-100/80">
+                  <RecipeStepsPanel
+                    instructionSections={instructionSections}
+                    checkedSteps={checkedSteps}
+                    toggleStep={toggleCompletedStepId}
+                    temperatureUnit={temperatureUnit}
+                  />
+                </div>
+              )}
+            </section>
           )}
         </div>
-      )}
+        )}
 
-      {/* Always-visible Cook Mode CTA */}
-      {instructions.length > 0 && (
-        <div className="border-t border-gray-50 px-5 py-5">
-          <button
-            type="button"
-            onClick={() => setIsCookModeOpen(true)}
-            className="group flex w-full items-center justify-center gap-2.5 rounded-2xl py-4 text-sm font-black text-white shadow-lg shadow-primary-500/20 transition-all active:scale-[0.99]"
-            style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #e11d48 100%)' }}
-          >
-            <ChefHat size={17} strokeWidth={2.5} />
-            {savedCookStep !== null
-              ? `${isTechnique ? 'Resume guide' : 'Resume cooking'} · step ${savedCookStep + 1}`
-              : isTechnique ? 'Follow technique guide' : 'Launch cooking mode'}
-          </button>
-          <p className="mt-2 text-center text-[11px] font-medium text-gray-400">
-            {savedCookStep !== null
-              ? `You left off at step ${savedCookStep + 1} of ${instructions.length}`
-              : isTechnique ? 'Follow this technique step by step.' : 'Follow this recipe step by step with timers.'}
-          </p>
-        </div>
-      )}
+        {!recipeBodyLoading && secondaryTabs.length > 0 && (
+          <div className="bg-gray-50 px-3 py-3 border-t border-gray-100">
+            <div
+              className="grid gap-1 rounded-2xl bg-gray-100 p-1 text-[12px] font-bold"
+              style={{ gridTemplateColumns: `repeat(${secondaryTabs.length}, minmax(0, 1fr))` }}
+            >
+              {secondaryTabs.map((tab) => {
+                const active = visibleSecondaryTab === tab.key;
 
-      <CookModeModal
-        isOpen={isCookModeOpen}
-        recipeId={recipeId}
-        recipeName={recipeName}
-        instructions={instructions}
-        ingredients={allIngredients.map((entry) => entry.raw)}
-        initialStepIndex={savedCookStep ?? 0}
-        onClose={() => setIsCookModeOpen(false)}
-        onProgressChange={handleCookProgressChange}
-        onComplete={handleCookComplete}
-      />
-    </div>
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveSecondaryTab((current) => (current === tab.key ? null : tab.key))}
+                    className={`rounded-xl px-2 py-2.5 transition-all ${
+                      active
+                        ? 'bg-white text-violet-600 shadow-sm'
+                        : 'text-gray-500 hover:bg-white/50 hover:text-gray-700'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {!recipeBodyLoading && visibleSecondaryTab === 'nutrition' && hasIngredients && (
+          <div className="border-t border-gray-50">
+            <RecipeNutritionSummary
+              ingredients={allIngredients}
+              servings={getServings(recipe)}
+              recipeName={recipeName}
+            />
+          </div>
+        )}
+
+        {!recipeBodyLoading && visibleSecondaryTab === 'ask' && (
+          <div className="px-5 py-5 border-t border-gray-50">
+            <RecipeAskPanel
+              question={askQuestion}
+              response={askAnswer}
+              onAsk={handleAskRecipe}
+              loading={askLoading}
+            />
+          </div>
+        )}
+
+
+      </div>
+
+      {hasSteps && (
+        <CookModeModal
+          isOpen={isCookModeOpen}
+          recipeId={recipeId}
+          recipeName={recipeName}
+          instructions={allInstructions}
+          ingredients={cookModeIngredients}
+          ingredientSections={cookModeIngredientSections}
+          checkedIngredientIds={checkedIngredientIds}
+          initialStepIndex={currentStepIndex}
+          servingScale={servingScale}
+          onServingScaleChange={onServingScaleChange}
+          scaleQuantity={scaleQuantity}
+          useMetric={useMetric}
+          onToggleMetric={onToggleMetric}
+          temperatureUnit={temperatureUnit}
+          recipeConversion={recipeConversion}
+          volumePreference={volumePreference}
+          rounding={rounding}
+          onClose={() => setIsCookModeOpen(false)}
+          onIngredientToggle={toggleCheckedIngredientId}
+          onIngredientSelectAll={setCheckedIngredientIds}
+          onProgressChange={setCurrentStepIndex}
+          onStepComplete={markCompletedStepId}
+          onComplete={handleCookModeComplete}
+          onAddCookingNote={onAddCookingNote}
+        />
+      )}
+    </>
   );
 };
 

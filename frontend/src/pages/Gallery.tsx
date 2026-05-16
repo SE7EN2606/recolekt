@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { VideoCard } from '../components/VideoCard';
 import { Button } from '../components/Button';
-import { Search, Settings2, Trash2, CircleX, MoreVertical, Pencil, FolderInput } from 'lucide-react';
+import { Search, Settings2, Trash2, CircleX, MoreVertical, Pencil, FolderInput, ChefHat } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -25,8 +25,113 @@ const PROCESSING_MESSAGES = [
   'msg_optimizing', 'msg_polishing', 'msg_finalizing'
 ];
 
+type GalleryContentFilter = 'all' | 'recipes';
 
-function useSearch(query: string, folderId: string | undefined) {
+const COOKBOOK_FILTERS: Array<{
+  id: GalleryContentFilter;
+  label: string;
+  icon?: React.ElementType;
+}> = [
+  { id: 'all', label: 'All' },
+  { id: 'recipes', label: 'Recipes', icon: ChefHat },
+];
+
+function getVideoContentType(video: any): string {
+  return String(
+    video?.content_type ??
+    video?.contentType ??
+    video?.contenttype ??
+    video?.raw?.content_type ??
+    video?.__raw?.content_type ??
+    ''
+  ).toLowerCase();
+}
+
+function getVideoId(video: any): string {
+  return String(video?.id ?? video?.process_id ?? video?.processId ?? '');
+}
+
+function parseObject(value: unknown): any {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try { return JSON.parse(value); } catch { return {}; }
+  }
+  return typeof value === 'object' ? value : {};
+}
+
+function getRecipeTitle(video: any): string {
+  const summary = parseObject(video?.summary ?? video?.summarytext ?? video?.raw?.summary);
+  const recipeRoot = parseObject(video?.recipe ?? video?.raw?.recipe);
+  const recipe = recipeRoot?.recipe ?? recipeRoot;
+
+  return String(
+    summary?.english?.title ??
+    recipe?.english?.title ??
+    video?.summaryTitle ??
+    video?.summarytitle ??
+    video?.title ??
+    video?.caption?.split?.('\n')?.[0] ??
+    'Recipe'
+  ).trim();
+}
+
+function isCookbookFilter(filter: GalleryContentFilter): boolean {
+  return filter !== 'all';
+}
+
+function matchesContentFilter(video: any, filter: GalleryContentFilter): boolean {
+  const isRecipe = getVideoContentType(video) === 'recipe';
+  if (filter === 'all') return true;
+  if (!isRecipe) return false;
+
+  return true;
+}
+
+function collectStrings(value: unknown, depth = 0): string {
+  if (depth > 5 || value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(item => collectStrings(item, depth + 1)).join(' ');
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>)
+      .map(item => collectStrings(item, depth + 1))
+      .join(' ');
+  }
+  return '';
+}
+
+function getRecipeSearchScore(video: any, query: string): number {
+  const q = query.trim().toLowerCase();
+  if (!q || getVideoContentType(video) !== 'recipe') return 0;
+
+  const summary = parseObject(video?.summary ?? video?.summarytext ?? video?.raw?.summary);
+  const recipeRoot = parseObject(video?.recipe ?? video?.raw?.recipe);
+  const recipe = recipeRoot?.recipe ?? recipeRoot;
+  const title = getRecipeTitle(video).toLowerCase();
+  const ingredients = collectStrings(
+    recipe?.ingredients ??
+    recipe?.ingredientLines ??
+    recipe?.ingredient_lines ??
+    recipeRoot?.ingredients
+  ).toLowerCase();
+  const topic = String(
+    video?.summary_topic ??
+    video?.summaryTopic ??
+    summary?.topic ??
+    summary?.theme ??
+    ''
+  ).toLowerCase();
+  const caption = String(video?.caption ?? video?.raw?.caption ?? '').toLowerCase();
+
+  let score = 0;
+  if (title.includes(q)) score += 40;
+  if (ingredients.includes(q)) score += 30;
+  if (topic.includes(q)) score += 20;
+  if (caption.includes(q)) score += 10;
+  return score;
+}
+
+function useSearch(query: string, folderId: string | undefined, recipeOnly: boolean) {
   const [results, setResults]     = useState<any[] | null>(null);
 
   const [searching, setSearching] = useState(false);
@@ -39,6 +144,7 @@ function useSearch(query: string, folderId: string | undefined) {
       try {
         const params = new URLSearchParams({ q: query.trim() });
         if (folderId) params.set('folder_id', folderId);
+        if (recipeOnly) params.set('content_type', 'recipe');
         const res = await fetch(`${API_BASE}/search?${params}`, {
           signal: controller.signal,
           credentials: 'include',
@@ -56,7 +162,7 @@ function useSearch(query: string, folderId: string | undefined) {
       }
     }, 300);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [query, folderId]);
+  }, [query, folderId, recipeOnly]);
 
   useEffect(() => { if (!query.trim()) setResults(null); }, [query]);
 
@@ -163,6 +269,7 @@ export const Gallery: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [contentFilter, setContentFilter] = useState<GalleryContentFilter>('all');
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
 
   const [msgIndex, setMsgIndex] = useState(0);
@@ -174,7 +281,7 @@ export const Gallery: React.FC = () => {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const { results: searchResults, searching } = useSearch(searchQuery, folderId);
+  const { results: searchResults, searching } = useSearch(searchQuery, folderId, isCookbookFilter(contentFilter));
 
   useEffect(() => {
     if (!authLoading && !user) navigate('/auth', { replace: true });
@@ -193,6 +300,7 @@ export const Gallery: React.FC = () => {
     setSelectedIds(new Set());
     setShowFolderMenu(false);
     setSearchQuery('');
+    setContentFilter('all');
   }, [folderId, location.pathname, location.key]);
 
   useEffect(() => {
@@ -244,15 +352,25 @@ export const Gallery: React.FC = () => {
     return map;
   }, [videos]);
 
-  const displayedVideos = useMemo(() => {
-    if (searchResults !== null) return searchResults;
-    let filtered = videos.filter((v: any) => {
+  const folderScopedVideos = useMemo(() => {
+    return videos.filter((v: any) => {
       if (isFavoritesView) return v.isFavorite;
       if (isAllView)       return true;
       if (isUnsortedView)  return !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all';
       return v.folderId === folderId;
     });
-    if (searchQuery) {
+  }, [videos, folderId, isFavoritesView, isAllView, isUnsortedView]);
+
+  const displayedVideos = useMemo(() => {
+    let filtered = searchResults !== null
+      ? searchResults
+      : folderScopedVideos;
+
+    if (contentFilter !== 'all') {
+      filtered = filtered.filter((v: any) => matchesContentFilter(v, contentFilter));
+    }
+
+    if (searchResults === null && searchQuery) {
       const q = searchQuery.toLowerCase().trim();
       filtered = filtered.filter((v: any) => {
         const videoId = v?.id ?? v?.process_id ?? v?.processId ?? '';
@@ -261,6 +379,11 @@ export const Gallery: React.FC = () => {
       });
     }
     return [...filtered].sort((a: any, b: any) => {
+      if (searchQuery.trim() && isCookbookFilter(contentFilter)) {
+        const scoreDiff = getRecipeSearchScore(b, searchQuery) - getRecipeSearchScore(a, searchQuery);
+        if (scoreDiff !== 0) return scoreDiff;
+      }
+
       const aP = a.category === 'Processing' || a.status === 'processing';
       const bP = b.category === 'Processing' || b.status === 'processing';
       if (aP && !bP) return -1;
@@ -269,7 +392,103 @@ export const Gallery: React.FC = () => {
       const dB = new Date(b.savedAt || b.created_at || 0).getTime();
       return sortOrder === 'desc' ? dB - dA : dA - dB;
     });
-  }, [videos, searchResults, folderId, isFavoritesView, isAllView, isUnsortedView, searchQuery, sortOrder, searchIndex]);
+  }, [searchResults, folderScopedVideos, searchQuery, sortOrder, searchIndex, contentFilter]);
+
+  const recipeHomeVideos = useMemo(() => {
+    return folderScopedVideos.filter((v: any) => getVideoContentType(v) === 'recipe');
+  }, [folderScopedVideos]);
+
+  const renderVideoGrid = (items: any[]) => (
+    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-6">
+      {items.map((video: any) => {
+        const videoId = getVideoId(video);
+        return (
+          <div
+            key={videoId}
+            draggable={!selectionMode && video.category !== 'Processing'}
+            onDragStart={e => {
+              let idsToMove = [videoId];
+              if (selectedIds.has(videoId)) idsToMove = Array.from(selectedIds);
+              e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
+
+              const idsToMoveLabel = idsToMove.length === 1 ? '1 reel' : `${idsToMove.length} reels`;
+              const ghostVideos = displayedVideos
+                .filter((candidate: any) => idsToMove.includes(getVideoId(candidate)))
+                .slice(0, 4);
+
+              const dragGhost = document.createElement('div');
+              dragGhost.style.position = 'fixed';
+              dragGhost.style.top = '-1000px';
+              dragGhost.style.left = '-1000px';
+              dragGhost.style.pointerEvents = 'none';
+              dragGhost.style.transform = 'scale(0.82)';
+              dragGhost.style.zIndex = '999999';
+
+              const stack = document.createElement('div');
+              stack.style.position = 'relative';
+              stack.style.width = '104px';
+              stack.style.height = '126px';
+
+              ghostVideos.forEach((ghostVideo: any, index: number) => {
+                const img = document.createElement('img');
+                img.src = ghostVideo?.thumbnailUrl || ghostVideo?.thumbnail_url || ghostVideo?.gcs_urls?.preview_thumbnail || ghostVideo?.gcs_urls?.thumbnail || '';
+                img.style.position = 'absolute';
+                img.style.width = '62px';
+                img.style.height = '88px';
+                img.style.objectFit = 'cover';
+                img.style.borderRadius = '14px';
+                img.style.border = '2px solid white';
+                img.style.boxShadow = '0 10px 24px rgba(0,0,0,0.24)';
+                img.style.left = `${index * 11}px`;
+                img.style.top = `${index * 7}px`;
+                img.style.transform = `rotate(${(index - 1.5) * 5}deg)`;
+                img.style.background = '#e5e7eb';
+                stack.appendChild(img);
+              });
+
+              const badge = document.createElement('div');
+              badge.style.position = 'absolute';
+              badge.style.left = '34px';
+              badge.style.bottom = '0';
+              badge.style.padding = '8px 13px';
+              badge.style.borderRadius = '999px';
+              badge.style.background = 'rgba(255,255,255,0.82)';
+              badge.style.boxShadow = '0 12px 30px rgba(0,0,0,0.24)';
+              badge.style.fontSize = '11px';
+              badge.style.fontWeight = '900';
+              badge.style.color = '#111827';
+              badge.style.whiteSpace = 'nowrap';
+              badge.textContent = idsToMoveLabel;
+              stack.appendChild(badge);
+
+              dragGhost.appendChild(stack);
+              document.body.appendChild(dragGhost);
+
+              const cleanupGhost = () => {
+                dragGhost.remove();
+                window.removeEventListener('dragend', cleanupGhost);
+              };
+
+              window.addEventListener('dragend', cleanupGhost);
+              e.dataTransfer.setDragImage(dragGhost, 48, 62);
+
+              setTimeout(() => dragGhost.remove(), 0);
+              e.dataTransfer.setData('sourceId', video.folderId || 'unsorted');
+              e.dataTransfer.effectAllowed = 'move';
+            }}
+            className={!selectionMode && video.category !== 'Processing' ? 'cursor-grab active:cursor-grabbing' : ''}
+          >
+            <VideoCard
+              video={video}
+              selectionMode={selectionMode}
+              selected={selectedIds.has(videoId)}
+              onToggleSelect={() => toggleSelect(videoId)}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
 
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
@@ -342,7 +561,7 @@ export const Gallery: React.FC = () => {
 
   const getFolderTitle = (): string => {
     if (isFavoritesView) return t('gallery:favorites');
-    if (isAllView) return t('gallery:myVideos');
+    if (isAllView) return t('gallery:gallery', 'Gallery');
     if (isUnsortedView) return t('sidebar:unsorted', 'Unsorted');
     const flat = (list: any[]): any[] => list.flatMap(f => [f, ...(f.subFolders ? flat(f.subFolders) : [])]);
     const found = flat(folders).find((f: any) => f.id === folderId);
@@ -370,6 +589,10 @@ export const Gallery: React.FC = () => {
   if (!user) return null;
 
   const folderTitle = getFolderTitle();
+  const filterCounts: Record<GalleryContentFilter, number> = {
+    all: folderScopedVideos.length,
+    recipes: recipeHomeVideos.length,
+  };
 
   return (
     <div className="w-full pt-4 md:pt-0 pb-0 md:pb-6 animate-fade-in">
@@ -513,89 +736,39 @@ export const Gallery: React.FC = () => {
             {sortOrder === 'desc' ? <CalendarArrowUp size={20} /> : <CalendarArrowDown size={20} />}
           </button>
         </div>
+
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
+          {COOKBOOK_FILTERS.map(({ id, label, icon: Icon }) => {
+            const active = contentFilter === id;
+            const recipeChip = id !== 'all';
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setContentFilter(id)}
+                className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-black transition-colors ${
+                  active
+                    ? recipeChip
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-gray-950 text-white'
+                    : recipeChip
+                      ? 'bg-amber-50 text-amber-800 border border-amber-100 hover:bg-amber-100'
+                      : 'bg-white/70 text-gray-600 border border-gray-100 hover:bg-white'
+                }`}
+              >
+                {Icon && <Icon size={14} aria-hidden="true" />}
+                {label}
+                <span className={active ? 'text-white/75' : recipeChip ? 'text-amber-700/60' : 'text-gray-400'}>
+                  {filterCounts[id]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-24 md:mb-12">
-        {displayedVideos.map((video: any) => {
-          const videoId = video?.id ?? video?.process_id ?? video?.processId ?? '';
-          return (
-            <div
-              key={videoId}
-              draggable={!selectionMode && video.category !== 'Processing'}
-              onDragStart={e => {
-                let idsToMove = [videoId];
-                if (selectedIds.has(videoId)) idsToMove = Array.from(selectedIds);
-                e.dataTransfer.setData('videoIds', JSON.stringify(idsToMove));
-                
-                const idsToMoveLabel = idsToMove.length === 1 ? '1 reel' : `${idsToMove.length} reels`;
-                const ghostVideos = displayedVideos
-                  .filter((candidate: any) => idsToMove.includes(candidate?.id ?? candidate?.process_id ?? candidate?.processId ?? ''))
-                  .slice(0, 4);
-
-                const dragGhost = document.createElement('div');
-                dragGhost.style.position = 'fixed';
-                dragGhost.style.top = '-1000px';
-                dragGhost.style.left = '-1000px';
-                dragGhost.style.pointerEvents = 'none';
-                dragGhost.style.transform = 'scale(0.82)';
-                dragGhost.style.zIndex = '999999';
-
-                const stack = document.createElement('div');
-                stack.style.position = 'relative';
-                stack.style.width = '104px';
-                stack.style.height = '126px';
-
-                ghostVideos.forEach((ghostVideo: any, index: number) => {
-                  const img = document.createElement('img');
-                  img.src = ghostVideo?.thumbnailUrl || ghostVideo?.thumbnail_url || ghostVideo?.gcs_urls?.preview_thumbnail || ghostVideo?.gcs_urls?.thumbnail || '';
-                  img.style.position = 'absolute';
-                  img.style.width = '62px';
-                  img.style.height = '88px';
-                  img.style.objectFit = 'cover';
-                  img.style.borderRadius = '14px';
-                  img.style.border = '2px solid white';
-                  img.style.boxShadow = '0 10px 24px rgba(0,0,0,0.24)';
-                  img.style.left = `${index * 11}px`;
-                  img.style.top = `${index * 7}px`;
-                  img.style.transform = `rotate(${(index - 1.5) * 5}deg)`;
-                  img.style.background = '#e5e7eb';
-                  stack.appendChild(img);
-                });
-
-                const badge = document.createElement('div');
-                badge.style.position = 'absolute';
-                badge.style.left = '34px';
-                badge.style.bottom = '0';
-                badge.style.padding = '8px 13px';
-                badge.style.borderRadius = '999px';
-                badge.style.background = 'rgba(255,255,255,0.82)';
-                badge.style.boxShadow = '0 12px 30px rgba(0,0,0,0.24)';
-                badge.style.fontSize = '11px';
-                badge.style.fontWeight = '900';
-                badge.style.color = '#111827';
-                badge.style.whiteSpace = 'nowrap';
-                badge.textContent = idsToMoveLabel;
-                stack.appendChild(badge);
-
-                dragGhost.appendChild(stack);
-                document.body.appendChild(dragGhost);
-                e.dataTransfer.setDragImage(dragGhost, 48, 62);
-
-                setTimeout(() => dragGhost.remove(), 0);
-e.dataTransfer.setData('sourceId', video.folderId || 'unsorted');
-                e.dataTransfer.effectAllowed = 'move';
-              }}
-              className={!selectionMode && video.category !== 'Processing' ? 'cursor-grab active:cursor-grabbing' : ''}
-            >
-              <VideoCard
-                video={video}
-                selectionMode={selectionMode}
-                selected={selectedIds.has(videoId)}
-                onToggleSelect={() => toggleSelect(videoId)}
-              />
-            </div>
-          );
-        })}
+      <div className="mb-24 md:mb-12">
+        {renderVideoGrid(displayedVideos)}
       </div>
 
       {!dataLoading && !searching && displayedVideos.length === 0 && (

@@ -25,6 +25,7 @@ from fetcher_api.api.helpers.normalizers import (
     ensure_dict,
     json_stringify,
 )
+from fetcher_api.api.helpers.video_downloader import get_instagram_video_duration
 from fetcher_api.utils.ocr_utils import maybe_ocr_and_merge_text
 from fetcher_api.services.video_analysis import (
     download_instagram_video,
@@ -413,6 +414,20 @@ def background_process(
             yt_duration_seconds = 0
             if yt_video_path and os.path.exists(yt_video_path):
                 yt_duration, yt_duration_seconds = get_video_duration(yt_video_path)
+            if not yt_duration_seconds:
+                try:
+                    _yt_meta_dur = (meta.get("duration") or meta.get("duration_seconds"))
+                    if _yt_meta_dur:
+                        yt_duration_seconds = int(float(_yt_meta_dur))
+                    if not yt_duration_seconds:
+                        _yt_fetched = get_instagram_video_duration(url)
+                        if _yt_fetched:
+                            yt_duration_seconds = _yt_fetched
+                    if yt_duration_seconds:
+                        _m, _s = divmod(yt_duration_seconds, 60)
+                        yt_duration = f"{_m}:{_s:02d}"
+                except Exception:
+                    pass
             processing_strategy = "youtube_captions_with_video" if yt_video_path else "youtube_captions"
             t_result = None
 
@@ -585,13 +600,13 @@ def background_process(
         dl_result = {}
         if not os.path.exists(video_path):
             if is_tiktok:
-                dl_result = ensure_dict(download_instagram_video(url, video_path))
-            else:
                 if str(os.getenv("TIKTOK_TRY_VIDEO_DOWNLOAD", "")).lower() not in {"1", "true", "yes"}:
                     logger.info("TikTok video download skipped; using caption/thumbnail fallback")
                     dl_result = {"ok": False, "path": None, "error": "tiktok_video_download_disabled"}
                 else:
                     dl_result = ensure_dict(meta_client.download_video(url, video_path))
+            else:
+                dl_result = ensure_dict(download_instagram_video(url, video_path))
 
             if not dl_result.get("success"):
                 meta = ensure_dict(dl_result.get("metadata", {}))
@@ -667,12 +682,27 @@ def background_process(
                     if not summary_title and caption:
                         summary_title = caption.split("\n")[0][:80].strip()
 
+                    _tt_dur_secs = 0
+                    _tt_dur_fmt = None
+                    try:
+                        _meta_dur = meta.get("duration") or meta.get("duration_seconds")
+                        if _meta_dur:
+                            _tt_dur_secs = int(float(_meta_dur))
+                        if not _tt_dur_secs:
+                            _fetched = get_instagram_video_duration(url)
+                            if _fetched:
+                                _tt_dur_secs = _fetched
+                        if _tt_dur_secs:
+                            m, s = divmod(_tt_dur_secs, 60)
+                            _tt_dur_fmt = f"{m}:{s:02d}"
+                    except Exception:
+                        pass
                     result.update({
                         "status": "done",
                         "user_id": user_id,
                         "source_url": url,
-                        "duration": "0:00",
-                        "duration_seconds": 0,
+                        "duration": _tt_dur_fmt,
+                        "duration_seconds": _tt_dur_secs,
                         "caption": caption,
                         "author_name": author_name,
                         "summary": ai_summary,

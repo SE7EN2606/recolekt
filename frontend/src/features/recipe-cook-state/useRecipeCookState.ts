@@ -1,0 +1,178 @@
+import { useEffect, useRef, useState } from 'react';
+import type { LocalCookStatus } from '../recipe-detail/RecipeCookbookRail';
+import {
+  getRecipeCookState,
+  markRecipeCooked,
+  RecipeCookStateResponse,
+  resetRecipeCookState,
+} from './recipeCookStateApi';
+import { resetRecipeCookSession } from '../recipe-cook-session/recipeCookSessionApi';
+
+type CookStateStatus = 'idle' | 'loading' | 'saving' | 'error';
+
+function getTodayCookedLabel(): string {
+  return 'today';
+}
+
+function isToday(value: string): boolean {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+
+  const now = new Date();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
+}
+
+function formatCookedLabel(lastCookedAt: string | null): string {
+  if (!lastCookedAt) return '';
+  if (isToday(lastCookedAt)) return getTodayCookedLabel();
+  return lastCookedAt;
+}
+
+function serializeCookState(data: RecipeCookStateResponse): LocalCookStatus {
+  const cookCount = Number(data?.cookCount || 0);
+
+  return {
+    cookedCount: Number.isFinite(cookCount) && cookCount > 0 ? cookCount : 0,
+    lastCookedLabel: formatCookedLabel(data?.lastCookedAt || null),
+    hasActiveSession: Boolean(data?.hasActiveSession),
+  };
+}
+
+const EMPTY_COOK_STATUS: LocalCookStatus = {
+  cookedCount: 0,
+  lastCookedLabel: '',
+  hasActiveSession: false,
+};
+
+export function useRecipeCookState(
+  reelId: string,
+  enabled: boolean
+): {
+  cookStatus: LocalCookStatus;
+  status: CookStateStatus;
+  markCooked: () => void;
+  resetCookState: () => void;
+} {
+  const [cookStatus, setCookStatus] = useState<LocalCookStatus>(EMPTY_COOK_STATUS);
+  const [status, setStatus] = useState<CookStateStatus>('idle');
+  const [loaded, setLoaded] = useState(false);
+  const cookStateGenerationRef = useRef(0);
+
+  useEffect(() => {
+    cookStateGenerationRef.current += 1;
+    setCookStatus(EMPTY_COOK_STATUS);
+    setStatus('idle');
+    setLoaded(false);
+  }, [reelId]);
+
+  useEffect(() => {
+    if (!reelId || !enabled) return;
+
+    let cancelled = false;
+    const generation = cookStateGenerationRef.current;
+    setStatus('loading');
+
+    const loadCookState = async () => {
+      try {
+        const data = await getRecipeCookState(reelId);
+
+        if (!cancelled && generation === cookStateGenerationRef.current) {
+          setCookStatus(serializeCookState(data));
+          setLoaded(true);
+          setStatus('idle');
+        }
+      } catch (err) {
+        console.warn('Recipe cook state load failed', err);
+        if (!cancelled && generation === cookStateGenerationRef.current) {
+          setLoaded(true);
+          setStatus('error');
+        }
+      }
+    };
+
+    loadCookState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reelId, enabled]);
+
+  const markCooked = () => {
+    if (!reelId || !enabled) return;
+
+    const previous = cookStatus;
+    const generation = cookStateGenerationRef.current;
+
+    setCookStatus((current) => ({
+      cookedCount: current.cookedCount + 1,
+      lastCookedLabel: getTodayCookedLabel(),
+      hasActiveSession: false,
+    }));
+    setStatus('saving');
+    window.dispatchEvent(
+      new CustomEvent('recolekt:recipe-cook-session-reset', {
+        detail: { reelId },
+      })
+    );
+
+    markRecipeCooked(reelId)
+      .then((data) => {
+        if (generation === cookStateGenerationRef.current) {
+          setCookStatus(serializeCookState(data));
+          setStatus('idle');
+        }
+      })
+      .catch((err) => {
+        console.warn('Recipe mark cooked failed', err);
+        if (generation === cookStateGenerationRef.current) {
+          setCookStatus(previous);
+          setStatus('error');
+        }
+      });
+  };
+
+  const resetCookState = () => {
+    if (!reelId || !enabled) return;
+
+    const previous = cookStatus;
+    cookStateGenerationRef.current += 1;
+    const generation = cookStateGenerationRef.current;
+
+    setCookStatus(EMPTY_COOK_STATUS);
+    setStatus('saving');
+    window.dispatchEvent(
+      new CustomEvent('recolekt:recipe-cook-session-reset', {
+        detail: { reelId },
+      })
+    );
+
+    resetRecipeCookSession(reelId)
+      .then(() => resetRecipeCookState(reelId))
+      .then((data) => {
+        if (generation === cookStateGenerationRef.current) {
+          setCookStatus(serializeCookState(data));
+          setStatus('idle');
+        }
+      })
+      .catch((err) => {
+        console.warn('Recipe cook state reset failed', err);
+        if (generation === cookStateGenerationRef.current) {
+          setCookStatus(previous);
+          setStatus('error');
+        }
+      });
+  };
+
+  return {
+    cookStatus,
+    status: enabled && Boolean(reelId) && !loaded ? 'loading' : status,
+    markCooked,
+    resetCookState,
+  };
+}
+
+export default useRecipeCookState;

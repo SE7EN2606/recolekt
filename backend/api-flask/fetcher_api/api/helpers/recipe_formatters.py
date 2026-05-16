@@ -40,7 +40,10 @@ We support BOTH:
 
 import re
 import logging
+from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple
+
+from fetcher_api.services.unit_converter import normalize_ingredients_list
 
 logger = logging.getLogger(__name__)
 
@@ -92,11 +95,17 @@ def _normalize_instruction_list(instructions: Any) -> List[Any]:
         if isinstance(it, dict):
             cleaned = dict(it)
 
-            for key in ("instruction", "text", "source", "confidence"):
+            for key in ("instruction", "text", "step", "description", "body", "source", "confidence"):
                 if key in cleaned and cleaned[key] is not None:
                     cleaned[key] = str(cleaned[key]).strip()
 
-            main_text = cleaned.get("instruction") or cleaned.get("text")
+            main_text = (
+                cleaned.get("instruction")
+                or cleaned.get("text")
+                or cleaned.get("step")
+                or cleaned.get("description")
+                or cleaned.get("body")
+            )
             if main_text:
                 out.append(cleaned)
 
@@ -129,8 +138,9 @@ def _normalize_ingredient(ing: Any) -> Dict[str, Any]:
         name, note = split_name_and_note(base)
         return {
             "emoji": "",
-            "quantity": "",
-            "unit": "",
+            "quantity": None,
+            "unit": None,
+            "quantity_type": "unspecified",
             "name": name,
             "notes": note,
         }
@@ -158,13 +168,14 @@ def _normalize_ingredient(ing: Any) -> Dict[str, Any]:
     notes = "; ".join(notes_parts) if notes_parts else ""
 
     # Preserve Sprint 1 trust metadata and any future ingredient fields.
-    # Do not let normalization strip source/confidence/needs_review/quantityRange.
+    # Do not let normalization strip source/confidence/quantity_type/quantityRange.
     out = dict(ing)
 
     out.update({
         "emoji": emoji,
         "quantity": quantity,
         "unit": unit,
+        "quantity_type": _normalize_string_or_empty(ing.get("quantity_type")) or "unspecified",
         "name": base_name,
         "notes": notes,
     })
@@ -415,6 +426,14 @@ def _normalize_recipe_block(lang_block: Dict[str, Any]) -> None:
         lang_block["instructions"] = _flatten_instruction_sections(sections)
     elif "instructions" in lang_block:
         lang_block["instructions"] = _normalize_instruction_list(lang_block.get("instructions"))
+    else:
+        flat_instructions = _first_list(
+            lang_block.get("steps"),
+            lang_block.get("directions"),
+            lang_block.get("method"),
+        )
+        if flat_instructions:
+            lang_block["instructions"] = _normalize_instruction_list(flat_instructions)
 
     # ---- OTHER FIELDS ----
     if "tips" in lang_block:
@@ -582,3 +601,122 @@ def normalize_recipe(recipe_obj: Any, caption: Optional[str] = None) -> Any:
                 logger.info(f"[recipe] Inferred {len(groups)} ingredient groups from caption.")
 
     return recipe_obj
+
+
+def _first_non_empty_list_from_block(block: Dict[str, Any], keys: Tuple[str, ...]) -> List[Any]:
+    for key in keys:
+        value = block.get(key)
+        if isinstance(value, list) and value:
+            return value
+    return []
+
+
+def _restore_top_level_recipe_fallbacks(recipe_obj: Dict[str, Any]) -> None:
+    """
+    Keep frontend compatibility for recipes whose usable content lives only in
+    nested language blocks. This augments the response copy only.
+    """
+    nested_blocks = [
+        recipe_obj.get(lang)
+        for lang in LANG_KEYS
+        if isinstance(recipe_obj.get(lang), dict)
+    ]
+
+    if not nested_blocks:
+        return
+
+    if not _first_non_empty_list_from_block(recipe_obj, ("ingredients", "ingredient_sections", "ingredients_sections", "ingredients_groups")):
+        for block in nested_blocks:
+            ingredients = _first_non_empty_list_from_block(block, ("ingredients",))
+            sections = _first_non_empty_list_from_block(block, ("ingredient_sections", "ingredients_sections"))
+            groups = _first_non_empty_list_from_block(block, ("ingredients_groups",))
+            if ingredients or sections or groups:
+                if ingredients:
+                    recipe_obj["ingredients"] = ingredients
+                if sections:
+                    recipe_obj["ingredient_sections"] = sections
+                    recipe_obj["ingredients_sections"] = sections
+                if groups:
+                    recipe_obj["ingredients_groups"] = groups
+                break
+
+    if not _first_non_empty_list_from_block(recipe_obj, ("instructions", "steps", "directions", "method", "instructions_sections", "instruction_sections")):
+        for block in nested_blocks:
+            instructions = _first_non_empty_list_from_block(block, ("instructions", "steps", "directions", "method"))
+            sections = _first_non_empty_list_from_block(block, ("instructions_sections", "instruction_sections"))
+            if instructions or sections:
+                if instructions:
+                    recipe_obj["instructions"] = instructions
+                if sections:
+                    recipe_obj["instructions_sections"] = sections
+                    recipe_obj["instruction_sections"] = sections
+                break
+
+
+def _normalize_block_ingredient_units(lang_block: Dict[str, Any], measurement_system: str) -> None:
+    if isinstance(lang_block.get("ingredients"), list):
+        lang_block["ingredients"] = normalize_ingredients_list(
+            lang_block.get("ingredients") or [],
+            measurement_system,
+        )
+
+    for key in ("ingredient_sections", "ingredients_sections"):
+        sections = lang_block.get(key)
+        if not isinstance(sections, list):
+            continue
+
+        normalized_sections = []
+        for section in sections:
+            if not isinstance(section, dict):
+                normalized_sections.append(section)
+                continue
+            normalized_sections.append({
+                **section,
+                "items": normalize_ingredients_list(section.get("items") or [], measurement_system),
+            })
+        lang_block[key] = normalized_sections
+
+    groups = lang_block.get("ingredients_groups")
+    if isinstance(groups, list):
+        normalized_groups = []
+        for group in groups:
+            if not isinstance(group, dict):
+                normalized_groups.append(group)
+                continue
+            normalized_groups.append({
+                **group,
+                "items": normalize_ingredients_list(group.get("items") or [], measurement_system),
+            })
+        lang_block["ingredients_groups"] = normalized_groups
+
+
+def normalize_recipe_for_display(
+    recipe_obj: Any,
+    caption: Optional[str] = None,
+    measurement_system: str = "metric",
+) -> Any:
+    """
+    Normalize recipe shape and display units on a copy.
+
+    The stored extraction remains untouched; converted quantities are response-only
+    and keep _original_quantity / _original_unit for display/debug context.
+    """
+    if not isinstance(recipe_obj, dict):
+        return recipe_obj
+
+    display_recipe = normalize_recipe(deepcopy(recipe_obj), caption)
+    if not isinstance(display_recipe, dict):
+        return display_recipe
+
+    blocks: List[Dict[str, Any]] = [display_recipe]
+    for lang in LANG_KEYS:
+        lang_block = display_recipe.get(lang)
+        if isinstance(lang_block, dict):
+            blocks.append(lang_block)
+
+    for block in blocks:
+        _normalize_block_ingredient_units(block, measurement_system)
+
+    _restore_top_level_recipe_fallbacks(display_recipe)
+
+    return display_recipe

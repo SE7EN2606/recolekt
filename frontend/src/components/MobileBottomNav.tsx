@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Plus, Network } from 'lucide-react';
+import { ChefHat, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface MobileBottomNavProps {
@@ -8,7 +8,7 @@ interface MobileBottomNavProps {
 }
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) => {
-  const { t } = useTranslation(['modals', 'sidebar']);
+  const { t } = useTranslation(['modals', 'sidebar', 'gallery']);
 
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 transition-transform duration-300">
@@ -52,7 +52,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
                 <path d="M10 13l5 3-5 3v-6z" fill={isActive ? 'currentColor' : 'none'} />
               </svg>
               <span className="text-[11px] font-medium tracking-wide mt-0.5">
-                {t('modals:collections', 'Collections')}
+                {t('gallery:gallery', 'Gallery')}
               </span>
             </>
           )}
@@ -80,9 +80,9 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
           </button>
         </div>
 
-        {/* Right: Organizer */}
+        {/* Right: Cookbook */}
         <NavLink
-          to="/grocery-list"
+          to="/cookbook"
           className={({ isActive }) =>
             `flex flex-col items-center justify-center gap-1 w-[84px] py-1.5 rounded-3xl transition-all duration-300 ${
               isActive 
@@ -93,13 +93,13 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
         >
           {({ isActive }) => (
             <>
-              <Network 
+              <ChefHat
                 size={24} 
                 strokeWidth={2.2} 
                 className={`transition-transform duration-300 ${isActive ? 'scale-110' : ''}`}
               />
               <span className="text-[11px] font-medium tracking-wide mt-0.5">
-                {t('sidebar:groceryList', 'Grocery')}
+                Cookbook
               </span>
             </>
           )}

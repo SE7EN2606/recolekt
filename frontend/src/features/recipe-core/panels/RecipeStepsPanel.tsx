@@ -1,0 +1,104 @@
+import React from 'react';
+import { RawInstruction } from '../types';
+import { convertTemperatureInText } from '../../../utils/conversionUtils';
+
+type InstructionSection = {
+  title?: string;
+  instructions: RawInstruction[];
+};
+
+type Props = {
+  instructionSections: InstructionSection[];
+  checkedSteps: Set<number>;
+  toggleStep: (index: number) => void;
+  temperatureUnit?: 'celsius' | 'fahrenheit';
+};
+
+function getInstructionText(raw: RawInstruction): string {
+  if (typeof raw === 'string') return raw.trim();
+
+  const obj = raw as any;
+
+  return String(
+    obj?.instruction ??
+    obj?.text ??
+    obj?.step ??
+    obj?.description ??
+    obj?.body ??
+    ''
+  ).trim();
+}
+
+const RecipeStepsPanel: React.FC<Props> = ({
+  instructionSections,
+  checkedSteps,
+  toggleStep,
+  temperatureUnit = 'celsius',
+}) => {
+  let globalIndex = 0;
+
+  return (
+    <div className="space-y-5">
+      {instructionSections.map((section, sectionIndex) => {
+        const visibleInstructions = (section.instructions || [])
+          .map((instruction) => ({
+            raw: instruction,
+            text: convertTemperatureInText(getInstructionText(instruction), temperatureUnit),
+          }))
+          .filter((item) => item.text.length > 0);
+
+        if (visibleInstructions.length === 0) return null;
+
+        return (
+          <div key={sectionIndex} className="space-y-5">
+            {section.title && (
+              <h4 className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+                {section.title}
+              </h4>
+            )}
+
+            <div className="space-y-5">
+              {visibleInstructions.map(({ text }) => {
+                const stepIndex = globalIndex++;
+                const checked = checkedSteps.has(stepIndex);
+
+                return (
+                  <button
+                    key={`${sectionIndex}-${stepIndex}-${text.slice(0, 24)}`}
+                    type="button"
+                    onClick={() => toggleStep(stepIndex)}
+                    className="flex w-full items-start gap-3.5 text-left cursor-pointer select-none transition-all group"
+                  >
+                    <div
+                      className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all border-2 ${
+                        checked
+                          ? 'bg-primary-600 border-primary-600 text-white'
+                          : 'bg-white border-primary-200 group-hover:border-primary-400'
+                      }`}
+                    >
+                      <span className={`text-[11px] font-black ${checked ? 'text-white' : 'text-primary-600'}`}>
+                        {stepIndex + 1}
+                      </span>
+                    </div>
+
+                    <div className="flex-1 pt-[4px]">
+                      <p
+                        className={`text-[13px] leading-relaxed font-medium ${
+                          checked ? 'text-gray-400 line-through' : 'text-gray-700'
+                        }`}
+                      >
+                        {text}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+export default RecipeStepsPanel;

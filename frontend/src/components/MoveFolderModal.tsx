@@ -1,6 +1,5 @@
-// frontend/src/components/MoveFolderModal.tsx
 import React, { useState, useEffect } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, LayoutGrid, FolderOpen } from 'lucide-react';
 
 interface MoveFolderModalProps {
   isOpen:     boolean;
@@ -22,11 +21,6 @@ export const MoveFolderModal: React.FC<MoveFolderModalProps> = ({
   useEffect(() => {
     if (isOpen) { setSelectedParent(null); setStep('pick'); }
   }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
   const flattenFolders = (list: any[], parentId: string | null = null): any[] => {
     const result: any[] = [];
     for (const f of list) {
@@ -49,22 +43,21 @@ export const MoveFolderModal: React.FC<MoveFolderModalProps> = ({
     return result;
   };
 
-  const descendantIds  = getDescendantIds(folderId);
-  const invalidIds     = new Set([folderId, ...descendantIds]);
-  const allEligible    = flatFolders.filter((f: any) => !invalidIds.has(f.id));
+  const descendantIds   = getDescendantIds(folderId);
+  const invalidIds      = new Set([folderId, ...descendantIds]);
+  const allEligible     = flatFolders.filter((f: any) => !invalidIds.has(f.id));
 
-  const currentFolder  = flatFolders.find((f: any) => f.id === folderId);
+  const currentFolder   = flatFolders.find((f: any) => f.id === folderId);
   const currentParentId = currentFolder?.parent_id || null;
-  const hasSubFolders  = flatFolders.some((f: any) => f.parent_id === folderId);
+  const hasSubFolders   = flatFolders.some((f: any) => f.parent_id === folderId);
 
   const selectedName = selectedParent === null
-    ? 'Root (Main Library)'
+    ? 'My Library'
     : flatFolders.find((f: any) => f.id === selectedParent)?.name || '';
 
   const targetHasChildren = selectedParent !== null
     && flatFolders.some((f: any) => f.parent_id === selectedParent && !invalidIds.has(f.id));
 
-  // Restore selectedParent to the current location on first open
   useEffect(() => {
     if (isOpen && !initialised) { setSelectedParent(currentParentId); setInitialised(true); }
     if (!isOpen) setInitialised(false);
@@ -75,7 +68,7 @@ export const MoveFolderModal: React.FC<MoveFolderModalProps> = ({
     try { await onMove(selectedParent); onClose(); } finally { setMoving(false); }
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -90,24 +83,18 @@ export const MoveFolderModal: React.FC<MoveFolderModalProps> = ({
               <span className="font-semibold text-gray-700">"{folderName}"</span> live?
             </p>
 
-            <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto pr-1">
-              {/* Root option */}
+            <div className="flex flex-col gap-1 max-h-72 overflow-y-auto pr-1">
               <button
                 onClick={() => setSelectedParent(null)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm transition-all ${
+                className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border text-sm transition-all ${
                   selectedParent === null
                     ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
                     : 'border-gray-100 bg-gray-50 text-gray-700 hover:bg-gray-100'
                 }`}
               >
-                <span className="text-base">🏠</span>
-                <div className="flex-1 text-left">
-                  <p className="font-medium">Root — Main Library</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Make this a top-level collection</p>
-                </div>
-                {selectedParent === null && (
-                  <div className="w-2 h-2 rounded-full bg-primary-500" />
-                )}
+                <LayoutGrid size={15} className={selectedParent === null ? 'text-primary-500 shrink-0' : 'text-gray-400 shrink-0'} />
+                <span className="flex-1 text-left font-medium">My Library</span>
+                {selectedParent === null && <div className="w-2 h-2 rounded-full bg-primary-500 shrink-0" />}
               </button>
 
               {allEligible.length > 0 && (
@@ -127,26 +114,24 @@ export const MoveFolderModal: React.FC<MoveFolderModalProps> = ({
                   <button
                     key={f.id}
                     onClick={() => setSelectedParent(f.id)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm transition-all ${
+                    className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm transition-all ${
                       isSelected
                         ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
                         : 'border-gray-100 bg-gray-50 text-gray-700 hover:bg-gray-100'
                     } ${isSubFolder ? 'ml-4' : ''}`}
                   >
                     {isSubFolder && (
-                      <ChevronRight size={12} className="text-gray-300 flex-shrink-0 -ml-1" />
+                      <ChevronRight size={12} className="text-gray-300 shrink-0 -ml-1" />
                     )}
-                    <span className="text-base">📁</span>
-                    <div className="flex-1 text-left">
-                      <p className="font-medium">{f.name}</p>
-                      {isSubFolder && parentName && (
-                        <p className="text-xs text-gray-400 mt-0.5">inside {parentName}</p>
-                      )}
-                    </div>
+                    <FolderOpen size={14} className={isSelected ? 'text-primary-500 shrink-0' : 'text-gray-400 shrink-0'} />
+                    <span className="flex-1 text-left font-medium truncate">{f.name}</span>
+                    {isSubFolder && parentName && (
+                      <span className="text-xs text-gray-400 shrink-0">in {parentName}</span>
+                    )}
                     {isCurrent && !isSelected && (
-                      <span className="text-xs text-gray-400 italic">current</span>
+                      <span className="text-xs text-gray-400 italic shrink-0">current</span>
                     )}
-                    {isSelected && <div className="w-2 h-2 rounded-full bg-primary-500" />}
+                    {isSelected && <div className="w-2 h-2 rounded-full bg-primary-500 shrink-0" />}
                   </button>
                 );
               })}
@@ -158,7 +143,6 @@ export const MoveFolderModal: React.FC<MoveFolderModalProps> = ({
               )}
             </div>
 
-            {/* Warnings */}
             {targetHasChildren && selectedParent !== null && selectedParent !== currentParentId && (
               <div className="mt-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
                 ⚠️ This collection already has sub-collections. Yours will be nested alongside them.
