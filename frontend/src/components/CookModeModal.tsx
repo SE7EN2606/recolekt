@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, Check, ChefHat, Minus, Plus, X, HelpCircle } from 'lucide-react';
+import { ArrowLeft, Check, CheckCheck, ChefHat, Minus, Plus, X, HelpCircle } from 'lucide-react';
 import { useTimer } from '../context/TimerContext';
 import FloatingTimer from './FloatingTimer';
 import { formatQty } from '../features/recipe-core/recipePayload';
@@ -60,6 +60,7 @@ interface CookModeModalProps {
   rounding?: 'rounded' | 'exact';
   onClose: () => void;
   onIngredientToggle?: (ingredientId: string) => void;
+  onIngredientSelectAll?: (ingredientIds: string[]) => void;
   onProgressChange?: (stepIndex: number) => void;
   onStepComplete?: (stepIndex: number) => void;
   onComplete?: () => void;
@@ -249,7 +250,7 @@ const previewWords = (text: string, max = 14): string => {
 // RICH INSTRUCTION with bold numbers + tappable glossary terms
 // ─────────────────────────────────────────────────────────────────────────────
 
-const RichInstruction: React.FC<{ text: string }> = ({ text }) => {
+const RichInstruction: React.FC<{ text: string; tone?: 'light' | 'dark' }> = ({ text, tone = 'light' }) => {
   const [tip, setTip] = React.useState<{ term: string; def: string } | null>(null);
 
   React.useEffect(() => {
@@ -291,20 +292,19 @@ const RichInstruction: React.FC<{ text: string }> = ({ text }) => {
 
   return (
     <div className="w-full">
-      {/* Instruction text — capped at 28px max */}
       <p
-        className="text-center font-black leading-[1.28] tracking-[-0.02em] text-gray-950"
-        style={{ fontSize: 'clamp(20px, 2vw, 28px)' }}
+        className={`font-black leading-[1.22] ${tone === 'dark' ? 'text-left text-white' : 'text-center text-gray-950'}`}
+        style={{ fontSize: 'clamp(22px, 3vw, 42px)' }}
       >
         {segments.map((seg, i) => {
           if (seg.type === 'number') {
-            return <span key={i} className="text-primary-600">{seg.content}</span>;
+            return <span key={i} className={tone === 'dark' ? 'text-emerald-300' : 'text-primary-600'}>{seg.content}</span>;
           }
           if (seg.type === 'term' && seg.term) {
             return (
               <span
                 key={i}
-                className="underline decoration-dotted decoration-primary-400 cursor-pointer"
+                className={`cursor-pointer underline decoration-dotted ${tone === 'dark' ? 'decoration-emerald-300/70' : 'decoration-primary-400'}`}
                 style={{ textDecorationThickness: 2, textUnderlineOffset: 4 }}
                 onClick={() => setTip(tip?.term === seg.term ? null : { term: seg.term!, def: GLOSSARY[seg.term!] })}
               >
@@ -388,6 +388,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   rounding = 'rounded',
   onClose,
   onIngredientToggle,
+  onIngredientSelectAll,
   onProgressChange,
   onStepComplete,
   onComplete,
@@ -412,6 +413,11 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   const isLast = idx >= steps.length - 1;
 
   const stepIngs = React.useMemo(() => matchIngs(displayCur, ingredients), [displayCur, ingredients]);
+  const visibleStepIngredients = stepIngs.length > 0 ? stepIngs : ingredients.slice(0, 6);
+  const allIngredientIds = React.useMemo(
+    () => ingredients.map((ingredient, index) => ingId(ingredient, index)),
+    [ingredients],
+  );
   const checkedCount = React.useMemo(
     () => ingredients.filter((ingredient, index) => checkedIngredientIds.has(ingId(ingredient, index))).length,
     [checkedIngredientIds, ingredients],
@@ -423,6 +429,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
     [ingredientSections, ingredients],
   );
   const ingredientProgress = ingredients.length > 0 ? Math.round((checkedCount / ingredients.length) * 100) : 0;
+  const allIngredientsChecked = ingredients.length > 0 && checkedCount === ingredients.length;
   const stepProgress = steps.length > 0 ? Math.round(((idx + 1) / steps.length) * 100) : 0;
 
   React.useEffect(() => {
@@ -477,6 +484,10 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
     onServingScaleChange?.(Math.min(6, Math.max(0.5, nextScale)));
   };
 
+  const toggleAllIngredients = () => {
+    onIngredientSelectAll?.(allIngredientsChecked ? [] : allIngredientIds);
+  };
+
   const elapsed = Math.max(1, Math.round((Date.now() - started.current) / 60000));
 
   return createPortal(
@@ -517,17 +528,33 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
         <main className="flex-1 overflow-y-auto px-4 py-5 pb-28 md:px-7 md:py-8 md:pb-28">
           {phase === 'prep' && (
             <div className="relative mx-auto flex min-h-full w-full max-w-3xl flex-col gap-5 overflow-hidden">
-              <section className="rounded-[28px] border border-slate-700 bg-slate-900/80 p-5 text-center shadow-2xl shadow-black/20 md:p-7">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-300 ring-1 ring-emerald-300/20">
-                  <ChefHat size={28} aria-hidden="true" />
+              <section className="rounded-[24px] border border-slate-700 bg-slate-900/80 p-4 shadow-2xl shadow-black/20 md:p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-300 ring-1 ring-emerald-300/20">
+                      <ChefHat size={24} aria-hidden="true" />
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <h3 className="text-xl font-black tracking-tight text-white md:text-2xl">Prep & Ingredients</h3>
+                      <p className="mt-0.5 text-xs font-semibold leading-relaxed text-white/55">
+                        {checkedCount} of {ingredients.length} ready
+                      </p>
+                    </div>
+                  </div>
+                  {ingredients.length > 0 && onIngredientSelectAll && (
+                    <button
+                      type="button"
+                      onClick={toggleAllIngredients}
+                      className="inline-flex h-10 shrink-0 items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-3 text-xs font-black text-white/85 transition-colors hover:bg-white/15"
+                    >
+                      <CheckCheck size={15} aria-hidden="true" />
+                      {allIngredientsChecked ? 'Clear all' : 'Select all'}
+                    </button>
+                  )}
                 </div>
-                <h3 className="mt-4 text-3xl font-black tracking-tight text-white md:text-4xl">Prep & Ingredients</h3>
-                <p className="mx-auto mt-2 max-w-md text-sm font-medium leading-relaxed text-white/60">
-                  Check off what is ready, then start the step-by-step flow.
-                </p>
 
                 {ingredients.length > 0 && (
-                  <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
+                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
                     <div className="h-full rounded-full bg-emerald-400 transition-all duration-300" style={{ width: `${ingredientProgress}%` }} />
                   </div>
                 )}
@@ -667,56 +694,75 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
                 </div>
               </section>
 
-              <section className="relative flex min-h-[320px] flex-1 flex-col justify-center overflow-hidden rounded-[32px] bg-white px-5 py-8 text-gray-950 shadow-2xl shadow-black/30 md:min-h-[390px] md:px-10 md:py-12">
+              <section className="relative flex flex-1 flex-col justify-center overflow-hidden rounded-[32px] border border-white/10 bg-slate-900 px-5 py-7 shadow-2xl shadow-black/30 md:px-10 md:py-10">
                 <ChefHat
-                  size={180}
-                  className="pointer-events-none absolute -right-8 bottom-2 text-slate-100"
+                  size={96}
+                  className="pointer-events-none absolute bottom-5 right-4 text-slate-700/55 sm:hidden"
                   strokeWidth={1.2}
                   aria-hidden="true"
                 />
-                <div className="relative z-10 flex min-h-[180px] items-center justify-center">
-                  <RichInstruction text={displayCur} />
+                <ChefHat
+                  size={168}
+                  className="pointer-events-none absolute bottom-7 right-5 hidden text-slate-700/60 sm:block"
+                  strokeWidth={1.2}
+                  aria-hidden="true"
+                />
+                <div className="relative z-10 max-w-[min(100%,42rem)] pr-0 sm:pr-40">
+                  <RichInstruction text={displayCur} tone="dark" />
                 </div>
 
-                {stepIngs.length > 0 && (
-                  <div className="relative z-10 mt-8 border-t border-gray-100 pt-5">
-                    <p className="mb-3 text-center text-[10px] font-black uppercase tracking-widest text-gray-400">For this step</p>
-                    <div className="flex flex-wrap justify-center gap-2">
-                      {stepIngs.map((ingredient, index) => {
-                        const qty = formatIngredientQuantity(
-                          ingredient,
-                          servingScale,
-                          scaleQuantity,
-                          useMetric,
-                          recipeConversion,
-                          volumePreference,
-                          rounding
-                        );
-                        const quantityType = qty ? '' : quantityTypeLabel(ingredient);
-                        const emoji = ingEmoji(ingredient);
+                {(next || visibleStepIngredients.length > 0) && (
+                  <div className="relative z-10 mt-7 max-w-[min(100%,42rem)] border-t border-white/10 pt-5 pr-0 sm:pr-40">
+                    {next && (
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Up next</p>
+                        <p className="mt-2 text-base font-bold leading-snug text-slate-400 md:text-lg">
+                          {previewWords(displayNext, 18)}
+                        </p>
+                      </div>
+                    )}
 
-                        return (
-                          <span
-                            key={`${ingName(ingredient)}-${index}`}
-                            className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800"
-                          >
-                            {emoji && <span className="text-base leading-none">{emoji}</span>}
-                            {ingName(ingredient)}
-                            {(qty || quantityType) && <span className="text-emerald-600">{qty || quantityType}</span>}
-                          </span>
-                        );
-                      })}
-                    </div>
+                    {visibleStepIngredients.length > 0 && (
+                      <div className={next ? 'mt-5' : ''}>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                          {stepIngs.length > 0 ? 'Ingredients now' : 'Ingredients'}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {visibleStepIngredients.map((ingredient, index) => {
+                            const qty = formatIngredientQuantity(
+                              ingredient,
+                              servingScale,
+                              scaleQuantity,
+                              useMetric,
+                              recipeConversion,
+                              volumePreference,
+                              rounding
+                            );
+                            const quantityType = qty ? '' : quantityTypeLabel(ingredient);
+                            const emoji = ingEmoji(ingredient);
+
+                            return (
+                              <span
+                                key={`${ingName(ingredient)}-${index}`}
+                                className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/[0.07] px-3 py-2 text-xs font-black text-white/80"
+                              >
+                                {emoji && <span className="text-base leading-none">{emoji}</span>}
+                                <span className="min-w-0 truncate">{ingName(ingredient)}</span>
+                                {(qty || quantityType) && <span className="shrink-0 text-emerald-300">{qty || quantityType}</span>}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        {stepIngs.length === 0 && ingredients.length > visibleStepIngredients.length && (
+                          <p className="mt-2 text-xs font-bold text-slate-500">
+                            +{ingredients.length - visibleStepIngredients.length} more
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
-
-              {next && (
-                <section className="rounded-[24px] border border-white/10 bg-white/[0.06] px-4 py-3">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-white/35">Next</p>
-                  <p className="mt-1 text-sm font-semibold leading-snug text-white/70">{previewWords(displayNext, 18)}</p>
-                </section>
-              )}
             </div>
           )}
 
