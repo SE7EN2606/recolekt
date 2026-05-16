@@ -53,6 +53,13 @@ logger.info(
     "yes" if whatsapp_phone_number_id else "no",
     len(whatsapp_phone_number_id or ""),
 )
+whatsapp_env_key_markers = ("WHATSAPP", "RECOLEKT_WA", "WA_", "ACCESS_TOKEN")
+visible_whatsapp_env_keys = sorted(
+    (key, len(value or ""))
+    for key, value in os.environ.items()
+    if any(marker in key for marker in whatsapp_env_key_markers)
+)
+logger.info("WhatsApp env keys visible: %s", visible_whatsapp_env_keys)
 
 from fetcher_api import create_app
 
