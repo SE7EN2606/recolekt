@@ -46,15 +46,41 @@ export function RecipeNotesCard({
   onSave,
   onDelete,
   status,
+  focusSignal = 0,
 }: {
   note: string;
   onChange: (value: string) => void;
   onSave: () => void;
   onDelete: () => void;
   status: RecipeNoteStatus;
+  focusSignal?: number;
 }) {
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const [isWriting, setIsWriting] = React.useState(false);
   const hasNote = note.trim().length > 0;
+  const showEmptyState = !hasNote && !isWriting;
+
+  const activateNote = React.useCallback(() => {
+    setIsWriting(true);
+    window.requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+    });
+  }, []);
+
+  React.useEffect(() => {
+    if (focusSignal <= 0) return;
+    if (status === 'loading') return;
+
+    setIsWriting(true);
+    window.requestAnimationFrame(() => {
+      const container = containerRef.current;
+      if (!container || container.getClientRects().length === 0) return;
+
+      container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      textareaRef.current?.focus();
+    });
+  }, [focusSignal, status]);
 
   if (status === 'loading') {
     return (
@@ -81,7 +107,7 @@ export function RecipeNotesCard({
             : 'Saved automatically';
 
   return (
-    <div id="recipe-notes" className="scroll-mt-24 rounded-[24px] border border-amber-100/80 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
+    <div ref={containerRef} id="recipe-notes" className="scroll-mt-24 rounded-[24px] border border-amber-100/80 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
       <div className="flex items-center gap-2 mb-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
           <StickyNote size={16} aria-hidden="true" />
@@ -93,7 +119,7 @@ export function RecipeNotesCard({
           <div className="text-xs font-medium text-gray-400">Your margin note for next time</div>
         </div>
       </div>
-      {!hasNote && (
+      {showEmptyState && (
         <div className="mb-3 rounded-2xl border border-dashed border-amber-200 bg-amber-50/40 px-3 py-3">
           <div className="text-sm font-black text-gray-800">No personal notes yet</div>
           <div className="mt-1 text-xs font-medium leading-relaxed text-gray-500">
@@ -101,7 +127,7 @@ export function RecipeNotesCard({
           </div>
           <button
             type="button"
-            onClick={() => textareaRef.current?.focus()}
+            onClick={activateNote}
             className="mt-2 rounded-xl bg-white px-3 py-1.5 text-[11px] font-black text-amber-800 ring-1 ring-amber-100 transition-colors hover:bg-amber-50"
           >
             Add note
@@ -112,6 +138,7 @@ export function RecipeNotesCard({
         ref={textareaRef}
         value={note}
         onChange={(event) => onChange(event.target.value)}
+        onFocus={() => setIsWriting(true)}
         placeholder="Substitutions, timing tweaks, mistakes, serving feedback..."
         className="min-h-[132px] w-full resize-none rounded-2xl border border-amber-100 bg-amber-50/35 px-3 py-3 text-sm font-medium leading-relaxed text-gray-800 placeholder:text-amber-700/45 focus:border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-100"
       />
@@ -219,6 +246,7 @@ export function RecipeMobileStateSection({
   onNoteChange,
   onNoteSave,
   onNoteDelete,
+  noteFocusSignal,
   noteStatus,
   cookStatus,
   cookStatusLoading = false,
@@ -232,6 +260,7 @@ export function RecipeMobileStateSection({
   onNoteChange: (value: string) => void;
   onNoteSave: () => void;
   onNoteDelete: () => void;
+  noteFocusSignal?: number;
   noteStatus: RecipeNoteStatus;
   cookStatus: LocalCookStatus;
   cookStatusLoading?: boolean;
@@ -254,6 +283,7 @@ export function RecipeMobileStateSection({
         onChange={onNoteChange}
         onSave={onNoteSave}
         onDelete={onNoteDelete}
+        focusSignal={noteFocusSignal}
         status={noteStatus}
       />
       {originalUrl && (
@@ -321,6 +351,7 @@ export function RecipeCookbookRail({
   onNoteChange,
   onNoteSave,
   onNoteDelete,
+  noteFocusSignal,
   noteStatus,
   cookStatus,
   cookStatusLoading = false,
@@ -344,6 +375,7 @@ export function RecipeCookbookRail({
   onNoteChange: (value: string) => void;
   onNoteSave: () => void;
   onNoteDelete: () => void;
+  noteFocusSignal?: number;
   noteStatus: RecipeNoteStatus;
   cookStatus: LocalCookStatus;
   cookStatusLoading?: boolean;
@@ -466,6 +498,7 @@ export function RecipeCookbookRail({
         onChange={onNoteChange}
         onSave={onNoteSave}
         onDelete={onNoteDelete}
+        focusSignal={noteFocusSignal}
         status={noteStatus}
       />
 

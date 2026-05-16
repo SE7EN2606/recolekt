@@ -238,6 +238,7 @@ export const VideoDetail: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedVideo, setEditedVideo] = useState<any>(null);
   const [servingScale, setServingScale] = useState(1);
+  const [noteFocusSignal, setNoteFocusSignal] = useState(0);
   const richRecipeRef = useRef<any>(null);
   const [useMetric, setUseMetric] = useState(() => {
     const p = readShoppingPreferences();
@@ -500,14 +501,7 @@ export const VideoDetail: React.FC = () => {
   } = useRecipeNotes(currentVideoId, showRecipeCard);
 
   const openRecipeNotes = useCallback(() => {
-    window.setTimeout(() => {
-      const target = document.getElementById('recipe-notes');
-      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      const textarea = target?.querySelector('textarea');
-      if (textarea instanceof HTMLTextAreaElement) {
-        textarea.focus();
-      }
-    }, 80);
+    setNoteFocusSignal((value) => value + 1);
   }, []);
 
   const {
@@ -873,6 +867,7 @@ export const VideoDetail: React.FC = () => {
               onNoteChange={setRecipeNote}
               onNoteSave={saveRecipeNote}
               onNoteDelete={deleteRecipeNote}
+              noteFocusSignal={noteFocusSignal}
               noteStatus={recipeNoteStatus}
               cookStatus={cookStatus}
               cookStatusLoading={cookStatusLoading}
@@ -974,6 +969,7 @@ export const VideoDetail: React.FC = () => {
             onNoteChange={setRecipeNote}
             onNoteSave={saveRecipeNote}
             onNoteDelete={deleteRecipeNote}
+            noteFocusSignal={noteFocusSignal}
             noteStatus={recipeNoteStatus}
             cookStatus={cookStatus}
             cookStatusLoading={cookStatusLoading}

@@ -161,6 +161,42 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
         return False
 
 
+
+# ─────────────────────────────────────────────
+# WHATSAPP HELPERS
+# ─────────────────────────────────────────────
+
+def _send_wa_reply(to_number: str, text: str) -> bool:
+    # You will get these from the Meta Dashboard later
+    wa_token = os.getenv("WHATSAPP_ACCESS_TOKEN")
+    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+
+    if not wa_token or not phone_id:
+        logger.warning("⚠️ WhatsApp credentials not set")
+        return False
+
+    try:
+        resp = requests.post(
+            f"https://graph.facebook.com/v25.0/{phone_id}/messages",
+            headers={"Authorization": f"Bearer {wa_token}"},
+            json={
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": to_number,
+                "type": "text",
+                "text": {"preview_url": False, "body": text}
+            }
+        )
+        result = resp.json()
+        if "error" in result:
+            logger.error(f"❌ WA reply failed: {result['error']}")
+            return False
+        return True
+    except Exception as e:
+        logger.error(f"❌ _send_wa_reply crash: {e}")
+        return False
+
+
 # ─────────────────────────────────────────────
 # INSTAGRAM HELPERS
 # ─────────────────────────────────────────────
@@ -191,6 +227,106 @@ def _send_ig_reply(recipient_id: str, text: str) -> bool:
     except Exception as e:
         logger.error(f"❌ _send_ig_reply crash: {e}")
         return False
+
+
+# ─────────────────────────────────────────────
+# WHATSAPP WEBHOOK
+# ─────────────────────────────────────────────
+
+@auth_bp.route("/webhook/whatsapp", methods=["GET", "POST"])
+def whatsapp_webhook():
+    # ── 1. Meta Verification ──
+    if request.method == "GET":
+        mode = request.args.get("hub.mode")
+        token = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+        if mode == "subscribe" and token == os.getenv("WEBHOOK_VERIFY_TOKEN", "recolekt-titanium-secret-2026"):
+            return challenge, 200
+        return "Forbidden", 403
+
+    # ── 2. Handle Incoming Messages ──
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        
+        try:
+            for entry in data.get("entry", []):
+                for change in entry.get("changes", []):
+                    value = change.get("value", {})
+                    
+                    # Ignore status updates (delivered, read, etc)
+                    if "messages" not in value:
+                        continue
+                        
+                    message = value["messages"][0]
+                    sender_number = message.get("from") # This is their WA phone number
+                    
+                    # Only process text messages (which includes URLs)
+                    if message.get("type") != "text":
+                        continue
+                        
+                    text = message.get("text", {}).get("body", "").strip()
+                    if not sender_number or not text:
+                        continue
+
+                    # Deduplication guard (WA sometimes sends webhooks twice)
+                    msg_id = message.get("id")
+                    if msg_id in PROCESSED_WEBHOOKS:
+                        continue
+                    PROCESSED_WEBHOOKS[msg_id] = time.time()
+
+                    logger.info(f"🟢 WA Message from {sender_number}: {text}")
+
+                    # ── CASE A: 6-Digit PIN Linking ──
+                    if text.isdigit() and len(text) == 6:
+                        pin_row = fetch_one(
+                            "SELECT user_id FROM link_pins WHERE pin = %s AND expires_at > NOW()",
+                            (text,)
+                        )
+                        if pin_row:
+                            linked_user_id = pin_row["user_id"] if isinstance(pin_row, dict) else pin_row[0]
+                            # Unlink old WA numbers (like we fixed for IG)
+                            execute("UPDATE users SET whatsapp_number = NULL WHERE whatsapp_number = %s", (sender_number,), commit=True)
+                            # Link to new user
+                            execute("UPDATE users SET whatsapp_number = %s WHERE user_id = %s", (sender_number, linked_user_id), commit=True)
+                            execute("DELETE FROM link_pins WHERE pin = %s", (text,), commit=True)
+                            
+                            _send_wa_reply(sender_number, "✅ WhatsApp linked to Recolekt! Send me any link to save it.")
+                        else:
+                            _send_wa_reply(sender_number, "❌ Invalid or expired PIN.")
+                        continue
+
+                    # ── CASE B: URL Processing ──
+                    # Check if user is linked
+                    user_row = fetch_one("SELECT user_id FROM users WHERE whatsapp_number = %s", (sender_number,))
+                    if user_row:
+                        linked_user_id = user_row["user_id"] if isinstance(user_row, dict) else user_row[0]
+                        
+                        # Very basic check: Does the message contain "http"?
+                        if "http" in text:
+                            # Save to inbox (Note: platform is now 'whatsapp')
+                            execute(
+                                "INSERT INTO inbox_items (user_id, platform, sender_ig_id, raw_url, status) "
+                                "VALUES (%s, 'whatsapp', %s, %s, 'PENDING')",
+                                (linked_user_id, sender_number, text),
+                                commit=True
+                            )
+                            _send_wa_reply(sender_number, "✅ Link received! Analyzing and saving to your library...")
+                            
+                            # Wake up the scraper!
+                            base_url = request.host_url.rstrip("/")
+                            threading.Thread(
+                                target=_trigger_summarize_job, 
+                                args=(base_url, text, linked_user_id)
+                            ).start()
+                        else:
+                            _send_wa_reply(sender_number, "I didn't detect a link in that message. Please send a valid URL starting with http/https!")
+                    else:
+                        _send_wa_reply(sender_number, "👋 Please link your WhatsApp in the Recolekt app first.")
+
+        except Exception as e:
+            logger.error(f"❌ WA Webhook error: {e}", exc_info=True)
+
+        return "EVENT_RECEIVED", 200
 
 
 # ─────────────────────────────────────────────

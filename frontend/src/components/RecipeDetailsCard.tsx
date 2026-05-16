@@ -79,6 +79,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     completedStepIds,
     setCurrentStepIndex,
     toggleCheckedIngredientId,
+    setCheckedIngredientIds,
     toggleCompletedStepId,
     markCompletedStepId,
     completeSession,
@@ -501,6 +502,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           rounding={rounding}
           onClose={() => setIsCookModeOpen(false)}
           onIngredientToggle={toggleCheckedIngredientId}
+          onIngredientSelectAll={setCheckedIngredientIds}
           onProgressChange={setCurrentStepIndex}
           onStepComplete={markCompletedStepId}
           onComplete={handleCookModeComplete}

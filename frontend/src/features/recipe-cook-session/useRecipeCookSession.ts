@@ -32,6 +32,7 @@ export function useRecipeCookSession(
   status: CookSessionStatus;
   setCurrentStepIndex: (stepIndex: number) => void;
   toggleCheckedIngredientId: (id: string) => void;
+  setCheckedIngredientIds: (ids: string[]) => void;
   toggleCompletedStepId: (stepIndex: number) => void;
   markCompletedStepId: (stepIndex: number) => void;
   completeSession: () => void;
@@ -161,6 +162,14 @@ export function useRecipeCookSession(
     });
   };
 
+  const setCheckedIngredientIds = (ids: string[]) => {
+    updateSession((current) => ({
+      ...current,
+      checkedIngredientIds: [...new Set(ids.map((id) => String(id)))],
+      status: 'active',
+    }));
+  };
+
   const toggleCompletedStepId = (stepIndex: number) => {
     updateSession((current) => {
       const ids = toSet(current.completedStepIds);
@@ -211,6 +220,7 @@ export function useRecipeCookSession(
     status,
     setCurrentStepIndex,
     toggleCheckedIngredientId,
+    setCheckedIngredientIds,
     toggleCompletedStepId,
     markCompletedStepId,
     completeSession,
