@@ -240,7 +240,9 @@ def whatsapp_webhook():
         mode = request.args.get("hub.mode")
         token = request.args.get("hub.verify_token")
         challenge = request.args.get("hub.challenge")
-        if mode == "subscribe" and token == os.getenv("WEBHOOK_VERIFY_TOKEN", "recolekt-titanium-secret-2026"):
+        
+        # 🔥 HARDCODED FOR META REVIEW: Bypass Railway variables entirely
+        if mode == "subscribe" and token == "recolekt-titanium-secret-2026":
             return challenge, 200
         return "Forbidden", 403
 
