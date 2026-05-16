@@ -297,7 +297,7 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
 
 def _send_wa_reply(to_number: str, text: str) -> bool:
     # You will get these from the Meta Dashboard later
-    wa_token = os.getenv("WHATSAPP_ACCESS_TOKEN")
+    wa_token = os.getenv("WHATSAPP_ACCESS_TOKEN") or os.getenv("RECOLEKT_WA_ACCESS_TOKEN")
     phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 
     if not wa_token or not phone_id:
