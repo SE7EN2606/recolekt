@@ -2,6 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle, Copy, Loader2, MessageCircle, RefreshCw, XCircle } from 'lucide-react';
 import { API_BASE } from '../utils/api';
 
+const RECOLEKT_WHATSAPP_DISPLAY = '+1 555 674 1760';
+const RECOLEKT_WHATSAPP_COPY = '+15556741760';
+const RECOLEKT_WHATSAPP_WA_ME = '15556741760';
+
 function joinUrl(base: string, path: string) {
   const b = String(base || '').replace(/\/+$/, '');
   const p = String(path || '').replace(/^\/+/, '');
@@ -20,7 +24,7 @@ export const WhatsAppLink: React.FC<WhatsAppLinkProps> = ({ onLinked, authToken 
   const [pin, setPin] = useState('');
   const [expiresIn, setExpiresIn] = useState(900);
   const [copied, setCopied] = useState(false);
-  const [whatsappUrl, setWhatsappUrl] = useState('');
+  const [copiedNumber, setCopiedNumber] = useState(false);
 
   useEffect(() => {
     if (state !== 'waiting' || expiresIn <= 0) return;
@@ -70,7 +74,6 @@ export const WhatsAppLink: React.FC<WhatsAppLinkProps> = ({ onLinked, authToken 
       if (data.pin) {
         setPin(data.pin);
         setExpiresIn(data.expires_in || 900);
-        setWhatsappUrl(data.whatsapp_url || '');
         setState('waiting');
       } else {
         setState('error');
@@ -90,11 +93,19 @@ export const WhatsAppLink: React.FC<WhatsAppLinkProps> = ({ onLinked, authToken 
     }
   };
 
+  const copyWhatsAppNumber = async () => {
+    try {
+      await navigator.clipboard.writeText(RECOLEKT_WHATSAPP_COPY);
+      setCopiedNumber(true);
+      setTimeout(() => setCopiedNumber(false), 2000);
+    } catch {
+      // Clipboard permissions can fail; the visible number remains copyable.
+    }
+  };
+
   const openWhatsApp = () => {
     navigator.clipboard.writeText(pin).catch(() => {});
-    if (whatsappUrl) {
-      window.open(whatsappUrl, '_blank');
-    }
+    window.open(`https://wa.me/${RECOLEKT_WHATSAPP_WA_ME}?text=${encodeURIComponent(pin)}`, '_blank');
   };
 
   const formatTime = (s: number) => {
@@ -135,18 +146,26 @@ export const WhatsAppLink: React.FC<WhatsAppLinkProps> = ({ onLinked, authToken 
           <p className="text-gray-500 text-sm">Follow these steps to link your WhatsApp</p>
         </div>
 
+        <div className="w-full rounded-xl border border-green-100 bg-green-50 px-4 py-3 text-sm font-bold text-green-700">
+          Message Recolekt on WhatsApp: {RECOLEKT_WHATSAPP_DISPLAY}
+        </div>
+
         <ol className="text-sm text-gray-600 text-left space-y-2 w-full">
           <li className="flex gap-3">
             <span className="w-5 h-5 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">1</span>
-            <span>Copy the PIN below and open WhatsApp</span>
+            <span>Copy your PIN below.</span>
           </li>
           <li className="flex gap-3">
             <span className="w-5 h-5 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">2</span>
-            <span>Send the PIN to Recolekt on WhatsApp</span>
+            <span>Open WhatsApp and start a chat with {RECOLEKT_WHATSAPP_DISPLAY}.</span>
           </li>
           <li className="flex gap-3">
             <span className="w-5 h-5 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">3</span>
-            <span>Come back here — we'll detect it automatically</span>
+            <span>Send only this PIN: {pin}</span>
+          </li>
+          <li className="flex gap-3">
+            <span className="w-5 h-5 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">4</span>
+            <span>Come back here — we'll detect it automatically.</span>
           </li>
         </ol>
 
@@ -156,6 +175,13 @@ export const WhatsAppLink: React.FC<WhatsAppLinkProps> = ({ onLinked, authToken 
             {pin}
           </span>
           <span className="text-xs text-gray-400">Expires in {formatTime(expiresIn)}</span>
+        </div>
+
+        <div className="w-full bg-white border border-gray-200 rounded-xl p-4 text-left">
+          <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">
+            Message to send
+          </label>
+          <div className="font-mono text-lg font-black text-gray-900 break-all">{pin}</div>
         </div>
 
         <div className="flex flex-col gap-2 w-full">
@@ -173,7 +199,18 @@ export const WhatsAppLink: React.FC<WhatsAppLinkProps> = ({ onLinked, authToken 
             {copied ? <CheckCircle size={16} className="text-green-500" /> : <Copy size={16} />}
             {copied ? 'Copied!' : 'Copy PIN only'}
           </button>
+          <button
+            onClick={copyWhatsAppNumber}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-colors"
+          >
+            {copiedNumber ? <CheckCircle size={16} className="text-green-500" /> : <Copy size={16} />}
+            {copiedNumber ? 'Number copied!' : 'Copy WhatsApp number'}
+          </button>
         </div>
+
+        <p className="text-xs text-gray-400 leading-relaxed">
+          If WhatsApp does not open automatically, open WhatsApp manually and send the PIN to {RECOLEKT_WHATSAPP_DISPLAY}.
+        </p>
 
         <div className="flex items-center gap-2 text-xs text-gray-400">
           <Loader2 size={14} className="animate-spin" />
