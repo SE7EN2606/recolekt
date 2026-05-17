@@ -29,6 +29,19 @@ APP_URL = os.getenv("APP_URL", "https://recolekt.app")
 PROCESSED_WEBHOOKS = {}
 ALREADY_SAVED_REPLY = "✅ Already saved — this video is already in your Recolekt library."
 
+def _ensure_whatsapp_number_column() -> None:
+    execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number varchar", commit=True)
+
+
+def _get_recolekt_whatsapp_number() -> str:
+    return (
+        os.getenv("RECOLEKT_WHATSAPP_NUMBER")
+        or os.getenv("WHATSAPP_PUBLIC_NUMBER")
+        or os.getenv("WHATSAPP_BUSINESS_NUMBER")
+        or ""
+    ).strip()
+
+
 def get_signing_key():
     return os.getenv("SECRET_KEY", "recolekt-titanium-secret-2026")
 
@@ -428,8 +441,9 @@ def whatsapp_webhook():
 
                     # ── CASE A: 6-Digit PIN Linking ──
                     if text.isdigit() and len(text) == 6:
+                        _ensure_whatsapp_number_column()
                         pin_row = fetch_one(
-                            "SELECT user_id FROM link_pins WHERE pin = %s AND expires_at > NOW()",
+                            "SELECT user_id FROM link_pins WHERE pin = %s AND platform = 'whatsapp' AND expires_at > NOW()",
                             (text,)
                         )
                         if pin_row:
@@ -440,14 +454,14 @@ def whatsapp_webhook():
                             execute("UPDATE users SET whatsapp_number = %s WHERE user_id = %s", (sender_number, linked_user_id), commit=True)
                             execute("DELETE FROM link_pins WHERE pin = %s", (text,), commit=True)
                             
-                            _send_wa_reply(sender_number, "✅ WhatsApp linked to Recolekt! Send me any link to save it.")
+                            _send_wa_reply(sender_number, "✅ WhatsApp linked — you can now send Recolekt Instagram links here.")
                         else:
                             _send_wa_reply(sender_number, "❌ Invalid or expired PIN.")
                         continue
 
                     # ── CASE B: URL Processing ──
                     # Ensure production DB has WhatsApp linking column before lookup
-                    execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number varchar", commit=True)
+                    _ensure_whatsapp_number_column()
 
                     # Check if user is linked
                     user_row = fetch_one("SELECT user_id FROM users WHERE whatsapp_number = %s", (sender_number,))
@@ -796,6 +810,83 @@ def instagram_unlink():
         commit=True
     )
     logger.info(f"🔓 Unlinked Instagram for user {user_id}")
+    return jsonify({"unlinked": True}), 200
+
+
+@auth_bp.route("/whatsapp/generate-pin", methods=["POST", "OPTIONS"])
+def whatsapp_generate_pin():
+    if request.method == "OPTIONS":
+        return "", 200
+    try:
+        user_id = get_user_id_from_request()
+    except Exception:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    _ensure_whatsapp_number_column()
+    user = fetch_one("SELECT whatsapp_number FROM users WHERE user_id = %s", (user_id,))
+    if user and (user.get("whatsapp_number") if isinstance(user, dict) else user[0]):
+        return jsonify({"error": "WhatsApp already linked"}), 400
+
+    for _ in range(10):
+        pin = "".join(random.choices("0123456789", k=6))
+        existing = fetch_one("SELECT pin FROM link_pins WHERE pin = %s", (pin,))
+        if not existing:
+            break
+
+    expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+    execute(
+        "INSERT INTO link_pins (pin, user_id, platform, expires_at) VALUES (%s, %s, 'whatsapp', %s) "
+        "ON CONFLICT (pin) DO UPDATE SET user_id = EXCLUDED.user_id, platform = EXCLUDED.platform, expires_at = EXCLUDED.expires_at",
+        (pin, user_id, expires),
+        commit=True
+    )
+
+    whatsapp_number = _get_recolekt_whatsapp_number()
+    whatsapp_digits = re.sub(r"\D+", "", whatsapp_number)
+    whatsapp_url = f"https://wa.me/{whatsapp_digits}" if whatsapp_digits else ""
+    logger.info("🔑 WhatsApp PIN generated for user %s", user_id)
+    return jsonify({
+        "pin": pin,
+        "expires_in": 900,
+        "whatsapp_number": whatsapp_number,
+        "whatsapp_url": whatsapp_url,
+    }), 200
+
+
+@auth_bp.route("/whatsapp/link-status", methods=["GET", "OPTIONS"])
+def whatsapp_link_status():
+    if request.method == "OPTIONS":
+        return "", 200
+    try:
+        user_id = get_user_id_from_request()
+    except Exception:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    _ensure_whatsapp_number_column()
+    user = fetch_one("SELECT whatsapp_number FROM users WHERE user_id = %s", (user_id,))
+    if not user:
+        return jsonify({"linked": False}), 200
+
+    whatsapp_number = user.get("whatsapp_number") if isinstance(user, dict) else user[0]
+    return jsonify({"linked": bool(whatsapp_number), "whatsapp_number": whatsapp_number}), 200
+
+
+@auth_bp.route("/whatsapp/unlink", methods=["POST", "OPTIONS"])
+def whatsapp_unlink():
+    if request.method == "OPTIONS":
+        return "", 200
+    try:
+        user_id = get_user_id_from_request()
+    except Exception:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    _ensure_whatsapp_number_column()
+    execute(
+        "UPDATE users SET whatsapp_number = NULL WHERE user_id = %s",
+        (user_id,),
+        commit=True
+    )
+    logger.info(f"🔓 Unlinked WhatsApp for user {user_id}")
     return jsonify({"unlinked": True}), 200
 
 @auth_bp.route("/instagram/account-info", methods=["GET", "OPTIONS"])

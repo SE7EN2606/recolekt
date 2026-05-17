@@ -1,12 +1,13 @@
 import { API_BASE } from "../utils/api";
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Globe, Video, LogOut, HelpCircle, Info, Moon, Sun, Check, Zap, Infinity, ChartPie, Activity, AlertTriangle, BarChart3, Instagram, CheckCircle, Loader2, Unlink, Youtube, Smartphone, Facebook } from 'lucide-react';
+import { Globe, Video, LogOut, HelpCircle, Info, Moon, Sun, Check, Zap, Infinity, ChartPie, Activity, AlertTriangle, BarChart3, Instagram, CheckCircle, Loader2, Unlink, Youtube, Smartphone, Facebook, MessageCircle } from 'lucide-react';
 import { Button } from '../components/Button';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { InstagramLink } from '../components/InstagramLink'; 
+import { WhatsAppLink } from '../components/WhatsAppLink';
 
 interface MistralLimits {
   status: string;
@@ -39,6 +40,8 @@ export const AccountSettings: React.FC = () => {
   // ─── INSTAGRAM DROP BOX STATE ───
   const [igLinked, setIgLinked] = useState(false);
   const [igUnlinking, setIgUnlinking] = useState(false);
+  const [whatsAppLinked, setWhatsAppLinked] = useState(false);
+  const [whatsAppUnlinking, setWhatsAppUnlinking] = useState(false);
 
   // ─── DYNAMIC USAGE & PLAN STATE ───
   const isPro = false;
@@ -84,6 +87,15 @@ export const AccountSettings: React.FC = () => {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    if (!token) return;
+    fetch(`${API_BASE}/api/auth/whatsapp/link-status`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (d.linked) { setWhatsAppLinked(true); } })
+      .catch(() => {});
+  }, []);
+
   // ─── ACTIONS ───
   const unlinkInstagram = async () => {
     const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
@@ -93,6 +105,16 @@ export const AccountSettings: React.FC = () => {
       setIgLinked(false);
     } catch {}
     setIgUnlinking(false);
+  };
+
+  const unlinkWhatsApp = async () => {
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    setWhatsAppUnlinking(true);
+    try {
+      await fetch(`${API_BASE}/api/auth/whatsapp/unlink`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      setWhatsAppLinked(false);
+    } catch {}
+    setWhatsAppUnlinking(false);
   };
 
   const handleLogout = async () => {
@@ -317,6 +339,49 @@ export const AccountSettings: React.FC = () => {
               <InstagramLink 
                 authToken={localStorage.getItem('auth_token') || localStorage.getItem('token') || ''} 
                 onLinked={() => setIgLinked(true)} 
+              />
+            </div>
+          )}
+        </div>
+
+        {/* WhatsApp Drop Box */}
+        <div className="bg-white rounded-3xl shadow-sm p-6 md:p-8 border border-gray-100">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-green-500 rounded-2xl flex items-center justify-center shadow-lg shadow-green-500/20">
+                <MessageCircle size={20} className="text-white" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-gray-900">WhatsApp Drop Box</h3>
+                <p className="text-sm text-gray-400">Save reels by sending links to Recolekt on WhatsApp</p>
+              </div>
+            </div>
+            
+            {whatsAppLinked && (
+              <button
+                onClick={unlinkWhatsApp}
+                disabled={whatsAppUnlinking}
+                className="flex items-center gap-2 px-4 py-2 border border-red-200 text-red-500 hover:bg-red-50 font-bold rounded-xl text-sm transition-colors disabled:opacity-50"
+              >
+                {whatsAppUnlinking ? <Loader2 size={16} className="animate-spin" /> : <Unlink size={16} />}
+                {whatsAppUnlinking ? 'Disconnecting...' : 'Disconnect'}
+              </button>
+            )}
+          </div>
+
+          {whatsAppLinked ? (
+            <div className="flex items-start gap-3 p-4 bg-green-50 rounded-2xl border border-green-100">
+              <CheckCircle size={18} className="text-green-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-green-800">WhatsApp linked!</p>
+                <p className="text-xs text-green-600 mt-0.5">Send any Instagram link to Recolekt on WhatsApp to save it instantly.</p>
+              </div>
+            </div>
+          ) : (
+            <div className="border border-gray-100 rounded-2xl overflow-hidden">
+              <WhatsAppLink
+                authToken={localStorage.getItem('auth_token') || localStorage.getItem('token') || ''}
+                onLinked={() => setWhatsAppLinked(true)}
               />
             </div>
           )}
