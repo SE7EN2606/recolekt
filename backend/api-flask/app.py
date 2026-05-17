@@ -39,11 +39,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("app")
-logger.info(
-    "RECOLEKT_META_TOKEN present=%s length=%d",
-    "yes" if os.getenv("RECOLEKT_META_TOKEN") else "no",
-    len(os.getenv("RECOLEKT_META_TOKEN") or ""),
-)
 
 from fetcher_api import create_app
 
