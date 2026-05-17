@@ -39,27 +39,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("app")
-whatsapp_access_token = os.getenv("WHATSAPP_ACCESS_TOKEN")
-recolekt_wa_access_token = os.getenv("RECOLEKT_WA_ACCESS_TOKEN")
-whatsapp_phone_number_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
-logger.info(
-    "WhatsApp env diagnostics: WHATSAPP_ACCESS_TOKEN present=%s length=%d; "
-    "RECOLEKT_WA_ACCESS_TOKEN present=%s length=%d; "
-    "WHATSAPP_PHONE_NUMBER_ID present=%s value_length=%d",
-    "yes" if whatsapp_access_token else "no",
-    len(whatsapp_access_token or ""),
-    "yes" if recolekt_wa_access_token else "no",
-    len(recolekt_wa_access_token or ""),
-    "yes" if whatsapp_phone_number_id else "no",
-    len(whatsapp_phone_number_id or ""),
-)
-whatsapp_env_key_markers = ("WHATSAPP", "RECOLEKT_WA", "WA_", "ACCESS_TOKEN")
-visible_whatsapp_env_keys = sorted(
-    (key, len(value or ""))
-    for key, value in os.environ.items()
-    if any(marker in key for marker in whatsapp_env_key_markers)
-)
-logger.info("WhatsApp env keys visible: %s", visible_whatsapp_env_keys)
 
 from fetcher_api import create_app
 
