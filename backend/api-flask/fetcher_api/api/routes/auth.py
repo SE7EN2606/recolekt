@@ -443,6 +443,9 @@ def whatsapp_webhook():
                         continue
 
                     # ── CASE B: URL Processing ──
+                    # Ensure production DB has WhatsApp linking column before lookup
+                    execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number varchar", commit=True)
+
                     # Check if user is linked
                     user_row = fetch_one("SELECT user_id FROM users WHERE whatsapp_number = %s", (sender_number,))
                     if user_row:
