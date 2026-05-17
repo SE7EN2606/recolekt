@@ -301,6 +301,7 @@ def _send_wa_reply(to_number: str, text: str) -> bool:
         os.getenv("WHATSAPP_ACCESS_TOKEN")
         or os.getenv("RECOLEKT_WA_ACCESS_TOKEN")
         or os.getenv("META_CLOUD_API_KEY")
+        or os.getenv("RECOLEKT_META_TOKEN")
     )
     phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 
