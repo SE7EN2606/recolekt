@@ -305,6 +305,17 @@ def _send_wa_reply(to_number: str, text: str) -> bool:
     )
     phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 
+    if not wa_token:
+        try:
+            row = fetch_one(
+                "SELECT value FROM app_runtime_config WHERE key = %s",
+                ("whatsapp_access_token",)
+            )
+            if row:
+                wa_token = row["value"] if isinstance(row, dict) else row[0]
+        except Exception as e:
+            logger.warning("⚠️ WhatsApp token DB fallback unavailable: %s", e)
+
     if not wa_token or not phone_id:
         logger.warning("⚠️ WhatsApp credentials not set")
         return False
