@@ -297,24 +297,27 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
 
 def _send_wa_reply(to_number: str, text: str) -> bool:
     # You will get these from the Meta Dashboard later
+    wa_token = None
+    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+
+    # Prefer DB runtime token because Railway env token slots have been unreliable / stale.
+    try:
+        row = fetch_one(
+            "SELECT value FROM app_runtime_config WHERE key = %s",
+            ("whatsapp_access_token",)
+        )
+        if row:
+            wa_token = row["value"] if isinstance(row, dict) else row[0]
+    except Exception as e:
+        logger.warning("⚠️ WhatsApp token DB fallback unavailable: %s", e)
+
     wa_token = (
-        os.getenv("WHATSAPP_ACCESS_TOKEN")
+        wa_token
+        or os.getenv("WHATSAPP_ACCESS_TOKEN")
         or os.getenv("RECOLEKT_WA_ACCESS_TOKEN")
         or os.getenv("META_CLOUD_API_KEY")
         or os.getenv("RECOLEKT_META_TOKEN")
     )
-    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
-
-    if not wa_token:
-        try:
-            row = fetch_one(
-                "SELECT value FROM app_runtime_config WHERE key = %s",
-                ("whatsapp_access_token",)
-            )
-            if row:
-                wa_token = row["value"] if isinstance(row, dict) else row[0]
-        except Exception as e:
-            logger.warning("⚠️ WhatsApp token DB fallback unavailable: %s", e)
 
     if not wa_token or not phone_id:
         logger.warning("⚠️ WhatsApp credentials not set")
