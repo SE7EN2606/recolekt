@@ -176,12 +176,25 @@ def serve_root():
         return send_from_directory(frontend_dir, "index.html")
     return jsonify({"status": "API running", "frontend": "not bundled"}), 200
 
+@app.route("/webhook/whatsapp", methods=["GET", "POST"])
+def root_whatsapp_webhook():
+    if request.method == "GET":
+        mode = request.args.get("hub.mode")
+        token = request.args.get("hub.verify_token")
+        challenge = request.args.get("hub.challenge")
+        if mode == "subscribe" and token == os.getenv("WEBHOOK_VERIFY_TOKEN", "recolekt-titanium-secret-2026"):
+            return challenge, 200
+        return "Forbidden", 403
+    
+    # We will handle the POST logic later, just get Meta verified first!
+    return "EVENT_RECEIVED", 200
+
 @app.errorhandler(NotFound)
 def handle_404(e):
     _log_404()
 
     if IS_LOCAL:
-        return _json_404()
+        return _json_404() 
 
     path = request.path.lstrip("/")
 
@@ -224,6 +237,11 @@ def handle_error(e):
         "path": request.path,
         "method": request.method,
     }), code
+
+
+@app.get("/health")
+def healthcheck():
+    return {"status": "ok"}, 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
