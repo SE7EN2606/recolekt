@@ -40,6 +40,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("app")
 
+try:
+    from urllib.parse import urlparse
+    _db_host = urlparse(os.getenv("DATABASE_URL", "")).hostname
+    logger.info("DATABASE_URL host diagnostic: %s", _db_host)
+except Exception:
+    logger.info("DATABASE_URL host diagnostic unavailable")
+
 from fetcher_api import create_app
 
 app = create_app()
