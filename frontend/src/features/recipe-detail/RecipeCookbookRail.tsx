@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChefHat, ChevronDown, Clock3, Folder, ShoppingBasket, Sparkles, StickyNote, Tags } from 'lucide-react';
+import { ChefHat, ChevronDown, Clock3, Folder, ShoppingBasket, Sparkles, StickyNote } from 'lucide-react';
 import { OriginalLink } from '../../components/VideoDetailWidgets';
 
 export type RecipeMetaChip = {
@@ -252,8 +252,6 @@ export function RecipeMobileStateSection({
   cookStatusLoading = false,
   onMarkCooked,
   onResetCookStatus,
-  originalUrl,
-  platform,
   t,
 }: {
   note: string;
@@ -286,9 +284,6 @@ export function RecipeMobileStateSection({
         focusSignal={noteFocusSignal}
         status={noteStatus}
       />
-      {originalUrl && (
-        <OriginalLink url={originalUrl} platform={platform} t={t} />
-      )}
     </div>
   );
 }
@@ -300,6 +295,7 @@ export function SourceDetailsContent({
   platform,
   t,
   showOriginalLink = true,
+  tags = [],
 }: {
   caption?: string;
   transcript?: string;
@@ -307,7 +303,21 @@ export function SourceDetailsContent({
   platform: string;
   t: any;
   showOriginalLink?: boolean;
+  tags?: string[];
 }) {
+  const safeTags = React.useMemo(() => {
+    const seen = new Set<string>();
+    return tags
+      .map((tag) => String(tag || '').replace(/^#/, '').trim())
+      .filter((tag) => {
+        if (!tag) return false;
+        const key = tag.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }, [tags]);
+
   return (
     <div className="space-y-5">
       {caption && (
@@ -334,6 +344,21 @@ export function SourceDetailsContent({
 
       {showOriginalLink && originalUrl && (
         <OriginalLink url={originalUrl} platform={platform} t={t} />
+      )}
+
+      {safeTags.length > 0 && (
+        <div>
+          <h4 className="mb-2 text-[11px] font-black uppercase tracking-widest text-gray-400">
+            Tags
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {safeTags.map((tag) => (
+              <span key={tag} className="rounded-full bg-gray-50 px-3 py-1.5 text-[12px] font-bold text-gray-600 ring-1 ring-gray-100">
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -389,7 +414,6 @@ export function RecipeCookbookRail({
   onRemoveFromShoppingList?: () => void;
 }) {
   const [sourceOpen, setSourceOpen] = React.useState(false);
-  const hasSourceDetails = Boolean(caption || transcript || originalUrl);
   const tagValues = React.useMemo(() => {
     const seen = new Set<string>();
     return [folderName, ...metaChips.map((chip) => chip.value)]
@@ -402,11 +426,40 @@ export function RecipeCookbookRail({
         return true;
       });
   }, [folderName, metaChips]);
+  const hasSourceDetails = Boolean(caption || transcript || originalUrl || tagValues.length > 0);
 
   return (
     <div className="hidden md:flex flex-col w-full gap-5 mt-0">
-      {originalUrl && (
-        <OriginalLink url={originalUrl} platform={platform} t={t} />
+      {cookStatusLoading ? (
+        <div className="rounded-[28px] bg-emerald-600/85 p-5 shadow-[0_24px_54px_-28px_rgba(5,150,105,0.9)]">
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 animate-pulse rounded-2xl bg-white/15" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="h-5 w-40 animate-pulse rounded-full bg-white/25" />
+              <div className="h-4 w-48 animate-pulse rounded-full bg-white/20" />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onStartCooking}
+          className="group rounded-[28px] bg-emerald-600 p-5 text-left text-white shadow-[0_24px_54px_-28px_rgba(5,150,105,0.9)] transition-colors hover:bg-emerald-700"
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20">
+              <ChefHat size={22} aria-hidden="true" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-lg font-black leading-tight">
+                {cookStatus.hasActiveSession ? 'Continue cooking' : 'Start cooking'}
+              </span>
+              <span className="mt-0.5 block text-sm font-medium text-emerald-50/85">
+                {cookStatus.hasActiveSession ? 'Pick up your saved cook session.' : 'Open guided Cook Mode.'}
+              </span>
+            </span>
+          </div>
+        </button>
       )}
 
       {(onAddToShoppingList || onRemoveFromShoppingList) && (
@@ -452,38 +505,6 @@ export function RecipeCookbookRail({
         )
       )}
 
-      {cookStatusLoading ? (
-        <div className="rounded-[28px] bg-emerald-600/85 p-5 shadow-[0_24px_54px_-28px_rgba(5,150,105,0.9)]">
-          <div className="flex items-center gap-3">
-            <div className="h-11 w-11 animate-pulse rounded-2xl bg-white/15" />
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className="h-5 w-40 animate-pulse rounded-full bg-white/25" />
-              <div className="h-4 w-48 animate-pulse rounded-full bg-white/20" />
-            </div>
-          </div>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={onStartCooking}
-          className="group rounded-[28px] bg-emerald-600 p-5 text-left text-white shadow-[0_24px_54px_-28px_rgba(5,150,105,0.9)] transition-colors hover:bg-emerald-700"
-        >
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20">
-              <ChefHat size={22} aria-hidden="true" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-lg font-black leading-tight">
-                {cookStatus.hasActiveSession ? 'Continue Cooking' : 'Start Cooking'}
-              </span>
-              <span className="mt-0.5 block text-sm font-medium text-emerald-50/85">
-                {cookStatus.hasActiveSession ? 'Pick up your saved cook session.' : 'Open guided Cook Mode.'}
-              </span>
-            </span>
-          </div>
-        </button>
-      )}
-
       <RecipeRailCard
         icon={<Folder size={16} aria-hidden="true" />}
         label="Collection"
@@ -506,24 +527,6 @@ export function RecipeCookbookRail({
         status={noteStatus}
       />
 
-      {tagValues.length > 0 && (
-        <div className="rounded-[24px] border border-gray-100 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
-          <div className="mb-3 flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
-              <Tags size={16} aria-hidden="true" />
-            </span>
-            <span className="text-[11px] font-black uppercase tracking-widest text-gray-400">Auto-tags</span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {tagValues.map((tag) => (
-              <span key={tag} className="rounded-full bg-gray-50 px-3 py-1.5 text-[12px] font-bold text-gray-600 ring-1 ring-gray-100">
-                {tag}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
       {hasSourceDetails && (
         <div className="rounded-[24px] border border-gray-100 bg-white shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
           <button
@@ -538,10 +541,10 @@ export function RecipeCookbookRail({
               </span>
               <span>
                 <span className="block text-sm font-black text-gray-950">
-                  {t('videoDetail:extractionDetails', 'Extraction details')}
+                  {t('videoDetail:sourceDetails', 'Source details')}
                 </span>
                 <span className="mt-0.5 block text-xs font-medium text-gray-400">
-                  Caption, transcript, and source context
+                  Caption, transcript, tags, and original link
                 </span>
               </span>
             </span>
@@ -559,7 +562,8 @@ export function RecipeCookbookRail({
                 originalUrl={originalUrl}
                 platform={platform}
                 t={t}
-                showOriginalLink={false}
+                showOriginalLink
+                tags={tagValues}
               />
             </div>
           )}

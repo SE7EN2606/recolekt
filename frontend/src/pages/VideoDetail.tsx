@@ -586,7 +586,7 @@ export const VideoDetail: React.FC = () => {
 
   const showFolderBadge = Boolean(folderName && !showRecipeCard);
   const hasRecipeSourceDetails =
-    showRecipeCard && Boolean(viewModel.caption || viewModel.transcript || viewModel.originalUrl);
+    showRecipeCard && Boolean(viewModel.caption || viewModel.transcript || viewModel.originalUrl || viewModel.tags?.length);
 
   const actionItems = (video
     ? [
@@ -836,36 +836,6 @@ export const VideoDetail: React.FC = () => {
           {/* Recipe card */}
           {showRecipeCard && stableRecipeForCard && (
             <div className="mb-5">
-              <button
-                type="button"
-                onClick={() => plannedRecipeIds.has(currentVideoId)
-                  ? removeRecipeFromShoppingList(currentVideoId)
-                  : addRecipeToShoppingList(currentVideoId, null)}
-                disabled={shoppingLoading || shoppingSaving}
-                className={`mb-4 flex w-full items-center gap-3 rounded-[24px] border p-4 text-left shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 md:hidden ${
-                  plannedRecipeIds.has(currentVideoId)
-                    ? 'border-emerald-100 bg-emerald-50'
-                    : 'border-gray-100 bg-white active:bg-emerald-50'
-                }`}
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
-                  <ShoppingBasket size={19} aria-hidden="true" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-black text-gray-950">
-                    {shoppingSaving
-                      ? 'Updating shopping list...'
-                      : plannedRecipeIds.has(currentVideoId)
-                        ? 'In your cooking plan'
-                        : 'Add ingredients to shopping list'}
-                  </span>
-                  <span className="mt-0.5 block text-xs font-medium text-gray-500">
-                    {plannedRecipeIds.has(currentVideoId)
-                      ? 'Tap to remove this recipe.'
-                      : 'Plan this recipe and derive groceries.'}
-                  </span>
-                </span>
-              </button>
               <RecipeDetailsCard
                 recipe={stableRecipeForCard}
                 recipeId={currentVideoId}
@@ -884,6 +854,38 @@ export const VideoDetail: React.FC = () => {
                 hasActiveSession={cookStatus.hasActiveSession}
                 cookStatusLoading={cookStatusLoading}
                 openCookModeSignal={cookModeOpenSignal}
+                secondaryAction={(
+                  <button
+                    type="button"
+                    onClick={() => plannedRecipeIds.has(currentVideoId)
+                      ? removeRecipeFromShoppingList(currentVideoId)
+                      : addRecipeToShoppingList(currentVideoId, null)}
+                    disabled={shoppingLoading || shoppingSaving}
+                    className={`flex w-full items-center gap-3 rounded-[22px] border p-3.5 text-left shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 md:hidden ${
+                      plannedRecipeIds.has(currentVideoId)
+                        ? 'border-emerald-100 bg-emerald-50'
+                        : 'border-gray-100 bg-white active:bg-emerald-50'
+                    }`}
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
+                      <ShoppingBasket size={19} aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-black text-gray-950">
+                        {shoppingSaving
+                          ? 'Updating shopping list...'
+                          : plannedRecipeIds.has(currentVideoId)
+                            ? 'In your cooking plan'
+                            : 'Add ingredients to shopping list'}
+                      </span>
+                      <span className="mt-0.5 block text-xs font-medium text-gray-500">
+                        {plannedRecipeIds.has(currentVideoId)
+                          ? 'Tap to remove this recipe.'
+                          : 'Plan this recipe and derive groceries.'}
+                      </span>
+                    </span>
+                  </button>
+                )}
               />
             </div>
           )}
@@ -918,7 +920,8 @@ export const VideoDetail: React.FC = () => {
                   originalUrl={viewModel.originalUrl}
                   platform={viewModel.platform}
                   t={t}
-                  showOriginalLink={!showRecipeCard}
+                  showOriginalLink
+                  tags={viewModel.tags}
                 />
               </Accordion>
             </div>
