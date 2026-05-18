@@ -86,10 +86,13 @@ function collectStrings(value: unknown, depth = 0): string {
 }
 
 function recipeText(video: any): string {
+  return [getRecipeTitle(video), recipeBodyText(video)].filter(Boolean).join(' ');
+}
+
+function recipeBodyText(video: any): string {
   const recipe = getRecipePayload(video);
   const summary = parseObject(video?.summary ?? video?.summarytext ?? video?.raw?.summary);
   return [
-    getRecipeTitle(video),
     collectStrings(recipe?.ingredients),
     collectStrings(recipe?.ingredientLines ?? recipe?.ingredient_lines),
     collectStrings(recipe?.instructions ?? recipe?.steps ?? recipe?.directions ?? recipe?.method),
@@ -113,6 +116,67 @@ function recipeInstructionText(video: any): string {
     recipe?.instructions_sections ??
     recipe?.instructionSections
   );
+}
+
+function countArrayish(value: unknown): number {
+  if (!value) return 0;
+  if (Array.isArray(value)) {
+    return value.reduce((total, item) => {
+      if (item && typeof item === 'object') {
+        const nestedItems =
+          (item as any).items ??
+          (item as any).ingredients ??
+          (item as any).steps ??
+          (item as any).instructions;
+        if (Array.isArray(nestedItems)) return total + nestedItems.length;
+      }
+      return total + 1;
+    }, 0);
+  }
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).reduce<number>((total, item) => total + countArrayish(item), 0);
+  }
+  if (typeof value === 'string') {
+    return value.split(/\n|\. /).map(part => part.trim()).filter(Boolean).length;
+  }
+  return 0;
+}
+
+export function getRecipeIngredientCount(video: any): number {
+  const recipe = getRecipePayload(video);
+  return countArrayish(
+    recipe?.ingredients ??
+    recipe?.ingredientLines ??
+    recipe?.ingredient_lines ??
+    recipe?.ingredient_sections ??
+    recipe?.ingredientSections
+  );
+}
+
+export function getRecipeStepCount(video: any): number {
+  const recipe = getRecipePayload(video);
+  return countArrayish(
+    recipe?.instructions ??
+    recipe?.steps ??
+    recipe?.directions ??
+    recipe?.method ??
+    recipe?.instruction_sections ??
+    recipe?.instructions_sections ??
+    recipe?.instructionSections
+  );
+}
+
+export function hasUsableCookbookRecipe(video: any): boolean {
+  if (getVideoContentType(video) !== 'recipe') return false;
+  if (isBrokenRecipe(video)) return false;
+  return getRecipeIngredientCount(video) > 0 || getRecipeStepCount(video) > 0 || Boolean(recipeBodyText(video).trim());
+}
+
+export function isBrokenRecipe(video: any): boolean {
+  const status = String(video?.status ?? video?.raw?.status ?? '').toLowerCase();
+  if (['error', 'failed', 'deleted'].includes(status)) return true;
+  const title = getRecipeTitle(video).toLowerCase();
+  return title === 'recipe' && !recipeBodyText(video).trim();
 }
 
 function parseMinutes(value: unknown): number | null {
@@ -230,7 +294,7 @@ export function recipeSearchScore(video: any, query: string): number {
 }
 
 export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
-  const candidates = videos.filter((video) => !getRecipeUserState(video).hasActiveSession);
+  const candidates = videos.filter((video) => hasUsableCookbookRecipe(video) && !getRecipeUserState(video).hasActiveSession);
   if (candidates.length === 0) return null;
 
   const isWeekend = now.getDay() === 0 || now.getDay() === 6;
@@ -240,6 +304,8 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
   const scored = candidates.map((video) => {
     const state = getRecipeUserState(video);
     const bucket = getRecipeTimeBucket(video);
+    const ingredientCount = getRecipeIngredientCount(video);
+    const stepCount = getRecipeStepCount(video);
     const savedAt = new Date(video?.savedAt ?? video?.saved_at ?? video?.createdAt ?? video?.created_at ?? 0).getTime();
     const lastCookedAt = state.lastCookedAt ? new Date(state.lastCookedAt).getTime() : 0;
     const lastOpenedAt = new Date(
@@ -257,11 +323,17 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
     if (state.cookCount === 0) {
       score += 24;
       reason = 'Never cooked';
+    } else if (lastCookedAt && now.getTime() - lastCookedAt > 30 * 86400000) {
+      score += 18;
+      reason = 'Worth revisiting';
     }
     if (isUntouchedSave(video, now)) {
       score += 28;
       reason = 'You saved this a while ago';
     }
+    if (ingredientCount > 0 && ingredientCount <= 10) score += 8;
+    if (stepCount > 0 && stepCount <= 6) score += 6;
+    if (ingredientCount > 16 || stepCount > 10) score -= isWeekend ? 0 : 8;
     if (isWeekdayEvening) {
       if (bucket === RECIPE_TIME_BUCKETS.QUICK_MEAL) {
         score += 34;
