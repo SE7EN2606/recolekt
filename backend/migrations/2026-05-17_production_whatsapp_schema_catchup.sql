@@ -105,4 +105,58 @@ ALTER TABLE public.reels
     ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now(),
     ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 
+-- Location rows are replaced/upserted by fetcher_api/services/db_insert.py.
+CREATE TABLE IF NOT EXISTS public.reel_locations (
+    id bigserial PRIMARY KEY,
+    reel_id text NOT NULL,
+    user_id text NOT NULL,
+    position integer NOT NULL,
+    name text NOT NULL,
+    place_type text,
+    description text,
+    address text,
+    neighborhood text,
+    city text,
+    region text,
+    country text,
+    postal_code text,
+    instagram_username text,
+    instagram_account_name text,
+    lat double precision,
+    lng double precision,
+    google_place_id text,
+    maps_url text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.reel_locations
+    ADD COLUMN IF NOT EXISTS id bigserial,
+    ADD COLUMN IF NOT EXISTS reel_id text,
+    ADD COLUMN IF NOT EXISTS user_id text,
+    ADD COLUMN IF NOT EXISTS position integer,
+    ADD COLUMN IF NOT EXISTS name text,
+    ADD COLUMN IF NOT EXISTS place_type text,
+    ADD COLUMN IF NOT EXISTS description text,
+    ADD COLUMN IF NOT EXISTS address text,
+    ADD COLUMN IF NOT EXISTS neighborhood text,
+    ADD COLUMN IF NOT EXISTS city text,
+    ADD COLUMN IF NOT EXISTS region text,
+    ADD COLUMN IF NOT EXISTS country text,
+    ADD COLUMN IF NOT EXISTS postal_code text,
+    ADD COLUMN IF NOT EXISTS instagram_username text,
+    ADD COLUMN IF NOT EXISTS instagram_account_name text,
+    ADD COLUMN IF NOT EXISTS lat double precision,
+    ADD COLUMN IF NOT EXISTS lng double precision,
+    ADD COLUMN IF NOT EXISTS google_place_id text,
+    ADD COLUMN IF NOT EXISTS maps_url text,
+    ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now(),
+    ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+
+CREATE UNIQUE INDEX IF NOT EXISTS reel_locations_reel_user_position_uidx
+    ON public.reel_locations (reel_id, user_id, position);
+
+CREATE INDEX IF NOT EXISTS reel_locations_reel_user_idx
+    ON public.reel_locations (reel_id, user_id);
+
 COMMIT;
