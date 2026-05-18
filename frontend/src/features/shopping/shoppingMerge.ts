@@ -39,11 +39,20 @@ function overrideMap(overrides: ShoppingItemOverride[]) {
   return new Map(overrides.map((override) => [override.ingredientKey, override]));
 }
 
+const SAFE_MERGE_UNITS = new Set([
+  'g', 'kg', 'ml', 'l', 'oz', 'fl oz', 'lb', 'cup', 'tbsp', 'tsp', 'clove',
+]);
+
 function canMergeQuantity(target: MergedShoppingItem, ingredient: NormalizedShoppingIngredient): boolean {
   if (isSemanticOnly(ingredient)) return false;
   if (target.quantity === null || ingredient.quantity === null) return false;
   if (!target.unit && !ingredient.unit) return true;
-  return Boolean(target.unit && ingredient.unit && target.unit === ingredient.unit);
+  return Boolean(
+    target.unit &&
+      ingredient.unit &&
+      target.unit === ingredient.unit &&
+      SAFE_MERGE_UNITS.has(target.unit)
+  );
 }
 
 function displayNameForQuantity(key: string, quantity: number | null, fallback: string): string {
@@ -176,10 +185,8 @@ export function deriveMergedShoppingItems(
         existing.name = displayNameForKey(existing.key, existing.quantity, ingredient.name);
         reconcileProduceQuantity(existing);
       } else {
-        if (existing.key !== ingredient.key || existing.interpretedCategory !== 'produce') {
-          existing.quantity = null;
-          existing.unit = null;
-        }
+        existing.quantity = null;
+        existing.unit = null;
       }
     }
   }

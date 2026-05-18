@@ -10,7 +10,8 @@
   "travelIdeas": "e.g. Travel Ideas",
   "organizer": "Organizer",
   "unsorted": "Unsorted",
-  "groceryList": "Grocery List",
+  "groceryList": "Shopping List",
+  "shoppingList": "Shopping List",
   "savedPlaces": "Saved Places",
   "others": "Others"
 }

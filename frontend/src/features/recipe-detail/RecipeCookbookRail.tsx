@@ -437,10 +437,14 @@ export function RecipeCookbookRail({
             </span>
             <span className="min-w-0">
               <span className="block text-sm font-black text-gray-950">
-                {shoppingPlanned ? 'Remove from shopping list' : 'Add ingredients to shopping list'}
+                {shoppingSaving
+                  ? 'Updating shopping list...'
+                  : shoppingPlanned
+                    ? 'In your cooking plan'
+                    : 'Add ingredients to shopping list'}
               </span>
               <span className="mt-0.5 block text-xs font-medium text-gray-500">
-                {shoppingPlanned ? 'This recipe is in your cooking plan.' : 'Plan this recipe and derive groceries.'}
+                {shoppingPlanned ? 'Click to remove this recipe.' : 'Plan this recipe and derive groceries.'}
               </span>
             </span>
           </div>

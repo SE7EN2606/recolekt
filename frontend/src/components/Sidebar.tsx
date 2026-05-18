@@ -27,7 +27,7 @@ const isSystemOrAllVideos = (folder: any) => {
 
 
 export const Sidebar: React.FC = () => {
-  const { folders, addFolder, videos, moveVideos, groceryList } = useData();
+  const { folders, addFolder, videos, moveVideos } = useData();
 
   const [dragOverId, setDragOverId] = React.useState<string | null>(null);
   const [pendingMove, setPendingMove] = React.useState<{ids: string[]; targetFolderId: string; targetFolderName: string} | null>(null);
@@ -50,8 +50,6 @@ export const Sidebar: React.FC = () => {
   };
 
   const getFavoritesCount = () => (videos || []).filter((v: any) => v.isFavorite).length;
-
-  const getGroceryCount = () => (groceryList || []).filter((i: any) => !i.have).length;
 
   const isFolderActive = (folder: any) => {
     const folderPath = `/gallery/${folder.id}`;
@@ -195,6 +193,22 @@ export const Sidebar: React.FC = () => {
                       </span>
                     </>
                   )}
+                </NavLink>
+              </div>
+
+              <div className="relative">
+                <NavLink to="/shopping-list" className={({ isActive }) => linkClass(isActive || location.pathname === '/grocery-list')}>
+                  {({ isActive }) => {
+                    const active = isActive || location.pathname === '/grocery-list';
+                    return (
+                      <>
+                        <div className="flex items-center gap-3">
+                          <ShoppingCart size={20} strokeWidth={2} className={active ? 'text-primary-600' : 'text-gray-400 group-hover:text-primary-600'} />
+                          <span className="text-[15px] font-semibold">Shopping List</span>
+                        </div>
+                      </>
+                    );
+                  }}
                 </NavLink>
               </div>
 

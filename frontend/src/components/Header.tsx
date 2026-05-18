@@ -123,7 +123,7 @@ export const Header: React.FC = () => {
                   <>
                     <NavPill to="/gallery" label={t('gallery:gallery')} />
                     <NavPill to="/cookbook" label="Cookbook" />
-                    <NavPill to="/grocery-list" label="Grocery List" />
+                    <NavPill to="/shopping-list" label="Shopping List" />
                     <NavPill to="/settings" label={t('header:settings')} />
                   </>
                 ) : !loading && (

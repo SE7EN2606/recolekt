@@ -136,6 +136,7 @@ function App() {
                   <Route path="/profile" element={<ProfileSettings />} />
                   <Route path="/places" element={<SavedPlaces />} />
                   <Route path="/grocery-list" element={<ShoppingList />} />
+                  <Route path="/shopping-list" element={<ShoppingList />} />
                   <Route path="/admin" element={<AdminPanel />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
