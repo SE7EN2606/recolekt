@@ -26,7 +26,7 @@ export const BillingCancel: React.FC = () => {
         <Button onClick={() => navigate('/billing')} className="h-[56px] text-lg font-bold">
           {t('common:tryAgain', 'Try Again')}
         </Button>
-        <Button variant="ghost" onClick={() => navigate('/settings/app')}>
+        <Button variant="ghost" onClick={() => navigate('/settings')}>
           {t('settings:backToSettings', 'Back to Settings')}
         </Button>
       </div>
