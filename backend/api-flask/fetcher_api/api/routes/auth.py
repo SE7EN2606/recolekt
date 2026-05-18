@@ -7,7 +7,9 @@ import resend
 import urllib.parse
 import time
 import threading
+import re
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 from flask import Blueprint, request, jsonify, session, redirect, url_for, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -25,6 +27,20 @@ APP_URL = os.getenv("APP_URL", "https://recolekt.app")
 
 # 🔥 MEMORY CACHE to prevent duplicate webhook processing
 PROCESSED_WEBHOOKS = {}
+ALREADY_SAVED_REPLY = "✅ Already saved — this video is already in your Recolekt library."
+
+def _ensure_whatsapp_number_column() -> None:
+    execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp_number varchar", commit=True)
+
+
+def _get_recolekt_whatsapp_number() -> str:
+    return (
+        os.getenv("RECOLEKT_WHATSAPP_NUMBER")
+        or os.getenv("WHATSAPP_PUBLIC_NUMBER")
+        or os.getenv("WHATSAPP_BUSINESS_NUMBER")
+        or ""
+    ).strip()
+
 
 def get_signing_key():
     return os.getenv("SECRET_KEY", "recolekt-titanium-secret-2026")
@@ -48,6 +64,132 @@ def _get_frontend_base() -> str:
     host = request.host
     scheme = request.scheme
     return f"{scheme}://{host}"
+
+
+def _extract_first_url(text: str) -> str:
+    match = re.search(r'https?://[^\s"\'<>]+', text or "", flags=re.IGNORECASE)
+    return match.group(0).rstrip(".,;)") if match else ""
+
+
+def get_social_url_key(url: str) -> tuple[str | None, str | None]:
+    raw = (url or "").strip()
+    if not raw:
+        return None, None
+
+    if not re.match(r"^https?://", raw, flags=re.IGNORECASE):
+        raw = "https://" + raw
+
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return None, None
+
+    host = (parsed.netloc or "").lower()
+    host = host[4:] if host.startswith("www.") else host
+    path = parsed.path or ""
+
+    if host in {"instagram.com", "m.instagram.com"}:
+        match = re.search(r"/(reel|reels|p)/([^/?#]+)/?", path, flags=re.IGNORECASE)
+        if not match:
+            return "instagram", None
+
+        kind = match.group(1).lower()
+        shortcode = match.group(2).strip()
+        if not shortcode:
+            return "instagram", None
+        if kind == "reels":
+            kind = "reel"
+        if kind == "p":
+            kind = "post"
+        return "instagram", f"{kind}:{shortcode}"
+
+    return host or None, raw.lower()
+
+
+def find_existing_reel_for_user(user_id: str, url: str):
+    platform, key = get_social_url_key(url)
+    logger.info(
+        "🔎 inbound duplicate lookup platform=%s normalized_key=%s user=%s",
+        platform,
+        key,
+        user_id,
+    )
+
+    if platform == "instagram" and key:
+        try:
+            kind, shortcode = key.split(":", 1)
+        except ValueError:
+            kind, shortcode = "", ""
+
+        if shortcode:
+            if kind == "reel":
+                return fetch_one(
+                    """
+                    SELECT id, source_url, status
+                    FROM reels
+                    WHERE user_id = %s
+                      AND source_url ILIKE %s
+                      AND (
+                            source_url ILIKE %s
+                         OR source_url ILIKE %s
+                      )
+                    ORDER BY created_at DESC NULLS LAST
+                    LIMIT 1
+                    """,
+                    (user_id, f"%{shortcode}%", "%instagram.com/reel/%", "%instagram.com/reels/%"),
+                )
+
+            if kind == "post":
+                return fetch_one(
+                    """
+                    SELECT id, source_url, status
+                    FROM reels
+                    WHERE user_id = %s
+                      AND source_url ILIKE %s
+                      AND source_url ILIKE %s
+                    ORDER BY created_at DESC NULLS LAST
+                    LIMIT 1
+                    """,
+                    (user_id, f"%{shortcode}%", "%instagram.com/p/%"),
+                )
+
+    return fetch_one(
+        """
+        SELECT id, source_url, status
+        FROM reels
+        WHERE user_id = %s AND source_url = %s
+        ORDER BY created_at DESC NULLS LAST
+        LIMIT 1
+        """,
+        (user_id, url),
+    )
+
+
+def insert_inbox_item(
+    user_id: str,
+    platform: str,
+    sender_id: str,
+    raw_url: str,
+    message_text: str | None = None,
+    status: str = "PENDING",
+):
+    resolved_sql = "NOW()" if status in {"DUPLICATE", "RESOLVED"} else "NULL"
+    execute(
+        f"""
+        INSERT INTO inbox_items (user_id, platform, sender_ig_id, raw_url, message_text, status, resolved_at)
+        VALUES (%s, %s, %s, %s, %s, %s, {resolved_sql})
+        """,
+        (user_id, platform, sender_id, raw_url, message_text, status),
+        commit=True,
+    )
+    logger.info(
+        "📥 inbox item written platform=%s sender=%s user=%s status=%s raw_url=%s",
+        platform,
+        sender_id,
+        user_id,
+        status,
+        raw_url,
+    )
 
 
 # ─────────────────────────────────────────────
@@ -168,8 +310,27 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
 
 def _send_wa_reply(to_number: str, text: str) -> bool:
     # You will get these from the Meta Dashboard later
-    wa_token = os.getenv("WHATSAPP_ACCESS_TOKEN")
+    wa_token = None
     phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+
+    # Prefer DB runtime token because Railway env token slots have been unreliable / stale.
+    try:
+        row = fetch_one(
+            "SELECT value FROM app_runtime_config WHERE key = %s",
+            ("whatsapp_access_token",)
+        )
+        if row:
+            wa_token = row["value"] if isinstance(row, dict) else row[0]
+    except Exception as e:
+        logger.warning("⚠️ WhatsApp token DB fallback unavailable: %s", e)
+
+    wa_token = (
+        wa_token
+        or os.getenv("WHATSAPP_ACCESS_TOKEN")
+        or os.getenv("RECOLEKT_WA_ACCESS_TOKEN")
+        or os.getenv("META_CLOUD_API_KEY")
+        or os.getenv("RECOLEKT_META_TOKEN")
+    )
 
     if not wa_token or not phone_id:
         logger.warning("⚠️ WhatsApp credentials not set")
@@ -240,7 +401,9 @@ def whatsapp_webhook():
         mode = request.args.get("hub.mode")
         token = request.args.get("hub.verify_token")
         challenge = request.args.get("hub.challenge")
-        if mode == "subscribe" and token == os.getenv("WEBHOOK_VERIFY_TOKEN", "recolekt-titanium-secret-2026"):
+        
+        # 🔥 HARDCODED FOR META REVIEW: Bypass Railway variables entirely
+        if mode == "subscribe" and token == "recolekt-titanium-secret-2026":
             return challenge, 200
         return "Forbidden", 403
 
@@ -278,8 +441,9 @@ def whatsapp_webhook():
 
                     # ── CASE A: 6-Digit PIN Linking ──
                     if text.isdigit() and len(text) == 6:
+                        _ensure_whatsapp_number_column()
                         pin_row = fetch_one(
-                            "SELECT user_id FROM link_pins WHERE pin = %s AND expires_at > NOW()",
+                            "SELECT user_id FROM link_pins WHERE pin = %s AND platform = 'whatsapp' AND expires_at > NOW()",
                             (text,)
                         )
                         if pin_row:
@@ -290,12 +454,15 @@ def whatsapp_webhook():
                             execute("UPDATE users SET whatsapp_number = %s WHERE user_id = %s", (sender_number, linked_user_id), commit=True)
                             execute("DELETE FROM link_pins WHERE pin = %s", (text,), commit=True)
                             
-                            _send_wa_reply(sender_number, "✅ WhatsApp linked to Recolekt! Send me any link to save it.")
+                            _send_wa_reply(sender_number, "✅ WhatsApp linked — you can now send Recolekt Instagram links here.")
                         else:
                             _send_wa_reply(sender_number, "❌ Invalid or expired PIN.")
                         continue
 
                     # ── CASE B: URL Processing ──
+                    # Ensure production DB has WhatsApp linking column before lookup
+                    _ensure_whatsapp_number_column()
+
                     # Check if user is linked
                     user_row = fetch_one("SELECT user_id FROM users WHERE whatsapp_number = %s", (sender_number,))
                     if user_row:
@@ -303,20 +470,51 @@ def whatsapp_webhook():
                         
                         # Very basic check: Does the message contain "http"?
                         if "http" in text:
-                            # Save to inbox (Note: platform is now 'whatsapp')
-                            execute(
-                                "INSERT INTO inbox_items (user_id, platform, sender_ig_id, raw_url, status) "
-                                "VALUES (%s, 'whatsapp', %s, %s, 'PENDING')",
-                                (linked_user_id, sender_number, text),
-                                commit=True
+                            url = _extract_first_url(text) or text
+                            social_platform, normalized_key = get_social_url_key(url)
+                            logger.info(
+                                "📨 inbound link platform=whatsapp sender=%s linked_user=%s normalized_platform=%s normalized_key=%s",
+                                sender_number,
+                                linked_user_id,
+                                social_platform,
+                                normalized_key,
                             )
+
+                            existing = find_existing_reel_for_user(linked_user_id, url)
+                            if existing:
+                                existing_id = existing.get("id") if isinstance(existing, dict) else existing[0]
+                                logger.info(
+                                    "✅ inbound duplicate found platform=whatsapp sender=%s user=%s normalized_key=%s existing_reel=%s",
+                                    sender_number,
+                                    linked_user_id,
+                                    normalized_key,
+                                    existing_id,
+                                )
+                                insert_inbox_item(
+                                    linked_user_id,
+                                    "whatsapp",
+                                    sender_number,
+                                    url,
+                                    text,
+                                    status="DUPLICATE",
+                                )
+                                _send_wa_reply(sender_number, ALREADY_SAVED_REPLY)
+                                continue
+
+                            logger.info(
+                                "🆕 inbound duplicate not found platform=whatsapp sender=%s user=%s normalized_key=%s",
+                                sender_number,
+                                linked_user_id,
+                                normalized_key,
+                            )
+                            insert_inbox_item(linked_user_id, "whatsapp", sender_number, url, text, status="PENDING")
                             _send_wa_reply(sender_number, "✅ Link received! Analyzing and saving to your library...")
                             
                             # Wake up the scraper!
                             base_url = request.host_url.rstrip("/")
                             threading.Thread(
                                 target=_trigger_summarize_job, 
-                                args=(base_url, text, linked_user_id)
+                                args=(base_url, url, linked_user_id)
                             ).start()
                         else:
                             _send_wa_reply(sender_number, "I didn't detect a link in that message. Please send a valid URL starting with http/https!")
@@ -456,8 +654,8 @@ def _handle_incoming_message(sender_id: str, text: str, message: dict):
         linked_user_id = user_row["user_id"] if isinstance(user_row, dict) else user_row[0]
 
         url = None
-        if "instagram.com/reel" in text or "instagram.com/p/" in text:
-            url = text
+        if "instagram.com/reel" in text or "instagram.com/reels" in text or "instagram.com/p/" in text:
+            url = _extract_first_url(text) or text
         elif message.get("attachments"):
             for att in message["attachments"]:
                 payload = att.get("payload", {})
@@ -466,13 +664,43 @@ def _handle_incoming_message(sender_id: str, text: str, message: dict):
                     break
 
         if url:
-            execute(
-                "INSERT INTO inbox_items (user_id, platform, sender_ig_id, raw_url, message_text, status) "
-                "VALUES (%s, 'instagram', %s, %s, %s, 'PENDING')",
-                (linked_user_id, sender_id, url, text),
-                commit=True
+            social_platform, normalized_key = get_social_url_key(url)
+            logger.info(
+                "📨 inbound link platform=instagram sender=%s linked_user=%s normalized_platform=%s normalized_key=%s",
+                sender_id,
+                linked_user_id,
+                social_platform,
+                normalized_key,
             )
-            logger.info(f"📥 Saved inbox item for user {linked_user_id}: {url}")
+
+            existing = find_existing_reel_for_user(linked_user_id, url)
+            if existing:
+                existing_id = existing.get("id") if isinstance(existing, dict) else existing[0]
+                logger.info(
+                    "✅ inbound duplicate found platform=instagram sender=%s user=%s normalized_key=%s existing_reel=%s",
+                    sender_id,
+                    linked_user_id,
+                    normalized_key,
+                    existing_id,
+                )
+                insert_inbox_item(
+                    linked_user_id,
+                    "instagram",
+                    sender_id,
+                    url,
+                    text,
+                    status="DUPLICATE",
+                )
+                _send_ig_reply(sender_id, ALREADY_SAVED_REPLY)
+                return
+
+            logger.info(
+                "🆕 inbound duplicate not found platform=instagram sender=%s user=%s normalized_key=%s",
+                sender_id,
+                linked_user_id,
+                normalized_key,
+            )
+            insert_inbox_item(linked_user_id, "instagram", sender_id, url, text, status="PENDING")
             _send_ig_reply(sender_id, "✅ Got it! Saving this reel to your Recolekt library...")
             
             # 🔥 NEW: Wake up the scraper pipeline!
@@ -582,6 +810,83 @@ def instagram_unlink():
         commit=True
     )
     logger.info(f"🔓 Unlinked Instagram for user {user_id}")
+    return jsonify({"unlinked": True}), 200
+
+
+@auth_bp.route("/whatsapp/generate-pin", methods=["POST", "OPTIONS"])
+def whatsapp_generate_pin():
+    if request.method == "OPTIONS":
+        return "", 200
+    try:
+        user_id = get_user_id_from_request()
+    except Exception:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    _ensure_whatsapp_number_column()
+    user = fetch_one("SELECT whatsapp_number FROM users WHERE user_id = %s", (user_id,))
+    if user and (user.get("whatsapp_number") if isinstance(user, dict) else user[0]):
+        return jsonify({"error": "WhatsApp already linked"}), 400
+
+    for _ in range(10):
+        pin = "".join(random.choices("0123456789", k=6))
+        existing = fetch_one("SELECT pin FROM link_pins WHERE pin = %s", (pin,))
+        if not existing:
+            break
+
+    expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+    execute(
+        "INSERT INTO link_pins (pin, user_id, platform, expires_at) VALUES (%s, %s, 'whatsapp', %s) "
+        "ON CONFLICT (pin) DO UPDATE SET user_id = EXCLUDED.user_id, platform = EXCLUDED.platform, expires_at = EXCLUDED.expires_at",
+        (pin, user_id, expires),
+        commit=True
+    )
+
+    whatsapp_number = _get_recolekt_whatsapp_number()
+    whatsapp_digits = re.sub(r"\D+", "", whatsapp_number)
+    whatsapp_url = f"https://wa.me/{whatsapp_digits}" if whatsapp_digits else ""
+    logger.info("🔑 WhatsApp PIN generated for user %s", user_id)
+    return jsonify({
+        "pin": pin,
+        "expires_in": 900,
+        "whatsapp_number": whatsapp_number,
+        "whatsapp_url": whatsapp_url,
+    }), 200
+
+
+@auth_bp.route("/whatsapp/link-status", methods=["GET", "OPTIONS"])
+def whatsapp_link_status():
+    if request.method == "OPTIONS":
+        return "", 200
+    try:
+        user_id = get_user_id_from_request()
+    except Exception:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    _ensure_whatsapp_number_column()
+    user = fetch_one("SELECT whatsapp_number FROM users WHERE user_id = %s", (user_id,))
+    if not user:
+        return jsonify({"linked": False}), 200
+
+    whatsapp_number = user.get("whatsapp_number") if isinstance(user, dict) else user[0]
+    return jsonify({"linked": bool(whatsapp_number), "whatsapp_number": whatsapp_number}), 200
+
+
+@auth_bp.route("/whatsapp/unlink", methods=["POST", "OPTIONS"])
+def whatsapp_unlink():
+    if request.method == "OPTIONS":
+        return "", 200
+    try:
+        user_id = get_user_id_from_request()
+    except Exception:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    _ensure_whatsapp_number_column()
+    execute(
+        "UPDATE users SET whatsapp_number = NULL WHERE user_id = %s",
+        (user_id,),
+        commit=True
+    )
+    logger.info(f"🔓 Unlinked WhatsApp for user {user_id}")
     return jsonify({"unlinked": True}), 200
 
 @auth_bp.route("/instagram/account-info", methods=["GET", "OPTIONS"])
