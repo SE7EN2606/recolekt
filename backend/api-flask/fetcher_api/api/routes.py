@@ -15,6 +15,7 @@ from flask import Blueprint, jsonify, request
 
 from fetcher_api.adapters.db import fetch_one, fetch_all, execute, get_user_tier, count_user_reels
 from fetcher_api.api.helpers.auth import get_user_id_from_request
+from fetcher_api.services.social_urls import canonicalize_social_url, is_facebook_share_url
 
 logger = logging.getLogger("api")
 
@@ -48,11 +49,15 @@ def _detect_platform_code(url: str) -> str:
 
 def _extract_shortcode_for_url(url: str, platform_id: str) -> str:
     try:
-        if platform_id in {"IG", "FB"}:
+        if platform_id == "FB":
+            result = canonicalize_social_url(url, resolve_facebook_redirects=True)
+            return result.content_id or ""
+
+        if platform_id == "IG":
             from fetcher_api.adapters.meta_client import meta_client
             return (meta_client.extract_shortcode(url) or "").strip()
     except Exception:
-        logger.warning("⚠️ meta_client.extract_shortcode failed", exc_info=True)
+        logger.warning("⚠️ Social content id extraction failed", exc_info=True)
 
     if platform_id == "YT":
         try:
@@ -75,13 +80,14 @@ def _find_duplicate_reel(user_id: str, url: str, shortcode: str | None = None):
     A reel must be unique per user.
 
     Match by exact source_url first, then by shortcode embedded in the generated id.
-    This blocks duplicates even if the incoming URL has slightly different formatting.
+    Opaque Facebook share URLs are kept out of the generated-id prefix path.
     """
     url = (url or "").strip()
     shortcode = (shortcode or "").strip()
+    opaque_facebook_share = is_facebook_share_url(url)
 
     try:
-        if shortcode:
+        if shortcode and not opaque_facebook_share:
             return fetch_one(
                 """
                 SELECT id, status, gcs_urls, created_at

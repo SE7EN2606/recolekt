@@ -9,13 +9,18 @@ import time
 import threading
 import re
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
 
 from flask import Blueprint, request, jsonify, session, redirect, url_for, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from fetcher_api.api.helpers.auth import get_user_id_from_request
 from fetcher_api.adapters.db import execute, fetch_one, fetch_all
+from fetcher_api.services.social_urls import (
+    canonicalize_social_url,
+    facebook_share_url_variants,
+    has_stable_duplicate_url,
+    is_facebook_share_url,
+)
 from fetcher_api.utils.timestamps import get_unique_id
 logger = logging.getLogger("auth")
 
@@ -72,52 +77,25 @@ def _extract_first_url(text: str) -> str:
 
 
 def get_social_url_key(url: str) -> tuple[str | None, str | None]:
-    raw = (url or "").strip()
-    if not raw:
-        return None, None
-
-    if not re.match(r"^https?://", raw, flags=re.IGNORECASE):
-        raw = "https://" + raw
-
-    try:
-        parsed = urlparse(raw)
-    except Exception:
-        return None, None
-
-    host = (parsed.netloc or "").lower()
-    host = host[4:] if host.startswith("www.") else host
-    path = parsed.path or ""
-
-    if host in {"instagram.com", "m.instagram.com"}:
-        match = re.search(r"/(reel|reels|p)/([^/?#]+)/?", path, flags=re.IGNORECASE)
-        if not match:
-            return "instagram", None
-
-        kind = match.group(1).lower()
-        shortcode = match.group(2).strip()
-        if not shortcode:
-            return "instagram", None
-        if kind == "reels":
-            kind = "reel"
-        if kind == "p":
-            kind = "post"
-        return "instagram", f"{kind}:{shortcode}"
-
-    return host or None, raw.lower()
+    result = canonicalize_social_url(url)
+    return result.platform, result.canonical_key
 
 
 def find_existing_reel_for_user(user_id: str, url: str):
-    platform, key = get_social_url_key(url)
+    url_result = canonicalize_social_url(url, resolve_facebook_redirects=True)
+    platform = url_result.platform
+    key = url_result.canonical_key
     logger.info(
-        "🔎 inbound duplicate lookup platform=%s normalized_key=%s user=%s",
+        "🔎 inbound duplicate lookup platform=%s normalized_key=%s resolution=%s user=%s",
         platform,
         key,
+        url_result.resolution_status,
         user_id,
     )
 
     if platform == "instagram" and key:
         try:
-            kind, shortcode = key.split(":", 1)
+            _, kind, shortcode = key.split(":", 2)
         except ValueError:
             kind, shortcode = "", ""
 
@@ -153,6 +131,74 @@ def find_existing_reel_for_user(user_id: str, url: str):
                     (user_id, f"%{shortcode}%", "%instagram.com/p/%"),
                 )
 
+    if platform == "facebook" and url_result.content_id:
+        content_id = url_result.content_id
+        existing = fetch_one(
+            """
+            SELECT id, source_url, status
+            FROM reels
+            WHERE user_id = %s
+              AND (
+                    source_url ~* %s
+                 OR source_url ~* %s
+                 OR source_url ~* %s
+                 OR source_url ~* %s
+              )
+            ORDER BY created_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            (
+                user_id,
+                rf"facebook\.com/reels?/{content_id}([/?#]|$)",
+                rf"facebook\.com/(?:[^/?#]+/)?videos/(?:[^/?#]+/)?{content_id}([/?#]|$)",
+                rf"facebook\.com/watch[^#]*[?&]v={content_id}([&#]|$)",
+                rf"facebook\.com/video\.php[^#]*[?&]v={content_id}([&#]|$)",
+            ),
+        )
+        if existing:
+            logger.info(
+                "✅ inbound duplicate by canonical key user=%s canonical_key=%s existing=%s",
+                user_id,
+                url_result.canonical_key,
+                existing.get("id"),
+            )
+            return existing
+
+    if is_facebook_share_url(url_result.original_url):
+        share_variants = facebook_share_url_variants(url_result.original_url)
+        placeholders = ", ".join(["%s"] * len(share_variants))
+        existing = fetch_one(
+            f"""
+            SELECT id, source_url, status
+            FROM reels
+            WHERE user_id = %s AND source_url IN ({placeholders})
+            ORDER BY created_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            (user_id, *share_variants),
+        )
+        if existing:
+            logger.info(
+                "✅ inbound duplicate by exact historical Facebook share URL fallback user=%s existing=%s original_url=%s source_url=%s",
+                user_id,
+                existing.get("id"),
+                url_result.original_url,
+                existing.get("source_url"),
+            )
+            return existing
+
+        if not url_result.content_id:
+            logger.info(
+                "ℹ️ inbound no duplicate: Facebook share URL did not resolve to a content ID and no exact historical share URL exists user=%s original_url=%s resolution=%s",
+                user_id,
+                url_result.original_url,
+                url_result.resolution_status,
+            )
+        return None
+
+    if not has_stable_duplicate_url(url_result):
+        return None
+
     return fetch_one(
         """
         SELECT id, source_url, status
@@ -161,7 +207,7 @@ def find_existing_reel_for_user(user_id: str, url: str):
         ORDER BY created_at DESC NULLS LAST
         LIMIT 1
         """,
-        (user_id, url),
+        (user_id, url_result.canonical_url),
     )
 
 

@@ -60,6 +60,30 @@ export type AddVideoResult = {
   previewUrl?: string | null;
 };
 
+export type DuplicateReelResponse = {
+  duplicate: true;
+  code: 'duplicate_reel';
+  message: string;
+  existingReelId?: string;
+  existingReelUrl?: string;
+  canonicalKey?: string | null;
+  originalUrl?: string | null;
+  canonicalUrl?: string | null;
+  sourceUrl?: string | null;
+  title?: string | null;
+  status?: string | null;
+};
+
+export class DuplicateReelError extends Error {
+  duplicate: DuplicateReelResponse;
+
+  constructor(duplicate: DuplicateReelResponse) {
+    super(duplicate.message || 'Already saved');
+    this.name = 'DuplicateReelError';
+    this.duplicate = duplicate;
+  }
+}
+
 interface DataContextType {
   videos: Video[];
   folders: Folder[];
@@ -913,7 +937,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     async (url: string, forceRetry: boolean = false): Promise<AddVideoResult> => {
       if (!navigator.onLine) throw new Error('You are offline.');
 
-      const cleanUrl = (url || '').trim().split('?')[0];
+      const cleanUrl = (url || '').trim();
       const currentVideos = videosRef.current;
       const existing = currentVideos.find((v: any) => v.originalUrl === cleanUrl);
 
@@ -930,16 +954,20 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       });
 
+      let result: any = null;
+      try {
+        result = await response.json();
+      } catch {}
+
+      if (result?.duplicate && result?.code === 'duplicate_reel') {
+        throw new DuplicateReelError(result as DuplicateReelResponse);
+      }
+
       if (response.status === 409) throw new Error('This video has already been saved.');
       if (response.status === 401) {
         localStorage.removeItem('auth_token');
         throw new Error('Not authenticated. Please log in again.');
       }
-
-      let result: any = null;
-      try {
-        result = await response.json();
-      } catch {}
 
       if (!response.ok) {
         const message =

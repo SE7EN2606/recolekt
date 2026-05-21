@@ -1,7 +1,6 @@
-import { API_BASE } from "../utils/api";
 import React, { useState } from 'react';
 import { X, BookmarkCheck, CircleX } from 'lucide-react';
-import { useData } from '../context/DataContext';
+import { DuplicateReelError, useData } from '../context/DataContext';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
@@ -37,6 +36,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [alreadySaved, setAlreadySaved] = useState(false);
+  const [savedReelPath, setSavedReelPath] = useState('');
   const { addVideo } = useData();
   const { t } = useTranslation(['modals', 'common']);
   const navigate = useNavigate();
@@ -48,6 +48,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
       setUrl('');
       setError('');
       setAlreadySaved(false);
+      setSavedReelPath('');
       document.body.style.overflow = 'hidden';
     } else {
       const timer = setTimeout(() => setIsVisible(false), 300);
@@ -62,6 +63,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
       setUrl(text);
       setError('');
       setAlreadySaved(false);
+      setSavedReelPath('');
     } catch (err) {
       console.error('Failed to read clipboard:', err);
     }
@@ -71,11 +73,13 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
     setUrl('');
     setError('');
     setAlreadySaved(false);
+    setSavedReelPath('');
   };
 
   const handleClose = () => {
     setAlreadySaved(false);
     setError('');
+    setSavedReelPath('');
     onClose();
   };
 
@@ -94,6 +98,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
     setIsLoading(true);
     setError('');
     setAlreadySaved(false);
+    setSavedReelPath('');
 
     try {
       await addVideo(url.trim());
@@ -102,6 +107,13 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
       navigate('/gallery');
 
     } catch (err: any) {
+      if (err instanceof DuplicateReelError && err.duplicate.existingReelId) {
+        setAlreadySaved(true);
+        setSavedReelPath(err.duplicate.existingReelUrl || `/video/${err.duplicate.existingReelId}`);
+        setIsLoading(false);
+        return;
+      }
+
       const backendError = String(err.message || '').toLowerCase();
 
       if (backendError.includes('already been saved') || backendError.includes('already exists')) {
@@ -165,10 +177,10 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
                 <BookmarkCheck size={20} className="text-emerald-600 mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="text-sm font-bold text-emerald-800">
-                    {t('modals:errorAlreadySaved', 'Already in your collection')}
+                    {t('modals:errorAlreadySaved', 'Already saved')}
                   </p>
                   <p className="text-xs text-emerald-600 mt-0.5">
-                    {t('modals:alreadySavedHint', 'This reel is already saved. Go to your gallery to find it.')}
+                    {t('modals:alreadySavedHint', 'This video is already in your Recolekt library.')}
                   </p>
                 </div>
               </div>
@@ -182,10 +194,12 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
                 </button>
                 <button
                   type="button"
-                  onClick={() => { handleClose(); navigate('/gallery'); }}
+                  onClick={() => { handleClose(); navigate(savedReelPath || '/gallery'); }}
                   className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-bold shadow-sm"
                 >
-                  {t('modals:goToGallery', 'Go to Gallery')}
+                  {savedReelPath
+                    ? t('modals:viewSavedReel', 'View saved reel')
+                    : t('modals:goToGallery', 'Go to Gallery')}
                 </button>
               </div>
             </div>
@@ -195,7 +209,7 @@ export const AddVideoModal: React.FC<AddVideoModalProps> = ({ isOpen, onClose })
                 <input
                   type="text"
                   value={url}
-                  onChange={(e) => { setUrl(e.target.value); setError(''); setAlreadySaved(false); }}
+                  onChange={(e) => { setUrl(e.target.value); setError(''); setAlreadySaved(false); setSavedReelPath(''); }}
                   placeholder={t('modals:pastePlaceholder')}
                   className={`w-full h-[50px] pl-4 bg-white/50 border border-white/40 rounded-xl focus:bg-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none text-gray-900 placeholder-gray-400 backdrop-blur-sm ${
                     url ? 'pr-[88px]' : 'pr-16'
