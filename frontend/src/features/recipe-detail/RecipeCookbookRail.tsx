@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChefHat, ChevronDown, Clock3, Folder, ShoppingBasket, Sparkles, StickyNote } from 'lucide-react';
+import { AlignLeft, ChefHat, ChevronDown, Clock3, Folder, ShoppingBasket, StickyNote } from 'lucide-react';
 import { OriginalLink } from '../../components/VideoDetailWidgets';
 
 export type RecipeMetaChip = {
@@ -452,7 +452,7 @@ export function RecipeCookbookRail({
             </span>
             <span className="min-w-0">
               <span className="block text-lg font-black leading-tight">
-                {cookStatus.hasActiveSession ? 'Continue cooking' : 'Start cooking'}
+                {cookStatus.hasActiveSession ? 'Resume cooking' : 'Start cooking'}
               </span>
               <span className="mt-0.5 block text-sm font-medium text-emerald-50/85">
                 {cookStatus.hasActiveSession ? 'Pick up your saved cook session.' : 'Open guided Cook Mode.'}
@@ -493,23 +493,17 @@ export function RecipeCookbookRail({
                 {shoppingSaving
                   ? 'Updating shopping list...'
                   : shoppingPlanned
-                    ? 'In your cooking plan'
+                    ? 'Planned'
                     : 'Add ingredients to shopping list'}
               </span>
               <span className="mt-0.5 block text-xs font-medium text-gray-500">
-                {shoppingPlanned ? 'Click to remove this recipe.' : 'Plan this recipe and derive groceries.'}
+                {shoppingPlanned ? 'Already in your shopping plan.' : 'Plan this recipe for groceries.'}
               </span>
             </span>
           </div>
         </button>
         )
       )}
-
-      <RecipeRailCard
-        icon={<Folder size={16} aria-hidden="true" />}
-        label="Collection"
-        title={folderName || 'Unsorted'}
-      />
 
       <RecipeCookStatusCard
         status={cookStatus}
@@ -527,6 +521,14 @@ export function RecipeCookbookRail({
         status={noteStatus}
       />
 
+      {folderName && (
+        <RecipeRailCard
+          icon={<Folder size={16} aria-hidden="true" />}
+          label="Collection"
+          title={folderName}
+        />
+      )}
+
       {hasSourceDetails && (
         <div className="rounded-[24px] border border-gray-100 bg-white shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
           <button
@@ -537,7 +539,7 @@ export function RecipeCookbookRail({
           >
             <span className="flex items-center gap-3">
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 text-gray-700">
-                <Sparkles size={16} aria-hidden="true" />
+                <AlignLeft size={16} aria-hidden="true" />
               </span>
               <span>
                 <span className="block text-sm font-black text-gray-950">

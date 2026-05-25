@@ -875,13 +875,13 @@ export const VideoDetail: React.FC = () => {
                         {shoppingSaving
                           ? 'Updating shopping list...'
                           : plannedRecipeIds.has(currentVideoId)
-                            ? 'In your cooking plan'
+                            ? 'Planned'
                             : 'Add ingredients to shopping list'}
                       </span>
                       <span className="mt-0.5 block text-xs font-medium text-gray-500">
                         {plannedRecipeIds.has(currentVideoId)
-                          ? 'Tap to remove this recipe.'
-                          : 'Plan this recipe and derive groceries.'}
+                          ? 'Already in your shopping plan.'
+                          : 'Plan this recipe for groceries.'}
                       </span>
                     </span>
                   </button>
