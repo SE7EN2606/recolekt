@@ -21,6 +21,11 @@ export type TodaysPick = {
   signals: string[];
 } | null;
 
+export type TodaysPickOptions = {
+  plannedRecipeIds?: Set<string>;
+  excludeRecipeIds?: Set<string>;
+};
+
 export function parseObject(value: unknown): any {
   if (!value) return {};
   if (typeof value === 'string') {
@@ -342,6 +347,13 @@ export function isUntouchedSave(video: any, now = new Date()): boolean {
   return ageDays > 14 && state.cookCount === 0 && !state.hasActiveSession && !state.hasNote;
 }
 
+export function isRecentlySavedRecipe(video: any, now = new Date(), days = 10): boolean {
+  const rawDate = video?.savedAt ?? video?.saved_at ?? video?.createdAt ?? video?.created_at;
+  const savedAt = rawDate ? new Date(rawDate) : null;
+  if (!savedAt || Number.isNaN(savedAt.getTime())) return false;
+  return now.getTime() - savedAt.getTime() <= days * 86400000;
+}
+
 export function recipeSearchScore(video: any, query: string): number {
   const q = query.trim().toLowerCase();
   if (!q) return 1;
@@ -353,8 +365,13 @@ export function recipeSearchScore(video: any, query: string): number {
   return text.includes(q) ? 1 : 0;
 }
 
-export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
-  const candidates = videos.filter((video) => hasUsableCookbookRecipe(video) && !getRecipeUserState(video).hasActiveSession);
+export function pickTodaysRecipe(videos: any[], now = new Date(), options: TodaysPickOptions = {}): TodaysPick {
+  const plannedRecipeIds = options.plannedRecipeIds ?? new Set<string>();
+  const excludeRecipeIds = options.excludeRecipeIds ?? new Set<string>();
+  const candidates = videos.filter((video) => {
+    const id = getVideoId(video);
+    return hasUsableCookbookRecipe(video) && !getRecipeUserState(video).hasActiveSession && !excludeRecipeIds.has(id);
+  });
   if (candidates.length === 0) return null;
 
   const isWeekend = now.getDay() === 0 || now.getDay() === 6;
@@ -366,6 +383,8 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
     const bucket = getRecipeTimeBucket(video);
     const ingredientCount = getRecipeIngredientCount(video);
     const stepCount = getRecipeStepCount(video);
+    const videoId = getVideoId(video);
+    const planned = plannedRecipeIds.has(videoId);
     const savedAt = new Date(video?.savedAt ?? video?.saved_at ?? video?.createdAt ?? video?.created_at ?? 0).getTime();
     const lastCookedAt = state.lastCookedAt ? new Date(state.lastCookedAt).getTime() : 0;
     const lastOpenedAt = new Date(
@@ -378,7 +397,7 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
       0
     ).getTime();
     let score = Number.isFinite(savedAt) ? savedAt / 100000000000 : 0;
-    let reason = 'Never cooked';
+    let reason = 'Saved but never cooked';
     const signals: string[] = [];
     const addSignal = (signal: string) => {
       if (!signals.includes(signal) && signals.length < 4) signals.push(signal);
@@ -386,23 +405,34 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
 
     if (state.cookCount === 0) {
       score += 24;
-      reason = 'Never cooked';
+      reason = 'Saved but never cooked';
       addSignal('Never cooked');
     } else if (lastCookedAt && now.getTime() - lastCookedAt > 30 * 86400000) {
       score += 18;
-      reason = 'Worth revisiting';
+      reason = 'Good to cook again';
       addSignal('Cooked before');
+    }
+    if (planned) {
+      score += 42;
+      reason = 'Already planned';
+      addSignal('Planned');
     }
     if (isUntouchedSave(video, now)) {
       score += 28;
-      reason = 'You saved this a while ago';
+      reason = planned ? reason : 'Saved for later';
       addSignal('Saved for later');
     }
     if (state.hasNote) {
       score += 6;
       addSignal('Has notes');
     }
-    if (Number.isFinite(savedAt) && savedAt > recentCutoff) addSignal('Recently saved');
+    if (Number.isFinite(savedAt) && savedAt > recentCutoff) {
+      addSignal('Recently saved');
+      if (!planned && state.cookCount === 0) {
+        score += 5;
+        reason = 'Recently saved';
+      }
+    }
     if (state.cookCount > 0) addSignal('Cooked before');
     if (ingredientCount > 0 && ingredientCount <= 10) score += 8;
     if (stepCount > 0 && stepCount <= 6) score += 6;
@@ -410,21 +440,21 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
     if (isWeekdayEvening) {
       if (bucket === RECIPE_TIME_BUCKETS.QUICK_MEAL) {
         score += 34;
-        reason = 'Fast enough for tonight';
+        reason = planned ? reason : 'Quick weeknight option';
         addSignal('Quick');
       } else if (bucket === RECIPE_TIME_BUCKETS.WEEKNIGHT) {
         score += 18;
-        reason = 'Weeknight-friendly';
+        reason = planned ? reason : 'Weeknight-friendly';
       }
     }
     if (isWeekend) {
       if (bucket === RECIPE_TIME_BUCKETS.PROJECT_MEAL) {
         score += 34;
-        reason = 'Worth trying this weekend';
+        reason = planned ? reason : 'Good weekend project';
         addSignal('Good weekend recipe');
       } else if (bucket === RECIPE_TIME_BUCKETS.SLOW_MEAL) {
         score += 18;
-        reason = 'Weekend-friendly';
+        reason = planned ? reason : 'Weekend-friendly';
         addSignal('Good weekend recipe');
       }
     }
@@ -434,17 +464,21 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
     if (bucket === RECIPE_TIME_BUCKETS.UNKNOWN) score -= 4;
 
     const explanation =
-      reason === 'Never cooked'
+      reason === 'Saved but never cooked'
         ? 'You saved it, but it has not had its first cook yet.'
-        : reason === 'Worth revisiting'
+        : reason === 'Good to cook again'
           ? 'You have made it before, and it has been a while.'
-          : reason === 'You saved this a while ago'
+          : reason === 'Already planned'
+            ? 'It is already in your cooking plan, so the ingredients are easier to act on.'
+          : reason === 'Saved for later'
             ? 'An older save with recipe details ready when you are.'
-            : reason === 'Fast enough for tonight'
+            : reason === 'Recently saved'
+              ? 'A fresh save with enough recipe detail to make it easy to try.'
+            : reason === 'Quick weeknight option'
               ? 'This looks manageable when you want dinner moving soon.'
               : reason === 'Weeknight-friendly'
                 ? 'A recipe shape that fits a normal cooking night.'
-                : reason === 'Worth trying this weekend'
+                : reason === 'Good weekend project'
                   ? 'A richer recipe that fits a slower cooking window.'
                   : reason === 'Weekend-friendly'
                     ? 'A slower recipe that has room on a weekend.'

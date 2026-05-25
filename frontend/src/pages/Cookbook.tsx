@@ -4,7 +4,6 @@ import { ChefHat, CircleX, Clock3, Flame, Search, ShoppingBasket, StickyNote } f
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import {
-  detectRecipeTechniques,
   estimateRecipeTimeMinutes,
   getRecipeCuisineLabel,
   getRecipeIngredientCount,
@@ -16,6 +15,7 @@ import {
   getVideoId,
   hasUsableCookbookRecipe,
   isNeverCooked,
+  isRecentlySavedRecipe,
   isUntouchedSave,
   pickTodaysRecipe,
   RECIPE_TIME_BUCKETS,
@@ -24,7 +24,7 @@ import {
 import { searchCookbookRecipes, type CookbookSearchResult } from '../features/cookbook/cookbookSearch';
 import useShoppingList from '../features/shopping/useShoppingList';
 
-type CookbookFilter = 'all' | 'quick' | 'never' | 'cooked' | 'notes' | 'planned';
+type CookbookFilter = 'all' | 'quick' | 'planned' | 'never' | 'cooked' | 'notes' | 'later';
 
 const COOKBOOK_FILTERS: Array<{
   id: CookbookFilter;
@@ -33,10 +33,11 @@ const COOKBOOK_FILTERS: Array<{
 }> = [
   { id: 'all', label: 'All recipes', icon: ChefHat },
   { id: 'quick', label: 'Quick', icon: Clock3 },
+  { id: 'planned', label: 'Planned', icon: ShoppingBasket },
   { id: 'never', label: 'Never cooked', icon: Flame },
   { id: 'cooked', label: 'Cooked before', icon: ChefHat },
   { id: 'notes', label: 'Has notes', icon: StickyNote },
-  { id: 'planned', label: 'In shopping plan', icon: ShoppingBasket },
+  { id: 'later', label: 'Saved for later', icon: StickyNote },
 ];
 
 function getThumbnailUrl(video: any): string {
@@ -126,6 +127,42 @@ function getCurrentStepLabel(video: any): string | null {
   return `Step ${stepIndex + 1}`;
 }
 
+function uniqueByVideoId(videos: any[]): any[] {
+  const seen = new Set<string>();
+  const result: any[] = [];
+  videos.forEach((video) => {
+    const id = getVideoId(video);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    result.push(video);
+  });
+  return result;
+}
+
+function excludeVideoIds(videos: any[], ids: Set<string>): any[] {
+  return videos.filter((video) => !ids.has(getVideoId(video)));
+}
+
+function cardSignals(video: any, planned: boolean, searchLabels: string[] = []): string[] {
+  if (searchLabels.length > 0) return searchLabels.slice(0, 2);
+
+  const signals: string[] = [];
+  const add = (value: string | null | undefined) => {
+    const label = String(value || '').trim();
+    if (!label || signals.includes(label) || signals.length >= 3) return;
+    signals.push(label);
+  };
+
+  const state = getRecipeUserState(video);
+  add(timeBucketLabel(getRecipeTimeBucket(video)));
+  if (planned) add('Planned');
+  if (state.cookCount > 0) add(`Cooked ${state.cookCount}x`);
+  else add('Never cooked');
+  if (state.hasNote) add('Has notes');
+  add(getRecipeCuisineLabel(video));
+  return signals;
+}
+
 const CookbookSection: React.FC<{
   title: string;
   subtitle?: string;
@@ -158,11 +195,9 @@ const RecipeDecisionCard: React.FC<{
   const title = getRecipeTitle(video);
   const thumbnailUrl = getThumbnailUrl(video);
   const cookTime = formatCookTime(video);
-  const cuisine = getRecipeCuisineLabel(video);
-  const technique = detectRecipeTechniques(video)[0];
-  const bucket = timeBucketLabel(getRecipeTimeBucket(video));
   const state = getRecipeUserState(video);
   const keyIngredients = getRecipeKeyIngredients(video);
+  const signals = cardSignals(video, planned, searchLabels);
 
   return (
     <button
@@ -209,42 +244,21 @@ const RecipeDecisionCard: React.FC<{
           {title}
         </p>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {searchLabels.slice(0, 3).map((label) => (
-            <span key={label} className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-600">
-              {label}
-            </span>
-          ))}
-          {searchLabels.length === 0 && bucket && (
-            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700 ring-1 ring-amber-100">
-              {bucket}
-            </span>
-          )}
-          {searchLabels.length === 0 && cuisine && (
-            <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[10px] font-black text-stone-600">
-              {cuisine}
-            </span>
-          )}
-          {searchLabels.length === 0 && technique && (
-            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700 ring-1 ring-emerald-100">
-              {technique}
-            </span>
-          )}
-          {planned && (
-            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700 ring-1 ring-emerald-100">
-              Planned
-            </span>
-          )}
-          {state.cookCount > 0 && (
-            <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black text-gray-600 ring-1 ring-gray-100">
-              Cooked {state.cookCount}x
-            </span>
-          )}
-          {state.hasNote && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2.5 py-1 text-[10px] font-black text-stone-600">
-              <StickyNote size={10} aria-hidden="true" />
-              Note
-            </span>
-          )}
+          {signals.map((label) => {
+            const plannedSignal = label === 'Planned';
+            return (
+              <span
+                key={label}
+                className={`rounded-full px-2.5 py-1 text-[10px] font-black ${
+                  plannedSignal
+                    ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                    : 'bg-white text-gray-600 ring-1 ring-gray-100'
+                }`}
+              >
+                {label}
+              </span>
+            );
+          })}
         </div>
         {keyIngredients.length > 0 && (
           <p className="mt-1.5 line-clamp-2 text-xs font-medium leading-snug text-gray-500">
@@ -381,8 +395,77 @@ const TodaysPickPanel: React.FC<{
           >
             View recipe
           </button>
+          {planned && (
+            <button
+              type="button"
+              onClick={() => navigate('/shopping-list')}
+              className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-emerald-100 bg-white px-5 py-2.5 text-sm font-black text-emerald-800 shadow-sm transition-colors hover:bg-emerald-50"
+            >
+              Shopping List
+            </button>
+          )}
         </div>
       </div>
+    </div>
+  );
+};
+
+const ContinueCookingPanel: React.FC<{
+  videos: any[];
+  plannedRecipeIds: Set<string>;
+}> = ({ videos, plannedRecipeIds }) => {
+  const navigate = useNavigate();
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {videos.slice(0, 3).map((video) => {
+        const id = getVideoId(video);
+        const title = getRecipeTitle(video);
+        const thumbnail = getThumbnailUrl(video);
+        const progress = getCurrentStepLabel(video) || 'Session in progress';
+        const planned = plannedRecipeIds.has(id);
+
+        return (
+          <div key={id} className="rounded-[24px] border border-emerald-100 bg-white p-3 shadow-sm">
+            <button
+              type="button"
+              onClick={() => navigate(`/video/${id}`, { state: { from: 'cookbook' } })}
+              className="flex w-full items-center gap-3 text-left"
+            >
+              <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-slate-900">
+                {thumbnail ? (
+                  <img src={thumbnail} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-slate-500">
+                    No preview
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-black uppercase tracking-widest text-emerald-700">{progress}</p>
+                <p className="mt-1 line-clamp-2 text-sm font-black leading-snug text-gray-950">{title}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {planned && (
+                    <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700 ring-1 ring-emerald-100">
+                      Planned
+                    </span>
+                  )}
+                  <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700 ring-1 ring-amber-100">
+                    Resume
+                  </span>
+                </div>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(`/video/${id}`, { state: { from: 'cookbook' } })}
+              className="mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-black text-white transition-colors hover:bg-emerald-700"
+            >
+              Resume
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -415,6 +498,11 @@ export const Cookbook: React.FC = () => {
     [recipes]
   );
 
+  const continueCookingIds = useMemo(
+    () => new Set(continueCooking.map((video: any) => getVideoId(video))),
+    [continueCooking]
+  );
+
   const plannedRecipes = useMemo(() => {
     const recipesById = new Map(recipes.map((video: any) => [getVideoId(video), video]));
     return shoppingRecipeEntries
@@ -431,16 +519,29 @@ export const Cookbook: React.FC = () => {
       .filter(Boolean);
   }, [recipes, shoppingRecipeEntries]);
 
-  const todaysPick = useMemo(() => pickTodaysRecipe(recipes, new Date()), [recipes]);
+  const todaysPick = useMemo(
+    () => pickTodaysRecipe(recipes, new Date(), {
+      plannedRecipeIds,
+      excludeRecipeIds: continueCookingIds,
+    }),
+    [continueCookingIds, plannedRecipeIds, recipes]
+  );
 
   const primaryRecommendationIds = useMemo(() => {
-    const ids = new Set<string>();
+    const ids = new Set<string>(continueCookingIds);
     if (todaysPick) ids.add(getVideoId(todaysPick.video));
+    plannedRecipes.slice(0, 8).forEach((video: any) => ids.add(getVideoId(video)));
     return ids;
-  }, [todaysPick]);
+  }, [continueCookingIds, plannedRecipes, todaysPick]);
+
+  const plannedSectionRecipes = useMemo(() => {
+    const hiddenIds = new Set<string>(continueCookingIds);
+    if (todaysPick) hiddenIds.add(getVideoId(todaysPick.video));
+    return excludeVideoIds(uniqueByVideoId(plannedRecipes), hiddenIds);
+  }, [continueCookingIds, plannedRecipes, todaysPick]);
 
   const quickWins = useMemo(
-    () => recipes
+    () => uniqueByVideoId(recipes)
       .filter((video: any) => {
         if (primaryRecommendationIds.has(getVideoId(video))) return false;
         if (getRecipeUserState(video).hasActiveSession) return false;
@@ -457,25 +558,28 @@ export const Cookbook: React.FC = () => {
   }, [primaryRecommendationIds, quickWins]);
 
   const neverCooked = useMemo(
-    () => recipes
+    () => uniqueByVideoId(recipes)
       .filter((video: any) => isNeverCooked(video) && !getRecipeUserState(video).hasActiveSession && !primarySectionIds.has(getVideoId(video))),
     [primarySectionIds, recipes]
   );
 
   const untouchedSaves = useMemo(
-    () => recipes
+    () => uniqueByVideoId(recipes)
       .filter((video: any) => isUntouchedSave(video, new Date()) && !primarySectionIds.has(getVideoId(video)))
       .sort(sortBySavedAtDesc),
     [primarySectionIds, recipes]
   );
 
   const cookedBefore = useMemo(
-    () => recipes.filter((video: any) => getRecipeUserState(video).cookCount > 0).sort(sortByCookedAtDesc),
-    [recipes]
+    () => excludeVideoIds(
+      uniqueByVideoId(recipes).filter((video: any) => getRecipeUserState(video).cookCount > 0).sort(sortByCookedAtDesc),
+      primarySectionIds
+    ),
+    [primarySectionIds, recipes]
   );
 
   const recentlySaved = useMemo(
-    () => recipes
+    () => uniqueByVideoId(recipes)
       .filter((video: any) => isNeverCooked(video) && savedWithinDays(video, 14) && !primarySectionIds.has(getVideoId(video)))
       .sort(sortBySavedAtDesc),
     [primarySectionIds, recipes]
@@ -497,6 +601,7 @@ export const Cookbook: React.FC = () => {
     cooked: cookedRecipes.length,
     notes: recipesWithNotes.length,
     planned: recipes.filter((video: any) => plannedRecipeIds.has(getVideoId(video))).length,
+    later: recipes.filter((video: any) => isUntouchedSave(video, new Date()) || (isNeverCooked(video) && isRecentlySavedRecipe(video))).length,
   };
 
   const filteredRecipeResults = useMemo<CookbookSearchResult[]>(() => {
@@ -507,6 +612,7 @@ export const Cookbook: React.FC = () => {
       if (activeFilter === 'cooked') return state.cookCount > 0;
       if (activeFilter === 'notes') return state.hasNote;
       if (activeFilter === 'planned') return plannedRecipeIds.has(getVideoId(video));
+      if (activeFilter === 'later') return isUntouchedSave(video, new Date()) || (state.cookCount === 0 && isRecentlySavedRecipe(video));
       return true;
     });
 
@@ -551,6 +657,14 @@ export const Cookbook: React.FC = () => {
         </div>
       </div>
 
+      {!searchActive && continueCooking.length > 0 && (
+        <div className="mb-10">
+          <CookbookSection title="Continue cooking" subtitle="Pick up where you left off.">
+            <ContinueCookingPanel videos={continueCooking} plannedRecipeIds={plannedRecipeIds} />
+          </CookbookSection>
+        </div>
+      )}
+
       {!searchActive && todaysPick && (
         <div className="mb-10">
           <TodaysPickPanel pick={todaysPick} planned={plannedRecipeIds.has(getVideoId(todaysPick.video))} />
@@ -565,24 +679,11 @@ export const Cookbook: React.FC = () => {
         </div>
       )}
 
-      {!searchActive && continueCooking.length > 0 && (
-        <div className="mb-10">
-          <CookbookSection title="Continue cooking" subtitle="Active recipe sessions stay close to the top.">
-            <HorizontalRecipeRow
-              videos={continueCooking}
-              emptyText="No active cooking sessions."
-              reason={(video) => getCurrentStepLabel(video) || 'Session in progress'}
-              plannedRecipeIds={plannedRecipeIds}
-            />
-          </CookbookSection>
-        </div>
-      )}
-
-      {!searchActive && !shoppingLoading && plannedRecipes.length > 0 && (
+      {!searchActive && !shoppingLoading && plannedSectionRecipes.length > 0 && (
         <div className="mb-10">
           <CookbookSection title="This Week's Cooking Plan" subtitle="Recipes already shaping your shopping list.">
             <HorizontalRecipeRow
-              videos={plannedRecipes}
+              videos={plannedSectionRecipes}
               emptyText=""
               reason={() => 'In shopping plan'}
               plannedRecipeIds={plannedRecipeIds}
@@ -644,6 +745,19 @@ export const Cookbook: React.FC = () => {
               </button>
             );
           })}
+          {searchActive && (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery('');
+                setActiveFilter('all');
+                setShowAllRecipes(false);
+              }}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3.5 py-2 text-[12px] font-black text-gray-700 transition-colors hover:bg-gray-50"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
