@@ -17,6 +17,8 @@ export type RecipeTimeBucket = typeof RECIPE_TIME_BUCKETS[keyof typeof RECIPE_TI
 export type TodaysPick = {
   video: any;
   reason: string;
+  explanation: string;
+  signals: string[];
 } | null;
 
 export function parseObject(value: unknown): any {
@@ -164,6 +166,64 @@ export function getRecipeStepCount(video: any): number {
     recipe?.instructions_sections ??
     recipe?.instructionSections
   );
+}
+
+function ingredientLabel(value: unknown): string {
+  if (!value) return '';
+  if (typeof value === 'string') {
+    return value
+      .replace(/^\s*[-*]\s*/, '')
+      .replace(/^\d+(?:[./]\d+)?\s*(?:cups?|tbsp|tsp|tablespoons?|teaspoons?|grams?|g|kg|ml|l|oz|ounces?|lb|pounds?)?\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  if (typeof value === 'object') {
+    const source = value as any;
+    return String(
+      source?.name ??
+      source?.ingredient ??
+      source?.item ??
+      source?.text ??
+      source?.label ??
+      ''
+    ).trim();
+  }
+  return '';
+}
+
+function collectIngredientLabels(value: unknown, labels: string[], depth = 0): void {
+  if (!value || depth > 4 || labels.length >= 3) return;
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectIngredientLabels(item, labels, depth + 1));
+    return;
+  }
+  if (typeof value === 'object') {
+    const source = value as any;
+    const nested = source?.items ?? source?.ingredients;
+    if (nested) {
+      collectIngredientLabels(nested, labels, depth + 1);
+      return;
+    }
+  }
+
+  const label = ingredientLabel(value);
+  if (!label) return;
+  const normalized = label.toLowerCase();
+  if (!labels.some((existing) => existing.toLowerCase() === normalized)) labels.push(label);
+}
+
+export function getRecipeKeyIngredients(video: any): string[] {
+  const recipe = getRecipePayload(video);
+  const labels: string[] = [];
+  collectIngredientLabels(
+    recipe?.ingredients ??
+    recipe?.ingredientLines ??
+    recipe?.ingredient_lines ??
+    recipe?.ingredient_sections ??
+    recipe?.ingredientSections,
+    labels
+  );
+  return labels.slice(0, 3);
 }
 
 export function hasUsableCookbookRecipe(video: any): boolean {
@@ -319,18 +379,31 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
     ).getTime();
     let score = Number.isFinite(savedAt) ? savedAt / 100000000000 : 0;
     let reason = 'Never cooked';
+    const signals: string[] = [];
+    const addSignal = (signal: string) => {
+      if (!signals.includes(signal) && signals.length < 4) signals.push(signal);
+    };
 
     if (state.cookCount === 0) {
       score += 24;
       reason = 'Never cooked';
+      addSignal('Never cooked');
     } else if (lastCookedAt && now.getTime() - lastCookedAt > 30 * 86400000) {
       score += 18;
       reason = 'Worth revisiting';
+      addSignal('Cooked before');
     }
     if (isUntouchedSave(video, now)) {
       score += 28;
       reason = 'You saved this a while ago';
+      addSignal('Saved for later');
     }
+    if (state.hasNote) {
+      score += 6;
+      addSignal('Has notes');
+    }
+    if (Number.isFinite(savedAt) && savedAt > recentCutoff) addSignal('Recently saved');
+    if (state.cookCount > 0) addSignal('Cooked before');
     if (ingredientCount > 0 && ingredientCount <= 10) score += 8;
     if (stepCount > 0 && stepCount <= 6) score += 6;
     if (ingredientCount > 16 || stepCount > 10) score -= isWeekend ? 0 : 8;
@@ -338,6 +411,7 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
       if (bucket === RECIPE_TIME_BUCKETS.QUICK_MEAL) {
         score += 34;
         reason = 'Fast enough for tonight';
+        addSignal('Quick');
       } else if (bucket === RECIPE_TIME_BUCKETS.WEEKNIGHT) {
         score += 18;
         reason = 'Weeknight-friendly';
@@ -347,16 +421,36 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
       if (bucket === RECIPE_TIME_BUCKETS.PROJECT_MEAL) {
         score += 34;
         reason = 'Worth trying this weekend';
+        addSignal('Good weekend recipe');
       } else if (bucket === RECIPE_TIME_BUCKETS.SLOW_MEAL) {
         score += 18;
         reason = 'Weekend-friendly';
+        addSignal('Good weekend recipe');
       }
     }
+    if (bucket === RECIPE_TIME_BUCKETS.QUICK_MEAL) addSignal('Quick');
     if (Number.isFinite(lastCookedAt) && lastCookedAt > recentCutoff) score -= 10;
     if (Number.isFinite(lastOpenedAt) && lastOpenedAt > recentCutoff) score -= 6;
     if (bucket === RECIPE_TIME_BUCKETS.UNKNOWN) score -= 4;
 
-    return { video, reason, savedAt, score };
+    const explanation =
+      reason === 'Never cooked'
+        ? 'You saved it, but it has not had its first cook yet.'
+        : reason === 'Worth revisiting'
+          ? 'You have made it before, and it has been a while.'
+          : reason === 'You saved this a while ago'
+            ? 'An older save with recipe details ready when you are.'
+            : reason === 'Fast enough for tonight'
+              ? 'This looks manageable when you want dinner moving soon.'
+              : reason === 'Weeknight-friendly'
+                ? 'A recipe shape that fits a normal cooking night.'
+                : reason === 'Worth trying this weekend'
+                  ? 'A richer recipe that fits a slower cooking window.'
+                  : reason === 'Weekend-friendly'
+                    ? 'A slower recipe that has room on a weekend.'
+                    : 'A recipe that stands out from your cookbook signals.';
+
+    return { video, reason, explanation, signals, savedAt, score };
   });
 
   scored.sort((a, b) => {
@@ -365,5 +459,12 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
     return b.savedAt - a.savedAt;
   });
   const pick = scored[0];
-  return pick ? { video: pick.video, reason: pick.reason } : null;
+  return pick
+    ? {
+        video: pick.video,
+        reason: pick.reason,
+        explanation: pick.explanation,
+        signals: pick.signals,
+      }
+    : null;
 }
