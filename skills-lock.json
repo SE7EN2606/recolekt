@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "cleanui": {
+      "source": "peterhdd/cleanui",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "0c6e524d22b837e4831c4e9796cd253f07e8a7504661943b1153f87f88b6365c"
+    }
+  }
+}
