@@ -303,7 +303,7 @@ def insert_reel_into_db(reel_data):
                 summary_bullets, summary_hashtags, summary_emojis,
                 content_type, recipe, workout, detected_language,
                 gcs_urls, transcription, tools_list, location, prompt,
-                is_list, list_subtype, list_count, list_type,
+                is_list, list_subtype, list_count, list_type, error_message,
                 created_at, updated_at
             )
             VALUES (
@@ -314,7 +314,7 @@ def insert_reel_into_db(reel_data):
                 %(content_type)s, %(recipe)s::jsonb, %(workout)s::jsonb, %(detected_language)s,
                 %(gcs_urls)s::jsonb, %(transcription)s,
                 %(tools_list)s::jsonb, %(location)s::jsonb, %(prompt)s::jsonb,
-                %(is_list)s, %(list_subtype)s, %(list_count)s, %(list_type)s,
+                %(is_list)s, %(list_subtype)s, %(list_count)s, %(list_type)s, %(error_message)s,
                 %(created_at)s, NOW()
             )
             ON CONFLICT (id) DO UPDATE SET
@@ -343,6 +343,7 @@ def insert_reel_into_db(reel_data):
                 list_subtype       = EXCLUDED.list_subtype,
                 list_count         = EXCLUDED.list_count,
                 list_type          = EXCLUDED.list_type,
+                error_message      = EXCLUDED.error_message,
                 updated_at         = NOW();
         """
 
@@ -376,6 +377,7 @@ def insert_reel_into_db(reel_data):
             "list_subtype": list_subtype,
             "list_count": list_count,
             "list_type": list_type,
+            "error_message": reel_data.get("error_message"),
             "created_at": created_at,
         }
 

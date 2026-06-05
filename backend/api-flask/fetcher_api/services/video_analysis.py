@@ -611,7 +611,15 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
             logger.info("⬇️ Downloading Facebook video: %s", url)
             fb_result = meta_client.download_video(url, output_path)
             if not fb_result.get("success"):
-                return {"success": False, "metadata": {}, "post": None, "thumbnail_path": None, "video_path": None}
+                return {
+                    "success": False,
+                    "metadata": ensure_dict_local(fb_result.get("metadata", {})),
+                    "post": None,
+                    "thumbnail_path": None,
+                    "video_path": None,
+                    "error": fb_result.get("error"),
+                    "error_code": fb_result.get("error_code") or "extraction_failed",
+                }
 
             fb_meta = ensure_dict_local(fb_result.get("metadata", {}))
             thumbnail_path = fb_result.get("thumbnail_path")
@@ -643,7 +651,15 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
 
         if not ig_result.get("success"):
             logger.error("❌ Instagram meta_client download failed: %s", ig_result.get("error"))
-            return {"success": False, "metadata": {}, "post": None, "thumbnail_path": None, "video_path": None}
+            return {
+                "success": False,
+                "metadata": ensure_dict_local(ig_result.get("metadata", {})),
+                "post": None,
+                "thumbnail_path": None,
+                "video_path": None,
+                "error": ig_result.get("error"),
+                "error_code": ig_result.get("error_code") or "extraction_failed",
+            }
 
         actual_path = ig_result.get("video_path", output_path)
         if not actual_path or not os.path.exists(actual_path):

@@ -579,6 +579,14 @@ def background_process(
                     return
 
                 result["status"] = "error"
+                result["error_message"] = dl_result.get("error_code") or "extraction_failed"
+                logger.warning(
+                    "❌ Social extraction failed process_id=%s platform=%s error_code=%s error=%s",
+                    result.get("process_id"),
+                    platform_code,
+                    result["error_message"],
+                    dl_result.get("error"),
+                )
                 insert_reel_into_db(result)
                 return
 

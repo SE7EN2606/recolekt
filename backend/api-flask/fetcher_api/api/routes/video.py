@@ -21,6 +21,10 @@ from fetcher_api.services.video_analysis import (
     download_instagram_thumbnail,
 )
 from fetcher_api.api.helpers.processing import background_process
+from fetcher_api.services.social_ingestion import (
+    create_reused_social_reel,
+    find_reusable_social_reel,
+)
 from fetcher_api.services.storage import generate_gcs_paths
 from fetcher_api.services.social_urls import (
     SocialUrlResult,
@@ -34,6 +38,11 @@ from fetcher_api.api.helpers.auth import get_user_id_from_request
 logger = logging.getLogger("video")
 
 EXTRACTION_DAILY_LIMIT_TOTAL = int(os.getenv("EXTRACTION_DAILY_LIMIT_TOTAL", "50"))
+NON_RETRYABLE_SOCIAL_ERRORS = {
+    "social_cookies_expired",
+    "social_login_required",
+    "social_rate_limited",
+}
 
 
 def _count_extractions_today() -> int:
@@ -212,7 +221,7 @@ def _find_existing_reel(user_id: str, url_result: SocialUrlResult, shortcode: st
             content_id = url_result.content_id
             existing = fetch_one(
                 """
-                SELECT id, status, gcs_urls, source_url, summary_title, created_at
+                SELECT id, status, gcs_urls, source_url, summary_title, error_message, created_at
                 FROM reels
                 WHERE user_id = %s
                   AND (
@@ -246,7 +255,7 @@ def _find_existing_reel(user_id: str, url_result: SocialUrlResult, shortcode: st
             placeholders = ", ".join(["%s"] * len(share_variants))
             existing = fetch_one(
                 f"""
-                SELECT id, status, gcs_urls, source_url, summary_title, created_at
+                SELECT id, status, gcs_urls, source_url, summary_title, error_message, created_at
                 FROM reels
                 WHERE user_id = %s AND source_url IN ({placeholders})
                 ORDER BY created_at DESC NULLS LAST
@@ -283,7 +292,7 @@ def _find_existing_reel(user_id: str, url_result: SocialUrlResult, shortcode: st
         if url_result.platform == "instagram" and shortcode:
             return fetch_one(
                 """
-                SELECT id, status, gcs_urls, source_url, summary_title, created_at
+                SELECT id, status, gcs_urls, source_url, summary_title, error_message, created_at
                 FROM reels
                 WHERE user_id = %s
                   AND (
@@ -299,7 +308,7 @@ def _find_existing_reel(user_id: str, url_result: SocialUrlResult, shortcode: st
         if has_stable_duplicate_url(url_result):
             return fetch_one(
                 """
-                SELECT id, status, gcs_urls, source_url, summary_title, created_at
+                SELECT id, status, gcs_urls, source_url, summary_title, error_message, created_at
                 FROM reels
                 WHERE user_id = %s AND source_url = %s
                 ORDER BY created_at DESC NULLS LAST
@@ -361,6 +370,7 @@ def _duplicate_response(existing_reel, url_result: SocialUrlResult) -> dict:
         "canonicalUrl": url_result.canonical_url or None,
         "sourceUrl": existing.get("source_url"),
         "title": existing.get("summary_title"),
+        "errorCode": existing.get("error_message"),
         "preview_url": _preview_url_from_reel(existing_reel),
     }
 
@@ -450,14 +460,62 @@ def summarize():
                 url_result.canonical_url,
             )
 
-            if existing_status == "error" or force_retry:
+            existing_error_code = existing_reel.get("error_message")
+            if force_retry:
                 logger.info("⚠️ Reprocessing requested for existing reel %s; deleting old DB row before retry", existing_id)
+                execute(
+                    "DELETE FROM reels WHERE id = %s AND user_id = %s",
+                    (existing_id, user_id),
+                )
+            elif existing_status == "error" and existing_error_code in NON_RETRYABLE_SOCIAL_ERRORS:
+                logger.info(
+                    "🚫 Not retrying non-retryable social extraction error existing=%s user=%s error_code=%s",
+                    existing_id,
+                    user_id,
+                    existing_error_code,
+                )
+                return jsonify(_duplicate_response(existing_reel, url_result)), 200
+            elif existing_status == "error":
+                logger.info("⚠️ Reprocessing existing error reel %s; deleting old DB row before retry", existing_id)
                 execute(
                     "DELETE FROM reels WHERE id = %s AND user_id = %s",
                     (existing_id, user_id),
                 )
             else:
                 return jsonify(_duplicate_response(existing_reel, url_result)), 200
+
+        if url_result.platform in {"facebook", "instagram"} and not force_retry:
+            reusable_reel = find_reusable_social_reel(user_id, url_result, shortcode)
+            if reusable_reel:
+                reused_process_id = f"{shortcode}--{get_timestamp()}--{get_unique_id(processing_url or url)}"
+                try:
+                    reuse_gcs_paths = generate_gcs_paths(shortcode, platform_id, user_id=user_id)
+                except TypeError:
+                    reuse_gcs_paths = generate_gcs_paths(shortcode, platform_id)
+
+                reuse_result = create_reused_social_reel(
+                    reusable_reel,
+                    reused_process_id,
+                    user_id,
+                    processing_url,
+                    reuse_gcs_paths,
+                )
+
+                logger.info(
+                    "♻️ Reused processed social reel source=%s new=%s user=%s canonical_key=%s",
+                    reuse_result.get("source_reel_id"),
+                    reuse_result.get("reel_id"),
+                    user_id,
+                    url_result.canonical_key,
+                )
+                return jsonify({
+                    "status": "done",
+                    "duplicate": False,
+                    "reused": True,
+                    "reel_id": reused_process_id,
+                    "process_id": reused_process_id,
+                    "preview_url": (reuse_result.get("gcs_urls") or {}).get("preview_thumbnail"),
+                }), 200
 
     if _extraction_limit_reached():
         logger.warning("🚦 Daily extraction limit reached: %s", EXTRACTION_DAILY_LIMIT_TOTAL)

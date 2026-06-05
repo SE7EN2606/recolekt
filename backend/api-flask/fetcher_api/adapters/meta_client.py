@@ -19,6 +19,9 @@ import os
 import re
 import logging
 import tempfile
+import threading
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import instaloader
@@ -36,6 +39,12 @@ _FACEBOOK_USER_AGENT = (
 )
 _GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v25.0")
 _GRAPH_BASE_URL = f"https://graph.facebook.com/{_GRAPH_VERSION}"
+_FACEBOOK_DOWNLOAD_LOCK = threading.Lock()
+_INSTAGRAM_DOWNLOAD_LOCK = threading.Lock()
+_SOCIAL_REQUIRED_COOKIES = {
+    "FB_COOKIES_CONTENT": {"c_user", "xs"},
+    "IG_COOKIES_CONTENT": {"sessionid"},
+}
 
 # Matches /reel/, /reels/, /p/, /tv/ with optional trailing slash and optional query string
 _IG_SHORTCODE_RE = re.compile(
@@ -53,6 +62,78 @@ class MetaClient:
             dirname_pattern="",
         )
         logger.info("ℹ️ MetaClient: instaloader ready (public mode, no login)")
+        self._log_extraction_provider_config()
+        self._log_cookie_health("FB_COOKIES_CONTENT")
+        self._log_cookie_health("IG_COOKIES_CONTENT")
+
+    def _log_extraction_provider_config(self):
+        provider = (os.getenv("VIDEO_EXTRACTION_PROVIDER") or "yt-dlp").strip().lower()
+        api_url_configured = bool((os.getenv("VIDEO_EXTRACTION_API_URL") or "").strip())
+        api_key_configured = bool((os.getenv("VIDEO_EXTRACTION_API_KEY") or "").strip())
+
+        if provider in {"", "yt-dlp", "ytdlp"}:
+            logger.info("🎞️ Video extraction provider: yt-dlp fallback")
+            return
+
+        logger.warning(
+            "🎞️ Video extraction provider configured but not implemented provider=%s api_url=%s api_key=%s; using yt-dlp fallback",
+            provider,
+            api_url_configured,
+            api_key_configured,
+        )
+
+    @contextmanager
+    def _social_download_slot(self, platform: str):
+        platform_key = (platform or "").strip().lower()
+        lock = _FACEBOOK_DOWNLOAD_LOCK if platform_key == "facebook" else _INSTAGRAM_DOWNLOAD_LOCK
+        logger.info("🚦 Waiting for %s social download slot", platform_key)
+        with lock:
+            logger.info("🚦 Acquired %s social download slot", platform_key)
+            try:
+                yield
+            finally:
+                logger.info("🚦 Released %s social download slot", platform_key)
+
+    def _classified_failure(self, error: Exception | str, default: str = "extraction_failed") -> str:
+        text = str(error or "").lower()
+        if not text:
+            return default
+
+        login_markers = (
+            "login required",
+            "sign in",
+            "sign-in",
+            "cookies",
+            "cookie",
+            "checkpoint",
+            "not logged in",
+            "private",
+            "authentication",
+            "unauthorized",
+        )
+        rate_markers = (
+            "rate limit",
+            "ratelimit",
+            "too many requests",
+            "http error 429",
+            "429",
+            "temporarily blocked",
+        )
+        provider_markers = (
+            "provider unavailable",
+            "api unavailable",
+            "upstream unavailable",
+        )
+
+        if any(marker in text for marker in rate_markers):
+            return "social_rate_limited"
+        if "expired" in text and ("cookie" in text or "session" in text):
+            return "social_cookies_expired"
+        if any(marker in text for marker in login_markers):
+            return "social_login_required"
+        if any(marker in text for marker in provider_markers):
+            return "extraction_provider_unavailable"
+        return default
 
     # ----------------------------------------------------------------
     # URL detection
@@ -633,6 +714,65 @@ class MetaClient:
         logger.warning("⚠️ %s cookies source detected as invalid; skipping cookies", env_var)
         return None
 
+    def _parse_netscape_cookie_health(self, content: str) -> tuple[set[str], Optional[int], int]:
+        names = set()
+        expiries = []
+        count = 0
+
+        for line in (content or "").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("# Netscape HTTP Cookie File"):
+                continue
+
+            if stripped.startswith("#HttpOnly_"):
+                stripped = stripped[len("#HttpOnly_"):]
+            elif stripped.startswith("#"):
+                continue
+
+            parts = stripped.split("\t")
+            if len(parts) < 7:
+                continue
+
+            count += 1
+            names.add(parts[5])
+            try:
+                expiry = int(float(parts[4]))
+                if expiry > 0:
+                    expiries.append(expiry)
+            except Exception:
+                pass
+
+        return names, min(expiries) if expiries else None, count
+
+    def _log_cookie_health(self, env_var: str):
+        raw_content = os.environ.get(env_var, "").strip()
+        if not raw_content:
+            logger.warning("🍪 %s not configured; social fallback may require login", env_var)
+            return
+
+        normalized = self._normalize_cookie_content(raw_content, env_var)
+        if not normalized:
+            logger.critical("🍪 %s unusable; social fallback may fail with login_required", env_var)
+            return
+
+        names, earliest_expiry, count = self._parse_netscape_cookie_health(normalized)
+        required = _SOCIAL_REQUIRED_COOKIES.get(env_var, set())
+        missing = sorted(required - names)
+        if missing:
+            logger.warning("🍪 %s missing expected cookie names: %s", env_var, ",".join(missing))
+
+        if earliest_expiry:
+            seconds_remaining = earliest_expiry - int(datetime.now(timezone.utc).timestamp())
+            days_remaining = seconds_remaining // 86400
+            if days_remaining < 14:
+                logger.critical("🍪 %s earliest cookie expiry in %sd; refresh before production traffic", env_var, days_remaining)
+            elif days_remaining < 30:
+                logger.warning("🍪 %s earliest cookie expiry in %sd; schedule refresh", env_var, days_remaining)
+            else:
+                logger.info("🍪 %s health ok: %d cookies, earliest expiry in %sd", env_var, count, days_remaining)
+        else:
+            logger.warning("🍪 %s has %d cookies but no expiry timestamps; monitor manually", env_var, count)
+
     def _write_cookies(self, env_var: str, suffix: str) -> Optional[str]:
         content = os.environ.get(env_var, "").strip()
         if not content:
@@ -662,6 +802,8 @@ class MetaClient:
             ydl_opts = {
                 "quiet": True,
                 "no_warnings": False,
+                "retries": 1,
+                "fragment_retries": 1,
                 "http_headers": {
                     "User-Agent": _FACEBOOK_USER_AGENT,
                 },
@@ -837,6 +979,8 @@ class MetaClient:
                 "merge_output_format": "mp4",
                 "quiet": True,
                 "no_warnings": True,
+                "retries": 1,
+                "fragment_retries": 1,
                 "http_headers": {
                     "User-Agent": (
                         "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
@@ -908,8 +1052,16 @@ class MetaClient:
             }
 
         except Exception as e:
-            logger.error("❌ Instagram yt-dlp download error: %s", e)
-            return {"success": False, "error": str(e), "metadata": {}, "post": None, "thumbnail_path": None}
+            error_code = self._classified_failure(e)
+            logger.error("❌ Instagram yt-dlp download error code=%s error=%s", error_code, e)
+            return {
+                "success": False,
+                "error": str(e),
+                "error_code": error_code,
+                "metadata": {},
+                "post": None,
+                "thumbnail_path": None,
+            }
         finally:
             if cookies_path and os.path.exists(cookies_path):
                 try:
@@ -998,8 +1150,9 @@ class MetaClient:
             }
 
         except Exception as e:
-            logger.error("❌ Instagram instaloader download error: %s", e)
-            return {"success": False, "error": str(e), "metadata": {}, "post": None, "thumbnail_path": None}
+            error_code = self._classified_failure(e)
+            logger.error("❌ Instagram instaloader download error code=%s error=%s", error_code, e)
+            return {"success": False, "error": str(e), "error_code": error_code, "metadata": {}, "post": None, "thumbnail_path": None}
 
     # ----------------------------------------------------------------
     # download_video — routes by platform
@@ -1011,76 +1164,81 @@ class MetaClient:
     # ----------------------------------------------------------------
     def download_video(self, url: str, output_path: str, post_info=None) -> dict:
         if self.is_instagram_url(url):
-            use_ytdlp = os.environ.get("IG_USE_YTDLP_ONLY", "").lower() in ("true", "1", "yes")
-            if use_ytdlp:
-                logger.info("⬇️ Instagram download via yt-dlp [IG_USE_YTDLP_ONLY]: %s", url)
-                return self._download_instagram_video_ytdlp(url, output_path)
-            else:
-                logger.info("⬇️ Instagram download via instaloader [local]: %s", url)
-                return self._download_instagram_video_instaloader(url, output_path)
+            with self._social_download_slot("instagram"):
+                use_ytdlp = os.environ.get("IG_USE_YTDLP_ONLY", "").lower() in ("true", "1", "yes")
+                if use_ytdlp:
+                    logger.info("⬇️ Instagram download via yt-dlp [IG_USE_YTDLP_ONLY]: %s", url)
+                    return self._download_instagram_video_ytdlp(url, output_path)
+                else:
+                    logger.info("⬇️ Instagram download via instaloader [local]: %s", url)
+                    return self._download_instagram_video_instaloader(url, output_path)
 
         elif self.is_facebook_url(url):
-            cookies_path = None
-            try:
-                graph_info = self._get_facebook_graph_info(url)
-                if graph_info and graph_info.get("video_url"):
-                    if self._download_direct_video_url(graph_info["video_url"], output_path, "https://www.facebook.com/"):
-                        logger.info("✅ Facebook video downloaded via Meta Graph")
-                        return {
-                            "success": True,
-                            "video_path": output_path,
-                            "metadata": graph_info,
-                            "thumbnail_path": None,
-                        }
-                    logger.info("ℹ️ Facebook Graph media download failed; falling back to yt-dlp")
-                elif graph_info:
-                    logger.info("ℹ️ Facebook Graph matched media without source URL; falling back to yt-dlp")
-                else:
-                    logger.info("ℹ️ Facebook Graph unavailable for this media; falling back to yt-dlp")
+            with self._social_download_slot("facebook"):
+                cookies_path = None
+                try:
+                    graph_info = self._get_facebook_graph_info(url)
+                    if graph_info and graph_info.get("video_url"):
+                        if self._download_direct_video_url(graph_info["video_url"], output_path, "https://www.facebook.com/"):
+                            logger.info("✅ Facebook video downloaded via Meta Graph")
+                            return {
+                                "success": True,
+                                "video_path": output_path,
+                                "metadata": graph_info,
+                                "thumbnail_path": None,
+                            }
+                        logger.info("ℹ️ Facebook Graph media download failed; falling back to yt-dlp")
+                    elif graph_info:
+                        logger.info("ℹ️ Facebook Graph matched media without source URL; falling back to yt-dlp")
+                    else:
+                        logger.info("ℹ️ Facebook Graph unavailable for this media; falling back to yt-dlp")
 
-                if not post_info:
-                    post_info = self.get_post_info(url)
-                if not post_info:
-                    raise ValueError("No metadata available")
+                    if not post_info:
+                        post_info = self.get_post_info(url)
+                    if not post_info:
+                        raise ValueError("No metadata available")
 
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                    os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-                ydl_opts = {
-                    "outtmpl": output_path,
-                    "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                    "quiet": True,
-                    "no_warnings": True,
-                    "http_headers": {
-                        "User-Agent": _FACEBOOK_USER_AGENT,
-                    },
-                }
+                    ydl_opts = {
+                        "outtmpl": output_path,
+                        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                        "quiet": True,
+                        "no_warnings": True,
+                        "retries": 1,
+                        "fragment_retries": 1,
+                        "http_headers": {
+                            "User-Agent": _FACEBOOK_USER_AGENT,
+                        },
+                    }
 
-                cookies_path = self._write_cookies("FB_COOKIES_CONTENT", "fb_cookies.txt")
-                if cookies_path:
-                    ydl_opts["cookiefile"] = cookies_path
-                else:
-                    logger.debug("ℹ️ FB_COOKIES_CONTENT not set — downloading without cookies")
+                    cookies_path = self._write_cookies("FB_COOKIES_CONTENT", "fb_cookies.txt")
+                    if cookies_path:
+                        ydl_opts["cookiefile"] = cookies_path
+                    else:
+                        logger.debug("ℹ️ FB_COOKIES_CONTENT not set — downloading without cookies")
 
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([url])
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.download([url])
 
-                if os.path.exists(output_path):
-                    logger.info("✅ Facebook video saved to %s", output_path)
-                    return {"success": True, "metadata": post_info, "thumbnail_path": None}
-                raise ValueError("Download finished but file missing")
+                    if os.path.exists(output_path):
+                        logger.info("✅ Facebook video saved to %s", output_path)
+                        return {"success": True, "metadata": post_info, "thumbnail_path": None}
+                    raise ValueError("Download finished but file missing")
 
-            except Exception as e:
-                logger.error("❌ Facebook download error: %s", e)
-                return {"success": False, "error": str(e)}
+                except Exception as e:
+                    error_code = self._classified_failure(e)
+                    logger.error("❌ Facebook download error code=%s error=%s", error_code, e)
+                    return {"success": False, "error": str(e), "error_code": error_code}
 
-            finally:
-                if cookies_path and os.path.exists(cookies_path):
-                    try:
-                        os.unlink(cookies_path)
-                    except Exception:
-                        pass
+                finally:
+                    if cookies_path and os.path.exists(cookies_path):
+                        try:
+                            os.unlink(cookies_path)
+                        except Exception:
+                            pass
 
-        return {"success": False, "reason": "unsupported_platform"}
+        return {"success": False, "reason": "unsupported_platform", "error_code": "extraction_failed"}
 
 
 # Singleton
