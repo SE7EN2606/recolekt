@@ -34,6 +34,8 @@ _FACEBOOK_USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
+_GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v25.0")
+_GRAPH_BASE_URL = f"https://graph.facebook.com/{_GRAPH_VERSION}"
 
 # Matches /reel/, /reels/, /p/, /tv/ with optional trailing slash and optional query string
 _IG_SHORTCODE_RE = re.compile(
@@ -151,6 +153,192 @@ class MetaClient:
         if not match:
             return None
         return match.group(1) == "true"
+
+    # ----------------------------------------------------------------
+    # Meta Graph API helpers
+    # ----------------------------------------------------------------
+    def _graph_token(self) -> Optional[str]:
+        return self._first_non_empty(
+            os.getenv("META_PAGE_ACCESS_TOKEN"),
+            os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN"),
+            os.getenv("INSTAGRAM_PAGE_ACCESS_TOKEN"),
+            os.getenv("META_ACCESS_TOKEN"),
+        )
+
+    def _instagram_business_id(self) -> Optional[str]:
+        return self._first_non_empty(
+            os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID"),
+            os.getenv("META_INSTAGRAM_BUSINESS_ACCOUNT_ID"),
+        )
+
+    def _graph_get(self, path: str, token: str, params: Optional[Dict[str, Any]] = None) -> Optional[dict]:
+        if not token:
+            return None
+
+        raw_path = str(path or "").strip()
+        clean_path = raw_path.lstrip("/")
+        is_full_url = raw_path.startswith("http://") or raw_path.startswith("https://")
+        url = raw_path if is_full_url else f"{_GRAPH_BASE_URL}/{clean_path}"
+        log_path = clean_path.split("?", 1)[0] if not is_full_url else raw_path.split("?", 1)[0]
+        request_params = dict(params or {})
+        if "access_token=" not in raw_path:
+            request_params["access_token"] = token
+
+        try:
+            resp = requests.get(
+                url,
+                params=request_params,
+                timeout=12,
+            )
+            data = resp.json()
+        except Exception as e:
+            logger.warning("⚠️ Meta Graph request failed path=%s error=%s", log_path, e)
+            return None
+
+        if not isinstance(data, dict):
+            logger.warning("⚠️ Meta Graph returned non-object response path=%s status=%s", log_path, resp.status_code)
+            return None
+
+        if resp.status_code >= 400 or data.get("error"):
+            error = data.get("error") if isinstance(data.get("error"), dict) else {}
+            logger.info(
+                "ℹ️ Meta Graph inaccessible path=%s status=%s code=%s type=%s",
+                log_path,
+                resp.status_code,
+                error.get("code"),
+                error.get("type"),
+            )
+            return None
+
+        return data
+
+    def _get_instagram_graph_info(self, url: str) -> Optional[dict]:
+        token = self._graph_token()
+        ig_id = self._instagram_business_id()
+        shortcode = self.extract_shortcode(url)
+
+        if not token or not ig_id or not shortcode:
+            logger.info(
+                "ℹ️ Instagram Graph lookup skipped: token=%s ig_id=%s shortcode=%s",
+                bool(token),
+                bool(ig_id),
+                bool(shortcode),
+            )
+            return None
+
+        fields = "id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,username,shortcode"
+        limit = str(os.getenv("META_GRAPH_MEDIA_SEARCH_LIMIT", "100"))
+        path = f"{ig_id}/media"
+        params: Dict[str, Any] = {"fields": fields, "limit": limit}
+
+        for page_index in range(3):
+            payload = self._graph_get(path, token, params)
+            if not payload:
+                logger.info("ℹ️ Instagram Graph lookup fallback: media list unavailable")
+                return None
+
+            for item in payload.get("data") or []:
+                if not isinstance(item, dict):
+                    continue
+                item_shortcode = str(item.get("shortcode") or "").strip()
+                permalink = str(item.get("permalink") or "").strip()
+                if item_shortcode == shortcode or f"/{shortcode}/" in permalink:
+                    logger.info("✅ Instagram Graph matched media: shortcode=%s page=%s", shortcode, page_index + 1)
+                    return {
+                        "shortcode": shortcode,
+                        "caption": item.get("caption") or "",
+                        "username": item.get("username") or "",
+                        "video_url": item.get("media_url") or "",
+                        "thumbnail_url": item.get("thumbnail_url") or item.get("media_url") or "",
+                        "media_id": item.get("id") or "",
+                        "timestamp": item.get("timestamp"),
+                        "source": "instagram_graph",
+                    }
+
+            paging = payload.get("paging") if isinstance(payload.get("paging"), dict) else {}
+            next_url = paging.get("next")
+            if not next_url:
+                break
+            path = next_url
+            params = {}
+
+        logger.info("ℹ️ Instagram Graph lookup fallback: shortcode not found in authorized media shortcode=%s", shortcode)
+        return None
+
+    def _get_facebook_graph_info(self, url: str) -> Optional[dict]:
+        token = self._graph_token()
+        content_id = self.extract_shortcode(url)
+
+        if not token or not content_id or not str(content_id).isdigit():
+            logger.info(
+                "ℹ️ Facebook Graph lookup skipped: token=%s numeric_id=%s",
+                bool(token),
+                bool(content_id and str(content_id).isdigit()),
+            )
+            return None
+
+        fields = "id,description,created_time,source,permalink_url,picture,from,length"
+        payload = self._graph_get(str(content_id), token, {"fields": fields})
+        if not payload:
+            logger.info("ℹ️ Facebook Graph lookup fallback: media inaccessible id=%s", content_id)
+            return None
+
+        video_url = payload.get("source") or ""
+        from_obj = payload.get("from") if isinstance(payload.get("from"), dict) else {}
+        logger.info(
+            "✅ Facebook Graph matched media: id=%s has_source=%s",
+            content_id,
+            bool(video_url),
+        )
+        return {
+            "shortcode": payload.get("id") or content_id,
+            "caption": payload.get("description") or "",
+            "username": from_obj.get("name") or "Facebook Page",
+            "video_url": video_url,
+            "thumbnail_url": payload.get("picture") or "",
+            "permalink": payload.get("permalink_url") or "",
+            "timestamp": payload.get("created_time"),
+            "source": "facebook_graph",
+        }
+
+    def _download_direct_video_url(self, video_url: str, output_path: str, referer: str) -> bool:
+        if not video_url:
+            return False
+        try:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            with requests.get(
+                video_url,
+                stream=True,
+                timeout=(5, 45),
+                headers={
+                    "User-Agent": _FACEBOOK_USER_AGENT,
+                    "Referer": referer,
+                },
+            ) as resp:
+                if resp.status_code != 200:
+                    logger.info("ℹ️ Graph media URL download failed status=%s", resp.status_code)
+                    return False
+                with open(output_path, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=1024 * 256):
+                        if chunk:
+                            f.write(chunk)
+
+            ok = os.path.exists(output_path) and os.path.getsize(output_path) > 1000
+            logger.info("✅ Graph media URL download %s path=%s", "succeeded" if ok else "failed", output_path)
+            if not ok and os.path.exists(output_path):
+                try:
+                    os.unlink(output_path)
+                except Exception:
+                    pass
+            return ok
+        except Exception as e:
+            if os.path.exists(output_path):
+                try:
+                    os.unlink(output_path)
+                except Exception:
+                    pass
+            logger.warning("⚠️ Graph media URL download error: %s", e)
+            return False
 
     def _extract_business_address_from_html(self, html_text: str) -> Dict[str, str]:
         if not html_text:
@@ -530,6 +718,25 @@ class MetaClient:
         shortcode = self.extract_shortcode(url)
 
         if self.is_instagram_url(url):
+            graph_info = self._get_instagram_graph_info(url)
+            if graph_info:
+                return {
+                    "shortcode": graph_info.get("shortcode") or shortcode,
+                    "caption": graph_info.get("caption", ""),
+                    "is_video": True,
+                    "video_url": graph_info.get("video_url"),
+                    "username": graph_info.get("username", ""),
+                    "full_name": "",
+                    "thumbnail_url": graph_info.get("thumbnail_url", ""),
+                    "media_id": graph_info.get("media_id", ""),
+                    "author_url": "",
+                    "likes": 0,
+                    "comments": 0,
+                    "timestamp": graph_info.get("timestamp"),
+                    "source": "instagram_graph",
+                }
+            logger.info("ℹ️ Instagram Graph lookup unavailable; falling back to oEmbed")
+
             oembed = self._get_instagram_oembed(url)
             if not oembed:
                 return None
@@ -550,6 +757,25 @@ class MetaClient:
             }
 
         elif self.is_facebook_url(url):
+            graph_info = self._get_facebook_graph_info(url)
+            if graph_info:
+                return {
+                    "shortcode": graph_info.get("shortcode") or shortcode,
+                    "caption": graph_info.get("caption", ""),
+                    "is_video": True,
+                    "video_url": graph_info.get("video_url"),
+                    "username": graph_info.get("username", ""),
+                    "full_name": "",
+                    "thumbnail_url": graph_info.get("thumbnail_url", ""),
+                    "media_id": graph_info.get("shortcode", ""),
+                    "author_url": graph_info.get("permalink", ""),
+                    "likes": 0,
+                    "comments": 0,
+                    "timestamp": graph_info.get("timestamp"),
+                    "source": "facebook_graph",
+                }
+            logger.info("ℹ️ Facebook Graph lookup unavailable; falling back to yt-dlp metadata")
+
             info = self._get_facebook_info(url)
             if not info:
                 return None
@@ -580,6 +806,30 @@ class MetaClient:
         cookies_path = None
         try:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            graph_info = self._get_instagram_graph_info(url)
+            if graph_info and graph_info.get("video_url"):
+                if self._download_direct_video_url(graph_info["video_url"], output_path, "https://www.instagram.com/"):
+                    logger.info("✅ Instagram video downloaded via Meta Graph")
+                    return {
+                        "success": True,
+                        "video_path": output_path,
+                        "thumbnail_path": None,
+                        "metadata": {
+                            "username": graph_info.get("username", ""),
+                            "caption": graph_info.get("caption", ""),
+                            "likes": 0,
+                            "comments": 0,
+                            "thumbnail_url": graph_info.get("thumbnail_url", ""),
+                            "source": "instagram_graph",
+                        },
+                        "post": None,
+                    }
+                logger.info("ℹ️ Instagram Graph media download failed; falling back to yt-dlp")
+            elif graph_info:
+                logger.info("ℹ️ Instagram Graph matched media without direct URL; falling back to yt-dlp")
+            else:
+                logger.info("ℹ️ Instagram Graph unavailable for this media; falling back to yt-dlp")
 
             ydl_opts = {
                 "outtmpl": output_path,
@@ -772,6 +1022,22 @@ class MetaClient:
         elif self.is_facebook_url(url):
             cookies_path = None
             try:
+                graph_info = self._get_facebook_graph_info(url)
+                if graph_info and graph_info.get("video_url"):
+                    if self._download_direct_video_url(graph_info["video_url"], output_path, "https://www.facebook.com/"):
+                        logger.info("✅ Facebook video downloaded via Meta Graph")
+                        return {
+                            "success": True,
+                            "video_path": output_path,
+                            "metadata": graph_info,
+                            "thumbnail_path": None,
+                        }
+                    logger.info("ℹ️ Facebook Graph media download failed; falling back to yt-dlp")
+                elif graph_info:
+                    logger.info("ℹ️ Facebook Graph matched media without source URL; falling back to yt-dlp")
+                else:
+                    logger.info("ℹ️ Facebook Graph unavailable for this media; falling back to yt-dlp")
+
                 if not post_info:
                     post_info = self.get_post_info(url)
                 if not post_info:
