@@ -259,3 +259,119 @@ def create_reused_social_reel(
         "source_reel_id": source_reel.get("id"),
         "gcs_urls": new_gcs_urls,
     }
+
+
+def update_existing_reel_from_reusable(
+    source_reel: dict,
+    target_reel_id: str,
+    user_id: str,
+    source_url: str,
+    target_gcs_paths: dict,
+) -> dict:
+    """Update an existing failed user reel from a processed source reel."""
+    existing_gcs_urls = source_reel.get("gcs_urls") or {}
+    if isinstance(existing_gcs_urls, str):
+        try:
+            existing_gcs_urls = json.loads(existing_gcs_urls)
+        except Exception:
+            existing_gcs_urls = {}
+    if not isinstance(existing_gcs_urls, dict):
+        existing_gcs_urls = {}
+
+    new_gcs_urls = _copy_reused_gcs_urls(existing_gcs_urls, target_gcs_paths)
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE reels AS target
+                SET
+                    source_url = %s,
+                    status = 'done',
+                    caption = source.caption,
+                    author_name = source.author_name,
+                    duration = source.duration,
+                    is_long_video = source.is_long_video,
+                    summary_category = source.summary_category,
+                    summary_topic = source.summary_topic,
+                    summary_title = source.summary_title,
+                    summary_text = source.summary_text,
+                    summary_bullets = source.summary_bullets,
+                    summary_hashtags = source.summary_hashtags,
+                    summary_emojis = source.summary_emojis,
+                    content_type = source.content_type,
+                    recipe = source.recipe,
+                    workout = source.workout,
+                    detected_language = source.detected_language,
+                    gcs_urls = %s::jsonb,
+                    transcription = source.transcription,
+                    tools_list = source.tools_list,
+                    location = source.location,
+                    prompt = source.prompt,
+                    is_list = source.is_list,
+                    list_subtype = source.list_subtype,
+                    list_count = source.list_count,
+                    list_type = source.list_type,
+                    error_message = NULL,
+                    updated_at = NOW()
+                FROM reels AS source
+                WHERE target.id = %s
+                  AND target.user_id = %s
+                  AND source.id = %s
+                """,
+                (
+                    source_url,
+                    _json_value(new_gcs_urls),
+                    target_reel_id,
+                    user_id,
+                    source_reel.get("id"),
+                ),
+            )
+
+            cur.execute("SAVEPOINT social_reuse_existing_locations")
+            try:
+                cur.execute(
+                    "DELETE FROM reel_locations WHERE reel_id = %s AND user_id = %s",
+                    (target_reel_id, user_id),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO reel_locations (
+                        reel_id, user_id, position, name, place_type, description, address,
+                        neighborhood, city, region, country, postal_code,
+                        instagram_username, instagram_account_name,
+                        lat, lng, google_place_id, maps_url, created_at, updated_at
+                    )
+                    SELECT
+                        %s, %s, position, name, place_type, description, address,
+                        neighborhood, city, region, country, postal_code,
+                        instagram_username, instagram_account_name,
+                        lat, lng, google_place_id, maps_url, NOW(), NOW()
+                    FROM reel_locations
+                    WHERE reel_id = %s
+                    ON CONFLICT (reel_id, user_id, position) DO NOTHING
+                    """,
+                    (target_reel_id, user_id, source_reel.get("id")),
+                )
+            except Exception as exc:
+                cur.execute("ROLLBACK TO SAVEPOINT social_reuse_existing_locations")
+                logger.warning("♻️ Social reuse existing row: reel_locations copy skipped error=%s", exc)
+            finally:
+                try:
+                    cur.execute("RELEASE SAVEPOINT social_reuse_existing_locations")
+                except Exception:
+                    pass
+
+        conn.commit()
+
+    logger.info(
+        "♻️ Social reuse updated existing reel=%s from source_reel=%s copied_gcs_keys=%s",
+        target_reel_id,
+        source_reel.get("id"),
+        sorted(new_gcs_urls.keys()),
+    )
+    return {
+        "reel_id": target_reel_id,
+        "source_reel_id": source_reel.get("id"),
+        "gcs_urls": new_gcs_urls,
+    }
