@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, Trash2, Heart, FolderInput, AlertCircle, X,
   EllipsisVertical, AlignLeft, Pencil, Save, Globe, Folder, Archive,
-  MapPin, ShoppingBasket,
+  MapPin, ShoppingBasket, RefreshCw, Loader2,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -225,6 +225,7 @@ export const VideoDetail: React.FC = () => {
     moveVideos,
     toggleFavorite,
     updateVideo,
+    refreshVideo,
     getVideoById,
   } = useData();
 
@@ -278,6 +279,7 @@ export const VideoDetail: React.FC = () => {
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isRefreshingVideo, setIsRefreshingVideo] = useState(false);
 
   useScrollLock(
     isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen,
@@ -395,6 +397,21 @@ export const VideoDetail: React.FC = () => {
     if (!currentVideoId) return;
     moveVideos([currentVideoId], 'archive');
     setIsActionSheetOpen(false);
+  };
+
+  const handleRefreshVideo = async () => {
+    if (!currentVideoId || !viewModel.originalUrl || isRefreshingVideo) return;
+    setIsRefreshingVideo(true);
+    try {
+      await refreshVideo(currentVideoId);
+      setVideo((prev: any) =>
+        prev ? { ...prev, status: 'processing', category: 'Processing', errorMessage: null } : prev,
+      );
+    } catch (err) {
+      console.error('Refresh video failed', err);
+    } finally {
+      setIsRefreshingVideo(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -603,6 +620,11 @@ export const VideoDetail: React.FC = () => {
           label: t('videoDetail:moveToCollection', 'Move to Collection'),
           onClick: () => setIsMoveModalOpen(true),
         },
+        ...(viewModel.originalUrl ? [{
+          icon: isRefreshingVideo ? <Loader2 className="animate-spin" /> : <RefreshCw />,
+          label: isRefreshingVideo ? 'Refreshing video' : 'Refresh video',
+          onClick: handleRefreshVideo,
+        }] : []),
         { icon: <Archive />, label: t('videoDetail:archive', 'Archive'), onClick: handleArchive },
         {
           icon: <Trash2 />,

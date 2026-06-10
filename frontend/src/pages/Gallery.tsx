@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { MoveCollectionModal } from '../components/MoveCollectionModal';
 import { MoveFolderModal } from '../components/MoveFolderModal';
 import ConfirmModal from '../components/ConfirmModal';
+import { SmartFolderSuggestionsPanel } from '../features/folder-suggestions/SmartFolderSuggestionsPanel';
 
 
 const CalendarArrowUp = ({ size = 20 }) => ( <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 18 4-4 4 4"/><path d="M16 2v4"/><path d="M18 22v-8"/><path d="M21 11.343V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2-2v14a2 2 0 0 0 2 2h9"/><path d="M3 10h18"/><path d="M8 2v4"/></svg> );
@@ -67,6 +68,7 @@ function getRecipeTitle(video: any): string {
   return String(
     summary?.english?.title ??
     recipe?.english?.title ??
+    video?.summary_title ??
     video?.summaryTitle ??
     video?.summarytitle ??
     video?.title ??
@@ -356,7 +358,7 @@ export const Gallery: React.FC = () => {
     return videos.filter((v: any) => {
       if (isFavoritesView) return v.isFavorite;
       if (isAllView)       return true;
-      if (isUnsortedView)  return !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all';
+      if (isUnsortedView)  return !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all' || v.folderId === 'default';
       return v.folderId === folderId;
     });
   }, [videos, folderId, isFavoritesView, isAllView, isUnsortedView]);
@@ -397,6 +399,10 @@ export const Gallery: React.FC = () => {
   const recipeHomeVideos = useMemo(() => {
     return folderScopedVideos.filter((v: any) => getVideoContentType(v) === 'recipe');
   }, [folderScopedVideos]);
+
+  const unsortedCount = useMemo(() => (
+    videos.filter((v: any) => !v.folderId || v.folderId === 'unsorted' || v.folderId === 'all' || v.folderId === 'default').length
+  ), [videos]);
 
   const renderVideoGrid = (items: any[]) => (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-3 md:gap-6">
@@ -765,6 +771,13 @@ export const Gallery: React.FC = () => {
             );
           })}
         </div>
+
+        {!selectionMode && (isAllView || isUnsortedView) && unsortedCount > 0 && (
+          <SmartFolderSuggestionsPanel
+            unsortedCount={unsortedCount}
+            onApplied={refreshVideos}
+          />
+        )}
       </div>
 
       <div className="mb-24 md:mb-12">

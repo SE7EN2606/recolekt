@@ -92,11 +92,11 @@ export const Header: React.FC = () => {
           fixed top-0 left-0 right-0 z-[110]
           transition-all duration-500 ease-[cubic-bezier(0.25,0.8,0.25,1)]
           ${isScrolled
-            ? 'glass-header py-3 shadow-sm h-[65px] md:h-[70px]'
-            : 'bg-transparent py-6 h-[80px] md:h-[95px]'}
+            ? 'glass-header pt-[calc(var(--safe-area-top)+0.75rem)] pb-3 shadow-sm h-[calc(65px+var(--safe-area-top))] md:h-[70px] md:py-3'
+            : 'bg-transparent pt-[calc(var(--safe-area-top)+1.5rem)] pb-6 h-[calc(var(--mobile-header-height)+var(--safe-area-top))] md:h-[95px] md:py-6'}
         `}
       >
-        <div className="max-w-[1280px] mx-auto px-6 md:px-8 h-full">
+        <div className="max-w-[1280px] mx-auto px-6 md:px-8 h-full pl-[max(1.5rem,var(--safe-area-left))] pr-[max(1.5rem,var(--safe-area-right))] md:px-8">
           <div className="h-full flex items-center justify-between">
 
             <Link
@@ -173,7 +173,7 @@ export const Header: React.FC = () => {
                       {isLangMenuOpen && (
                         <>
                           <div className="fixed inset-0 z-40" onClick={() => setIsLangMenuOpen(false)} />
-                          <div className="absolute top-full mt-4 left-1/2 -translate-x-1/2 w-40 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 z-50 animate-fade-in">
+                          <div className="absolute top-full mt-4 left-1/2 -translate-x-1/2 w-40 bg-white border border-gray-100 rounded-2xl shadow-sm py-2 z-50 animate-fade-in">
                             <button onClick={() => handleLanguageChange('en')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold hover:bg-gray-50 transition-colors ${currentLang === 'en' ? 'text-primary-600' : 'text-gray-700'}`}>English {currentLang === 'en' && <Check size={16} />}</button>
                             <button onClick={() => handleLanguageChange('fr')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold hover:bg-gray-50 transition-colors ${currentLang === 'fr' ? 'text-primary-600' : 'text-gray-700'}`}>Français {currentLang === 'fr' && <Check size={16} />}</button>
                           </div>
@@ -211,7 +211,7 @@ export const Header: React.FC = () => {
                    {isMobileLangMenuOpen && (
                      <>
                        <div className="fixed inset-0 z-40" onClick={() => setIsMobileLangMenuOpen(false)} />
-                       <div className="absolute top-full mt-4 right-0 w-40 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 z-50 animate-fade-in">
+                       <div className="absolute top-full mt-4 right-0 w-40 bg-white border border-gray-100 rounded-2xl shadow-sm py-2 z-50 animate-fade-in">
                          <button onClick={() => handleLanguageChange('en')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'en' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}>English {currentLang === 'en' && <Check size={16} />}</button>
                          <button onClick={() => handleLanguageChange('fr')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'fr' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}>Français {currentLang === 'fr' && <Check size={16} />}</button>
                        </div>

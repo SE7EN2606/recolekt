@@ -11,7 +11,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
   const { t } = useTranslation(['modals', 'sidebar', 'gallery']);
 
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 transition-transform duration-300">
+    <div className="mobile-bottom-nav md:hidden fixed bottom-0 left-0 right-0 z-30 transition-transform duration-300">
       
       {/* ISOLATED GLASS BACKGROUND 
         Putting the blur on this absolute layer prevents Android from blurring the text/icons!
@@ -59,7 +59,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
         </NavLink>
 
         {/* Center: Add Button */}
-        <div className="absolute left-1/2 -translate-x-1/2 -top-8">
+        <div className="floating-add-button absolute left-1/2 -translate-x-1/2">
           <button
             onClick={onAddClick}
             aria-label={t('common:add', 'Add new video')}

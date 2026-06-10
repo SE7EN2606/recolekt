@@ -11,6 +11,7 @@ from fetcher_api.api.routes.admin import admin_bp
 from fetcher_api.api.routes.api_token import api_bp
 from fetcher_api.api.routes.cleanup import cleanup_bp
 from fetcher_api.api.routes.folders import folders_bp  # ✅ Added
+from fetcher_api.api.routes.folder_suggestions import folder_suggestions_bp
 
 __all__ = [
     'main_bp',
@@ -22,4 +23,5 @@ __all__ = [
     'api_bp',
     'cleanup_bp',
     'folders_bp',  # ✅ Added
+    'folder_suggestions_bp',
 ]
