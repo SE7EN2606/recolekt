@@ -69,7 +69,7 @@ function resolveTitle(video: any, t: any): string {
   if (recipeObj?.recipe) recipeObj = recipeObj.recipe;
 
   const recEngTitle = safeStr(recipeObj?.english?.title).trim();
-  const dbTitle = safeStr(video?.summarytitle ?? video?.summaryTitle).trim();
+  const dbTitle = safeStr(video?.summary_title ?? video?.summarytitle ?? video?.summaryTitle).trim();
 
   let passedTitle = safeStr(video?.title).trim();
   const captionCutoff = safeStr(video?.caption ?? '').split('\n')[0].substring(0, 56).trim();
@@ -128,7 +128,7 @@ function getToolsList(video: any): any {
 
 function getToolsSubtypeForBadge(video: any): ToolsSubtype {
   const rootSubtype = safeStr(
-    video?.list_subtype ?? video?.listSubtype ?? video?.raw?.list_subtype
+    video?.list_subtype ?? video?.listSubtype ?? video?.raw?.list_subtype ?? video?.__raw?.list_subtype
   ).toLowerCase();
   if (isToolsSubtype(rootSubtype)) return rootSubtype;
   const toolsList = getToolsList(video);

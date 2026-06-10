@@ -43,13 +43,13 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const fullWidthPages = ['/', '/billing', '/billing/success', '/billing/cancel', '/subscribe', '/auth', '/features'];
   const showSidebar = user && !fullWidthPages.includes(location.pathname);
   const showFooter = ['/', '/features', '/billing'].includes(location.pathname);
-  const mainBottomPadding = user && !showFooter ? 'pb-24' : 'pb-6';
+  const mainBottomPadding = user && !showFooter ? 'mobile-page-content' : 'pb-[calc(1.5rem+var(--safe-area-bottom))]';
 
   return (
     <div className="min-h-screen flex flex-col font-sans text-gray-900 selection:bg-primary-100">
       {!isAuthPage && <Header />}
 
-      <main className={`flex-1 w-full mx-auto ${isAuthPage ? 'pt-0' : `max-w-7xl px-4 md:px-8 ${mainBottomPadding} md:pb-0 pt-20 md:pt-27.5`}`}>
+      <main className={`flex-1 w-full mx-auto ${isAuthPage ? 'pt-0' : `max-w-7xl px-4 md:px-8 ${mainBottomPadding} md:pb-0 mobile-page-top md:pt-27.5`}`}>
         <div className="flex gap-6 items-start">
           {showSidebar && <Sidebar />}
           <div className="flex-1 w-full min-w-0 animate-fade-in">{children}</div>
