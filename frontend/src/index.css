@@ -191,6 +191,11 @@ body[style*="padding-right"] {
     .mobile-header-shell.mobile-header-scrolled .mobile-header-inner {
       height: 56px;
     }
+
+    .mobile-menu-header-spacer {
+      height: calc(env(safe-area-inset-top, 0px) + 64px + 18px);
+      flex-shrink: 0;
+    }
   }
 
   .safe-top-padding {

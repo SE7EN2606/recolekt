@@ -94,9 +94,9 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
         `}
       >
         <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4">
-          <div className="h-[80px] md:h-[95px] flex-shrink-0" />
+          <div className="mobile-menu-header-spacer md:h-[95px] md:flex-shrink-0" />
 
-          <div className="flex-1 overflow-y-auto py-4 pb-32">
+          <div className="flex-1 overflow-y-auto pt-0 pb-32">
             <div className={`transition-opacity duration-500 delay-100 ${animateOpen ? 'opacity-100' : 'opacity-0'} flex flex-col min-h-full`}>
 
               {showAuthedUI ? (
