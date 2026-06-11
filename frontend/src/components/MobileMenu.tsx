@@ -12,7 +12,6 @@ import { InputModal } from './InputModal';
 import { ManageCollectionsModal } from './ManageCollectionsModal';
 import { useTranslation } from 'react-i18next';
 import LogoBlack from '../assets/recolekt_logo_black.webp';
-import { useScrollLock } from '../utils/useScrollLock';
 
 interface MobileMenuProps {
   isOpen: boolean;
@@ -31,8 +30,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
   const navigate = useNavigate();
   const location = useLocation();
-
-  useScrollLock(isOpen);
 
   useEffect(() => {
     if (isOpen) {
@@ -87,7 +84,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     <>
       <div
         className={`
-          fixed inset-0 w-full z-[100] overflow-hidden
+          fixed inset-0 w-full z-[100] overflow-hidden overscroll-contain
           bg-slate-50/85 backdrop-blur-2xl transform-gpu
           transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
           ${animateOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}
@@ -96,7 +93,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
         <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4">
           <div className="mobile-menu-header-spacer md:h-[95px] md:flex-shrink-0" />
 
-          <div className="flex-1 overflow-y-auto pt-0 pb-32">
+          <div className="flex-1 overflow-y-auto overscroll-contain pt-0 pb-32" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className={`transition-opacity duration-500 delay-100 ${animateOpen ? 'opacity-100' : 'opacity-0'} flex flex-col min-h-full`}>
 
               {showAuthedUI ? (

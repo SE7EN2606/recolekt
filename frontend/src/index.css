@@ -174,7 +174,7 @@ body[style*="padding-right"] {
   }
 
   .mobile-home-content {
-    padding-top: calc(var(--mobile-header-total-height) + 12px);
+    padding-top: calc(var(--mobile-header-total-height) + 44px);
   }
 
   @media (max-width: 767px) {
@@ -200,7 +200,7 @@ body[style*="padding-right"] {
     }
 
     .mobile-menu-header-spacer {
-      height: calc(var(--mobile-header-total-height) + 16px);
+      height: calc(var(--mobile-header-total-height) + 32px);
       flex-shrink: 0;
     }
   }
