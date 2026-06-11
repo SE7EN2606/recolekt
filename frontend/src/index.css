@@ -199,9 +199,20 @@ body[style*="padding-right"] {
       height: var(--mobile-header-scrolled-content-height);
     }
 
-    .mobile-menu-header-spacer {
-      height: calc(var(--mobile-header-total-height) + 32px);
-      flex-shrink: 0;
+    .mobile-menu-content {
+      padding-top: calc(var(--mobile-header-total-height) + 40px);
+      padding-left: max(1.5rem, var(--safe-area-left));
+      padding-right: max(1.5rem, var(--safe-area-right));
+      padding-bottom: calc(var(--safe-area-bottom) + 24px);
+      max-height: 100dvh;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    .mobile-menu-content::-webkit-scrollbar {
+      display: none;
     }
   }
 

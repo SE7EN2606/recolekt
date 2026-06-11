@@ -85,16 +85,20 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
       <div
         className={`
           fixed inset-0 w-full z-[100] overflow-hidden overscroll-contain
-          bg-slate-50/85 backdrop-blur-2xl transform-gpu
+          bg-white transform-gpu
           transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
-          ${animateOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}
+          ${animateOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}
         `}
       >
-        <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4">
-          <div className="mobile-menu-header-spacer md:h-[95px] md:flex-shrink-0" />
-
-          <div className="flex-1 overflow-y-auto overscroll-contain pt-0 pb-32" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <div className={`transition-opacity duration-500 delay-100 ${animateOpen ? 'opacity-100' : 'opacity-0'} flex flex-col min-h-full`}>
+        <div
+          className={`
+            mobile-menu-content w-full max-w-[1100px] mx-auto
+            transition-opacity duration-500 delay-100
+            ${animateOpen ? 'opacity-100' : 'opacity-0'}
+            ${showAuthedUI ? 'overflow-y-auto' : 'overflow-hidden'}
+          `}
+        >
+            <div className="flex flex-col min-h-full">
 
               {showAuthedUI ? (
                 <div className="flex-1 space-y-8">
@@ -234,7 +238,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                   </button>
                 </div>
               ) : (
-                <div className="flex flex-col h-full space-y-8 px-2">
+                <div className="flex flex-col min-h-full space-y-8 px-2">
                   <div className="space-y-2">
                     {[
                       { label: t('header:home', 'Home'), path: '/' },
@@ -247,7 +251,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       </Link>
                     ))}
                   </div>
-                  <div className="pt-8 border-t border-gray-200 space-y-4">
+                  <div className="pt-6 space-y-4">
                     <Button fullWidth variant="primary" onClick={() => handleNav('/auth')} className="h-14 text-base font-bold shadow-xl shadow-primary-600/20">
                       {t('common:signIn', 'Sign In')}
                     </Button>
@@ -259,14 +263,17 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                 </div>
               )}
 
-              <div className="py-8 mt-auto flex justify-center">
-                <button onClick={() => handleNav('/gallery')} className="transition-transform active:scale-95">
-                  <img src={LogoBlack} alt="Recolekt" className="h-8" />
-                </button>
-              </div>
-              <div className="h-20 md:h-0" />
+              {showAuthedUI && (
+                <>
+                  <div className="py-8 mt-auto flex justify-center">
+                    <button onClick={() => handleNav('/gallery')} className="transition-transform active:scale-95">
+                      <img src={LogoBlack} alt="Recolekt" className="h-8" />
+                    </button>
+                  </div>
+                  <div className="h-20 md:h-0" />
+                </>
+              )}
             </div>
-          </div>
         </div>
       </div>
 
