@@ -12,6 +12,7 @@ def register_blueprints(app: Flask):
         api_bp,
         cleanup_bp,
         folders_bp,
+        folder_suggestions_bp,
     )
     from fetcher_api.api.routes.webhook import webhook_bp
     from fetcher_api.api.routes.saved_places import saved_places_bp
@@ -29,3 +30,4 @@ def register_blueprints(app: Flask):
     app.register_blueprint(saved_places_bp)
     app.register_blueprint(saved_reels_bp, url_prefix="/api")
     app.register_blueprint(folders_bp)
+    app.register_blueprint(folder_suggestions_bp)

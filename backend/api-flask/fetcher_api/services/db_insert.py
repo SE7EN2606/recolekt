@@ -1,12 +1,11 @@
 import json
 import logging
-import re
 from datetime import datetime, timezone
-from urllib.parse import parse_qs, urlparse
 
 import psycopg2.extras
 
 from fetcher_api.adapters.db import fetch_one, get_db_connection
+from fetcher_api.services.social_urls import canonicalize_social_url, has_stable_duplicate_url
 
 logger = logging.getLogger("db")
 
@@ -63,61 +62,13 @@ def canonicalize_source_url(source_url: str | None) -> str:
 
     This keeps uniqueness stable even if frontend/webhook sends slightly different URLs.
     """
-    raw = (source_url or "").strip()
-    if not raw:
-        return ""
+    result = canonicalize_social_url(source_url)
+    if result.canonical_url:
+        return result.canonical_url
 
-    if not re.match(r"^https?://", raw, flags=re.IGNORECASE):
-        raw = "https://" + raw
-
-    try:
-        parsed = urlparse(raw)
-        host = (parsed.netloc or "").lower()
-        host = host[4:] if host.startswith("www.") else host
-        path = parsed.path or ""
-
-        # Instagram canonical reel/post/tv URLs
-        if host in {"instagram.com", "m.instagram.com"}:
-            match = re.search(r"/(reel|reels|p|tv)/([^/?#]+)/?", path, flags=re.IGNORECASE)
-            if match:
-                kind = match.group(1).lower()
-                shortcode = match.group(2).strip()
-                if kind == "reels":
-                    kind = "reel"
-                return f"https://www.instagram.com/{kind}/{shortcode}/"
-
-            return "https://www.instagram.com" + path.rstrip("/") + "/"
-
-        # TikTok canonical video URLs
-        if host.endswith("tiktok.com"):
-            clean_path = path.rstrip("/")
-            return f"https://www.tiktok.com{clean_path}"
-
-        # YouTube canonical URLs
-        if host in {"youtu.be"}:
-            video_id = path.strip("/").split("/")[0]
-            if video_id:
-                return f"https://www.youtube.com/watch?v={video_id}"
-
-        if host in {"youtube.com", "m.youtube.com"}:
-            query = parse_qs(parsed.query or "")
-            video_id = (query.get("v") or [""])[0]
-            if video_id:
-                return f"https://www.youtube.com/watch?v={video_id}"
-
-            shorts_match = re.search(r"/shorts/([^/?#]+)/?", path, flags=re.IGNORECASE)
-            if shorts_match:
-                return f"https://www.youtube.com/shorts/{shorts_match.group(1)}"
-
-        # Facebook and generic fallback: remove query/fragment, normalize trailing slash.
-        scheme = "https"
-        clean_host = "www." + host if host and not host.startswith("www.") else host
-        clean_path = path.rstrip("/")
-        return f"{scheme}://{clean_host}{clean_path}"
-
-    except Exception:
-        logger.warning("⚠️ Failed canonicalizing source_url=%r; using stripped raw URL", source_url)
-        return raw.rstrip("/")
+    # Opaque Facebook share links are not content identities. Keep the raw URL for
+    # processing visibility, but do not turn a share token into a duplicate key.
+    return (source_url or "").strip()
 
 
 def check_duplicate_reel(user_id, source_url):
@@ -128,8 +79,9 @@ def check_duplicate_reel(user_id, source_url):
     existing reel id instead of creating a second copy.
     """
     try:
-        canonical_url = canonicalize_source_url(source_url)
-        if not user_id or not canonical_url:
+        canonical_result = canonicalize_social_url(source_url)
+        canonical_url = canonical_result.canonical_url
+        if not user_id or not has_stable_duplicate_url(canonical_result):
             return None
 
         sql = """
@@ -351,7 +303,7 @@ def insert_reel_into_db(reel_data):
                 summary_bullets, summary_hashtags, summary_emojis,
                 content_type, recipe, workout, detected_language,
                 gcs_urls, transcription, tools_list, location, prompt,
-                is_list, list_subtype, list_count, list_type,
+                is_list, list_subtype, list_count, list_type, error_message,
                 created_at, updated_at
             )
             VALUES (
@@ -362,7 +314,7 @@ def insert_reel_into_db(reel_data):
                 %(content_type)s, %(recipe)s::jsonb, %(workout)s::jsonb, %(detected_language)s,
                 %(gcs_urls)s::jsonb, %(transcription)s,
                 %(tools_list)s::jsonb, %(location)s::jsonb, %(prompt)s::jsonb,
-                %(is_list)s, %(list_subtype)s, %(list_count)s, %(list_type)s,
+                %(is_list)s, %(list_subtype)s, %(list_count)s, %(list_type)s, %(error_message)s,
                 %(created_at)s, NOW()
             )
             ON CONFLICT (id) DO UPDATE SET
@@ -391,6 +343,7 @@ def insert_reel_into_db(reel_data):
                 list_subtype       = EXCLUDED.list_subtype,
                 list_count         = EXCLUDED.list_count,
                 list_type          = EXCLUDED.list_type,
+                error_message      = EXCLUDED.error_message,
                 updated_at         = NOW();
         """
 
@@ -424,6 +377,7 @@ def insert_reel_into_db(reel_data):
             "list_subtype": list_subtype,
             "list_count": list_count,
             "list_type": list_type,
+            "error_message": reel_data.get("error_message"),
             "created_at": created_at,
         }
 

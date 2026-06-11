@@ -60,6 +60,30 @@ export type AddVideoResult = {
   previewUrl?: string | null;
 };
 
+export type DuplicateReelResponse = {
+  duplicate: true;
+  code: 'duplicate_reel';
+  message: string;
+  existingReelId?: string;
+  existingReelUrl?: string;
+  canonicalKey?: string | null;
+  originalUrl?: string | null;
+  canonicalUrl?: string | null;
+  sourceUrl?: string | null;
+  title?: string | null;
+  status?: string | null;
+};
+
+export class DuplicateReelError extends Error {
+  duplicate: DuplicateReelResponse;
+
+  constructor(duplicate: DuplicateReelResponse) {
+    super(duplicate.message || 'Already saved');
+    this.name = 'DuplicateReelError';
+    this.duplicate = duplicate;
+  }
+}
+
 interface DataContextType {
   videos: Video[];
   folders: Folder[];
@@ -74,6 +98,7 @@ interface DataContextType {
   updateVideo: (id: string, updates: any) => Promise<void>;
   deleteVideos: (videoIds: string[]) => Promise<void>;
   addVideo: (url: string, forceRetry?: boolean) => Promise<AddVideoResult>;
+  refreshVideo: (videoId: string) => Promise<void>;
   refreshVideos: () => Promise<void>;
   refreshFolders: () => Promise<void>;
   getVideoById: (id: string) => Video | undefined;
@@ -734,8 +759,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               displayTitle = summary.title;
             } else if (r.summary_title && typeof r.summary_title === 'string') {
               displayTitle = r.summary_title;
-            } else if (r.caption) {
-              displayTitle = r.caption.slice(0, 50) || 'Untitled';
             } else {
               displayTitle = 'Untitled';
             }
@@ -755,22 +778,24 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
           const sourceUrl = String(r.source_url || '');
           const platform =
-            sourceUrl.includes('facebook.com') || sourceUrl.includes('fb.com')
+            r.platform ||
+            (sourceUrl.includes('facebook.com') || sourceUrl.includes('fb.com')
               ? 'facebook'
               : sourceUrl.includes('tiktok.com')
                 ? 'tiktok'
                 : sourceUrl.includes('youtube.com') || sourceUrl.includes('youtu.be')
                   ? 'youtube'
-                  : 'instagram';
+                  : 'instagram');
 
           return {
             id: r.id,
             title: displayTitle,
             author: r.author_name || r.author || 'Unknown',
             platform,
-            thumbnailUrl: r.gcs_urls?.preview_thumbnail || '',
+            thumbnailUrl: r.thumbnailUrl || r.thumbnail_url || '',
             duration: formatVideoDuration(r.duration, r.duration_seconds),
             savedAt: r.created_at,
+            updated_at: r.updated_at,
             category: finalCategory,
             topic: hydratedSummary.topic || '',
             subCategory: hydratedSummary.topic || '',
@@ -778,21 +803,23 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             summary: hydratedSummary,
             summary_category: r.summary_category || hydratedSummary.category || '',
             summary_topic: r.summary_topic || hydratedSummary.topic || '',
+            summary_title: r.summary_title || displayTitle,
             transcript: transcriptText,
-            transcription: r.transcription,
+            transcription: null,
             originalUrl: sourceUrl,
+            sourceUrl,
             isFavorite: r.is_favorite,
             folderId: normalizedFolderId,
             content_type: normalizeContentType(r.content_type),
-            recipe: r.recipe,
-            tools_list: r.tools_list,
-            workout: r.workout,
-            location: r.location,
+            list_subtype: r.list_subtype,
+            recipe: null,
+            tools_list: null,
+            workout: null,
+            location: null,
             status: r.status,
             errorMessage: r.error_message || null,
             recipeUserState: normalizeRecipeUserState(r.recipe_user_state),
             recipe_user_state: normalizeRecipeUserState(r.recipe_user_state),
-            __raw: r,
           } as any as Video;
         });
 
@@ -913,7 +940,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     async (url: string, forceRetry: boolean = false): Promise<AddVideoResult> => {
       if (!navigator.onLine) throw new Error('You are offline.');
 
-      const cleanUrl = (url || '').trim().split('?')[0];
+      const cleanUrl = (url || '').trim();
       const currentVideos = videosRef.current;
       const existing = currentVideos.find((v: any) => v.originalUrl === cleanUrl);
 
@@ -930,16 +957,20 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       });
 
+      let result: any = null;
+      try {
+        result = await response.json();
+      } catch {}
+
+      if (result?.duplicate && result?.code === 'duplicate_reel') {
+        throw new DuplicateReelError(result as DuplicateReelResponse);
+      }
+
       if (response.status === 409) throw new Error('This video has already been saved.');
       if (response.status === 401) {
         localStorage.removeItem('auth_token');
         throw new Error('Not authenticated. Please log in again.');
       }
-
-      let result: any = null;
-      try {
-        result = await response.json();
-      } catch {}
 
       if (!response.ok) {
         const message =
@@ -1134,6 +1165,48 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     [setVideos, fetchVideos],
   );
 
+  const refreshVideo = useCallback(
+    async (videoId: string): Promise<void> => {
+      if (!videoId) throw new Error('Missing video id.');
+      if (!navigator.onLine) throw new Error('You are offline.');
+
+      setVideos((prev) =>
+        prev.map((v: any) =>
+          v.id === videoId
+            ? { ...v, status: 'processing', category: 'Processing', errorMessage: null }
+            : v,
+        ),
+      );
+
+      const res = await fetch(joinUrl(API_BASE, `/api/reels/${encodeURIComponent(String(videoId))}/refresh`), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      });
+
+      let payload: any = null;
+      try {
+        payload = await res.json();
+      } catch {}
+
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token');
+        throw new Error('Not authenticated. Please log in again.');
+      }
+
+      if (!res.ok) {
+        fetchVideos();
+        throw new Error(payload?.message || payload?.error || 'Failed to refresh video.');
+      }
+
+      window.setTimeout(() => {
+        globalLastFetchTime = 0;
+        fetchVideos();
+      }, 1000);
+    },
+    [setVideos, fetchVideos],
+  );
+
   const addFolder = useCallback(
     async (name: string, parentId: string | null = null) => {
       if (!navigator.onLine) throw new Error('Offline');
@@ -1242,6 +1315,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       updateVideo,
       deleteVideos,
       addVideo,
+      refreshVideo,
       refreshVideos,
       refreshFolders,
       getVideoById,
@@ -1267,6 +1341,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       updateVideo,
       deleteVideos,
       addVideo,
+      refreshVideo,
       refreshVideos,
       refreshFolders,
       getVideoById,

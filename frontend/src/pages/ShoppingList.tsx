@@ -170,31 +170,45 @@ export const ShoppingList: React.FC = () => {
           ))}
         </div>
       ) : (
-        <div className="grid gap-8 lg:grid-cols-[340px_minmax(0,1fr)]">
-          <aside className="space-y-4">
-            <h2 className="text-lg font-black text-gray-950">Planned recipes</h2>
+        <div className="space-y-8">
+          <section className="space-y-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-widest text-emerald-700">This Week’s Cooking Plan</p>
+                <h2 className="text-lg font-black text-gray-950">Planned recipes</h2>
+              </div>
+              {recipeEntries.length > 0 && (
+                <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700">
+                  {recipeEntries.length} {recipeEntries.length === 1 ? 'recipe' : 'recipes'}
+                </span>
+              )}
+            </div>
             {recipeEntries.length === 0 ? (
-              <div className="rounded-[24px] border border-dashed border-emerald-100 bg-white/60 p-5 text-sm font-medium text-gray-500">
-                No recipes planned yet. Open a recipe and add its ingredients.
+              <div className="rounded-[28px] border border-dashed border-emerald-100 bg-white/70 p-8 text-center shadow-sm">
+                <ShoppingBasket className="mx-auto mb-3 text-emerald-200" size={32} />
+                <p className="font-black text-gray-950">No recipes planned yet</p>
+                <p className="mx-auto mt-2 max-w-md text-sm font-medium leading-relaxed text-gray-500">
+                  Open a recipe page and choose “Add ingredients to shopping list.” Recolekt will translate your cooking plan into groceries here.
+                </p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {recipeEntries.map((entry) => {
                   const title = recipeTitle(entry.recipe);
                   const thumbnail = recipeThumbnail(entry.recipe);
                   return (
-                    <div key={entry.reelId} className="rounded-[22px] border border-gray-100 bg-white p-3 shadow-sm">
+                    <div key={entry.reelId} className="rounded-[24px] border border-gray-100 bg-white p-3 shadow-sm">
                       <button
                         type="button"
                         onClick={() => navigate(`/video/${entry.reelId}`)}
                         className="flex w-full items-center gap-3 text-left"
                       >
-                        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-2xl bg-slate-100">
+                        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-slate-100">
                           {thumbnail && <img src={thumbnail} alt="" className="h-full w-full object-cover" />}
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="line-clamp-2 text-sm font-black text-gray-950">{title}</p>
-                          <p className="mt-0.5 text-xs font-medium text-gray-400">Source recipe</p>
+                          <p className="mt-0.5 text-xs font-medium text-gray-400">Tap to open recipe detail</p>
                         </div>
                         <ChevronRight size={16} className="text-gray-300" aria-hidden="true" />
                       </button>
@@ -212,12 +226,13 @@ export const ShoppingList: React.FC = () => {
                 })}
               </div>
             )}
-          </aside>
+          </section>
 
-          <main className="space-y-5">
+          <section className="space-y-5">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h2 className="text-lg font-black text-gray-950">Groceries</h2>
+                <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Grouped grocery list</p>
+                <h2 className="text-lg font-black text-gray-950">Groceries to buy</h2>
                 <p className="mt-0.5 text-sm font-medium text-gray-500">
                   {activeItems.length} to buy
                   {activeItems.length > 0 ? ` · ${checkedActiveCount} of ${activeItems.length} checked` : ''}
@@ -238,7 +253,7 @@ export const ShoppingList: React.FC = () => {
                 <p className="mt-1 text-sm font-medium text-gray-500">
                   {groupedExcludedItems.length > 0
                     ? 'Restore items below if you still need them.'
-                    : 'Add ingredients from a recipe to get started.'}
+                    : 'Add ingredients from a recipe page to get started.'}
                 </p>
               </div>
             ) : (
@@ -283,7 +298,7 @@ export const ShoppingList: React.FC = () => {
                   ))}
               </div>
             )}
-          </main>
+          </section>
         </div>
       )}
     </div>

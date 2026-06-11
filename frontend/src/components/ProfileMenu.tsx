@@ -126,7 +126,7 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({ isOpen, onClose }) => 
                   </h4>
                   <div className="glass-card rounded-[24px] overflow-hidden shadow-sm">
                     <button
-                      onClick={() => handleNav('/settings/account')}
+                      onClick={() => handleNav('/settings')}
                       className="w-full flex items-center justify-between p-5 hover:bg-white/40 border-b border-white/20 transition-colors group"
                     >
                       <div className="flex items-center gap-4">
@@ -142,7 +142,7 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({ isOpen, onClose }) => 
                     </button>
 
                     <button
-                      onClick={() => handleNav('/settings/app')}
+                      onClick={() => handleNav('/settings')}
                       className="w-full flex items-center justify-between p-5 hover:bg-white/40 border-b border-white/20 transition-colors group"
                     >
                       <div className="flex items-center gap-4">

@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, Trash2, Heart, FolderInput, AlertCircle, X,
   EllipsisVertical, AlignLeft, Pencil, Save, Globe, Folder, Archive,
-  MapPin,
+  MapPin, ShoppingBasket, RefreshCw, Loader2,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -225,8 +225,8 @@ export const VideoDetail: React.FC = () => {
     moveVideos,
     toggleFavorite,
     updateVideo,
+    refreshVideo,
     getVideoById,
-    addToGroceryList, // ← DataContext must expose this; see note below
   } = useData();
 
   const { showOriginal, toggleLanguage } = useLanguage();
@@ -279,6 +279,7 @@ export const VideoDetail: React.FC = () => {
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isRefreshingVideo, setIsRefreshingVideo] = useState(false);
 
   useScrollLock(
     isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen,
@@ -289,8 +290,6 @@ export const VideoDetail: React.FC = () => {
     setServingScale(1);
     setIsEditing(false);
   }, [id]);
-
-  // Push ingredients into the shared GroceryList via DataContext
 
   const enrichVideo = useCallback(async () => {
     if (!id || !navigator.onLine) {
@@ -398,6 +397,21 @@ export const VideoDetail: React.FC = () => {
     if (!currentVideoId) return;
     moveVideos([currentVideoId], 'archive');
     setIsActionSheetOpen(false);
+  };
+
+  const handleRefreshVideo = async () => {
+    if (!currentVideoId || !viewModel.originalUrl || isRefreshingVideo) return;
+    setIsRefreshingVideo(true);
+    try {
+      await refreshVideo(currentVideoId);
+      setVideo((prev: any) =>
+        prev ? { ...prev, status: 'processing', category: 'Processing', errorMessage: null } : prev,
+      );
+    } catch (err) {
+      console.error('Refresh video failed', err);
+    } finally {
+      setIsRefreshingVideo(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -589,7 +603,7 @@ export const VideoDetail: React.FC = () => {
 
   const showFolderBadge = Boolean(folderName && !showRecipeCard);
   const hasRecipeSourceDetails =
-    showRecipeCard && Boolean(viewModel.caption || viewModel.transcript || viewModel.originalUrl);
+    showRecipeCard && Boolean(viewModel.caption || viewModel.transcript || viewModel.originalUrl || viewModel.tags?.length);
 
   const actionItems = (video
     ? [
@@ -606,6 +620,11 @@ export const VideoDetail: React.FC = () => {
           label: t('videoDetail:moveToCollection', 'Move to Collection'),
           onClick: () => setIsMoveModalOpen(true),
         },
+        ...(viewModel.originalUrl ? [{
+          icon: isRefreshingVideo ? <Loader2 className="animate-spin" /> : <RefreshCw />,
+          label: isRefreshingVideo ? 'Refreshing video' : 'Refresh video',
+          onClick: handleRefreshVideo,
+        }] : []),
         { icon: <Archive />, label: t('videoDetail:archive', 'Archive'), onClick: handleArchive },
         {
           icon: <Trash2 />,
@@ -655,10 +674,13 @@ export const VideoDetail: React.FC = () => {
               />
             )}
 
-            <div className="absolute top-4 left-4 right-4 flex justify-between z-20">
+            <div
+              className="absolute safe-top-offset left-4 right-4 flex justify-between z-20 md:top-4"
+              style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1rem)' }}
+            >
               <button
                 onClick={() => navigate(-1)}
-                className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-lg hover:bg-white/40 transition-colors"
+                className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-lg hover:bg-white/40 transition-colors md:w-10 md:h-10"
               >
                 <ArrowLeft size={20} />
               </button>
@@ -673,7 +695,7 @@ export const VideoDetail: React.FC = () => {
                     </button>
                     <button
                       onClick={() => setIsEditing(false)}
-                      className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center"
+                      className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center md:w-10 md:h-10"
                     >
                       <X size={20} />
                     </button>
@@ -681,7 +703,7 @@ export const VideoDetail: React.FC = () => {
                 ) : (
                   <button
                     onClick={() => setIsActionSheetOpen(true)}
-                    className="w-9 h-9 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center hover:bg-white/40 transition-colors"
+                    className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center hover:bg-white/40 transition-colors md:w-9 md:h-9"
                   >
                     <EllipsisVertical size={18} />
                   </button>
@@ -857,6 +879,38 @@ export const VideoDetail: React.FC = () => {
                 hasActiveSession={cookStatus.hasActiveSession}
                 cookStatusLoading={cookStatusLoading}
                 openCookModeSignal={cookModeOpenSignal}
+                secondaryAction={(
+                  <button
+                    type="button"
+                    onClick={() => plannedRecipeIds.has(currentVideoId)
+                      ? removeRecipeFromShoppingList(currentVideoId)
+                      : addRecipeToShoppingList(currentVideoId, null)}
+                    disabled={shoppingLoading || shoppingSaving}
+                    className={`flex w-full items-center gap-3 rounded-[22px] border p-3.5 text-left shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 md:hidden ${
+                      plannedRecipeIds.has(currentVideoId)
+                        ? 'border-emerald-100 bg-emerald-50'
+                        : 'border-gray-100 bg-white active:bg-emerald-50'
+                    }`}
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
+                      <ShoppingBasket size={19} aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-black text-gray-950">
+                        {shoppingSaving
+                          ? 'Updating shopping list...'
+                          : plannedRecipeIds.has(currentVideoId)
+                            ? 'Planned'
+                            : 'Add ingredients to shopping list'}
+                      </span>
+                      <span className="mt-0.5 block text-xs font-medium text-gray-500">
+                        {plannedRecipeIds.has(currentVideoId)
+                          ? 'Already in your shopping plan.'
+                          : 'Plan this recipe for groceries.'}
+                      </span>
+                    </span>
+                  </button>
+                )}
               />
             </div>
           )}
@@ -891,7 +945,8 @@ export const VideoDetail: React.FC = () => {
                   originalUrl={viewModel.originalUrl}
                   platform={viewModel.platform}
                   t={t}
-                  showOriginalLink={!showRecipeCard}
+                  showOriginalLink
+                  tags={viewModel.tags}
                 />
               </Accordion>
             </div>

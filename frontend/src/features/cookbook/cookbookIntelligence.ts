@@ -17,7 +17,14 @@ export type RecipeTimeBucket = typeof RECIPE_TIME_BUCKETS[keyof typeof RECIPE_TI
 export type TodaysPick = {
   video: any;
   reason: string;
+  explanation: string;
+  signals: string[];
 } | null;
+
+export type TodaysPickOptions = {
+  plannedRecipeIds?: Set<string>;
+  excludeRecipeIds?: Set<string>;
+};
 
 export function parseObject(value: unknown): any {
   if (!value) return {};
@@ -86,10 +93,13 @@ function collectStrings(value: unknown, depth = 0): string {
 }
 
 function recipeText(video: any): string {
+  return [getRecipeTitle(video), recipeBodyText(video)].filter(Boolean).join(' ');
+}
+
+function recipeBodyText(video: any): string {
   const recipe = getRecipePayload(video);
   const summary = parseObject(video?.summary ?? video?.summarytext ?? video?.raw?.summary);
   return [
-    getRecipeTitle(video),
     collectStrings(recipe?.ingredients),
     collectStrings(recipe?.ingredientLines ?? recipe?.ingredient_lines),
     collectStrings(recipe?.instructions ?? recipe?.steps ?? recipe?.directions ?? recipe?.method),
@@ -113,6 +123,125 @@ function recipeInstructionText(video: any): string {
     recipe?.instructions_sections ??
     recipe?.instructionSections
   );
+}
+
+function countArrayish(value: unknown): number {
+  if (!value) return 0;
+  if (Array.isArray(value)) {
+    return value.reduce((total, item) => {
+      if (item && typeof item === 'object') {
+        const nestedItems =
+          (item as any).items ??
+          (item as any).ingredients ??
+          (item as any).steps ??
+          (item as any).instructions;
+        if (Array.isArray(nestedItems)) return total + nestedItems.length;
+      }
+      return total + 1;
+    }, 0);
+  }
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).reduce<number>((total, item) => total + countArrayish(item), 0);
+  }
+  if (typeof value === 'string') {
+    return value.split(/\n|\. /).map(part => part.trim()).filter(Boolean).length;
+  }
+  return 0;
+}
+
+export function getRecipeIngredientCount(video: any): number {
+  const recipe = getRecipePayload(video);
+  return countArrayish(
+    recipe?.ingredients ??
+    recipe?.ingredientLines ??
+    recipe?.ingredient_lines ??
+    recipe?.ingredient_sections ??
+    recipe?.ingredientSections
+  );
+}
+
+export function getRecipeStepCount(video: any): number {
+  const recipe = getRecipePayload(video);
+  return countArrayish(
+    recipe?.instructions ??
+    recipe?.steps ??
+    recipe?.directions ??
+    recipe?.method ??
+    recipe?.instruction_sections ??
+    recipe?.instructions_sections ??
+    recipe?.instructionSections
+  );
+}
+
+function ingredientLabel(value: unknown): string {
+  if (!value) return '';
+  if (typeof value === 'string') {
+    return value
+      .replace(/^\s*[-*]\s*/, '')
+      .replace(/^\d+(?:[./]\d+)?\s*(?:cups?|tbsp|tsp|tablespoons?|teaspoons?|grams?|g|kg|ml|l|oz|ounces?|lb|pounds?)?\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  if (typeof value === 'object') {
+    const source = value as any;
+    return String(
+      source?.name ??
+      source?.ingredient ??
+      source?.item ??
+      source?.text ??
+      source?.label ??
+      ''
+    ).trim();
+  }
+  return '';
+}
+
+function collectIngredientLabels(value: unknown, labels: string[], depth = 0): void {
+  if (!value || depth > 4 || labels.length >= 3) return;
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectIngredientLabels(item, labels, depth + 1));
+    return;
+  }
+  if (typeof value === 'object') {
+    const source = value as any;
+    const nested = source?.items ?? source?.ingredients;
+    if (nested) {
+      collectIngredientLabels(nested, labels, depth + 1);
+      return;
+    }
+  }
+
+  const label = ingredientLabel(value);
+  if (!label) return;
+  const normalized = label.toLowerCase();
+  if (!labels.some((existing) => existing.toLowerCase() === normalized)) labels.push(label);
+}
+
+export function getRecipeKeyIngredients(video: any): string[] {
+  const recipe = getRecipePayload(video);
+  const labels: string[] = [];
+  collectIngredientLabels(
+    recipe?.ingredients ??
+    recipe?.ingredientLines ??
+    recipe?.ingredient_lines ??
+    recipe?.ingredient_sections ??
+    recipe?.ingredientSections,
+    labels
+  );
+  return labels.slice(0, 3);
+}
+
+export function hasUsableCookbookRecipe(video: any): boolean {
+  if (getVideoContentType(video) !== 'recipe') return false;
+  if (isBrokenRecipe(video)) return false;
+  return getRecipeIngredientCount(video) > 0 || getRecipeStepCount(video) > 0 || Boolean(recipeBodyText(video).trim());
+}
+
+export function isBrokenRecipe(video: any): boolean {
+  const status = String(video?.status ?? video?.raw?.status ?? '').toLowerCase();
+  if (['error', 'failed', 'deleted'].includes(status)) return true;
+  const title = getRecipeTitle(video).toLowerCase();
+  return title === 'recipe' && !recipeBodyText(video).trim();
 }
 
 function parseMinutes(value: unknown): number | null {
@@ -218,6 +347,13 @@ export function isUntouchedSave(video: any, now = new Date()): boolean {
   return ageDays > 14 && state.cookCount === 0 && !state.hasActiveSession && !state.hasNote;
 }
 
+export function isRecentlySavedRecipe(video: any, now = new Date(), days = 10): boolean {
+  const rawDate = video?.savedAt ?? video?.saved_at ?? video?.createdAt ?? video?.created_at;
+  const savedAt = rawDate ? new Date(rawDate) : null;
+  if (!savedAt || Number.isNaN(savedAt.getTime())) return false;
+  return now.getTime() - savedAt.getTime() <= days * 86400000;
+}
+
 export function recipeSearchScore(video: any, query: string): number {
   const q = query.trim().toLowerCase();
   if (!q) return 1;
@@ -229,8 +365,13 @@ export function recipeSearchScore(video: any, query: string): number {
   return text.includes(q) ? 1 : 0;
 }
 
-export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
-  const candidates = videos.filter((video) => !getRecipeUserState(video).hasActiveSession);
+export function pickTodaysRecipe(videos: any[], now = new Date(), options: TodaysPickOptions = {}): TodaysPick {
+  const plannedRecipeIds = options.plannedRecipeIds ?? new Set<string>();
+  const excludeRecipeIds = options.excludeRecipeIds ?? new Set<string>();
+  const candidates = videos.filter((video) => {
+    const id = getVideoId(video);
+    return hasUsableCookbookRecipe(video) && !getRecipeUserState(video).hasActiveSession && !excludeRecipeIds.has(id);
+  });
   if (candidates.length === 0) return null;
 
   const isWeekend = now.getDay() === 0 || now.getDay() === 6;
@@ -240,6 +381,10 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
   const scored = candidates.map((video) => {
     const state = getRecipeUserState(video);
     const bucket = getRecipeTimeBucket(video);
+    const ingredientCount = getRecipeIngredientCount(video);
+    const stepCount = getRecipeStepCount(video);
+    const videoId = getVideoId(video);
+    const planned = plannedRecipeIds.has(videoId);
     const savedAt = new Date(video?.savedAt ?? video?.saved_at ?? video?.createdAt ?? video?.created_at ?? 0).getTime();
     const lastCookedAt = state.lastCookedAt ? new Date(state.lastCookedAt).getTime() : 0;
     const lastOpenedAt = new Date(
@@ -252,39 +397,94 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
       0
     ).getTime();
     let score = Number.isFinite(savedAt) ? savedAt / 100000000000 : 0;
-    let reason = 'Never cooked';
+    let reason = 'Saved but never cooked';
+    const signals: string[] = [];
+    const addSignal = (signal: string) => {
+      if (!signals.includes(signal) && signals.length < 4) signals.push(signal);
+    };
 
     if (state.cookCount === 0) {
       score += 24;
-      reason = 'Never cooked';
+      reason = 'Saved but never cooked';
+      addSignal('Never cooked');
+    } else if (lastCookedAt && now.getTime() - lastCookedAt > 30 * 86400000) {
+      score += 18;
+      reason = 'Good to cook again';
+      addSignal('Cooked before');
+    }
+    if (planned) {
+      score += 42;
+      reason = 'Already planned';
+      addSignal('Planned');
     }
     if (isUntouchedSave(video, now)) {
       score += 28;
-      reason = 'You saved this a while ago';
+      reason = planned ? reason : 'Saved for later';
+      addSignal('Saved for later');
     }
+    if (state.hasNote) {
+      score += 6;
+      addSignal('Has notes');
+    }
+    if (Number.isFinite(savedAt) && savedAt > recentCutoff) {
+      addSignal('Recently saved');
+      if (!planned && state.cookCount === 0) {
+        score += 5;
+        reason = 'Recently saved';
+      }
+    }
+    if (state.cookCount > 0) addSignal('Cooked before');
+    if (ingredientCount > 0 && ingredientCount <= 10) score += 8;
+    if (stepCount > 0 && stepCount <= 6) score += 6;
+    if (ingredientCount > 16 || stepCount > 10) score -= isWeekend ? 0 : 8;
     if (isWeekdayEvening) {
       if (bucket === RECIPE_TIME_BUCKETS.QUICK_MEAL) {
         score += 34;
-        reason = 'Fast enough for tonight';
+        reason = planned ? reason : 'Quick weeknight option';
+        addSignal('Quick');
       } else if (bucket === RECIPE_TIME_BUCKETS.WEEKNIGHT) {
         score += 18;
-        reason = 'Weeknight-friendly';
+        reason = planned ? reason : 'Weeknight-friendly';
       }
     }
     if (isWeekend) {
       if (bucket === RECIPE_TIME_BUCKETS.PROJECT_MEAL) {
         score += 34;
-        reason = 'Worth trying this weekend';
+        reason = planned ? reason : 'Good weekend project';
+        addSignal('Good weekend recipe');
       } else if (bucket === RECIPE_TIME_BUCKETS.SLOW_MEAL) {
         score += 18;
-        reason = 'Weekend-friendly';
+        reason = planned ? reason : 'Weekend-friendly';
+        addSignal('Good weekend recipe');
       }
     }
+    if (bucket === RECIPE_TIME_BUCKETS.QUICK_MEAL) addSignal('Quick');
     if (Number.isFinite(lastCookedAt) && lastCookedAt > recentCutoff) score -= 10;
     if (Number.isFinite(lastOpenedAt) && lastOpenedAt > recentCutoff) score -= 6;
     if (bucket === RECIPE_TIME_BUCKETS.UNKNOWN) score -= 4;
 
-    return { video, reason, savedAt, score };
+    const explanation =
+      reason === 'Saved but never cooked'
+        ? 'You saved it, but it has not had its first cook yet.'
+        : reason === 'Good to cook again'
+          ? 'You have made it before, and it has been a while.'
+          : reason === 'Already planned'
+            ? 'It is already in your cooking plan, so the ingredients are easier to act on.'
+          : reason === 'Saved for later'
+            ? 'An older save with recipe details ready when you are.'
+            : reason === 'Recently saved'
+              ? 'A fresh save with enough recipe detail to make it easy to try.'
+            : reason === 'Quick weeknight option'
+              ? 'This looks manageable when you want dinner moving soon.'
+              : reason === 'Weeknight-friendly'
+                ? 'A recipe shape that fits a normal cooking night.'
+                : reason === 'Good weekend project'
+                  ? 'A richer recipe that fits a slower cooking window.'
+                  : reason === 'Weekend-friendly'
+                    ? 'A slower recipe that has room on a weekend.'
+                    : 'A recipe that stands out from your cookbook signals.';
+
+    return { video, reason, explanation, signals, savedAt, score };
   });
 
   scored.sort((a, b) => {
@@ -293,5 +493,12 @@ export function pickTodaysRecipe(videos: any[], now = new Date()): TodaysPick {
     return b.savedAt - a.savedAt;
   });
   const pick = scored[0];
-  return pick ? { video: pick.video, reason: pick.reason } : null;
+  return pick
+    ? {
+        video: pick.video,
+        reason: pick.reason,
+        explanation: pick.explanation,
+        signals: pick.signals,
+      }
+    : null;
 }

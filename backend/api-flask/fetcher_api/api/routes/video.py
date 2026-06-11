@@ -21,12 +21,28 @@ from fetcher_api.services.video_analysis import (
     download_instagram_thumbnail,
 )
 from fetcher_api.api.helpers.processing import background_process
+from fetcher_api.services.social_ingestion import (
+    create_reused_social_reel,
+    find_reusable_social_reel,
+)
 from fetcher_api.services.storage import generate_gcs_paths
+from fetcher_api.services.social_urls import (
+    SocialUrlResult,
+    canonicalize_social_url,
+    facebook_share_url_variants,
+    has_stable_duplicate_url,
+    is_facebook_share_url,
+)
 from fetcher_api.api.helpers.auth import get_user_id_from_request
 
 logger = logging.getLogger("video")
 
 EXTRACTION_DAILY_LIMIT_TOTAL = int(os.getenv("EXTRACTION_DAILY_LIMIT_TOTAL", "50"))
+NON_RETRYABLE_SOCIAL_ERRORS = {
+    "social_cookies_expired",
+    "social_login_required",
+    "social_rate_limited",
+}
 
 
 def _count_extractions_today() -> int:
@@ -186,24 +202,154 @@ def _extract_shortcode(url: str, platform: str) -> str:
     return meta_client.extract_shortcode(url) or "unknown"
 
 
-def _find_existing_reel(user_id: str, url: str | None, shortcode: str | None = None):
+def _shortcode_from_existing_reel(reel_id: str, source_url: str, platform: str) -> str:
+    """Prefer the stable id prefix for refreshes so old rows keep their identity."""
+    if reel_id:
+        prefix = str(reel_id).split("--", 1)[0].strip().rstrip("-")
+        if prefix and prefix.lower() not in {"unknown", "none", "null"}:
+            return prefix
+
+    shortcode = (_extract_shortcode(source_url, platform) or "unknown").rstrip("-").strip()
+    if shortcode and shortcode.lower() not in {"unknown", "none", "null"}:
+        return shortcode
+
+    return f"{platform.lower()}_{uuid.uuid4().hex[:10]}"
+
+
+def _mark_reel_refresh_failed(reel_id: str, user_id: str, message: str):
+    try:
+        execute(
+            """
+            UPDATE reels
+            SET status = 'error',
+                error_message = %s,
+                updated_at = NOW()
+            WHERE id = %s AND user_id = %s
+            """,
+            (message[:500], reel_id, user_id),
+        )
+    except Exception:
+        logger.exception("❌ Failed to mark refresh error for reel=%s user=%s", reel_id, user_id)
+
+
+def _refresh_reel_background(
+    result,
+    video_path,
+    temp_dir,
+    shortcode,
+    source_url,
+    user_id,
+):
+    try:
+        background_process(
+            result,
+            video_path,
+            temp_dir,
+            shortcode,
+            "",
+            source_url,
+            True,
+            "",
+            None,
+            user_id,
+            force=True,
+        )
+    except Exception as exc:
+        logger.exception("❌ Refresh background failed reel=%s user=%s", result.get("process_id"), user_id)
+        _mark_reel_refresh_failed(result.get("process_id"), user_id, str(exc))
+
+
+def _find_existing_reel(user_id: str, url_result: SocialUrlResult, shortcode: str | None = None):
     """
     A reel must be unique per user.
 
-    Match by exact source_url first, then by shortcode embedded in the generated id.
-    This prevents duplicates when URL formatting changes but the platform shortcode is the same.
+    Instagram keeps its shortcode lookup. Facebook only matches stable reel/video
+    IDs from canonical URLs, never opaque share tokens.
     """
     if not user_id:
         return None
 
     shortcode = (shortcode or "").strip()
-    url = (url or "").strip()
+    url = (url_result.canonical_url or "").strip()
+    original_is_facebook_share = is_facebook_share_url(url_result.original_url)
 
     try:
-        if shortcode:
+        if url_result.platform == "facebook" and url_result.content_id:
+            content_id = url_result.content_id
+            existing = fetch_one(
+                """
+                SELECT id, status, gcs_urls, source_url, summary_title, error_message, created_at
+                FROM reels
+                WHERE user_id = %s
+                  AND (
+                        source_url ~* %s
+                     OR source_url ~* %s
+                     OR source_url ~* %s
+                     OR source_url ~* %s
+                  )
+                ORDER BY created_at DESC NULLS LAST
+                LIMIT 1
+                """,
+                (
+                    user_id,
+                    rf"facebook\.com/reels?/{content_id}([/?#]|$)",
+                    rf"facebook\.com/(?:[^/?#]+/)?videos/(?:[^/?#]+/)?{content_id}([/?#]|$)",
+                    rf"facebook\.com/watch[^#]*[?&]v={content_id}([&#]|$)",
+                    rf"facebook\.com/video\.php[^#]*[?&]v={content_id}([&#]|$)",
+                ),
+            )
+            if existing:
+                logger.info(
+                    "📌 Duplicate by canonical key user=%s canonical_key=%s existing=%s",
+                    user_id,
+                    url_result.canonical_key,
+                    existing.get("id"),
+                )
+                return existing
+
+        if original_is_facebook_share:
+            share_variants = facebook_share_url_variants(url_result.original_url)
+            placeholders = ", ".join(["%s"] * len(share_variants))
+            existing = fetch_one(
+                f"""
+                SELECT id, status, gcs_urls, source_url, summary_title, error_message, created_at
+                FROM reels
+                WHERE user_id = %s AND source_url IN ({placeholders})
+                ORDER BY created_at DESC NULLS LAST
+                LIMIT 1
+                """,
+                (user_id, *share_variants),
+            )
+            if existing:
+                logger.info(
+                    "📌 Duplicate by exact historical Facebook share URL fallback user=%s existing=%s original_url=%s source_url=%s",
+                    user_id,
+                    existing.get("id"),
+                    url_result.original_url,
+                    existing.get("source_url"),
+                )
+                return existing
+
+            if not url_result.content_id:
+                logger.info(
+                    "ℹ️ No duplicate: Facebook share URL did not resolve to a content ID and no exact historical share URL exists user=%s original_url=%s resolution=%s",
+                    user_id,
+                    url_result.original_url,
+                    url_result.resolution_status,
+                )
+            else:
+                logger.info(
+                    "ℹ️ No duplicate by canonical key or exact historical Facebook share URL user=%s canonical_key=%s original_url=%s",
+                    user_id,
+                    url_result.canonical_key,
+                    url_result.original_url,
+                )
+            return None
+
+        if url_result.platform == "instagram" and shortcode:
             return fetch_one(
                 """
-                SELECT id, status, gcs_urls, created_at
+                SELECT id, status, gcs_urls, source_url, summary_title, error_message, created_at
                 FROM reels
                 WHERE user_id = %s
                   AND (
@@ -216,10 +362,10 @@ def _find_existing_reel(user_id: str, url: str | None, shortcode: str | None = N
                 (user_id, url, f"{shortcode}--%"),
             )
 
-        if url:
+        if has_stable_duplicate_url(url_result):
             return fetch_one(
                 """
-                SELECT id, status, gcs_urls, created_at
+                SELECT id, status, gcs_urls, source_url, summary_title, error_message, created_at
                 FROM reels
                 WHERE user_id = %s AND source_url = %s
                 ORDER BY created_at DESC NULLS LAST
@@ -229,7 +375,14 @@ def _find_existing_reel(user_id: str, url: str | None, shortcode: str | None = N
             )
 
     except Exception as exc:
-        logger.warning("⚠️ Duplicate lookup failed for user=%s url=%s shortcode=%s: %s", user_id, url, shortcode, exc)
+        logger.warning(
+            "⚠️ Duplicate lookup failed for user=%s canonical_key=%s url=%s shortcode=%s: %s",
+            user_id,
+            url_result.canonical_key,
+            url,
+            shortcode,
+            exc,
+        )
 
     return None
 
@@ -257,6 +410,26 @@ def _preview_url_from_reel(row) -> str | None:
         or gcs_urls.get("poster")
         or gcs_urls.get("poster_url")
     )
+
+
+def _duplicate_response(existing_reel, url_result: SocialUrlResult) -> dict:
+    existing = dict(existing_reel) if hasattr(existing_reel, "keys") else existing_reel._asdict()
+    existing_id = existing.get("id")
+    return {
+        "status": existing.get("status") or "processing",
+        "duplicate": True,
+        "code": "duplicate_reel",
+        "message": "Already saved — this video is already in your Recolekt library.",
+        "existingReelId": existing_id,
+        "existingReelUrl": f"/video/{existing_id}",
+        "canonicalKey": url_result.canonical_key,
+        "originalUrl": url_result.original_url,
+        "canonicalUrl": url_result.canonical_url or None,
+        "sourceUrl": existing.get("source_url"),
+        "title": existing.get("summary_title"),
+        "errorCode": existing.get("error_message"),
+        "preview_url": _preview_url_from_reel(existing_reel),
+    }
 
 
 @video_bp.route("/summarize", methods=["POST"])
@@ -307,36 +480,98 @@ def summarize():
 
     if url:
         url = str(url).strip()
-        platform_id = detect_platform(url)
-        shortcode = _extract_shortcode(url, platform_id)
+        url_result = canonicalize_social_url(url, resolve_facebook_redirects=True)
+        logger.info(
+            "🔗 URL canonicalization platform=%s status=%s key=%s original=%s resolved=%s",
+            url_result.platform,
+            url_result.resolution_status,
+            url_result.canonical_key,
+            url_result.original_url,
+            url_result.resolved_url,
+        )
+
+        processing_url = url_result.canonical_url or url
+        if url_result.platform == "facebook" and url_result.content_id:
+            url = processing_url
+
+        platform_id = detect_platform(processing_url)
+        shortcode = url_result.content_id if platform_id == "FB" else _extract_shortcode(processing_url, platform_id)
         shortcode = (shortcode or "unknown").rstrip("-").strip()
 
         if not shortcode or shortcode in {"unknown", "None"}:
             shortcode = f"{platform_id.lower()}_{uuid.uuid4().hex[:10]}"
             logger.info(f"🔄 Assigned dynamic shortcode: {shortcode}")
 
-        existing_reel = _find_existing_reel(user_id, url, shortcode)
+        existing_reel = _find_existing_reel(user_id, url_result, shortcode)
 
         if existing_reel:
             existing_id = existing_reel.get("id")
             existing_status = existing_reel.get("status") or "processing"
 
-            logger.info("📌 Duplicate reel blocked before processing: existing=%s user=%s url=%s", existing_id, user_id, url)
+            logger.info(
+                "📌 Duplicate reel blocked before processing: existing=%s user=%s canonical_key=%s original_url=%s canonical_url=%s",
+                existing_id,
+                user_id,
+                url_result.canonical_key,
+                url_result.original_url,
+                url_result.canonical_url,
+            )
 
-            if existing_status == "error" or force_retry:
+            existing_error_code = existing_reel.get("error_message")
+            if force_retry:
                 logger.info("⚠️ Reprocessing requested for existing reel %s; deleting old DB row before retry", existing_id)
                 execute(
                     "DELETE FROM reels WHERE id = %s AND user_id = %s",
                     (existing_id, user_id),
                 )
+            elif existing_status == "error" and existing_error_code in NON_RETRYABLE_SOCIAL_ERRORS:
+                logger.info(
+                    "🚫 Not retrying non-retryable social extraction error existing=%s user=%s error_code=%s",
+                    existing_id,
+                    user_id,
+                    existing_error_code,
+                )
+                return jsonify(_duplicate_response(existing_reel, url_result)), 200
+            elif existing_status == "error":
+                logger.info("⚠️ Reprocessing existing error reel %s; deleting old DB row before retry", existing_id)
+                execute(
+                    "DELETE FROM reels WHERE id = %s AND user_id = %s",
+                    (existing_id, user_id),
+                )
             else:
+                return jsonify(_duplicate_response(existing_reel, url_result)), 200
+
+        if url_result.platform in {"facebook", "instagram"} and not force_retry:
+            reusable_reel = find_reusable_social_reel(user_id, url_result, shortcode)
+            if reusable_reel:
+                reused_process_id = f"{shortcode}--{get_timestamp()}--{get_unique_id(processing_url or url)}"
+                try:
+                    reuse_gcs_paths = generate_gcs_paths(shortcode, platform_id, user_id=user_id)
+                except TypeError:
+                    reuse_gcs_paths = generate_gcs_paths(shortcode, platform_id)
+
+                reuse_result = create_reused_social_reel(
+                    reusable_reel,
+                    reused_process_id,
+                    user_id,
+                    processing_url,
+                    reuse_gcs_paths,
+                )
+
+                logger.info(
+                    "♻️ Reused processed social reel source=%s new=%s user=%s canonical_key=%s",
+                    reuse_result.get("source_reel_id"),
+                    reuse_result.get("reel_id"),
+                    user_id,
+                    url_result.canonical_key,
+                )
                 return jsonify({
-                    "status": existing_status,
-                    "duplicate": True,
-                    "reel_id": existing_id,
-                    "process_id": existing_id,
-                    "message": "This reel already exists in your collection.",
-                    "preview_url": _preview_url_from_reel(existing_reel),
+                    "status": "done",
+                    "duplicate": False,
+                    "reused": True,
+                    "reel_id": reused_process_id,
+                    "process_id": reused_process_id,
+                    "preview_url": (reuse_result.get("gcs_urls") or {}).get("preview_thumbnail"),
                 }), 200
 
     if _extraction_limit_reached():
@@ -425,3 +660,127 @@ def summarize():
         "process_id": result["process_id"],
         "preview_url": None,
     })
+
+
+@video_bp.route("/reels/<path:reel_id>/refresh", methods=["POST"])
+def refresh_reel(reel_id):
+    logger.info("🔄 /reels/%s/refresh called", reel_id)
+
+    try:
+        user_id = get_user_id_from_request()
+    except ValueError as e:
+        logger.error("❌ Refresh auth failed: %s", e)
+        return jsonify({"error": "Authentication required"}), 401
+
+    reel = fetch_one(
+        """
+        SELECT id, user_id, source_url, status, folder_id, is_favorite, created_at
+        FROM reels
+        WHERE id = %s AND user_id = %s
+        LIMIT 1
+        """,
+        (reel_id, user_id),
+    )
+
+    if not reel:
+        logger.info("🚫 Refresh denied or missing reel=%s user=%s", reel_id, user_id)
+        return jsonify({"error": "not_found", "message": "Video not found."}), 404
+
+    source_url = str(reel.get("source_url") or "").strip()
+    if not source_url:
+        logger.warning("🚫 Refresh blocked: reel=%s user=%s has no source_url", reel_id, user_id)
+        return jsonify({
+            "error": "missing_source_url",
+            "message": "This video cannot be refreshed because it has no source URL.",
+        }), 400
+
+    if not is_supported_url(source_url):
+        logger.warning("🚫 Refresh blocked: unsupported source_url reel=%s user=%s url=%s", reel_id, user_id, source_url)
+        return jsonify({
+            "error": "unsupported_platform",
+            "message": "Only Instagram, Facebook, YouTube, and TikTok URLs can be refreshed.",
+        }), 422
+
+    url_result = canonicalize_social_url(source_url, resolve_facebook_redirects=True)
+    processing_url = url_result.canonical_url or source_url
+    if url_result.platform == "facebook" and url_result.content_id:
+        source_url = processing_url
+
+    platform_id = detect_platform(processing_url)
+    shortcode = url_result.content_id if platform_id == "FB" and url_result.content_id else _shortcode_from_existing_reel(reel_id, processing_url, platform_id)
+    shortcode = (shortcode or "unknown").rstrip("-").strip()
+
+    try:
+        gcs_paths = generate_gcs_paths(shortcode, platform_id, user_id=user_id)
+    except TypeError:
+        gcs_paths = generate_gcs_paths(shortcode, platform_id)
+
+    result = {
+        "process_id": reel_id,
+        "id": reel_id,
+        "user_id": user_id,
+        "source_url": source_url,
+        "summary": {},
+        "caption": "",
+        "gcs_paths": gcs_paths,
+        "gcs_urls": {
+            "preview_thumbnail": None,
+            "video": None,
+            "result_json": None,
+        },
+    }
+
+    try:
+        execute(
+            """
+            UPDATE reels
+            SET status = 'processing',
+                error_message = NULL,
+                gcs_urls = %s::jsonb,
+                updated_at = NOW()
+            WHERE id = %s AND user_id = %s
+            """,
+            (json.dumps(result["gcs_urls"]), reel_id, user_id),
+        )
+        logger.info(
+            "🔄 Refresh queued reel=%s user=%s platform=%s shortcode=%s canonical_key=%s",
+            reel_id,
+            user_id,
+            platform_id,
+            shortcode,
+            url_result.canonical_key,
+        )
+    except Exception as exc:
+        logger.error("❌ Failed to mark reel processing for refresh reel=%s user=%s: %s", reel_id, user_id, exc, exc_info=True)
+        return jsonify({
+            "error": "refresh_failed",
+            "message": "Refresh could not be started.",
+        }), 500
+
+    temp_dir = tempfile.mkdtemp(dir=TEMP_DIR_BASE)
+    video_path = os.path.join(temp_dir, f"{reel_id}.mp4")
+
+    try:
+        threading.Thread(
+            target=_refresh_reel_background,
+            args=(result, video_path, temp_dir, shortcode, source_url, user_id),
+            daemon=True,
+        ).start()
+    except Exception as exc:
+        logger.error("❌ Failed to start refresh thread reel=%s user=%s: %s", reel_id, user_id, exc, exc_info=True)
+        try:
+            os.rmdir(temp_dir)
+        except Exception:
+            pass
+        _mark_reel_refresh_failed(reel_id, user_id, str(exc))
+        return jsonify({
+            "error": "refresh_failed",
+            "message": "Refresh could not be started.",
+        }), 500
+
+    return jsonify({
+        "success": True,
+        "reel_id": reel_id,
+        "status": "processing",
+        "message": "Refresh started",
+    }), 202

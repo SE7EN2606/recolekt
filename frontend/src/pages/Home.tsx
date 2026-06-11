@@ -16,10 +16,18 @@ import { useTranslation } from "react-i18next";
 type SummarizeResponse = {
   reel_id?: string;
   status?: string;
+  duplicate?: boolean;
   preview_url?: string | null;
   error?: string;
   code?: string;
   message?: string;
+  existingReelId?: string;
+  existingReelUrl?: string;
+  canonicalKey?: string | null;
+  originalUrl?: string | null;
+  canonicalUrl?: string | null;
+  sourceUrl?: string | null;
+  title?: string | null;
 };
 
 const joinUrl = (base: string, path: string) =>
@@ -46,6 +54,7 @@ export const Home: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [infoMsg, setInfoMsg] = useState("");
+  const [duplicateReel, setDuplicateReel] = useState<SummarizeResponse | null>(null);
 
   const navigate = useNavigate();
   const { t } = useTranslation(["home", "common"]);
@@ -95,6 +104,7 @@ export const Home: React.FC = () => {
       setUrl(text);
       setError("");
       setInfoMsg("");
+      setDuplicateReel(null);
     } catch (err) {
       console.error("Failed to read clipboard contents:", err);
     }
@@ -104,6 +114,7 @@ export const Home: React.FC = () => {
     setUrl("");
     setError("");
     setInfoMsg("");
+    setDuplicateReel(null);
   };
 
   const handleSaveWithUrl = async (urlToSave: string) => {
@@ -113,6 +124,7 @@ export const Home: React.FC = () => {
     setIsLoading(true);
     setError("");
     setInfoMsg("");
+    setDuplicateReel(null);
 
     if (isComingSoonPlatform(trimmedUrl)) {
       setInfoMsg(
@@ -136,7 +148,7 @@ export const Home: React.FC = () => {
       return;
     }
 
-    const cleanUrl = trimmedUrl.split("?")[0];
+    const cleanUrl = trimmedUrl;
 
     try {
       const response = await fetch(joinUrl(API_BASE, "/api/summarize"), {
@@ -179,6 +191,13 @@ export const Home: React.FC = () => {
 
       if (response.status === 409) {
         setError(data.error || t("home:duplicateError"));
+        setUrl("");
+        setIsLoading(false);
+        return;
+      }
+
+      if (data.duplicate && data.code === "duplicate_reel" && data.existingReelId) {
+        setDuplicateReel(data);
         setUrl("");
         setIsLoading(false);
         return;
@@ -287,6 +306,24 @@ export const Home: React.FC = () => {
                 >
                   ×
                 </button>
+              </div>
+            )}
+
+            {duplicateReel && (
+              <div className="flex flex-col gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-sm animate-fade-in text-left sm:flex-row sm:items-center">
+                <div className="flex-1">
+                  <p className="font-semibold">Already saved</p>
+                  <p className="text-emerald-700">
+                    {duplicateReel.message || "This video is already in your Recolekt library."}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => navigate(duplicateReel.existingReelUrl || `/video/${duplicateReel.existingReelId}`)}
+                  className="shrink-0"
+                >
+                  View saved reel
+                </Button>
               </div>
             )}
 

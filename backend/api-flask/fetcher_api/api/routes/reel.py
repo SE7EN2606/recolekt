@@ -331,6 +331,14 @@ def _serialize_shopping_entry(row) -> dict:
     }
 
 
+def _optional_bool(value):
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    raise ValueError("Expected boolean")
+
+
 def _fill_place_locality_from_reverse(place: dict) -> dict:
     if not isinstance(place, dict):
         return place
@@ -1680,8 +1688,12 @@ def patch_shopping_item(ingredient_key):
             return jsonify({"error": "ingredient_key is required"}), 400
 
         data = request.get_json(silent=True) or {}
-        checked = data.get("checked")
-        excluded = data.get("excluded")
+        try:
+            checked = _optional_bool(data.get("checked"))
+            excluded = _optional_bool(data.get("excluded"))
+        except ValueError:
+            return jsonify({"error": "checked and excluded must be boolean values"}), 400
+
         if checked is None and excluded is None:
             return jsonify({"error": "checked or excluded is required"}), 400
         has_checked = checked is not None

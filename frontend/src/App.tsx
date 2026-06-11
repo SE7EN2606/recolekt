@@ -12,6 +12,7 @@ import { useAuth } from './context/AuthContext';
 import LogoWhite from './assets/recolekt_logo_white.png';
 import { InstallPrompt } from './components/InstallPrompt';
 import { ProfileSettings } from './pages/AdminDashboard';
+import { AddVideoModal } from './components/AddVideoModal';
 
 const Gallery         = lazy(() => import('./pages/Gallery').then(m => ({ default: m.Gallery })));
 const Cookbook        = lazy(() => import('./pages/Cookbook').then(m => ({ default: m.Cookbook })));
@@ -20,14 +21,16 @@ const Organizer       = lazy(() => import('./pages/Organizer').then(m => ({ defa
 const AccountSettings = lazy(() => import('./pages/AccountSettings').then(m => ({ default: m.AccountSettings })));
 const OnboardingFlow  = lazy(() => import('./pages/OnboardingFlow').then(m => ({ default: m.OnboardingFlow })));
 const BillingPage     = lazy(() => import('./pages/BillingPage').then(m => ({ default: m.BillingPage })));
+const BillingSuccess  = lazy(() => import('./pages/BillingSuccess').then(m => ({ default: m.BillingSuccess })));
+const BillingCancel   = lazy(() => import('./pages/BillingCancel').then(m => ({ default: m.BillingCancel })));
 const SubscribePage   = lazy(() => import('./pages/SubscribePage').then(m => ({ default: m.SubscribePage })));
 const Features        = lazy(() => import('./pages/Features').then(m => ({ default: m.Features })));
 const Auth            = lazy(() => import('./pages/Auth').then(m => ({ default: m.Auth })));
 const SavedPlaces     = lazy(() => import('./pages/SavedPlaces').then(m => ({ default: m.SavedPlaces })));
 const AdminPanel      = lazy(() => import('./pages/AdminPanel').then(m => ({ default: m.AdminPanel })));
 const ShoppingList    = lazy(() => import('./pages/ShoppingList').then(m => ({ default: m.ShoppingList })));
+const HelpSupport     = lazy(() => import('./pages/HelpSupport').then(m => ({ default: m.HelpSupport })));
 const MobileBottomNav = lazy(() => import('./components/MobileBottomNav').then(m => ({ default: m.MobileBottomNav })));
-const AddVideoModal   = lazy(() => import('./components/AddVideoModal').then(m => ({ default: m.AddVideoModal })));
 
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -40,13 +43,13 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const fullWidthPages = ['/', '/billing', '/billing/success', '/billing/cancel', '/subscribe', '/auth', '/features'];
   const showSidebar = user && !fullWidthPages.includes(location.pathname);
   const showFooter = ['/', '/features', '/billing'].includes(location.pathname);
-  const mainBottomPadding = user && !showFooter ? 'pb-24' : 'pb-6';
+  const mainBottomPadding = user && !showFooter ? 'mobile-page-content' : 'pb-[calc(1.5rem+var(--safe-area-bottom))]';
 
   return (
     <div className="min-h-screen flex flex-col font-sans text-gray-900 selection:bg-primary-100">
       {!isAuthPage && <Header />}
 
-      <main className={`flex-1 w-full mx-auto ${isAuthPage ? 'pt-0' : `max-w-7xl px-4 md:px-8 ${mainBottomPadding} md:pb-0 pt-20 md:pt-27.5`}`}>
+      <main className={`flex-1 w-full mx-auto ${isAuthPage ? 'pt-0' : `max-w-7xl px-4 md:px-8 ${mainBottomPadding} md:pb-0 mobile-page-top md:pt-27.5`}`}>
         <div className="flex gap-6 items-start">
           {showSidebar && <Sidebar />}
           <div className="flex-1 w-full min-w-0 animate-fade-in">{children}</div>
@@ -126,6 +129,8 @@ function App() {
                   <Route path="/features" element={<Features />} />
                   <Route path="/auth" element={<Auth />} />
                   <Route path="/billing" element={<BillingPage />} />
+                  <Route path="/billing/success" element={<BillingSuccess />} />
+                  <Route path="/billing/cancel" element={<BillingCancel />} />
                   <Route path="/organizer" element={<Organizer />} />
                   <Route path="/gallery" element={<Gallery />} />
                   <Route path="/gallery/:folderId" element={<Gallery />} />
@@ -136,6 +141,8 @@ function App() {
                   <Route path="/profile" element={<ProfileSettings />} />
                   <Route path="/places" element={<SavedPlaces />} />
                   <Route path="/grocery-list" element={<ShoppingList />} />
+                  <Route path="/shopping-list" element={<ShoppingList />} />
+                  <Route path="/help" element={<HelpSupport />} />
                   <Route path="/admin" element={<AdminPanel />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

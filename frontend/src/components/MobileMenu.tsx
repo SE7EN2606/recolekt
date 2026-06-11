@@ -120,9 +120,9 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                         <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
                       </button>
 
-                      <button onClick={() => handleNav('/grocery-list')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
+                      <button onClick={() => handleNav('/shopping-list')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
                         <FolderOpen size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
-                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('sidebar:groceryList', 'Grocery List')}</span>
+                        <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('sidebar:shoppingList', 'Shopping List')}</span>
                         <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
                       </button>
 
@@ -196,7 +196,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                   <section>
                     <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] px-4 mb-3 drop-shadow-sm">{t('common:account', 'Account')}</h3>
                     <div className="bg-white/60 backdrop-blur-md border border-white/70 rounded-[28px] overflow-hidden shadow-sm">
-                      <button onClick={() => handleNav('/settings/account')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
+                      <button onClick={() => handleNav('/settings')} className="w-full flex items-center gap-4 p-5 border-b border-white/50 group transition-all hover:bg-white/80">
                         <User size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:myAccount', 'My Account')}</span>
                         <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
@@ -206,7 +206,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('common:billingPlan', 'Billing & Plan')}</span>
                         <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
                       </button>
-                      <button onClick={() => handleNav('/settings/app')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-white/80">
+                      <button onClick={() => handleNav('/settings')} className="w-full flex items-center gap-4 p-5 group transition-all hover:bg-white/80">
                         <Settings size={22} className="text-gray-500 group-hover:text-primary-600 transition-colors" />
                         <span className="text-gray-900 font-bold flex-1 text-left group-hover:text-primary-600 transition-colors">{t('header:settings', 'App Settings')}</span>
                         <ChevronRight size={18} className="text-gray-400 group-hover:text-primary-500 transition-colors" />

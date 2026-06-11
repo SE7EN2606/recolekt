@@ -42,6 +42,7 @@ export interface RecipeDetailsCardProps {
   hasActiveSession?: boolean;
   cookStatusLoading?: boolean;
   openCookModeSignal?: number;
+  secondaryAction?: React.ReactNode;
 }
 
 function getServings(recipe: any) {
@@ -68,6 +69,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   hasActiveSession = false,
   cookStatusLoading = false,
   openCookModeSignal = 0,
+  secondaryAction,
 }) => {
   const { t } = useTranslation(['videoDetail']);
   const [isCookModeOpen, setIsCookModeOpen] = useState(false);
@@ -154,8 +156,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const secondaryTabs = useMemo(() => {
     const tabs: { key: RecipeSecondaryTabKey; label: string }[] = [];
 
-    if (hasIngredients) tabs.push({ key: 'nutrition', label: 'Macro' });
-    tabs.push({ key: 'ask', label: 'Ask' });
+    if (hasIngredients) tabs.push({ key: 'nutrition', label: 'Nutrition details' });
+    tabs.push({ key: 'ask', label: 'Ask recipe' });
 
     return tabs;
   }, [hasIngredients]);
@@ -197,7 +199,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               <ChefHat size={17} aria-hidden="true" />
             </span>
             <h3 className="font-bold text-gray-900 text-base tracking-tight truncate">
-              {t('videoDetail:recipeDetails', 'Recipe Details')}
+              Recipe
             </h3>
           </div>
 
@@ -237,8 +239,13 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               className="flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-gray-950 px-5 py-4 text-[15px] font-black text-white shadow-sm transition-colors hover:bg-gray-800 active:bg-gray-900"
             >
               <ChefHat size={18} aria-hidden="true" />
-              {cookModeLoading ? 'Loading recipe state...' : hasActiveSession ? 'Resume cooking' : 'Cook this recipe'}
+              {cookModeLoading ? 'Loading recipe state...' : hasActiveSession ? 'Resume cooking' : 'Start cooking'}
             </button>
+            {secondaryAction && (
+              <div className="mt-3">
+                {secondaryAction}
+              </div>
+            )}
           </div>
         )}
 
