@@ -45,7 +45,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const showSidebar = user && !fullWidthPages.includes(location.pathname);
   const showFooter = ['/', '/features', '/billing'].includes(location.pathname);
   const mainBottomPadding = user && !showFooter ? 'mobile-page-content' : 'pb-[calc(1.5rem+var(--safe-area-bottom))]';
-  const mainTopPadding = isHomeRoute ? 'pt-0 md:pt-0' : 'mobile-page-top md:pt-27.5';
+  const mainTopPadding = isHomeRoute ? 'mobile-home-content md:pt-0' : 'mobile-page-top md:pt-27.5';
 
   return (
     <div className="min-h-screen flex flex-col font-sans text-gray-900 selection:bg-primary-100">
