@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   LayoutGrid, Heart, Archive,
   ChevronRight, BookOpen, HelpCircle, FolderPlus, User, Settings, LogOut,
-  FolderOpen, Inbox, CreditCard, FolderClosed, CornerDownRight
+  FolderOpen, Inbox, CreditCard, FolderClosed, CornerDownRight, X, Globe, Check
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -21,7 +21,7 @@ interface MobileMenuProps {
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   const { isAuthenticated, loading, signOut } = useAuth();
   const { folders, addFolder, videos } = useData();
-  const { t } = useTranslation(['common', 'sidebar', 'gallery', 'header', 'modals']);
+  const { t, i18n } = useTranslation(['common', 'sidebar', 'gallery', 'header', 'modals']);
 
   const [shouldRender, setShouldRender] = useState(false);
   const [animateOpen, setAnimateOpen] = useState(false);
@@ -77,6 +77,11 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
   const parentOptions = customFolders.map((f: any) => ({ id: f.id, name: f.name }));
   const showAuthedUI = !loading && isAuthenticated;
+  const currentLang = i18n.language?.substring(0, 2).toLowerCase() || 'en';
+
+  const handleLanguageChange = (lng: string) => {
+    void i18n.changeLanguage(lng);
+  };
 
   if (!shouldRender) return null;
 
@@ -84,12 +89,47 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     <>
       <div
         className={`
-          fixed inset-0 w-full z-[100] overflow-hidden overscroll-contain
-          bg-white transform-gpu
+          mobile-menu-shell w-full transform-gpu
           transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
           ${animateOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}
         `}
       >
+        <div className="mobile-menu-header">
+          <div className="mobile-menu-header-row flex items-center justify-between gap-3">
+            <button onClick={() => handleNav(showAuthedUI ? '/gallery' : '/')} className="flex min-h-11 items-center transition-transform active:scale-95" aria-label="Go to Home">
+              <img src={LogoBlack} alt="Recolekt" className="h-8 object-contain" />
+            </button>
+
+            <div className="flex items-center gap-2">
+              {!showAuthedUI && (
+                <div className="flex items-center gap-1 rounded-full bg-gray-100 p-1">
+                  <Globe size={16} className="ml-2 text-gray-500" />
+                  {['en', 'fr'].map((lng) => (
+                    <button
+                      key={lng}
+                      onClick={() => handleLanguageChange(lng)}
+                      className={`flex h-8 min-w-9 items-center justify-center rounded-full px-2 text-xs font-bold uppercase transition-colors ${
+                        currentLang === lng ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'
+                      }`}
+                    >
+                      {lng}
+                      {currentLang === lng && <Check size={12} className="ml-1" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={onClose}
+                aria-label="Close menu"
+                className="flex h-11 w-11 items-center justify-center rounded-full text-gray-900 transition-colors active:scale-95 hover:bg-gray-100"
+              >
+                <X size={24} />
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div
           className={`
             mobile-menu-content w-full max-w-[1100px] mx-auto
@@ -246,7 +286,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       { label: t('common:pricing', 'Pricing'), path: '/billing' },
                       { label: t('common:support', 'Support'), path: '/help?section=contact' },
                     ].map((link) => (
-                      <Link key={link.path} to={link.path} onClick={onClose} className={`block text-3xl font-black tracking-tight hover:text-primary-600 transition-colors py-2 ${location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'}`}>
+                      <Link key={link.path} to={link.path} onClick={onClose} className={`block text-3xl font-bold hover:text-primary-600 transition-colors py-2 ${location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'}`}>
                         {link.label}
                       </Link>
                     ))}

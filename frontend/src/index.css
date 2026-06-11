@@ -79,8 +79,9 @@ body[style*="padding-right"] {
     --safe-right: var(--safe-area-right);
     --mobile-header-content-height: 64px;
     --mobile-header-scrolled-content-height: 56px;
-    --mobile-header-height: var(--mobile-header-content-height);
-    --mobile-header-total-height: calc(var(--safe-area-top) + var(--mobile-header-content-height));
+    --mobile-header-total-height: calc(env(safe-area-inset-top, 0px) + var(--mobile-header-content-height));
+    --mobile-header-scrolled-total-height: calc(env(safe-area-inset-top, 0px) + var(--mobile-header-scrolled-content-height));
+    --mobile-header-height: var(--mobile-header-total-height);
     --mobile-bottom-nav-height: 76px;
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
@@ -166,27 +167,27 @@ body[style*="padding-right"] {
 
 @layer utilities {
   .mobile-page-content {
-    padding-bottom: calc(var(--mobile-bottom-nav-height) + var(--safe-area-bottom) + 24px);
+    padding-bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom, 0px) + 24px);
   }
 
   .mobile-page-top {
-    padding-top: calc(var(--mobile-header-height) + var(--safe-area-top));
+    padding-top: var(--mobile-header-total-height);
   }
 
   .mobile-home-content {
-    padding-top: calc(var(--mobile-header-total-height) + 44px);
+    padding-top: calc(var(--mobile-header-total-height) + 16px);
   }
 
   @media (max-width: 767px) {
     .mobile-header-shell {
       height: var(--mobile-header-total-height);
-      padding-top: var(--safe-area-top);
+      padding-top: env(safe-area-inset-top, 0px);
       padding-bottom: 0;
     }
 
     .mobile-header-shell.mobile-header-scrolled {
-      height: calc(var(--safe-area-top) + var(--mobile-header-scrolled-content-height));
-      padding-top: var(--safe-area-top);
+      height: var(--mobile-header-scrolled-total-height);
+      padding-top: env(safe-area-inset-top, 0px);
       padding-bottom: 0;
     }
 
@@ -199,12 +200,33 @@ body[style*="padding-right"] {
       height: var(--mobile-header-scrolled-content-height);
     }
 
+    .mobile-menu-shell {
+      position: fixed;
+      inset: 0;
+      height: 100dvh;
+      background: #ffffff;
+      z-index: 200;
+      overflow: hidden;
+      overscroll-behavior: contain;
+    }
+
+    .mobile-menu-header {
+      height: var(--mobile-header-total-height);
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-left: max(1.5rem, env(safe-area-inset-left, 0px));
+      padding-right: max(1.5rem, env(safe-area-inset-right, 0px));
+    }
+
+    .mobile-menu-header-row {
+      height: var(--mobile-header-content-height);
+    }
+
     .mobile-menu-content {
-      padding-top: calc(var(--mobile-header-total-height) + 40px);
-      padding-left: max(1.5rem, var(--safe-area-left));
-      padding-right: max(1.5rem, var(--safe-area-right));
-      padding-bottom: calc(var(--safe-area-bottom) + 24px);
-      max-height: 100dvh;
+      height: calc(100dvh - var(--mobile-header-total-height));
+      padding-top: 24px;
+      padding-left: max(1.5rem, env(safe-area-inset-left, 0px));
+      padding-right: max(1.5rem, env(safe-area-inset-right, 0px));
+      padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
       scrollbar-width: none;
@@ -233,6 +255,7 @@ body[style*="padding-right"] {
   }
 
   .mobile-bottom-nav {
+    bottom: 0;
     height: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom, 0px));
     min-height: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom, 0px));
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -241,16 +264,20 @@ body[style*="padding-right"] {
   }
 
   .mobile-bottom-nav-content {
+    height: var(--mobile-bottom-nav-height);
     min-height: var(--mobile-bottom-nav-height);
-    padding-bottom: 1rem;
+    padding-bottom: 0.75rem;
   }
 
   .floating-add-button {
-    position: fixed;
-    left: 50%;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 42px);
-    transform: translateX(-50%);
-    top: auto;
+    position: relative;
+    display: flex;
+    width: 84px;
+    height: 56px;
+    align-items: center;
+    justify-content: center;
+    transform: translateY(-18px);
+    flex: 0 0 84px;
   }
 
   @media (display-mode: standalone) {
