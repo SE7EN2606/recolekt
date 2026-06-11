@@ -89,6 +89,7 @@ export const Header: React.FC = () => {
     <>
       <header
         className={`
+          mobile-header-shell ${isScrolled ? 'mobile-header-scrolled' : ''}
           fixed top-0 left-0 right-0 z-[110]
           transition-all duration-500 ease-[cubic-bezier(0.25,0.8,0.25,1)]
           ${isScrolled
@@ -97,12 +98,12 @@ export const Header: React.FC = () => {
         `}
       >
         <div className="max-w-[1280px] mx-auto px-6 md:px-8 h-full pl-[max(1.5rem,var(--safe-area-left))] pr-[max(1.5rem,var(--safe-area-right))] md:px-8">
-          <div className="h-full flex items-center justify-between">
+          <div className="mobile-header-inner h-full flex items-center justify-between">
 
             <Link
               to={showAuthedUI ? '/gallery' : '/'}
               aria-label="Go to Home"
-              className="flex items-center z-50 group shrink-0"
+              className="flex min-h-11 items-center z-50 group shrink-0"
             >
               <img
                 src={isMobileMenuOpen ? LogoIcon : LogoBlack}
@@ -193,7 +194,7 @@ export const Header: React.FC = () => {
                  <button 
                    onClick={() => setIsSearchOpen(true)}
                    aria-label={t('gallery:search', 'Search')}
-                   className="w-10 h-10 rounded-full flex items-center justify-center text-gray-900 active:scale-95 hover:bg-gray-100 transition-all"
+                   className="w-11 h-11 rounded-full flex items-center justify-center text-gray-900 active:scale-95 hover:bg-gray-100 transition-all"
                  >
                    <Search size={22} />
                  </button>
@@ -222,7 +223,7 @@ export const Header: React.FC = () => {
               
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="w-10 h-10 rounded-full flex flex-col items-center justify-center relative z-50 transition-colors active:scale-95 hover:bg-gray-100"
+                className="w-11 h-11 rounded-full flex flex-col items-center justify-center relative z-50 transition-colors active:scale-95 hover:bg-gray-100"
                 aria-label="Toggle menu"
               >
                 <span className={`absolute w-5 h-[2px] bg-gray-900 rounded-full transition-all duration-300 ${isMobileMenuOpen ? 'rotate-45 translate-y-0' : '-translate-y-[4px]'}`} />

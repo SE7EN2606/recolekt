@@ -674,10 +674,13 @@ export const VideoDetail: React.FC = () => {
               />
             )}
 
-            <div className="absolute top-4 left-4 right-4 flex justify-between z-20">
+            <div
+              className="absolute safe-top-offset left-4 right-4 flex justify-between z-20 md:top-4"
+              style={{ top: 'calc(env(safe-area-inset-top, 0px) + 1rem)' }}
+            >
               <button
                 onClick={() => navigate(-1)}
-                className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-lg hover:bg-white/40 transition-colors"
+                className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-lg hover:bg-white/40 transition-colors md:w-10 md:h-10"
               >
                 <ArrowLeft size={20} />
               </button>
@@ -692,7 +695,7 @@ export const VideoDetail: React.FC = () => {
                     </button>
                     <button
                       onClick={() => setIsEditing(false)}
-                      className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center"
+                      className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center md:w-10 md:h-10"
                     >
                       <X size={20} />
                     </button>
@@ -700,7 +703,7 @@ export const VideoDetail: React.FC = () => {
                 ) : (
                   <button
                     onClick={() => setIsActionSheetOpen(true)}
-                    className="w-9 h-9 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center hover:bg-white/40 transition-colors"
+                    className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center hover:bg-white/40 transition-colors md:w-9 md:h-9"
                   >
                     <EllipsisVertical size={18} />
                   </button>

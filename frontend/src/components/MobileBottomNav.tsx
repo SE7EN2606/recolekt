@@ -19,7 +19,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
       <div className="absolute inset-0 bg-white/75 backdrop-blur-lg -webkit-backdrop-blur-lg border-t border-white/40 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] -z-10" />
 
       {/* FOREGROUND CONTENT */}
-      <div className="flex items-center justify-between max-w-sm mx-auto w-full px-6 pb-4 pt-2 relative">
+      <div className="mobile-bottom-nav-content flex items-center justify-between max-w-sm mx-auto w-full px-6 pt-2 relative">
 
         {/* Left: Collections */}
         <NavLink
@@ -59,7 +59,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
         </NavLink>
 
         {/* Center: Add Button */}
-        <div className="floating-add-button absolute left-1/2 -translate-x-1/2">
+        <div className="floating-add-button">
           <button
             onClick={onAddClick}
             aria-label={t('common:add', 'Add new video')}
