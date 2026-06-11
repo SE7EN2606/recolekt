@@ -93,8 +93,8 @@ export const Header: React.FC = () => {
           fixed top-0 left-0 right-0 z-[110]
           transition-all duration-500 ease-[cubic-bezier(0.25,0.8,0.25,1)]
           ${isScrolled
-            ? 'glass-header pt-[calc(var(--safe-area-top)+0.75rem)] pb-3 shadow-sm h-[calc(65px+var(--safe-area-top))] md:h-[70px] md:py-3'
-            : 'bg-transparent pt-[calc(var(--safe-area-top)+1.5rem)] pb-6 h-[calc(var(--mobile-header-height)+var(--safe-area-top))] md:h-[95px] md:py-6'}
+            ? 'glass-header shadow-sm md:h-[70px] md:py-3'
+            : 'bg-transparent md:h-[95px] md:py-6'}
         `}
       >
         <div className="max-w-[1280px] mx-auto px-6 md:px-8 h-full pl-[max(1.5rem,var(--safe-area-left))] pr-[max(1.5rem,var(--safe-area-right))] md:px-8">
