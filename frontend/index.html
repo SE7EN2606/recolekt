@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Recolekt</title>
+    <script>
+      (function () {
+        var isStandalone =
+          window.matchMedia("(display-mode: standalone)").matches ||
+          window.navigator.standalone === true;
+
+        if (isStandalone) {
+          document.documentElement.classList.add("is-standalone-pwa");
+        }
+      })();
+    </script>
 
     <link rel="manifest" href="/assets/favicon/manifest.webmanifest">
     <link rel="apple-touch-icon" href="/assets/favicon/assets/apple-touch-icon.png">
