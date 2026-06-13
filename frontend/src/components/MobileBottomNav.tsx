@@ -11,7 +11,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
   const { t } = useTranslation(['modals', 'sidebar', 'gallery']);
 
   return (
-    <div className="mobile-bottom-nav md:hidden fixed bottom-0 left-0 right-0 z-30 transition-transform duration-300">
+    <div className="mobile-bottom-nav md:hidden fixed bottom-0 left-0 right-0 z-30">
       
       {/* ISOLATED GLASS BACKGROUND 
         Putting the blur on this absolute layer prevents Android from blurring the text/icons!
