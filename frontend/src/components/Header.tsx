@@ -134,7 +134,7 @@ export const Header: React.FC = () => {
         className={`
           mobile-header-shell ${isScrolled ? 'mobile-header-scrolled' : ''}
           fixed top-0 left-0 right-0 z-[110]
-          transition-[background-color,box-shadow,border-color,backdrop-filter] duration-[180ms] ease-out
+          transition-[background-color,box-shadow,border-color] duration-[180ms] ease-out
           ${isScrolled
             ? 'glass-header shadow-sm md:h-[70px] md:py-3'
             : 'bg-transparent md:h-[95px] md:py-6'}
