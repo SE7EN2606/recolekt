@@ -11,15 +11,15 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
   const { t } = useTranslation(['modals', 'sidebar', 'gallery']);
 
   return (
-    <div className="mobile-bottom-nav md:hidden fixed bottom-0 left-0 right-0 z-30">
+    <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 transition-transform duration-300">
       
       {/* ISOLATED GLASS BACKGROUND 
         Putting the blur on this absolute layer prevents Android from blurring the text/icons!
       */}
-      <div className="mobile-bottom-nav-surface absolute inset-0 bg-white/75 backdrop-blur-lg -webkit-backdrop-blur-lg border-t border-white/40 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] -z-10" />
+      <div className="absolute inset-0 bg-white/75 backdrop-blur-lg -webkit-backdrop-blur-lg border-t border-white/40 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] -z-10" />
 
       {/* FOREGROUND CONTENT */}
-      <div className="mobile-bottom-nav-content flex items-center justify-between max-w-sm mx-auto w-full px-6 pt-2 relative">
+      <div className="flex items-center justify-between max-w-sm mx-auto w-full px-6 pb-4 pt-2 relative">
 
         {/* Left: Collections */}
         <NavLink
@@ -59,7 +59,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ onAddClick }) 
         </NavLink>
 
         {/* Center: Add Button */}
-        <div className="floating-add-button">
+        <div className="absolute left-1/2 -translate-x-1/2 -top-8">
           <button
             onClick={onAddClick}
             aria-label={t('common:add', 'Add new video')}

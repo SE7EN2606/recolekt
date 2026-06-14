@@ -1,5 +1,5 @@
 import { API_BASE } from "../utils/api";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Globe, Check, Search } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -16,7 +16,6 @@ export const Header: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [hoveredPath, setHoveredPath] = useState<string | null>(null);
-  const mobileMenuScrollYRef = useRef(0);
   
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
   const [isMobileLangMenuOpen, setIsMobileLangMenuOpen] = useState(false);
@@ -45,48 +44,6 @@ export const Header: React.FC = () => {
       window.removeEventListener('resize', handleResize);
     };
   }, []);
-
-  useEffect(() => {
-    if (!isMobileMenuOpen) return;
-
-    const html = document.documentElement;
-    const body = document.body;
-    const scrollY = window.scrollY || window.pageYOffset || 0;
-    mobileMenuScrollYRef.current = scrollY;
-
-    const originalHtmlOverflow = html.style.overflow;
-    const originalHtmlOverscrollBehavior = html.style.overscrollBehavior;
-    const originalBodyOverflow = body.style.overflow;
-    const originalBodyPosition = body.style.position;
-    const originalBodyTop = body.style.top;
-    const originalBodyLeft = body.style.left;
-    const originalBodyRight = body.style.right;
-    const originalBodyWidth = body.style.width;
-    const originalBodyTouchAction = body.style.touchAction;
-
-    html.style.overflow = 'hidden';
-    html.style.overscrollBehavior = 'none';
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.left = '0';
-    body.style.right = '0';
-    body.style.width = '100%';
-    body.style.overflow = 'hidden';
-    body.style.touchAction = 'none';
-
-    return () => {
-      html.style.overflow = originalHtmlOverflow;
-      html.style.overscrollBehavior = originalHtmlOverscrollBehavior;
-      body.style.overflow = originalBodyOverflow;
-      body.style.position = originalBodyPosition;
-      body.style.top = originalBodyTop;
-      body.style.left = originalBodyLeft;
-      body.style.right = originalBodyRight;
-      body.style.width = originalBodyWidth;
-      body.style.touchAction = originalBodyTouchAction;
-      window.scrollTo(0, mobileMenuScrollYRef.current);
-    };
-  }, [isMobileMenuOpen]);
 
   const meta = (user as any)?.user_metadata;
   const displayName = user?.name || meta?.full_name || 'User';
@@ -132,21 +89,20 @@ export const Header: React.FC = () => {
     <>
       <header
         className={`
-          mobile-header-shell ${isScrolled ? 'mobile-header-scrolled' : ''}
           fixed top-0 left-0 right-0 z-[110]
-          transition-[background-color,box-shadow,border-color] duration-[180ms] ease-out
+          transition-all duration-500 ease-[cubic-bezier(0.25,0.8,0.25,1)]
           ${isScrolled
-            ? 'glass-header shadow-sm md:h-[70px] md:py-3'
-            : 'bg-transparent md:h-[95px] md:py-6'}
+            ? 'glass-header py-3 shadow-sm h-[65px] md:h-[70px]'
+            : 'bg-transparent py-6 h-[80px] md:h-[95px]'}
         `}
       >
-        <div className="max-w-[1280px] mx-auto px-6 md:px-8 h-full pl-[max(1.5rem,var(--safe-area-left))] pr-[max(1.5rem,var(--safe-area-right))] md:px-8">
-          <div className="mobile-header-inner h-full flex items-center justify-between">
+        <div className="max-w-[1280px] mx-auto px-6 md:px-8 h-full">
+          <div className="h-full flex items-center justify-between">
 
             <Link
               to={showAuthedUI ? '/gallery' : '/'}
               aria-label="Go to Home"
-              className="flex min-h-11 items-center z-50 group shrink-0"
+              className="flex items-center z-50 group shrink-0"
             >
               <img
                 src={isMobileMenuOpen ? LogoIcon : LogoBlack}
@@ -217,7 +173,7 @@ export const Header: React.FC = () => {
                       {isLangMenuOpen && (
                         <>
                           <div className="fixed inset-0 z-40" onClick={() => setIsLangMenuOpen(false)} />
-                          <div className="absolute top-full mt-4 left-1/2 -translate-x-1/2 w-40 bg-white border border-gray-100 rounded-2xl shadow-sm py-2 z-50 animate-fade-in">
+                          <div className="absolute top-full mt-4 left-1/2 -translate-x-1/2 w-40 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 z-50 animate-fade-in">
                             <button onClick={() => handleLanguageChange('en')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold hover:bg-gray-50 transition-colors ${currentLang === 'en' ? 'text-primary-600' : 'text-gray-700'}`}>English {currentLang === 'en' && <Check size={16} />}</button>
                             <button onClick={() => handleLanguageChange('fr')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold hover:bg-gray-50 transition-colors ${currentLang === 'fr' ? 'text-primary-600' : 'text-gray-700'}`}>Français {currentLang === 'fr' && <Check size={16} />}</button>
                           </div>
@@ -237,7 +193,7 @@ export const Header: React.FC = () => {
                  <button 
                    onClick={() => setIsSearchOpen(true)}
                    aria-label={t('gallery:search', 'Search')}
-                   className="w-11 h-11 rounded-full flex items-center justify-center text-gray-900 active:scale-95 hover:bg-gray-100 transition-all"
+                   className="w-10 h-10 rounded-full flex items-center justify-center text-gray-900 active:scale-95 hover:bg-gray-100 transition-all"
                  >
                    <Search size={22} />
                  </button>
@@ -255,7 +211,7 @@ export const Header: React.FC = () => {
                    {isMobileLangMenuOpen && (
                      <>
                        <div className="fixed inset-0 z-40" onClick={() => setIsMobileLangMenuOpen(false)} />
-                       <div className="absolute top-full mt-4 right-0 w-40 bg-white border border-gray-100 rounded-2xl shadow-sm py-2 z-50 animate-fade-in">
+                       <div className="absolute top-full mt-4 right-0 w-40 bg-white border border-gray-100 rounded-2xl shadow-xl py-2 z-50 animate-fade-in">
                          <button onClick={() => handleLanguageChange('en')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'en' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}>English {currentLang === 'en' && <Check size={16} />}</button>
                          <button onClick={() => handleLanguageChange('fr')} className={`w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold transition-colors ${currentLang === 'fr' ? 'text-primary-600 bg-primary-50/50' : 'text-gray-700'}`}>Français {currentLang === 'fr' && <Check size={16} />}</button>
                        </div>
@@ -266,7 +222,7 @@ export const Header: React.FC = () => {
               
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="w-11 h-11 rounded-full flex flex-col items-center justify-center relative z-50 transition-colors active:scale-95 hover:bg-gray-100"
+                className="w-10 h-10 rounded-full flex flex-col items-center justify-center relative z-50 transition-colors active:scale-95 hover:bg-gray-100"
                 aria-label="Toggle menu"
               >
                 <span className={`absolute w-5 h-[2px] bg-gray-900 rounded-full transition-all duration-300 ${isMobileMenuOpen ? 'rotate-45 translate-y-0' : '-translate-y-[4px]'}`} />

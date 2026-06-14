@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   LayoutGrid, Heart, Archive,
   ChevronRight, BookOpen, HelpCircle, FolderPlus, User, Settings, LogOut,
-  FolderOpen, Inbox, CreditCard, FolderClosed, CornerDownRight, X, Globe, Check
+  FolderOpen, Inbox, CreditCard, FolderClosed, CornerDownRight
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -12,6 +12,7 @@ import { InputModal } from './InputModal';
 import { ManageCollectionsModal } from './ManageCollectionsModal';
 import { useTranslation } from 'react-i18next';
 import LogoBlack from '../assets/recolekt_logo_black.webp';
+import { useScrollLock } from '../utils/useScrollLock';
 
 interface MobileMenuProps {
   isOpen: boolean;
@@ -21,7 +22,7 @@ interface MobileMenuProps {
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
   const { isAuthenticated, loading, signOut } = useAuth();
   const { folders, addFolder, videos } = useData();
-  const { t, i18n } = useTranslation(['common', 'sidebar', 'gallery', 'header', 'modals']);
+  const { t } = useTranslation(['common', 'sidebar', 'gallery', 'header', 'modals']);
 
   const [shouldRender, setShouldRender] = useState(false);
   const [animateOpen, setAnimateOpen] = useState(false);
@@ -30,6 +31,8 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
   const navigate = useNavigate();
   const location = useLocation();
+
+  useScrollLock(isOpen);
 
   useEffect(() => {
     if (isOpen) {
@@ -77,11 +80,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
 
   const parentOptions = customFolders.map((f: any) => ({ id: f.id, name: f.name }));
   const showAuthedUI = !loading && isAuthenticated;
-  const currentLang = i18n.language?.substring(0, 2).toLowerCase() || 'en';
-
-  const handleLanguageChange = (lng: string) => {
-    void i18n.changeLanguage(lng);
-  };
 
   if (!shouldRender) return null;
 
@@ -89,56 +87,17 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     <>
       <div
         className={`
-          mobile-menu-shell w-full transform-gpu
+          fixed inset-0 w-full z-[100] overflow-hidden
+          bg-slate-50/85 backdrop-blur-2xl transform-gpu
           transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]
-          ${animateOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}
+          ${animateOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}
         `}
       >
-        <div className="mobile-menu-header">
-          <div className="mobile-menu-header-row flex items-center justify-between gap-3">
-            <button onClick={() => handleNav(showAuthedUI ? '/gallery' : '/')} className="flex min-h-11 items-center transition-transform active:scale-95" aria-label="Go to Home">
-              <img src={LogoBlack} alt="Recolekt" className="h-8 object-contain" />
-            </button>
+        <div className="flex flex-col h-[100dvh] max-w-[1100px] mx-auto px-4">
+          <div className="h-[80px] md:h-[95px] flex-shrink-0" />
 
-            <div className="flex items-center gap-2">
-              {!showAuthedUI && (
-                <div className="flex items-center gap-1 rounded-full bg-gray-100 p-1">
-                  <Globe size={16} className="ml-2 text-gray-500" />
-                  {['en', 'fr'].map((lng) => (
-                    <button
-                      key={lng}
-                      onClick={() => handleLanguageChange(lng)}
-                      className={`flex h-8 min-w-9 items-center justify-center rounded-full px-2 text-xs font-bold uppercase transition-colors ${
-                        currentLang === lng ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500'
-                      }`}
-                    >
-                      {lng}
-                      {currentLang === lng && <Check size={12} className="ml-1" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <button
-                onClick={onClose}
-                aria-label="Close menu"
-                className="flex h-11 w-11 items-center justify-center rounded-full text-gray-900 transition-colors active:scale-95 hover:bg-gray-100"
-              >
-                <X size={24} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div
-          className={`
-            mobile-menu-content w-full max-w-[1100px] mx-auto
-            transition-opacity duration-500 delay-100
-            ${animateOpen ? 'opacity-100' : 'opacity-0'}
-            ${showAuthedUI ? 'overflow-y-auto' : 'overflow-hidden'}
-          `}
-        >
-            <div className="flex flex-col min-h-full">
+          <div className="flex-1 overflow-y-auto py-4 pb-32">
+            <div className={`transition-opacity duration-500 delay-100 ${animateOpen ? 'opacity-100' : 'opacity-0'} flex flex-col min-h-full`}>
 
               {showAuthedUI ? (
                 <div className="flex-1 space-y-8">
@@ -278,7 +237,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                   </button>
                 </div>
               ) : (
-                <div className="flex flex-col min-h-full space-y-8 px-2">
+                <div className="flex flex-col h-full space-y-8 px-2">
                   <div className="space-y-2">
                     {[
                       { label: t('header:home', 'Home'), path: '/' },
@@ -286,12 +245,12 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                       { label: t('common:pricing', 'Pricing'), path: '/billing' },
                       { label: t('common:support', 'Support'), path: '/help?section=contact' },
                     ].map((link) => (
-                      <Link key={link.path} to={link.path} onClick={onClose} className={`block text-3xl font-bold hover:text-primary-600 transition-colors py-2 ${location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'}`}>
+                      <Link key={link.path} to={link.path} onClick={onClose} className={`block text-3xl font-black tracking-tight hover:text-primary-600 transition-colors py-2 ${location.pathname === link.path ? 'text-primary-600' : 'text-gray-900'}`}>
                         {link.label}
                       </Link>
                     ))}
                   </div>
-                  <div className="pt-6 space-y-4">
+                  <div className="pt-8 border-t border-gray-200 space-y-4">
                     <Button fullWidth variant="primary" onClick={() => handleNav('/auth')} className="h-14 text-base font-bold shadow-xl shadow-primary-600/20">
                       {t('common:signIn', 'Sign In')}
                     </Button>
@@ -303,17 +262,14 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
                 </div>
               )}
 
-              {showAuthedUI && (
-                <>
-                  <div className="py-8 mt-auto flex justify-center">
-                    <button onClick={() => handleNav('/gallery')} className="transition-transform active:scale-95">
-                      <img src={LogoBlack} alt="Recolekt" className="h-8" />
-                    </button>
-                  </div>
-                  <div className="h-20 md:h-0" />
-                </>
-              )}
+              <div className="py-8 mt-auto flex justify-center">
+                <button onClick={() => handleNav('/gallery')} className="transition-transform active:scale-95">
+                  <img src={LogoBlack} alt="Recolekt" className="h-8" />
+                </button>
+              </div>
+              <div className="h-20 md:h-0" />
             </div>
+          </div>
         </div>
       </div>
 

@@ -2,24 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Recolekt</title>
-    <script>
-      (function () {
-        var isIOS =
-          /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-          (navigator.platform === "MacIntel" &&
-            navigator.maxTouchPoints > 1);
-
-        var isStandalone =
-          window.matchMedia("(display-mode: standalone)").matches ||
-          window.navigator.standalone === true;
-
-        if (isIOS && isStandalone) {
-          document.documentElement.classList.add("is-ios-standalone-pwa");
-        }
-      })();
-    </script>
 
     <link rel="manifest" href="/assets/favicon/manifest.webmanifest">
     <link rel="apple-touch-icon" href="/assets/favicon/assets/apple-touch-icon.png">
