@@ -258,6 +258,14 @@ function normalizeRecipeUserState(raw: any) {
   };
 }
 
+export function refreshFailureMessage(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error || '');
+  if (!text || /failed to fetch/i.test(text) || /networkerror/i.test(text)) {
+    return 'Could not reach Recolekt to refresh this video. Please check your connection and try again.';
+  }
+  return text;
+}
+
 function stripRawForCache(videos: any[]): any[] {
   return (videos || []).map((v) => {
     const { __raw, ...rest } = v || {};
@@ -1225,19 +1233,17 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (!videoId) throw new Error('Missing video id.');
       if (!navigator.onLine) throw new Error('You are offline.');
 
-      setVideos((prev) =>
-        prev.map((v: any) =>
-          v.id === videoId
-            ? { ...v, status: 'processing', category: 'Processing', errorMessage: null }
-            : v,
-        ),
-      );
-
-      const res = await fetch(joinUrl(API_BASE, `/api/reels/${encodeURIComponent(String(videoId))}/refresh`), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-      });
+      let res: Response;
+      try {
+        res = await fetch(joinUrl(API_BASE, `/api/reels/${encodeURIComponent(String(videoId))}/refresh`), {
+          method: 'POST',
+          credentials: 'include',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        });
+      } catch (error) {
+        console.error('Refresh video network failed', error);
+        throw new Error(refreshFailureMessage(error));
+      }
 
       let payload: any = null;
       try {
@@ -1250,9 +1256,16 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       if (!res.ok) {
-        fetchVideos();
         throw new Error(payload?.message || payload?.error || 'Failed to refresh video.');
       }
+
+      setVideos((prev) =>
+        prev.map((v: any) =>
+          v.id === videoId || (v as any).process_id === videoId || (v as any).processId === videoId
+            ? { ...v, status: 'processing', category: 'Processing', errorMessage: null, error_message: null }
+            : v,
+        ),
+      );
 
       window.setTimeout(() => {
         globalLastFetchTime = 0;

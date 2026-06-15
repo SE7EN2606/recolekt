@@ -8,6 +8,11 @@ import {
   recipeBranchesMeaningfullyDifferent,
   selectLocalizedRecipe,
 } from '../src/pages/VideoDetailViewModel';
+import { refreshFailureMessage } from '../src/context/DataContext';
+import {
+  buildTerminalProcessingVideo,
+  isFacebookAccessError,
+} from '../src/pages/videoDetailTerminalState';
 import { hasUsableRecipeContent } from '../src/features/recipe-core/recipePayload';
 
 const testRecipe = {
@@ -170,5 +175,33 @@ assert.equal(showBannerAfter, false, 'done state should hide refresh banner');
 const shouldRenderRecipeExperience =
   replacedViewModel.contentType === 'recipe' && hasUsableRecipeContent(replacedViewModel.recipe);
 assert.equal(shouldRenderRecipeExperience, true, 'recipe content should suppress the generic summary experience');
+
+const terminalFacebookError = buildTerminalProcessingVideo({
+  detail: {
+    id: 'test-reel',
+    status: 'error',
+    error_message: 'facebook_extraction_failed',
+  },
+  merged: {
+    title: 'Old useful title',
+    summary: completedSummary,
+    recipe: testRecipe,
+  },
+  stable: {
+    title: 'Stable useful title',
+    thumbnailUrl: 'old-thumb.webp',
+  },
+  fallbackId: 'test-reel',
+});
+assert.equal(terminalFacebookError.status, 'error', 'terminal error should replace processing status');
+assert.equal(terminalFacebookError.error_message, 'facebook_extraction_failed');
+assert.equal(terminalFacebookError.thumbnailUrl, 'old-thumb.webp', 'terminal error should preserve stable content where available');
+assert.equal(isFacebookAccessError(terminalFacebookError), true, 'facebook terminal errors should trigger the full-page access message');
+
+assert.equal(
+  refreshFailureMessage(new TypeError('Failed to fetch')),
+  'Could not reach Recolekt to refresh this video. Please check your connection and try again.',
+  'network/preflight failures should not expose raw Failed to fetch',
+);
 
 console.log('VideoDetail view-model tests passed');

@@ -48,6 +48,11 @@ import {
   parseSummaryObject,
   selectLocalizedRecipe,
 } from './VideoDetailViewModel';
+import {
+  FACEBOOK_ACCESS_ERROR_MESSAGE,
+  buildTerminalProcessingVideo,
+  isFacebookAccessError,
+} from './videoDetailTerminalState';
 
 const MoveCollectionModalExt = MoveCollectionModal as React.ComponentType<{
   isOpen: boolean;
@@ -118,33 +123,6 @@ const fetchBackendAuthed = async (url: string, signal?: AbortSignal) => {
     throw error;
   }
   return res.json();
-};
-
-const FACEBOOK_ACCESS_ERROR_MESSAGE =
-  'This Facebook reel could not be accessed. It may be deleted, private, expired, or blocked by Facebook.';
-
-const isFacebookAccessError = (value: any): boolean => {
-  const message = String(
-    value?.error_message ||
-    value?.errorMessage ||
-    value?.error ||
-    ''
-  ).toLowerCase();
-  const status = String(value?.status || '').toLowerCase();
-
-  if (status !== 'error' && status !== 'failed' && status !== 'failure') {
-    return false;
-  }
-
-  return (
-    message.includes('facebook_extraction_failed') ||
-    message.includes('download') ||
-    message.includes('cannot parse data') ||
-    message.includes('login required') ||
-    message.includes('social_login_required') ||
-    message.includes('social_cookies_expired') ||
-    message.includes('facebook_media_unavailable')
-  );
 };
 
 function ReelErrorState({
@@ -513,6 +491,36 @@ export const VideoDetail: React.FC = () => {
     }
   }, [id, enrichVideo]);
 
+  const applyTerminalProcessingPayload = useCallback((
+    detail: any,
+    merged: any,
+    fallbackId: string,
+  ) => {
+    const terminalVideo = buildTerminalProcessingVideo({
+      detail,
+      merged,
+      stable: lastStableVideoRef.current,
+      fallbackId,
+    });
+
+    setVideo(terminalVideo);
+    hydrateVideo(fallbackId, terminalVideo);
+    detailHydratedRef.current = true;
+    setIsRefreshingVideo(false);
+    setRefreshMessage('');
+    refreshAbortRef.current = null;
+
+    if (isFacebookAccessError(terminalVideo)) {
+      setRefreshError('');
+      setDetailErrorMessage(FACEBOOK_ACCESS_ERROR_MESSAGE);
+    } else {
+      setDetailErrorMessage('');
+      setRefreshError(terminalVideo.errorMessage || 'Refresh failed.');
+    }
+
+    return terminalVideo;
+  }, [hydrateVideo]);
+
   useEffect(() => {
     const status = String(video?.status || '').toLowerCase();
     if (!id || status !== 'processing') return;
@@ -555,7 +563,8 @@ export const VideoDetail: React.FC = () => {
         }
 
         if (['error', 'failed', 'failure'].includes(nextStatus)) {
-          throw new Error(detail?.error_message || detail?.errorMessage || merged?.error_message || merged?.errorMessage || 'Refresh failed.');
+          applyTerminalProcessingPayload(detail, merged, id);
+          return;
         }
 
         if (Date.now() - startedAt > 3 * 60 * 1000) {
@@ -578,7 +587,7 @@ export const VideoDetail: React.FC = () => {
       if (timer !== null) window.clearTimeout(timer);
       controller.abort();
     };
-  }, [id, video?.status, fetchHydratedVideo, hydrateVideo]);
+  }, [id, video?.status, fetchHydratedVideo, applyTerminalProcessingPayload, hydrateVideo]);
 
   useEffect(() => {
     if (!isFacebookAccessError(video)) return;
@@ -636,6 +645,7 @@ export const VideoDetail: React.FC = () => {
     setIsRefreshingVideo(true);
     setRefreshMessage('Recolekt is updating this page. Please wait a moment.');
     setRefreshError('');
+    setDetailErrorMessage('');
     refreshAbortRef.current?.abort();
     const controller = new AbortController();
     refreshAbortRef.current = controller;
@@ -677,7 +687,8 @@ export const VideoDetail: React.FC = () => {
         }
 
         if (['error', 'failed', 'failure'].includes(status)) {
-          throw new Error(detail?.error_message || detail?.errorMessage || merged?.error_message || merged?.errorMessage || 'Refresh failed.');
+          applyTerminalProcessingPayload(detail, merged, currentVideoId);
+          return;
         }
 
         if (Date.now() - startedAt > timeoutMs) {

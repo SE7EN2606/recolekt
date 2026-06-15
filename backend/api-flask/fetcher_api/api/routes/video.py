@@ -777,8 +777,11 @@ def summarize():
     })
 
 
-@video_bp.route("/reels/<path:reel_id>/refresh", methods=["POST"])
+@video_bp.route("/reels/<path:reel_id>/refresh", methods=["POST", "OPTIONS"])
 def refresh_reel(reel_id):
+    if request.method == "OPTIONS":
+        return "", 204
+
     logger.info("🔄 /reels/%s/refresh called", reel_id)
 
     try:
