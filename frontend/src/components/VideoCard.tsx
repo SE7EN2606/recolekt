@@ -15,6 +15,7 @@ import {
   type ContentType,
   type ToolsSubtype,
 } from '../components/ContentTypeBadge';
+import { getMediaErrorPresentation } from '../utils/mediaErrorPresentation';
 
 interface VideoCardProps {
   video: any;
@@ -180,8 +181,6 @@ const PROCESSING_MESSAGES = [
   'msg_optimizing', 'msg_polishing', 'msg_finalizing',
 ];
 
-const RESTRICTED_CONTENT = 'RESTRICTED_CONTENT';
-
 const VideoCardComponent: React.FC<VideoCardProps> = ({
   video,
   selected,
@@ -279,7 +278,22 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
   const showRecipeStateBadges = variant === 'cookbook';
 
   const duration = String(video?.duration ?? '').trim();
-  const sourceUrl = String(video?.originalUrl ?? video?.sourceurl ?? video?.sourceUrl ?? video?.raw?.sourceurl ?? '');
+  const errorPresentation = useMemo(
+    () => getMediaErrorPresentation(video, { isMissingThumbnail: isMissingThumb }),
+    [video, isMissingThumb],
+  );
+  const sourceUrl =
+    errorPresentation.sourceUrl ||
+    String(
+      video?.originalUrl ??
+      video?.original_url ??
+      video?.sourceurl ??
+      video?.sourceUrl ??
+      video?.source_url ??
+      video?.raw?.sourceurl ??
+      video?.raw?.source_url ??
+      '',
+    );
 
   const handleHeartClick = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -312,6 +326,14 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
     try { await addVideo(sourceUrl, true); } catch {} finally { setIsRetrying(false); }
   };
 
+  const handleOpenSource = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!errorPresentation.sourceUrl) return;
+    const opened = window.open(errorPresentation.sourceUrl, '_blank', 'noopener,noreferrer');
+    if (opened) opened.opener = null;
+  };
+
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -320,15 +342,11 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
     try { await deleteVideos([videoId]); } catch { setIsDeleting(false); }
   };
 
-  const rawError = video?.errorMessage || video?.errormessage || video?.errorcode || video?.raw?.errormessage;
-  let errorText = t('videoCard:defaultError', 'Media download failed.');
-  if (rawError === RESTRICTED_CONTENT) {
-    errorText = t('videoCard:restrictedContent', 'Instagram blocked this video — Sensitive or Private.');
-  } else if (isMissingThumb) {
-    errorText = t('videoCard:missingThumbnailText', 'Media download failed.');
-  } else if (rawError) {
-    errorText = rawError;
-  }
+  const errorTitle = t(errorPresentation.titleKey, 'Processing failed');
+  const errorText = t(
+    errorPresentation.messageKey,
+    'Recolekt could not process this video. Please try again.',
+  );
 
   const activeTitle = showOriginalTitle && originalTitle ? originalTitle : displayTitle;
 
@@ -391,17 +409,27 @@ const VideoCardComponent: React.FC<VideoCardProps> = ({
           <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 p-4 bg-black/70 backdrop-blur-sm border border-red-500/30 rounded-2xl">
             <AlertCircle size={28} className="text-red-400 drop-shadow-md" />
             <div className="text-center">
-              <p className="text-white text-xs font-bold mb-1">{t('videoCard:processingFailed')}</p>
+              <p className="text-white text-xs font-bold mb-1">{errorTitle}</p>
               <p className="text-gray-300 text-[10px] leading-tight line-clamp-2">{errorText}</p>
             </div>
             <div className="flex gap-2 mt-1">
-              <button
-                onClick={handleRetry}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition-colors border border-white/10"
-              >
-                {isRetrying ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                {t('common:tryAgain')}
-              </button>
+              {errorPresentation.canOpenSource && (
+                <button
+                  onClick={handleOpenSource}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition-colors border border-white/10"
+                >
+                  {t('videoCard:openFacebook', 'Open Facebook')}
+                </button>
+              )}
+              {errorPresentation.canRetry && (
+                <button
+                  onClick={handleRetry}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold rounded-lg transition-colors border border-white/10"
+                >
+                  {isRetrying ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                  {t('common:tryAgain')}
+                </button>
+              )}
               <button
                 onClick={handleDelete}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 hover:bg-red-500/40 text-red-200 hover:text-white text-[10px] font-bold rounded-lg transition-colors border border-red-500/30"

@@ -5,6 +5,11 @@
   "processing": "Traitement...",
   "processingFailed": "Échec du traitement",
   "defaultError": "Un problème est survenu. Veuillez réessayer.",
+  "facebookUnavailableTitle": "Reel Facebook indisponible",
+  "facebookUnavailableMessage": "Ce reel a peut-être été supprimé, rendu privé, a expiré ou le lien ne fonctionne plus.",
+  "openFacebook": "Ouvrir Facebook",
+  "technicalFailureTitle": "Échec du traitement",
+  "technicalFailureMessage": "Recolekt n’a pas pu traiter cette vidéo. Veuillez réessayer.",
   "showingLanguage": "Affichage en {{lang}}",
   "tryAgain": "Nouvel essai",
   "showingEnglish": "Affichage en Anglais"

@@ -14,6 +14,7 @@ import {
   isFacebookAccessError,
 } from '../src/pages/videoDetailTerminalState';
 import { hasUsableRecipeContent } from '../src/features/recipe-core/recipePayload';
+import { getMediaErrorPresentation } from '../src/utils/mediaErrorPresentation';
 
 const testRecipe = {
   english: {
@@ -238,5 +239,92 @@ assert.equal(
   'Could not reach Recolekt to refresh this video. Please check your connection and try again.',
   'network/preflight failures should not expose raw Failed to fetch',
 );
+
+const facebookExtractionPresentation = getMediaErrorPresentation({
+  status: 'error',
+  platform: 'facebook',
+  source_url: 'https://www.facebook.com/reel/123',
+  error_message: 'facebook_extraction_failed',
+});
+assert.equal(
+  facebookExtractionPresentation.kind,
+  'facebook_unavailable',
+  'Facebook facebook_extraction_failed rows should use the unavailable presentation',
+);
+assert.equal(
+  facebookExtractionPresentation.canRetry,
+  false,
+  'Facebook unavailable rows should not offer retry',
+);
+assert.equal(
+  facebookExtractionPresentation.canOpenSource,
+  true,
+  'Facebook unavailable rows with a source URL should offer Open Facebook',
+);
+assert.equal(
+  facebookExtractionPresentation.sourceUrl,
+  'https://www.facebook.com/reel/123',
+);
+
+const facebookMediaUnavailablePresentation = getMediaErrorPresentation({
+  status: 'failed',
+  originalUrl: 'https://fb.watch/example',
+  errorMessage: 'facebook_media_unavailable',
+});
+assert.equal(
+  facebookMediaUnavailablePresentation.kind,
+  'facebook_unavailable',
+  'Facebook facebook_media_unavailable rows should use the unavailable presentation',
+);
+
+const instagramDownloadPresentation = getMediaErrorPresentation({
+  status: 'error',
+  sourceUrl: 'https://www.instagram.com/reel/abc',
+  error_message: 'download failed',
+});
+assert.equal(
+  instagramDownloadPresentation.kind,
+  'technical_failure',
+  'Instagram download failures should remain generic technical failures',
+);
+
+const tiktokLoginPresentation = getMediaErrorPresentation({
+  category: 'Failed',
+  source_url: 'https://www.tiktok.com/@chef/video/123',
+  errorMessage: 'login required',
+});
+assert.equal(
+  tiktokLoginPresentation.kind,
+  'technical_failure',
+  'TikTok login failures should remain generic technical failures',
+);
+
+for (const presentation of [
+  facebookExtractionPresentation,
+  facebookMediaUnavailablePresentation,
+  instagramDownloadPresentation,
+  tiktokLoginPresentation,
+]) {
+  assert.notEqual(
+    presentation.titleKey,
+    'facebook_extraction_failed',
+    'raw backend error codes should not be returned as visible titles',
+  );
+  assert.notEqual(
+    presentation.messageKey,
+    'facebook_extraction_failed',
+    'raw backend error codes should not be returned as visible messages',
+  );
+  assert.notEqual(
+    presentation.titleKey,
+    'facebook_media_unavailable',
+    'raw backend error codes should not be returned as visible titles',
+  );
+  assert.notEqual(
+    presentation.messageKey,
+    'facebook_media_unavailable',
+    'raw backend error codes should not be returned as visible messages',
+  );
+}
 
 console.log('VideoDetail view-model tests passed');

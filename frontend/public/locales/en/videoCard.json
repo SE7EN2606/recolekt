@@ -5,6 +5,11 @@
   "processing": "Processing...",
   "processingFailed": "Processing Failed",
   "defaultError": "Something went wrong. Please try again.",
+  "facebookUnavailableTitle": "Facebook reel unavailable",
+  "facebookUnavailableMessage": "This reel may have been deleted, made private, expired, or the link may no longer work.",
+  "openFacebook": "Open Facebook",
+  "technicalFailureTitle": "Processing failed",
+  "technicalFailureMessage": "Recolekt could not process this video. Please try again.",
   "showingLanguage": "Showing {{lang}}",
   "showingEnglish": "Showing English"
 }
