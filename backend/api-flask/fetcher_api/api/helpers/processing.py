@@ -84,17 +84,53 @@ def cleanup_video_from_gcs(shortcode, platform_code="IG", user_id=None):
 
 
 def _extract_title_from_ai_summary(ai_summary: dict) -> str:
-    if not isinstance(ai_summary, dict):
-        return ""
+    def parse_json_recursively(value, depth=0):
+        if depth > 3 or not isinstance(value, str):
+            return value
+        text = value.strip()
+        if not text or text[0] not in "{[":
+            return value
+        try:
+            return parse_json_recursively(json.loads(text), depth + 1)
+        except Exception:
+            return value
 
-    eng = ai_summary.get("english", {})
-    orig = ai_summary.get("original", {})
-    return (
-        (eng.get("title") if isinstance(eng, dict) else None)
-        or (orig.get("title") if isinstance(orig, dict) else None)
-        or ai_summary.get("title")
-        or ""
-    ).strip()
+    def usable_text(value):
+        if not isinstance(value, str):
+            return ""
+        text = value.strip()
+        if not text or text == "[object Object]":
+            return ""
+        if text[0] in "{[":
+            try:
+                json.loads(text)
+                return ""
+            except Exception:
+                pass
+        return text
+
+    parsed = parse_json_recursively(ai_summary)
+    if not isinstance(parsed, dict):
+        return usable_text(parsed)
+
+    for path in (
+        ("english", "title"),
+        ("original", "title"),
+        ("title",),
+        ("summary", "english", "title"),
+        ("summary", "original", "title"),
+    ):
+        current = parsed
+        for key in path:
+            if not isinstance(current, dict):
+                current = None
+                break
+            current = current.get(key)
+        title = usable_text(parse_json_recursively(current))
+        if title:
+            return title
+
+    return ""
 
 
 def _base_from_result_json_path(gcs_paths: dict) -> tuple[str, str]:
@@ -356,6 +392,50 @@ def _upload_result_json_and_attach(
     result["gcs_urls"]["result_json"] = result_json_url
 
 
+def _mark_forced_reprocess_failed(result: dict, message: str) -> None:
+    process_id = result.get("process_id") or result.get("id")
+    user_id = result.get("user_id")
+    if not process_id or not user_id:
+        insert_reel_into_db(result)
+        return
+
+    try:
+        execute(
+            """
+            UPDATE reels
+            SET status = 'error',
+                error_message = %s,
+                updated_at = NOW()
+            WHERE id = %s AND user_id = %s
+            """,
+            (str(message or "refresh_failed")[:500], process_id, user_id),
+        )
+    except Exception:
+        logger.exception("❌ Failed to mark forced reprocess error for %s", process_id)
+        raise
+
+
+def _fail_processing(result: dict, message: str, force: bool) -> None:
+    result["status"] = "error"
+    result["error_message"] = str(message or "processing_failed")[:500]
+    if force:
+        _mark_forced_reprocess_failed(result, result["error_message"])
+        return
+    insert_reel_into_db(result)
+
+
+def _abort_if_forced_extraction_failed(result: dict, ai_res: dict, force: bool) -> bool:
+    if not force or not isinstance(ai_res, dict) or not ai_res.get("_extraction_failed"):
+        return False
+
+    logger.error(
+        "❌ Forced refresh extraction failed for %s; preserving existing content",
+        result.get("process_id"),
+    )
+    _fail_processing(result, "extraction_failed", force)
+    return True
+
+
 def background_process(
     result,
     video_path,
@@ -396,8 +476,7 @@ def background_process(
 
             yt = fetch_youtube_data(url, temp_dir=temp_dir)
             if not yt.get("success"):
-                result["status"] = "error"
-                insert_reel_into_db(result)
+                _fail_processing(result, "youtube_extraction_failed", force)
                 return
 
             meta = yt.get("metadata", {}) or {}
@@ -491,7 +570,7 @@ def background_process(
                     except Exception as e:
                         logger.warning(f"⚠️ YouTube thumbnail download failed: {e}")
 
-            if thumb_success:
+            if thumb_success and not force:
                 _upload_thumbnail_and_persist(
                     thumbnail_path=thumbnail_path,
                     shortcode=shortcode,
@@ -528,8 +607,23 @@ def background_process(
                     video_path=yt_video_path if yt_video_path and os.path.exists(yt_video_path) else None,
                     duration_seconds=yt_duration_seconds,
                     is_silent=is_silent_input,
+                    fail_on_extractor_error=force,
                 )
             )
+            if _abort_if_forced_extraction_failed(result, ai_res, force):
+                return
+
+            if thumb_success and force:
+                _upload_thumbnail_and_persist(
+                    thumbnail_path=thumbnail_path,
+                    shortcode=shortcode,
+                    platform_code=platform_code,
+                    user_id=user_id,
+                    gcs_paths=gcs_paths,
+                    result=result,
+                    save_to_gcs=save_to_gcs,
+                    gcs_client=gcs_client,
+                )
 
             content_payload = ai_res.pop("_content_payload", None)
 
@@ -632,16 +726,17 @@ def background_process(
 
                     merged_text = caption
 
-                    _upload_thumbnail_and_persist(
-                        thumbnail_path=thumbnail_path,
-                        shortcode=shortcode,
-                        platform_code=platform_code,
-                        user_id=user_id,
-                        gcs_paths=gcs_paths,
-                        result=result,
-                        save_to_gcs=save_to_gcs,
-                        gcs_client=gcs_client,
-                    )
+                    if not force:
+                        _upload_thumbnail_and_persist(
+                            thumbnail_path=thumbnail_path,
+                            shortcode=shortcode,
+                            platform_code=platform_code,
+                            user_id=user_id,
+                            gcs_paths=gcs_paths,
+                            result=result,
+                            save_to_gcs=save_to_gcs,
+                            gcs_client=gcs_client,
+                        )
 
                     if save_to_gcs and gcs_client.available:
                         _save_input_payload(
@@ -663,8 +758,23 @@ def background_process(
                             video_path=None,
                             duration_seconds=0,
                             is_silent=False,
+                            fail_on_extractor_error=force,
                         )
                     )
+                    if _abort_if_forced_extraction_failed(result, ai_res, force):
+                        return
+
+                    if force:
+                        _upload_thumbnail_and_persist(
+                            thumbnail_path=thumbnail_path,
+                            shortcode=shortcode,
+                            platform_code=platform_code,
+                            user_id=user_id,
+                            gcs_paths=gcs_paths,
+                            result=result,
+                            save_to_gcs=save_to_gcs,
+                            gcs_client=gcs_client,
+                        )
 
                     content_payload = ai_res.pop("_content_payload", None)
                     _stabilize_tiktok_caption_recipe(ai_res, caption)
@@ -746,8 +856,11 @@ def background_process(
                         shutil.rmtree(temp_dir, ignore_errors=True)
                     return
 
-                result["status"] = "error"
-                insert_reel_into_db(result)
+                _fail_processing(
+                    result,
+                    dl_result.get("error_code") or dl_result.get("error") or "social_extraction_failed",
+                    force,
+                )
                 return
 
             meta = ensure_dict(dl_result.get("metadata", {}))
@@ -819,16 +932,17 @@ def background_process(
         if not thumb_success:
             generate_reel_thumbnail(video_path, thumbnail_path)
 
-        _upload_thumbnail_and_persist(
-            thumbnail_path=thumbnail_path,
-            shortcode=shortcode,
-            platform_code=platform_code,
-            user_id=user_id,
-            gcs_paths=gcs_paths,
-            result=result,
-            save_to_gcs=save_to_gcs,
-            gcs_client=gcs_client,
-        )
+        if not force:
+            _upload_thumbnail_and_persist(
+                thumbnail_path=thumbnail_path,
+                shortcode=shortcode,
+                platform_code=platform_code,
+                user_id=user_id,
+                gcs_paths=gcs_paths,
+                result=result,
+                save_to_gcs=save_to_gcs,
+                gcs_client=gcs_client,
+            )
 
         prompt_transcript = get_prompt_transcript(t_result) if t_result else ""
         merged_text = prompt_transcript
@@ -862,8 +976,23 @@ def background_process(
                 video_path=video_path,
                 duration_seconds=duration_seconds,
                 is_silent=is_silent_input,
+                fail_on_extractor_error=force,
             )
         )
+        if _abort_if_forced_extraction_failed(result, ai_res, force):
+            return
+
+        if force:
+            _upload_thumbnail_and_persist(
+                thumbnail_path=thumbnail_path,
+                shortcode=shortcode,
+                platform_code=platform_code,
+                user_id=user_id,
+                gcs_paths=gcs_paths,
+                result=result,
+                save_to_gcs=save_to_gcs,
+                gcs_client=gcs_client,
+            )
 
         content_payload = ai_res.pop("_content_payload", None)
 
@@ -934,5 +1063,4 @@ def background_process(
 
     except Exception as e:
         logger.error(f"❌ Background Process Failed: {e}", exc_info=True)
-        result["status"] = "error"
-        insert_reel_into_db(result)
+        _fail_processing(result, str(e), force)

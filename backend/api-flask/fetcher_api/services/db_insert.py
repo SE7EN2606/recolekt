@@ -50,6 +50,83 @@ def _to_jsonb_array(value) -> str:
     return "[]"
 
 
+def _parse_json_recursively(value, depth: int = 0):
+    if depth > 3 or not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text or text[0] not in "{[":
+        return value
+    try:
+        return _parse_json_recursively(json.loads(text), depth + 1)
+    except Exception:
+        return value
+
+
+def _looks_json_shaped(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text or text[0] not in "{[":
+        return False
+    try:
+        json.loads(text)
+        return True
+    except Exception:
+        return False
+
+
+def _usable_display_text(value) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if not text or text == "[object Object]" or _looks_json_shaped(text):
+        return ""
+    return text
+
+
+def _value_at_path(value, path: str):
+    current = value
+    for key in path.split("."):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _extract_plain_title(*values) -> str | None:
+    paths = (
+        "english.title",
+        "original.title",
+        "title",
+        "summary.english.title",
+        "summary.original.title",
+        "summary.title",
+    )
+    repaired_json_title = False
+
+    for value in values:
+        parsed = _parse_json_recursively(value)
+        if parsed is not value and isinstance(value, str):
+            repaired_json_title = True
+
+        direct = _usable_display_text(parsed)
+        if direct:
+            if repaired_json_title:
+                logger.warning("⚠️ [DB_INSERT] Repaired JSON-shaped summary_title into plain title")
+            return direct
+
+        if isinstance(parsed, dict):
+            for path in paths:
+                candidate = _parse_json_recursively(_value_at_path(parsed, path))
+                title = _usable_display_text(candidate)
+                if title:
+                    if repaired_json_title:
+                        logger.warning("⚠️ [DB_INSERT] Repaired JSON-shaped summary_title into plain title")
+                    return title
+
+    return None
+
+
 def canonicalize_source_url(source_url: str | None) -> str:
     """
     Normalize source URLs so each saved reel is unique per user.
@@ -231,23 +308,12 @@ def insert_reel_into_db(reel_data):
         summary_en = summary_struct.get("english", {}) if isinstance(summary_struct, dict) else {}
         summary_orig = summary_struct.get("original", {}) if isinstance(summary_struct, dict) else {}
 
-        raw_title = reel_data.get("summary_title")
-        if isinstance(raw_title, dict):
-            summary_title_str = (
-                (raw_title.get("english") or {}).get("title")
-                or (raw_title.get("original") or {}).get("title")
-                or raw_title.get("title")
-                or ""
-            ).strip() or None
-        else:
-            summary_title_str = (str(raw_title).strip() if raw_title else None) or None
-
-        if not summary_title_str:
-            summary_title_str = (
-                (summary_en.get("title") or "").strip()
-                or (summary_orig.get("title") or "").strip()
-                or None
-            )
+        summary_title_str = _extract_plain_title(
+            reel_data.get("summary_title"),
+            reel_data.get("title"),
+            summary_struct,
+            reel_data.get("summary_text"),
+        )
 
         raw_text = reel_data.get("summary_text")
         if raw_text is None:

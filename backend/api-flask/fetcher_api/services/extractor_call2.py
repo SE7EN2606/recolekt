@@ -133,6 +133,16 @@ class Call2Mixin:
         headline_json = build_headlines_json(highlights)
         parsed_title = safe_str(parsed.get("title", "")).strip()
         summary_guard = _recipe_summary_guard(parsed)
+        translated_workout_schema = (
+            ',\n  "translated_workout_en": { "same": "structure as workout_original, translated to natural English" }'
+            if parsed.get("workout")
+            else ""
+        )
+        translated_recipe_schema = (
+            ',\n  "translated_recipe_en": { "same": "structure as recipe_original, translated to natural English" }'
+            if parsed.get("recipe")
+            else ""
+        )
 
 
         prompt = (
@@ -145,8 +155,8 @@ class Call2Mixin:
             f"{summary_guard}"
             f"CONTENT TO TRANSLATE / REWRITE:\n\n"
             f'"headlines_input": {headline_json}\n\n'
-            + (f'"workout_en": {__import__("json").dumps(parsed.get("workout"), ensure_ascii=False)}\n\nTranslate this workout into the SAME language as your summary_original. Return it as "translated_workout" with identical structure — translate group titles, item names, item info, tips. Keep duration, equipment names, and numeric values unchanged.\n\n' if parsed.get("workout") else "")
-            + (f'"recipe_en": {__import__("json").dumps(parsed.get("recipe"), ensure_ascii=False)}\n\nTranslate this recipe into the SAME language as your summary_original. Return it as "translated_recipe" with identical structure — translate title, ingredients (item/name fields), instructions, tips, notes, group titles. Keep quantities, units, and numeric values unchanged.\n\n' if parsed.get("recipe") else "")
+            + (f'"workout_original": {__import__("json").dumps(parsed.get("workout"), ensure_ascii=False)}\n\nTranslate this workout from {lang} into natural English. Return it as "translated_workout_en" with identical structure — translate group titles, exercise names, item info, tips, and notes. Keep duration, equipment names, numeric values, reps, sets, and times unchanged.\n\n' if parsed.get("workout") else "")
+            + (f'"recipe_original": {__import__("json").dumps(parsed.get("recipe"), ensure_ascii=False)}\n\nTranslate this recipe from {lang} into natural English. Return it as "translated_recipe_en" with identical structure — translate title, ingredient item/name fields, instructions, tips, notes, and group titles. Keep quantities, units, temperatures, times, and numeric values unchanged.\n\n' if parsed.get("recipe") else "")
             + f"Return translated original-language headlines in this exact JSON shape:\n"
             + f'  "headlines": [{{"headline": "translated headline", "description": "translated description"}}]\n\n'
             f"REQUIREMENTS:\n"
@@ -166,7 +176,9 @@ class Call2Mixin:
             f'  "summary_original": "{lang} para1\\n\\n{lang} para2",\n'
             f'  "summary_en": "English para1\\n\\nEnglish para2",\n'
             f'  "title_original": "{lang} title here",\n'
-            f'  "headlines": [{{"headline": "translated", "description": "translated"}}]\n'
+            f'  "headlines": [{{"headline": "translated", "description": "translated"}}]'
+            f'{translated_workout_schema}'
+            f'{translated_recipe_schema}\n'
             f"}}"
         )
 
@@ -195,8 +207,13 @@ class Call2Mixin:
             headlines_og = copy_emojis_to_headlines(highlights, headlines_og)
 
 
-        workout_og = result_data.get("translated_workout") if isinstance(result_data.get("translated_workout"), dict) else None
-        recipe_og = result_data.get("translated_recipe") if isinstance(result_data.get("translated_recipe"), dict) else None
+        workout_en = result_data.get("translated_workout_en")
+        if not isinstance(workout_en, dict):
+            workout_en = result_data.get("workout_en") if isinstance(result_data.get("workout_en"), dict) else None
+
+        recipe_en = result_data.get("translated_recipe_en")
+        if not isinstance(recipe_en, dict):
+            recipe_en = result_data.get("recipe_en") if isinstance(result_data.get("recipe_en"), dict) else None
 
         out = {
             "summary_en": summary_en or summary_og,
@@ -205,10 +222,10 @@ class Call2Mixin:
             "headlines_en": list(highlights),
             "headlines_og": headlines_og,
         }
-        if workout_og:
-            out["workout_og"] = workout_og
-        if recipe_og:
-            out["recipe_og"] = recipe_og
+        if workout_en:
+            out["workout_en"] = workout_en
+        if recipe_en:
+            out["recipe_en"] = recipe_en
         return out
 
 

@@ -809,6 +809,16 @@ def _extract_item_names_from_cats(tools_cats_en: list[dict] | None, limit: int =
     return names
 
 
+def _non_empty_dict(value) -> dict | None:
+    return value if isinstance(value, dict) and bool(value) else None
+
+
+def _source_language_branch(payload: dict) -> dict:
+    if isinstance(payload.get("original"), dict):
+        return payload["original"]
+    return payload
+
+
 
 class AssemblyMixin:
     """Assembles the final output dictionary for UniversalExtractor.extract()."""
@@ -1270,6 +1280,54 @@ class AssemblyMixin:
             summary["original"]["summary"] = summary["english"]["summary"]
 
 
+        recipe_payload = parsed.get("recipe")
+        if content_type == "recipe" and isinstance(recipe_payload, dict):
+            recipe_en = _non_empty_dict(summary_result.get("recipe_en"))
+            if not recipe_en:
+                recipe_en = _non_empty_dict(summary_result.get("translated_recipe_en"))
+
+            if not is_english_content:
+                recipe_original = _source_language_branch(recipe_payload)
+                if recipe_en:
+                    recipe_payload = {
+                        "english": recipe_en,
+                        "original": recipe_original,
+                    }
+                else:
+                    logger.warning(
+                        "⚠️ Non-English recipe missing translated English branch; preserving original only"
+                    )
+                    recipe_payload = {"original": recipe_original}
+            elif isinstance(recipe_payload.get("english"), dict) or isinstance(recipe_payload.get("original"), dict):
+                recipe_payload = {
+                    "english": recipe_payload.get("english") or recipe_payload,
+                    "original": recipe_payload.get("original") or recipe_payload.get("english") or recipe_payload,
+                }
+
+        workout_payload = parsed.get("workout")
+        if isinstance(workout_payload, dict):
+            workout_en = _non_empty_dict(summary_result.get("workout_en"))
+            if not workout_en:
+                workout_en = _non_empty_dict(summary_result.get("translated_workout_en"))
+
+            if not is_english_content:
+                workout_original = _source_language_branch(workout_payload)
+                if workout_en:
+                    workout_payload = {
+                        "english": workout_en,
+                        "original": workout_original,
+                    }
+                else:
+                    logger.warning(
+                        "⚠️ Non-English workout missing translated English branch; preserving original only"
+                    )
+                    workout_payload = {"original": workout_original}
+            elif isinstance(workout_payload.get("english"), dict) or isinstance(workout_payload.get("original"), dict):
+                workout_payload = {
+                    "english": workout_payload.get("english") or workout_payload,
+                    "original": workout_payload.get("original") or workout_payload.get("english") or workout_payload,
+                }
+
         return {
             "content_type": public_content_type,
             "extractor_version": getattr(self, "EXTRACTOR_VERSION", ""),
@@ -1283,16 +1341,8 @@ class AssemblyMixin:
             "debug": prompt_trace or {},
             "items": parsed.get("items"),
             "tools_list": tools_list,
-            "recipe": (
-                {"english": parsed.get("recipe"), "original": summary_result.get("recipe_og")}
-                if parsed.get("recipe") and summary_result.get("recipe_og")
-                else parsed.get("recipe")
-            ),
-            "workout": (
-                {"english": parsed.get("workout"), "original": summary_result.get("workout_og")}
-                if parsed.get("workout") and summary_result.get("workout_og")
-                else parsed.get("workout")
-            ),
+            "recipe": recipe_payload,
+            "workout": workout_payload,
             "location": parsed.get("location"),
             "detected_language": lang,
             "is_list": False if has_location else is_list,

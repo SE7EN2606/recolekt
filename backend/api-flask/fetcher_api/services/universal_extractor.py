@@ -4,7 +4,7 @@ Universal Content Extractor, orchestration only.
 All heavy logic lives in dedicated mixins:
     extractor_http.py            -> HttpMixin      (_call_ai, retry, model fallback)
     extractor_call1.py           -> Call1Mixin     (Call 1 parsing)
-    extractor_call2.py           -> Call2Mixin     (Call 2 summary + Call 3 translation)
+    extractor_call2.py           -> Call2Mixin     (Call 2 summary + bilingual translation where needed)
     extractor_assembly.py        -> AssemblyMixin  (final output assembly)
     extractor_list_detection.py  -> detection helpers
 
@@ -24,7 +24,7 @@ MODEL CHAIN NOTE:
     extractor_http.py owns the model policy.
     Current default policy is:
       - Call 1 / vision extraction: ['mistral-large-latest', 'mistral-small-latest']
-      - Call 2 / Call 3 summary/translation: ['mistral-small-latest']
+      - Call 2 summary/translation: ['mistral-small-latest']
     Do NOT include 'open-mistral-nemo'. Nemo is weaker and fails tier-list instructions.
 """
 

@@ -46,6 +46,7 @@ import {
   isBadgeToolsSubtype,
   isToolsContentType,
   parseSummaryObject,
+  selectLocalizedRecipe,
 } from './VideoDetailViewModel';
 
 const MoveCollectionModalExt = MoveCollectionModal as React.ComponentType<{
@@ -98,7 +99,7 @@ const getAuthToken = (): string => {
   }
 };
 
-const fetchBackendAuthed = async (url: string) => {
+const fetchBackendAuthed = async (url: string, signal?: AbortSignal) => {
   const token = getAuthToken();
   const res = await fetch(url, {
     method: 'GET',
@@ -109,6 +110,7 @@ const fetchBackendAuthed = async (url: string) => {
     },
     credentials: 'include',
     cache: 'no-store',
+    signal,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
@@ -226,6 +228,7 @@ export const VideoDetail: React.FC = () => {
     toggleFavorite,
     updateVideo,
     refreshVideo,
+    hydrateVideo,
     getVideoById,
   } = useData();
 
@@ -280,6 +283,12 @@ export const VideoDetail: React.FC = () => {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isRefreshingVideo, setIsRefreshingVideo] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState('');
+  const [refreshError, setRefreshError] = useState('');
+  const detailHydratedRef = useRef(false);
+  const lastStableVideoRef = useRef<any>(null);
+  const refreshAbortRef = useRef<AbortController | null>(null);
+  const refreshRunRef = useRef(0);
 
   useScrollLock(
     isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen,
@@ -289,7 +298,47 @@ export const VideoDetail: React.FC = () => {
   useEffect(() => {
     setServingScale(1);
     setIsEditing(false);
+    detailHydratedRef.current = false;
+    lastStableVideoRef.current = null;
+    refreshAbortRef.current?.abort();
+    refreshAbortRef.current = null;
+    refreshRunRef.current += 1;
+    setIsRefreshingVideo(false);
+    setRefreshMessage('');
+    setRefreshError('');
   }, [id]);
+
+  useEffect(() => {
+    return () => {
+      refreshAbortRef.current?.abort();
+      refreshRunRef.current += 1;
+    };
+  }, []);
+
+  const fetchHydratedVideo = useCallback(async (signal?: AbortSignal) => {
+    if (!id) return null;
+    const db = await fetchBackendAuthed(
+      apiUrl(`api/reel/${encodeURIComponent(id)}?ts=${Date.now()}`),
+      signal,
+    );
+    if (!db) return null;
+
+    const resultJsonUrl =
+      db?.result_json_url ||
+      db?.resultJsonUrl ||
+      db?.gcs_result_json_url ||
+      db?.result_json ||
+      db?.gcs_urls?.result_json ||
+      db?.gcs_urls?.result_json_url ||
+      null;
+
+    const gcs = resultJsonUrl ? await fetchGcsJson(resultJsonUrl) : null;
+    return {
+      detail: db,
+      resultJson: gcs,
+      video: mergeVideoPayload(db, gcs, galleryThumbnail),
+    };
+  }, [id, galleryThumbnail]);
 
   const enrichVideo = useCallback(async () => {
     if (!id || !navigator.onLine) {
@@ -297,35 +346,34 @@ export const VideoDetail: React.FC = () => {
       return;
     }
     try {
-      const db = await fetchBackendAuthed(
-        apiUrl(`api/reel/${encodeURIComponent(id)}?ts=${Date.now()}`),
-      );
-      if (!db) { setLoading(false); return; }
-
-      const resultJsonUrl =
-        db?.result_json_url ||
-        db?.resultJsonUrl ||
-        db?.gcs_result_json_url ||
-        db?.result_json ||
-        db?.gcs_urls?.result_json ||
-        db?.gcs_urls?.result_json_url ||
-        null;
-
-      const gcs = resultJsonUrl ? await fetchGcsJson(resultJsonUrl) : null;
-      const merged = mergeVideoPayload(db, gcs, galleryThumbnail);
+      const hydrated = await fetchHydratedVideo();
+      const merged = hydrated?.video;
+      if (!merged) { setLoading(false); return; }
+      const mergedStatus = String(merged.status || '').toLowerCase();
 
       setVideo((prev: any) => ({
         ...(prev || {}),
         ...merged,
-        id: merged.id || merged.process_id || db.id || db.process_id || id,
-        process_id: merged.process_id || merged.id || db.process_id || db.id || id,
+        id: merged.id || merged.process_id || id,
+        process_id: merged.process_id || merged.id || id,
       }));
+      detailHydratedRef.current = true;
+      if (mergedStatus === 'processing') {
+        setIsRefreshingVideo(true);
+        setRefreshMessage('Recolekt is updating this page. Please wait a moment.');
+      } else if (mergedStatus === 'done' || mergedStatus === 'completed') {
+        lastStableVideoRef.current = {
+          ...merged,
+          id: merged.id || merged.process_id || id,
+          process_id: merged.process_id || merged.id || id,
+        };
+      }
     } catch (err) {
       console.error('Enrichment error', err);
     } finally {
       setLoading(false);
     }
-  }, [id, galleryThumbnail]);
+  }, [id, fetchHydratedVideo]);
 
   useEffect(() => {
     if (!id) return;
@@ -338,11 +386,50 @@ export const VideoDetail: React.FC = () => {
     const thumb = cached.thumbnailUrl || cached.gcs_urls?.preview_thumbnail;
     if (thumb) setGalleryThumbnail(thumb);
 
-    setVideo({
+    const cachedStatus = String(cached.status || '').toLowerCase();
+    const cacheRow = {
       ...cached,
       id: cached.id || cached.process_id,
       process_id: cached.process_id || cached.id,
-    });
+    };
+
+    if (!detailHydratedRef.current) {
+      setVideo(cacheRow);
+    } else {
+      setVideo((prev: any) => {
+        if (!prev) return cacheRow;
+        const prevStatus = String(prev.status || '').toLowerCase();
+        const cachedStatusValue = String(cached.status || '').toLowerCase();
+        const cacheHasTerminalStatus =
+          ['done', 'completed', 'error', 'failed', 'failure'].includes(cachedStatusValue);
+        const shouldAcceptCacheStatus =
+          prevStatus === 'processing' && cacheHasTerminalStatus;
+        return {
+          ...prev,
+          isFavorite: cached.isFavorite ?? (cached as any).is_favorite ?? prev.isFavorite,
+          is_favorite: (cached as any).is_favorite ?? cached.isFavorite ?? prev.is_favorite,
+          folderId: cached.folderId ?? (cached as any).folder_id ?? prev.folderId,
+          folder_id: (cached as any).folder_id ?? cached.folderId ?? prev.folder_id,
+          status: shouldAcceptCacheStatus ? cached.status : prev.status,
+          error_message: shouldAcceptCacheStatus
+            ? ((cached as any).error_message ?? (cached as any).errorMessage ?? prev.error_message)
+            : prev.error_message,
+          errorMessage: shouldAcceptCacheStatus
+            ? ((cached as any).errorMessage ?? (cached as any).error_message ?? prev.errorMessage)
+            : prev.errorMessage,
+          category: cached.category ?? prev.category,
+          thumbnailUrl: cached.thumbnailUrl ?? prev.thumbnailUrl,
+          updated_at: shouldAcceptCacheStatus ? ((cached as any).updated_at ?? prev.updated_at) : prev.updated_at,
+          recipeUserState: (cached as any).recipeUserState ?? (cached as any).recipe_user_state ?? prev.recipeUserState,
+          recipe_user_state: (cached as any).recipe_user_state ?? (cached as any).recipeUserState ?? prev.recipe_user_state,
+        };
+      });
+    }
+
+    if (!detailHydratedRef.current && cachedStatus === 'processing') {
+      setIsRefreshingVideo(true);
+      setRefreshMessage('Recolekt is updating this page. Please wait a moment.');
+    }
 
     const needsHydration =
       navigator.onLine && cachedLocationNeedsHydration(cached, thumb);
@@ -356,6 +443,73 @@ export const VideoDetail: React.FC = () => {
       enrichVideo();
     }
   }, [id, enrichVideo]);
+
+  useEffect(() => {
+    const status = String(video?.status || '').toLowerCase();
+    if (!id || status !== 'processing') return;
+    if (!navigator.onLine) return;
+
+    setIsRefreshingVideo(true);
+    setRefreshMessage('Recolekt is updating this page. Please wait a moment.');
+
+    const controller = new AbortController();
+    refreshAbortRef.current?.abort();
+    refreshAbortRef.current = controller;
+    const runId = refreshRunRef.current + 1;
+    refreshRunRef.current = runId;
+    const startedAt = Date.now();
+    let timer: number | null = null;
+
+    const poll = async () => {
+      if (controller.signal.aborted || refreshRunRef.current !== runId) return;
+      try {
+        const hydrated = await fetchHydratedVideo(controller.signal);
+        const detail = hydrated?.detail;
+        const merged = hydrated?.video;
+        const nextStatus = String(detail?.status || '').toLowerCase();
+
+        if (nextStatus === 'done' || nextStatus === 'completed') {
+          const completed = {
+            ...merged,
+            id: merged.id || merged.process_id || id,
+            process_id: merged.process_id || merged.id || id,
+          };
+          setVideo(completed);
+          hydrateVideo(id, completed);
+          lastStableVideoRef.current = completed;
+          detailHydratedRef.current = true;
+          setIsRefreshingVideo(false);
+          setRefreshMessage('');
+          setRefreshError('');
+          refreshAbortRef.current = null;
+          return;
+        }
+
+        if (['error', 'failed', 'failure'].includes(nextStatus)) {
+          throw new Error(detail?.error_message || detail?.errorMessage || merged?.error_message || merged?.errorMessage || 'Refresh failed.');
+        }
+
+        if (Date.now() - startedAt > 3 * 60 * 1000) {
+          throw new Error('Refresh is taking longer than expected. Please try again.');
+        }
+
+        timer = window.setTimeout(poll, 2500);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        console.error('Processing poll failed', err);
+        setRefreshError(err instanceof Error ? err.message : 'Refresh failed.');
+        setRefreshMessage('');
+        setIsRefreshingVideo(false);
+      }
+    };
+
+    timer = window.setTimeout(poll, 2500);
+
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [id, video?.status, fetchHydratedVideo, hydrateVideo]);
 
   useEffect(() => {
     if (isEditing && video) {
@@ -401,16 +555,63 @@ export const VideoDetail: React.FC = () => {
 
   const handleRefreshVideo = async () => {
     if (!currentVideoId || !viewModel.originalUrl || isRefreshingVideo) return;
+    setIsActionSheetOpen(false);
     setIsRefreshingVideo(true);
+    setRefreshMessage('Recolekt is updating this page. Please wait a moment.');
+    setRefreshError('');
+    refreshAbortRef.current?.abort();
+    const controller = new AbortController();
+    refreshAbortRef.current = controller;
+    const runId = refreshRunRef.current + 1;
+    refreshRunRef.current = runId;
+
     try {
       await refreshVideo(currentVideoId);
       setVideo((prev: any) =>
         prev ? { ...prev, status: 'processing', category: 'Processing', errorMessage: null } : prev,
       );
+
+      const startedAt = Date.now();
+      const timeoutMs = 3 * 60 * 1000;
+      while (!controller.signal.aborted && refreshRunRef.current === runId) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2500));
+        if (controller.signal.aborted || refreshRunRef.current !== runId) return;
+
+        const hydrated = await fetchHydratedVideo(controller.signal);
+        const detail = hydrated?.detail;
+        const merged = hydrated?.video;
+        const status = String(detail?.status || '').toLowerCase();
+
+        if (status === 'done' || status === 'completed') {
+          const completed = {
+            ...merged,
+            id: merged.id || merged.process_id || currentVideoId,
+            process_id: merged.process_id || merged.id || currentVideoId,
+          };
+          setVideo(completed);
+          hydrateVideo(currentVideoId, completed);
+          lastStableVideoRef.current = completed;
+          detailHydratedRef.current = true;
+          setIsRefreshingVideo(false);
+          setRefreshMessage('');
+          setRefreshError('');
+          refreshAbortRef.current = null;
+          return;
+        }
+
+        if (['error', 'failed', 'failure'].includes(status)) {
+          throw new Error(detail?.error_message || detail?.errorMessage || merged?.error_message || merged?.errorMessage || 'Refresh failed.');
+        }
+
+        if (Date.now() - startedAt > timeoutMs) {
+          throw new Error('Refresh is taking longer than expected. Please try again.');
+        }
+      }
     } catch (err) {
       console.error('Refresh video failed', err);
-    } finally {
+      setRefreshError(err instanceof Error ? err.message : 'Refresh failed.');
       setIsRefreshingVideo(false);
+      setRefreshMessage('');
     }
   };
 
@@ -456,11 +657,20 @@ export const VideoDetail: React.FC = () => {
 
   const viewModel = useMemo(() => {
     if (!video) return null;
-    const source = isEditing && editedVideo ? editedVideo : video;
+    const source =
+      isEditing && editedVideo
+        ? editedVideo
+        : String(video?.status || '').toLowerCase() === 'processing' && lastStableVideoRef.current
+          ? { ...lastStableVideoRef.current, status: video.status, updated_at: video.updated_at }
+          : video;
     return buildViewModel(source, showOriginal, galleryThumbnail);
   }, [video, editedVideo, isEditing, showOriginal, galleryThumbnail]);
 
-  const recipeForCard = buildRecipeForCard(viewModel?.recipe, (video as any)?.recipe, [
+  const localizedVideoRecipe = selectLocalizedRecipe((video as any)?.recipe, showOriginal);
+  const recipeForCard = buildRecipeForCard(viewModel?.recipe || localizedVideoRecipe, localizedVideoRecipe || (video as any)?.recipe, [
+    selectLocalizedRecipe((video as any)?.gcs?.recipe, showOriginal),
+    selectLocalizedRecipe((video as any)?.raw?.recipe, showOriginal),
+    selectLocalizedRecipe((video as any)?.__raw?.recipe, showOriginal),
     (video as any)?.gcs?.recipe,
     (video as any)?.raw?.recipe,
     (video as any)?.__raw?.recipe,
@@ -483,8 +693,9 @@ export const VideoDetail: React.FC = () => {
     richRecipeRef.current = recipeForCard;
   }
 
+  const currentStatus = String(video?.status || '').toLowerCase();
   const stableRecipeForCard =
-    richRecipeRef.current && recipeInstructionCount(richRecipeRef.current) > currentInstructionCount
+    currentStatus === 'processing' && richRecipeRef.current && recipeInstructionCount(richRecipeRef.current) > currentInstructionCount
       ? richRecipeRef.current
       : recipeForCard;
 
@@ -622,8 +833,8 @@ export const VideoDetail: React.FC = () => {
         },
         ...(viewModel.originalUrl ? [{
           icon: isRefreshingVideo ? <Loader2 className="animate-spin" /> : <RefreshCw />,
-          label: isRefreshingVideo ? 'Refreshing video' : 'Refresh video',
-          onClick: handleRefreshVideo,
+          label: isRefreshingVideo ? 'Updating video…' : 'Refresh video',
+          onClick: isRefreshingVideo ? () => {} : handleRefreshVideo,
         }] : []),
         { icon: <Archive />, label: t('videoDetail:archive', 'Archive'), onClick: handleArchive },
         {
@@ -648,6 +859,22 @@ export const VideoDetail: React.FC = () => {
 
       <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-6 items-start">
         <div className="min-w-0 w-full flex flex-col">
+          {(refreshMessage || refreshError) && (
+            <div
+              className={`mb-4 flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold ${
+                refreshError
+                  ? 'border-red-100 bg-red-50 text-red-700'
+                  : 'border-primary-100 bg-primary-50 text-primary-800'
+              }`}
+            >
+              {refreshError ? (
+                <AlertCircle size={18} aria-hidden="true" className="shrink-0" />
+              ) : (
+                <Loader2 size={18} aria-hidden="true" className="shrink-0 animate-spin" />
+              )}
+              <span>{refreshError || refreshMessage}</span>
+            </div>
+          )}
 
           {/* Thumbnail */}
           {showRecipeCard && cameFromCookbook && (
@@ -743,12 +970,27 @@ export const VideoDetail: React.FC = () => {
 
           {/* Title */}
           <div className={showRecipeCard ? 'mb-2 px-0.5 md:mb-3' : 'mb-3'}>
-            <EditableTitle
-              title={viewModel.title}
-              isEditMode={isEditing}
-              value={viewModel.title}
-              onChange={(val: string) => handleEditField('title', val)}
-            />
+            <div className="flex items-start justify-between gap-3">
+              <EditableTitle
+                title={viewModel.title}
+                isEditMode={isEditing}
+                value={viewModel.title}
+                onChange={(val: string) => handleEditField('title', val)}
+              />
+              {showRecipeCard && viewModel.hasTranslation && !isEditing && (
+                <button
+                  type="button"
+                  onClick={(e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); toggleLanguage(); }}
+                  className="mt-1 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary-600 px-3 text-white shadow-sm transition-colors hover:bg-primary-700"
+                  aria-label={showOriginal ? 'Show English' : `Show ${viewModel.languageCode}`}
+                >
+                  <Globe size={14} aria-hidden="true" />
+                  <span className="text-[11px] font-bold uppercase">
+                    {showOriginal ? 'EN' : viewModel.languageCode}
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Author + date */}

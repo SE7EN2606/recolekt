@@ -109,10 +109,27 @@ def _coerce_summary_title_string(summary_title_raw):
     if summary_title_raw is None:
         return None
     if isinstance(summary_title_raw, dict):
+        for path in (
+            ("english", "title"),
+            ("original", "title"),
+            ("title",),
+            ("summary", "english", "title"),
+            ("summary", "original", "title"),
+        ):
+            current = summary_title_raw
+            for key in path:
+                if not isinstance(current, dict):
+                    current = None
+                    break
+                current = current.get(key)
+            if isinstance(current, str) and current.strip():
+                return current.strip()
         return None
     if isinstance(summary_title_raw, str):
         parsed = json_loads_maybe(summary_title_raw, default=summary_title_raw)
         if isinstance(parsed, dict):
+            return _coerce_summary_title_string(parsed)
+        if isinstance(parsed, list):
             return None
         return summary_title_raw.strip() or None
     return None
@@ -657,6 +674,7 @@ def _build_reel_payload_for_api(process_id: str, user_id: str, include_prompt: b
             is_long_video, duration, recipe, workout, transcription,
             tools_list, location, prompt,
             is_list, list_subtype, list_count, list_type,
+            detected_language, updated_at, error_message,
             gcs_urls
         FROM reels
         WHERE user_id = %s AND id = %s

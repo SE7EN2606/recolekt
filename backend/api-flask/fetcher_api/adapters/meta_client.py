@@ -124,6 +124,14 @@ class MetaClient:
             "api unavailable",
             "upstream unavailable",
         )
+        unavailable_markers = (
+            "not available",
+            "unavailable",
+            "removed",
+            "does not exist",
+            "copyright",
+            "private video",
+        )
 
         if any(marker in text for marker in rate_markers):
             return "social_rate_limited"
@@ -133,7 +141,21 @@ class MetaClient:
             return "social_login_required"
         if any(marker in text for marker in provider_markers):
             return "extraction_provider_unavailable"
+        if default.startswith("facebook") and any(marker in text for marker in unavailable_markers):
+            return "facebook_media_unavailable"
         return default
+
+    def _facebook_url_candidates(self, url: str) -> list[str]:
+        content_id = self.extract_shortcode(url)
+        candidates = [url]
+
+        if content_id and str(content_id).isdigit():
+            candidates.extend([
+                f"https://www.facebook.com/reel/{content_id}",
+                f"https://www.facebook.com/watch/?v={content_id}",
+            ])
+
+        return list(dict.fromkeys(candidate for candidate in candidates if candidate))
 
     # ----------------------------------------------------------------
     # URL detection
@@ -773,6 +795,37 @@ class MetaClient:
         else:
             logger.warning("🍪 %s has %d cookies but no expiry timestamps; monitor manually", env_var, count)
 
+    def cookie_health_report(self, env_var: str) -> dict:
+        raw_content = os.environ.get(env_var, "").strip()
+        report = {
+            "configured": bool(raw_content),
+            "valid_format": False,
+            "required_present": False,
+            "missing_required": sorted(_SOCIAL_REQUIRED_COOKIES.get(env_var, set())),
+            "expiry": "unknown",
+            "cookie_count": 0,
+        }
+        if not raw_content:
+            return report
+
+        normalized = self._normalize_cookie_content(raw_content, env_var)
+        if not normalized:
+            return report
+
+        names, earliest_expiry, count = self._parse_netscape_cookie_health(normalized)
+        required = _SOCIAL_REQUIRED_COOKIES.get(env_var, set())
+        missing = sorted(required - names)
+        report.update({
+            "valid_format": True,
+            "required_present": not missing,
+            "missing_required": missing,
+            "cookie_count": count,
+        })
+        if earliest_expiry:
+            seconds_remaining = earliest_expiry - int(datetime.now(timezone.utc).timestamp())
+            report["expiry"] = "expired" if seconds_remaining <= 0 else "valid"
+        return report
+
     def _write_cookies(self, env_var: str, suffix: str) -> Optional[str]:
         content = os.environ.get(env_var, "").strip()
         if not content:
@@ -798,6 +851,7 @@ class MetaClient:
     # ----------------------------------------------------------------
     def _get_facebook_info(self, url: str) -> Optional[dict]:
         cookies_path = None
+        last_error = None
         try:
             ydl_opts = {
                 "quiet": True,
@@ -815,35 +869,57 @@ class MetaClient:
             else:
                 logger.debug("ℹ️ FB_COOKIES_CONTENT not set — proceeding without cookies")
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+            for candidate_url in self._facebook_url_candidates(url):
+                try:
+                    logger.info("ℹ️ Facebook yt-dlp metadata attempt url=%s", candidate_url)
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(candidate_url, download=False)
+                except Exception as exc:
+                    last_error = exc
+                    logger.info(
+                        "ℹ️ Facebook yt-dlp metadata attempt failed code=%s url=%s",
+                        self._classified_failure(exc, default="facebook_extraction_failed"),
+                        candidate_url,
+                    )
+                    continue
 
-            if not info:
-                return None
+                if not info:
+                    continue
 
-            shortcode = info.get("id") or self.extract_shortcode(url) or "unknown"
-            username = info.get("uploader") or info.get("channel") or "Facebook User"
-            caption = info.get("description") or info.get("title") or ""
+                shortcode = info.get("id") or self.extract_shortcode(candidate_url) or "unknown"
+                username = info.get("uploader") or info.get("channel") or "Facebook User"
+                caption = info.get("description") or info.get("title") or ""
 
-            video_url = info.get("url")
-            if not video_url and info.get("formats"):
-                formats = [f for f in info["formats"] if f.get("ext") == "mp4" and f.get("vcodec") != "none"]
-                if formats:
-                    video_url = formats[-1].get("url")
+                video_url = info.get("url")
+                if not video_url and info.get("formats"):
+                    formats = [f for f in info["formats"] if f.get("ext") == "mp4" and f.get("vcodec") != "none"]
+                    if formats:
+                        video_url = formats[-1].get("url")
 
-            logger.info("✅ Facebook yt-dlp metadata: author=%s, shortcode=%s", username, shortcode)
-            return {
-                "shortcode": shortcode,
-                "caption": caption,
-                "username": username,
-                "video_url": video_url,
-                "likes": info.get("like_count", 0),
-                "comments": info.get("comment_count", 0),
-                "timestamp": info.get("upload_date"),
-            }
+                logger.info("✅ Facebook yt-dlp metadata: author=%s, shortcode=%s url=%s", username, shortcode, candidate_url)
+                return {
+                    "shortcode": shortcode,
+                    "caption": caption,
+                    "username": username,
+                    "video_url": video_url,
+                    "likes": info.get("like_count", 0),
+                    "comments": info.get("comment_count", 0),
+                    "timestamp": info.get("upload_date"),
+                }
+
+            if last_error:
+                logger.info(
+                    "ℹ️ Facebook yt-dlp metadata exhausted code=%s",
+                    self._classified_failure(last_error, default="facebook_extraction_failed"),
+                )
+            return None
 
         except Exception as e:
-            logger.error("❌ Facebook yt-dlp error: %s", e, exc_info=True)
+            logger.error(
+                "❌ Facebook yt-dlp metadata error code=%s error=%s",
+                self._classified_failure(e, default="facebook_extraction_failed"),
+                e,
+            )
             return None
 
         finally:
@@ -1176,6 +1252,7 @@ class MetaClient:
         elif self.is_facebook_url(url):
             with self._social_download_slot("facebook"):
                 cookies_path = None
+                last_error = None
                 try:
                     graph_info = self._get_facebook_graph_info(url)
                     if graph_info and graph_info.get("video_url"):
@@ -1196,7 +1273,7 @@ class MetaClient:
                     if not post_info:
                         post_info = self.get_post_info(url)
                     if not post_info:
-                        raise ValueError("No metadata available")
+                        logger.info("ℹ️ Facebook metadata unavailable; attempting yt-dlp download candidates directly")
 
                     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -1218,16 +1295,51 @@ class MetaClient:
                     else:
                         logger.debug("ℹ️ FB_COOKIES_CONTENT not set — downloading without cookies")
 
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        ydl.download([url])
+                    for candidate_url in self._facebook_url_candidates(url):
+                        try:
+                            logger.info("⬇️ Facebook yt-dlp download attempt url=%s", candidate_url)
+                            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                                info = ydl.extract_info(candidate_url, download=True)
 
-                    if os.path.exists(output_path):
-                        logger.info("✅ Facebook video saved to %s", output_path)
-                        return {"success": True, "metadata": post_info, "thumbnail_path": None}
-                    raise ValueError("Download finished but file missing")
+                            actual_path = output_path
+                            if not os.path.exists(actual_path):
+                                for ext in ("mp4", "webm", "mkv", "mov"):
+                                    candidate_path = f"{output_path}.{ext}"
+                                    if os.path.exists(candidate_path):
+                                        actual_path = candidate_path
+                                        break
+
+                            if not os.path.exists(actual_path):
+                                raise ValueError("Download finished but file missing")
+
+                            metadata = post_info or {
+                                "shortcode": (info or {}).get("id") or self.extract_shortcode(candidate_url) or "unknown",
+                                "caption": (info or {}).get("description") or (info or {}).get("title") or "",
+                                "username": (info or {}).get("uploader") or (info or {}).get("channel") or "Facebook User",
+                                "likes": (info or {}).get("like_count", 0) or 0,
+                                "comments": (info or {}).get("comment_count", 0) or 0,
+                            }
+                            logger.info("✅ Facebook video saved to %s via %s", actual_path, candidate_url)
+                            return {
+                                "success": True,
+                                "video_path": actual_path,
+                                "metadata": metadata,
+                                "thumbnail_path": None,
+                            }
+                        except Exception as exc:
+                            last_error = exc
+                            logger.info(
+                                "ℹ️ Facebook yt-dlp download attempt failed code=%s url=%s",
+                                self._classified_failure(exc, default="facebook_extraction_failed"),
+                                candidate_url,
+                            )
+
+                    if last_error:
+                        raise last_error
+                    raise ValueError("Facebook download failed")
 
                 except Exception as e:
-                    error_code = self._classified_failure(e)
+                    error_code = self._classified_failure(e, default="facebook_extraction_failed")
                     logger.error("❌ Facebook download error code=%s error=%s", error_code, e)
                     return {"success": False, "error": str(e), "error_code": error_code}
 

@@ -99,6 +99,7 @@ interface DataContextType {
   deleteVideos: (videoIds: string[]) => Promise<void>;
   addVideo: (url: string, forceRetry?: boolean) => Promise<AddVideoResult>;
   refreshVideo: (videoId: string) => Promise<void>;
+  hydrateVideo: (videoId: string, hydrated: any) => void;
   refreshVideos: () => Promise<void>;
   refreshFolders: () => Promise<void>;
   getVideoById: (id: string) => Video | undefined;
@@ -181,6 +182,66 @@ function normalizeSummary(summaryRaw: unknown): any {
   }
 
   return summary;
+}
+
+function isJsonDocumentString(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const text = value.trim();
+  if (!text || !/^[{[]/.test(text)) return false;
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function usableDisplayText(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  if (!text || text === '[object Object]' || isJsonDocumentString(text)) return '';
+  return text;
+}
+
+function parseJsonDocument(value: unknown): unknown {
+  if (typeof value !== 'string' || !isJsonDocumentString(value)) return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function extractDisplayTitle(...values: unknown[]): string {
+  const paths = [
+    ['english', 'title'],
+    ['original', 'title'],
+    ['title'],
+    ['summary', 'english', 'title'],
+    ['summary', 'original', 'title'],
+  ];
+
+  for (const value of values) {
+    const parsed = parseJsonDocument(value);
+    const direct = usableDisplayText(parsed);
+    if (direct) return direct;
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+    for (const path of paths) {
+      let current: any = parsed;
+      for (const key of path) {
+        if (!current || typeof current !== 'object') {
+          current = null;
+          break;
+        }
+        current = current[key];
+      }
+      const text = usableDisplayText(parseJsonDocument(current));
+      if (text) return text;
+    }
+  }
+
+  return '';
 }
 
 function normalizeRecipeUserState(raw: any) {
@@ -753,15 +814,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
           let displayTitle = 'Processing...';
           if (isDone) {
-            if (summary?.english?.title) {
-              displayTitle = summary.english.title;
-            } else if (typeof summary?.title === 'string' && summary.title !== 'Processing...') {
-              displayTitle = summary.title;
-            } else if (r.summary_title && typeof r.summary_title === 'string') {
-              displayTitle = r.summary_title;
-            } else {
-              displayTitle = 'Untitled';
-            }
+            displayTitle =
+              extractDisplayTitle(summary, r.summary_title, r.title) ||
+              'Untitled';
           } else if (isFailed) {
             displayTitle = 'Processing Failed';
           }
@@ -803,7 +858,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             summary: hydratedSummary,
             summary_category: r.summary_category || hydratedSummary.category || '',
             summary_topic: r.summary_topic || hydratedSummary.topic || '',
-            summary_title: r.summary_title || displayTitle,
+            summary_title: extractDisplayTitle(r.summary_title, summary) || displayTitle,
             transcript: transcriptText,
             transcription: null,
             originalUrl: sourceUrl,
@@ -1207,6 +1262,34 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     [setVideos, fetchVideos],
   );
 
+  const hydrateVideo = useCallback((videoId: string, hydrated: any) => {
+    if (!videoId || !hydrated) return;
+
+    setVideos((prev) => {
+      const existingIndex = (prev || []).findIndex(
+        (v: any) => v.id === videoId || v.process_id === videoId || v.processId === videoId,
+      );
+
+      if (existingIndex < 0) return prev;
+
+      const next = [...prev];
+      const existing: any = next[existingIndex];
+      next[existingIndex] = {
+        ...existing,
+        ...hydrated,
+        id: existing.id || hydrated.id || hydrated.process_id || videoId,
+        process_id: hydrated.process_id || hydrated.id || existing.process_id || videoId,
+        isFavorite: hydrated.isFavorite ?? hydrated.is_favorite ?? existing.isFavorite,
+        folderId: hydrated.folderId ?? hydrated.folder_id ?? existing.folderId,
+        thumbnailUrl: hydrated.thumbnailUrl ?? existing.thumbnailUrl,
+        recipeUserState: hydrated.recipeUserState ?? hydrated.recipe_user_state ?? existing.recipeUserState,
+        recipe_user_state: hydrated.recipe_user_state ?? hydrated.recipeUserState ?? existing.recipe_user_state,
+      } as any;
+
+      return next as Video[];
+    });
+  }, [setVideos]);
+
   const addFolder = useCallback(
     async (name: string, parentId: string | null = null) => {
       if (!navigator.onLine) throw new Error('Offline');
@@ -1316,6 +1399,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       deleteVideos,
       addVideo,
       refreshVideo,
+      hydrateVideo,
       refreshVideos,
       refreshFolders,
       getVideoById,
@@ -1342,6 +1426,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       deleteVideos,
       addVideo,
       refreshVideo,
+      hydrateVideo,
       refreshVideos,
       refreshFolders,
       getVideoById,

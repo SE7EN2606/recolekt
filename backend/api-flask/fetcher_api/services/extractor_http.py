@@ -49,8 +49,7 @@ class HttpMixin:
         )
 
         logger.info(
-            "🔑 Mistral HTTP ready (%s...) , extraction chain=%s summary chain=%s",
-            api_key[:12],
+            "Mistral HTTP ready; extraction chain=%s summary chain=%s",
             self._chain_extraction,
             self._chain_summary,
         )

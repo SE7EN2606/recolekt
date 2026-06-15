@@ -108,6 +108,45 @@ def _transcription_result_to_dict(result) -> dict:
     return payload
 
 
+def _mark_forced_reprocess_failed(result: dict, message: str) -> None:
+    process_id = result.get("process_id") or result.get("id")
+    user_id = result.get("user_id")
+    if not process_id or not user_id:
+        insert_reel_into_db(result)
+        return
+
+    execute(
+        """
+        UPDATE reels
+        SET status = 'error',
+            error_message = %s,
+            updated_at = NOW()
+        WHERE id = %s AND user_id = %s
+        """,
+        (str(message or "refresh_failed")[:500], process_id, user_id),
+    )
+
+
+def _fail_processing(result: dict, message: str, force: bool) -> None:
+    result["status"] = "error"
+    result["error_message"] = str(message or "processing_failed")[:500]
+    if force:
+        _mark_forced_reprocess_failed(result, result["error_message"])
+        return
+    insert_reel_into_db(result)
+
+
+def _abort_if_forced_extraction_failed(result: dict, ai_res: dict, force: bool) -> bool:
+    if not force or not isinstance(ai_res, dict) or not ai_res.get("_extraction_failed"):
+        return False
+    logger.error(
+        "❌ Forced refresh extraction failed for %s; preserving existing content",
+        result.get("process_id"),
+    )
+    _fail_processing(result, "extraction_failed", force)
+    return True
+
+
 def _run_parallel_transcription(media_path: str) -> tuple[str, dict, bool]:
     result = _run_async(transcribe_video(media_path))
     prompt_transcript = get_prompt_transcript(result)
@@ -379,8 +418,11 @@ def background_process(
                     video_path=None,
                     duration_seconds=0,
                     is_silent=is_silent_input,
+                    fail_on_extractor_error=force,
                 )
             )
+            if _abort_if_forced_extraction_failed(result, ai_res, force):
+                return
 
             content_payload = ai_res.pop("_content_payload", None)
 
@@ -503,8 +545,11 @@ def background_process(
                             video_path=None,
                             duration_seconds=0,
                             is_silent=False,
+                            fail_on_extractor_error=force,
                         )
                     )
+                    if _abort_if_forced_extraction_failed(result, ai_res, force):
+                        return
 
                     content_payload = ai_res.pop("_content_payload", None)
                     _stabilize_tiktok_caption_recipe(ai_res, caption)
@@ -680,8 +725,11 @@ def background_process(
                 video_path=video_path,
                 duration_seconds=duration_seconds,
                 is_silent=is_silent_input,
+                fail_on_extractor_error=force,
             )
         )
+        if _abort_if_forced_extraction_failed(result, ai_res, force):
+            return
 
         logger.info("🔑 ai_res keys: %s", sorted(ai_res.keys()))
         logger.info(

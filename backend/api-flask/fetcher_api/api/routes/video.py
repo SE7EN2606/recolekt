@@ -232,6 +232,124 @@ def _mark_reel_refresh_failed(reel_id: str, user_id: str, message: str):
         logger.exception("❌ Failed to mark refresh error for reel=%s user=%s", reel_id, user_id)
 
 
+def _queue_existing_reel_refresh(
+    reel_id: str,
+    user_id: str,
+    source_url: str,
+    save_to_gcs: bool = True,
+):
+    if not source_url:
+        return {
+            "payload": {
+                "error": "missing_source_url",
+                "message": "This video cannot be refreshed because it has no source URL.",
+            },
+            "status_code": 400,
+        }
+
+    if not is_supported_url(source_url):
+        return {
+            "payload": {
+                "error": "unsupported_platform",
+                "message": "Only Instagram, Facebook, YouTube, and TikTok URLs can be refreshed.",
+            },
+            "status_code": 422,
+        }
+
+    url_result = canonicalize_social_url(source_url, resolve_facebook_redirects=True)
+    processing_url = url_result.canonical_url or source_url
+    if url_result.platform == "facebook" and url_result.content_id:
+        source_url = processing_url
+
+    platform_id = detect_platform(processing_url)
+    shortcode = (
+        url_result.content_id
+        if platform_id == "FB" and url_result.content_id
+        else _shortcode_from_existing_reel(reel_id, processing_url, platform_id)
+    )
+    shortcode = (shortcode or "unknown").rstrip("-").strip()
+
+    try:
+        gcs_paths = generate_gcs_paths(shortcode, platform_id, user_id=user_id)
+    except TypeError:
+        gcs_paths = generate_gcs_paths(shortcode, platform_id)
+
+    result = {
+        "process_id": reel_id,
+        "id": reel_id,
+        "user_id": user_id,
+        "source_url": source_url,
+        "summary": {},
+        "caption": "",
+        "gcs_paths": gcs_paths,
+        "gcs_urls": {},
+    }
+
+    try:
+        execute(
+            """
+            UPDATE reels
+            SET status = 'processing',
+                error_message = NULL,
+                updated_at = NOW()
+            WHERE id = %s AND user_id = %s
+            """,
+            (reel_id, user_id),
+        )
+        logger.info(
+            "🔄 Refresh queued reel=%s user=%s platform=%s shortcode=%s canonical_key=%s",
+            reel_id,
+            user_id,
+            platform_id,
+            shortcode,
+            url_result.canonical_key,
+        )
+    except Exception as exc:
+        logger.error("❌ Failed to mark reel processing for refresh reel=%s user=%s: %s", reel_id, user_id, exc, exc_info=True)
+        return {
+            "payload": {
+                "error": "refresh_failed",
+                "message": "Refresh could not be started.",
+            },
+            "status_code": 500,
+        }
+
+    temp_dir = tempfile.mkdtemp(dir=TEMP_DIR_BASE)
+    video_path = os.path.join(temp_dir, f"{reel_id}.mp4")
+
+    try:
+        threading.Thread(
+            target=_refresh_reel_background,
+            args=(result, video_path, temp_dir, shortcode, source_url, user_id, save_to_gcs),
+            daemon=True,
+        ).start()
+    except Exception as exc:
+        logger.error("❌ Failed to start refresh thread reel=%s user=%s: %s", reel_id, user_id, exc, exc_info=True)
+        try:
+            os.rmdir(temp_dir)
+        except Exception:
+            pass
+        _mark_reel_refresh_failed(reel_id, user_id, str(exc))
+        return {
+            "payload": {
+                "error": "refresh_failed",
+                "message": "Refresh could not be started.",
+            },
+            "status_code": 500,
+        }
+
+    return {
+        "payload": {
+            "status": "processing",
+            "duplicate": False,
+            "reprocessing": True,
+            "reel_id": reel_id,
+            "process_id": reel_id,
+        },
+        "status_code": 202,
+    }
+
+
 def _refresh_reel_background(
     result,
     video_path,
@@ -239,6 +357,7 @@ def _refresh_reel_background(
     shortcode,
     source_url,
     user_id,
+    save_to_gcs=True,
 ):
     try:
         background_process(
@@ -248,7 +367,7 @@ def _refresh_reel_background(
             shortcode,
             "",
             source_url,
-            True,
+            save_to_gcs,
             "",
             None,
             user_id,
@@ -519,11 +638,9 @@ def summarize():
 
             existing_error_code = existing_reel.get("error_message")
             if force_retry:
-                logger.info("⚠️ Reprocessing requested for existing reel %s; deleting old DB row before retry", existing_id)
-                execute(
-                    "DELETE FROM reels WHERE id = %s AND user_id = %s",
-                    (existing_id, user_id),
-                )
+                logger.info("🔄 Reprocessing requested for existing reel %s; preserving row and refreshing in place", existing_id)
+                queued = _queue_existing_reel_refresh(existing_id, user_id, existing_reel.get("source_url") or processing_url or url, save_to_gcs)
+                return jsonify(queued["payload"]), queued["status_code"]
             elif existing_status == "error" and existing_error_code in NON_RETRYABLE_SOCIAL_ERRORS:
                 logger.info(
                     "🚫 Not retrying non-retryable social extraction error existing=%s user=%s error_code=%s",
@@ -533,11 +650,9 @@ def summarize():
                 )
                 return jsonify(_duplicate_response(existing_reel, url_result)), 200
             elif existing_status == "error":
-                logger.info("⚠️ Reprocessing existing error reel %s; deleting old DB row before retry", existing_id)
-                execute(
-                    "DELETE FROM reels WHERE id = %s AND user_id = %s",
-                    (existing_id, user_id),
-                )
+                logger.info("🔄 Reprocessing existing error reel %s in place", existing_id)
+                queued = _queue_existing_reel_refresh(existing_id, user_id, existing_reel.get("source_url") or processing_url or url, save_to_gcs)
+                return jsonify(queued["payload"]), queued["status_code"]
             else:
                 return jsonify(_duplicate_response(existing_reel, url_result)), 200
 
@@ -686,101 +801,15 @@ def refresh_reel(reel_id):
         logger.info("🚫 Refresh denied or missing reel=%s user=%s", reel_id, user_id)
         return jsonify({"error": "not_found", "message": "Video not found."}), 404
 
-    source_url = str(reel.get("source_url") or "").strip()
-    if not source_url:
-        logger.warning("🚫 Refresh blocked: reel=%s user=%s has no source_url", reel_id, user_id)
-        return jsonify({
-            "error": "missing_source_url",
-            "message": "This video cannot be refreshed because it has no source URL.",
-        }), 400
+    queued = _queue_existing_reel_refresh(reel_id, user_id, str(reel.get("source_url") or "").strip(), True)
+    if queued["status_code"] >= 400:
+        return jsonify(queued["payload"]), queued["status_code"]
 
-    if not is_supported_url(source_url):
-        logger.warning("🚫 Refresh blocked: unsupported source_url reel=%s user=%s url=%s", reel_id, user_id, source_url)
-        return jsonify({
-            "error": "unsupported_platform",
-            "message": "Only Instagram, Facebook, YouTube, and TikTok URLs can be refreshed.",
-        }), 422
-
-    url_result = canonicalize_social_url(source_url, resolve_facebook_redirects=True)
-    processing_url = url_result.canonical_url or source_url
-    if url_result.platform == "facebook" and url_result.content_id:
-        source_url = processing_url
-
-    platform_id = detect_platform(processing_url)
-    shortcode = url_result.content_id if platform_id == "FB" and url_result.content_id else _shortcode_from_existing_reel(reel_id, processing_url, platform_id)
-    shortcode = (shortcode or "unknown").rstrip("-").strip()
-
-    try:
-        gcs_paths = generate_gcs_paths(shortcode, platform_id, user_id=user_id)
-    except TypeError:
-        gcs_paths = generate_gcs_paths(shortcode, platform_id)
-
-    result = {
-        "process_id": reel_id,
-        "id": reel_id,
-        "user_id": user_id,
-        "source_url": source_url,
-        "summary": {},
-        "caption": "",
-        "gcs_paths": gcs_paths,
-        "gcs_urls": {
-            "preview_thumbnail": None,
-            "video": None,
-            "result_json": None,
-        },
-    }
-
-    try:
-        execute(
-            """
-            UPDATE reels
-            SET status = 'processing',
-                error_message = NULL,
-                gcs_urls = %s::jsonb,
-                updated_at = NOW()
-            WHERE id = %s AND user_id = %s
-            """,
-            (json.dumps(result["gcs_urls"]), reel_id, user_id),
-        )
-        logger.info(
-            "🔄 Refresh queued reel=%s user=%s platform=%s shortcode=%s canonical_key=%s",
-            reel_id,
-            user_id,
-            platform_id,
-            shortcode,
-            url_result.canonical_key,
-        )
-    except Exception as exc:
-        logger.error("❌ Failed to mark reel processing for refresh reel=%s user=%s: %s", reel_id, user_id, exc, exc_info=True)
-        return jsonify({
-            "error": "refresh_failed",
-            "message": "Refresh could not be started.",
-        }), 500
-
-    temp_dir = tempfile.mkdtemp(dir=TEMP_DIR_BASE)
-    video_path = os.path.join(temp_dir, f"{reel_id}.mp4")
-
-    try:
-        threading.Thread(
-            target=_refresh_reel_background,
-            args=(result, video_path, temp_dir, shortcode, source_url, user_id),
-            daemon=True,
-        ).start()
-    except Exception as exc:
-        logger.error("❌ Failed to start refresh thread reel=%s user=%s: %s", reel_id, user_id, exc, exc_info=True)
-        try:
-            os.rmdir(temp_dir)
-        except Exception:
-            pass
-        _mark_reel_refresh_failed(reel_id, user_id, str(exc))
-        return jsonify({
-            "error": "refresh_failed",
-            "message": "Refresh could not be started.",
-        }), 500
-
-    return jsonify({
+    payload = {
         "success": True,
         "reel_id": reel_id,
         "status": "processing",
         "message": "Refresh started",
-    }), 202
+    }
+    payload.update(queued["payload"])
+    return jsonify(payload), queued["status_code"]

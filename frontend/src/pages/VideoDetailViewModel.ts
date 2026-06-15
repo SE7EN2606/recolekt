@@ -37,6 +37,93 @@ export const parseSummaryObject = (value: unknown): any => {
   return parsed && typeof parsed === 'object' ? parsed : {};
 };
 
+export const parseJsonRecursively = (value: unknown, depth = 0): unknown => {
+  if (depth > 3 || typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+  if (!/^[{[]/.test(trimmed)) return value;
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parseJsonRecursively(parsed, depth + 1);
+  } catch {
+    return value;
+  }
+};
+
+export const isJsonShapedString = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!/^[{[]/.test(trimmed)) return false;
+  try {
+    JSON.parse(trimmed);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const isUsableDisplayText = (value: unknown): value is string => {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (trimmed === '[object Object]') return false;
+  if (isJsonShapedString(trimmed)) return false;
+  return true;
+};
+
+const valueAtPath = (value: any, path: string): unknown => {
+  if (!value || typeof value !== 'object') return undefined;
+  return path.split('.').reduce<unknown>((current: any, key) => {
+    if (!current || typeof current !== 'object') return undefined;
+    return current[key];
+  }, value);
+};
+
+export const extractLocalizedText = (
+  value: unknown,
+  field: 'title' | 'summary',
+  showOriginal: boolean,
+): string => {
+  const parsed = parseJsonRecursively(value);
+  const preferred = showOriginal ? 'original' : 'english';
+  const fallback = showOriginal ? 'english' : 'original';
+  const fieldPaths =
+    field === 'title'
+      ? [
+          `${preferred}.title`,
+          `${fallback}.title`,
+          'title',
+          `summary.${preferred}.title`,
+          `summary.${fallback}.title`,
+          'summary.title',
+        ]
+      : [
+          `${preferred}.summary`,
+          `${fallback}.summary`,
+          'summary',
+          'text',
+          `summary.${preferred}.summary`,
+          `summary.${fallback}.summary`,
+          'summary.text',
+        ];
+
+  if (isUsableDisplayText(parsed)) return parsed.trim();
+  if (!parsed || typeof parsed !== 'object') return '';
+
+  for (const path of fieldPaths) {
+    const candidate = parseJsonRecursively(valueAtPath(parsed, path));
+    if (isUsableDisplayText(candidate)) return candidate.trim();
+  }
+
+  return '';
+};
+
+const displayFallbackFromCaption = (caption: unknown): string => {
+  if (!isUsableDisplayText(caption)) return '';
+  return caption.trim().split('\n')[0]?.substring(0, 80).trim() || '';
+};
+
 export const firstNonEmpty = (...values: unknown[]): string => {
   for (const v of values) {
     const s = safe(v);
@@ -50,6 +137,127 @@ const firstDefined = <T,>(...values: T[]): T | undefined => {
     if (v !== undefined && v !== null) return v;
   }
   return undefined;
+};
+
+const localizedRecipeBranch = (recipe: any, key: 'english' | 'original'): any => {
+  const parsed = parseJsonRecursively(recipe);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const candidate = parseJsonRecursively((parsed as any)[key]);
+  return candidate && typeof candidate === 'object' && !Array.isArray(candidate) ? candidate : null;
+};
+
+export const selectLocalizedRecipe = (recipe: unknown, showOriginal: boolean): any => {
+  let parsed = parseJsonRecursively(recipe);
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && (parsed as any).recipe) {
+    parsed = parseJsonRecursively((parsed as any).recipe);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+
+  const english = localizedRecipeBranch(parsed, 'english');
+  const original = localizedRecipeBranch(parsed, 'original');
+
+  if (showOriginal && original) return original;
+  if (english) return english;
+  if (original) return original;
+  return parsed;
+};
+
+export const hasUsableLocalizedRecipeBranch = (recipe: unknown, key: 'english' | 'original'): boolean => {
+  const branch = localizedRecipeBranch(recipe, key);
+  if (!branch) return false;
+  return [
+    branch.ingredients,
+    branch.instructions,
+    branch.steps,
+    branch.directions,
+    branch.method,
+    branch.ingredient_sections,
+    branch.ingredients_sections,
+    branch.instruction_sections,
+    branch.instructions_sections,
+  ].some((value) => Array.isArray(value) && value.length > 0);
+};
+
+export const hasBilingualRecipeContent = (recipe: unknown): boolean =>
+  hasUsableLocalizedRecipeBranch(recipe, 'english') &&
+  hasUsableLocalizedRecipeBranch(recipe, 'original');
+
+const normalizedComparisonText = (value: unknown): string =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+
+const firstRecipeIngredientName = (recipe: any): string => {
+  const ingredients = Array.isArray(recipe?.ingredients) ? recipe.ingredients : [];
+  const first = ingredients[0];
+  if (typeof first === 'string') return first;
+  if (first && typeof first === 'object') {
+    return first.item || first.name || first.label || '';
+  }
+  return '';
+};
+
+const firstRecipeInstructionText = (recipe: any): string => {
+  const instructions = Array.isArray(recipe?.instructions)
+    ? recipe.instructions
+    : Array.isArray(recipe?.steps)
+      ? recipe.steps
+      : Array.isArray(recipe?.directions)
+        ? recipe.directions
+        : [];
+  const first = instructions[0];
+  if (typeof first === 'string') return first;
+  if (first && typeof first === 'object') {
+    return first.instruction || first.text || first.step || first.description || first.body || '';
+  }
+  return '';
+};
+
+export const recipeBranchesMeaningfullyDifferent = (recipe: unknown): boolean => {
+  const english = localizedRecipeBranch(recipe, 'english');
+  const original = localizedRecipeBranch(recipe, 'original');
+  if (!english || !original) return false;
+  if (!hasUsableLocalizedRecipeBranch(recipe, 'english') || !hasUsableLocalizedRecipeBranch(recipe, 'original')) {
+    return false;
+  }
+
+  const englishSignature = [
+    english.title || english.name,
+    firstRecipeIngredientName(english),
+    firstRecipeInstructionText(english),
+  ].map(normalizedComparisonText);
+
+  const originalSignature = [
+    original.title || original.name,
+    firstRecipeIngredientName(original),
+    firstRecipeInstructionText(original),
+  ].map(normalizedComparisonText);
+
+  return englishSignature.some((value, index) => value && originalSignature[index] && value !== originalSignature[index]);
+};
+
+const PLACEHOLDER_HEADLINE = 'key detail';
+const PLACEHOLDER_DESCRIPTION = 'a concrete detail shown in the clip.';
+
+const normalizePlaceholderText = (value: unknown): string =>
+  String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+export const isPlaceholderHeadline = (bullet: any): boolean => {
+  const headline = normalizePlaceholderText(
+    typeof bullet === 'string' ? bullet : bullet?.headline || bullet?.title || bullet?.text,
+  );
+  const description = normalizePlaceholderText(
+    typeof bullet === 'string' ? '' : bullet?.description || bullet?.text || bullet?.body,
+  );
+  return headline === PLACEHOLDER_HEADLINE || description === PLACEHOLDER_DESCRIPTION;
+};
+
+export const filterDisplayHeadlines = (bullets: any[]): any[] => {
+  if (!Array.isArray(bullets) || bullets.length === 0) return [];
+  return bullets.filter((bullet) => !isPlaceholderHeadline(bullet));
 };
 
 const toNumberOrNull = (value: unknown): number | null => {
@@ -382,6 +590,10 @@ export const mergeVideoPayload = (db: any, gcs: any, fallbackThumb?: string) => 
   merged.list_summary = firstDefined(db?.list_summary, gcs?.list_summary, merged.list_summary);
 
   merged.gcs_urls = firstDefined(db?.gcs_urls, gcs?.gcs_urls, merged.gcs_urls) || {};
+  merged.status = firstDefined(db?.status, gcs?.status, merged.status);
+  merged.error_message = firstDefined(db?.error_message, db?.errorMessage, gcs?.error_message, gcs?.errorMessage, merged.error_message);
+  merged.errorMessage = merged.error_message;
+  merged.updated_at = firstDefined(db?.updated_at, db?.updatedAt, gcs?.updated_at, gcs?.updatedAt, merged.updated_at);
   merged.thumbnailUrl =
     firstNonEmpty(
       db?.thumbnailUrl,
@@ -391,6 +603,22 @@ export const mergeVideoPayload = (db: any, gcs: any, fallbackThumb?: string) => 
       fallbackThumb,
     ) || undefined;
 
+  const normalizedTitle = extractLocalizedText(
+    {
+      english: parseSummaryObject(merged.summary)?.english,
+      original: parseSummaryObject(merged.summary)?.original,
+      title: merged.summary_title || merged.title,
+      summary: merged.summary,
+    },
+    'title',
+    false,
+  );
+
+  if (normalizedTitle) {
+    merged.summary_title = normalizedTitle;
+    merged.title = normalizedTitle;
+  }
+
   return merged;
 };
 
@@ -399,17 +627,22 @@ export const buildViewModel = (
   showOriginal: boolean,
   galleryThumbnail: string | undefined,
 ) => {
+  const rawContentType = resolveInternalContentType(v);
+  const isRecipeContent = rawContentType === 'recipe';
   const summaryObj = parseSummaryObject(v.summary);
   const englishData = summaryObj.english || {};
   const originalData = summaryObj.original || {};
 
-  const contentIsDifferent =
-    Object.keys(englishData).length > 0 &&
-    Object.keys(originalData).length > 0 &&
-    (originalData.title !== englishData.title || originalData.summary !== englishData.summary);
+  let recipeData = parseMaybeJson<any>(v.recipe, null);
+  if (recipeData?.recipe) recipeData = recipeData.recipe;
+  const recipeHasUsableEnglish = hasUsableLocalizedRecipeBranch(recipeData, 'english');
+  const recipeHasUsableOriginal = hasUsableLocalizedRecipeBranch(recipeData, 'original');
+  const forceOriginalRecipeLanguage =
+    isRecipeContent && recipeHasUsableOriginal && !recipeHasUsableEnglish;
+  const useOriginalLanguage = showOriginal || forceOriginalRecipeLanguage;
 
   const langBlock =
-    showOriginal && Object.keys(originalData).length > 0
+    useOriginalLanguage && Object.keys(originalData).length > 0
       ? originalData
       : Object.keys(englishData).length > 0
         ? englishData
@@ -417,17 +650,28 @@ export const buildViewModel = (
 
   const ext = v.detected_language?.toLowerCase();
   const trans = v.transcription?.detected_language?.toLowerCase();
+  const recipeEnglish = recipeData?.english;
+  const recipeOriginal = recipeData?.original;
+  const recipeIsBilingual =
+    recipeEnglish &&
+    recipeOriginal &&
+    typeof recipeEnglish === 'object' &&
+    typeof recipeOriginal === 'object' &&
+    recipeBranchesMeaningfullyDifferent(recipeData);
+  const summaryIsDifferent =
+    Object.keys(englishData).length > 0 &&
+    Object.keys(originalData).length > 0 &&
+    (originalData.title !== englishData.title || originalData.summary !== englishData.summary);
+  const contentIsDifferent = isRecipeContent
+    ? Boolean(recipeIsBilingual)
+    : summaryIsDifferent;
+
   let langCode = 'EN';
   if (ext && ext !== 'unknown' && ext !== 'en') langCode = ext.toUpperCase();
   else if (trans && trans !== 'unknown' && trans !== 'en') langCode = trans.toUpperCase();
   else if (contentIsDifferent) langCode = inferLang(`${originalData.title || ''} ${originalData.summary || ''}`);
 
-  let recipeData = parseMaybeJson<any>(v.recipe, null);
-  if (recipeData?.recipe) recipeData = recipeData.recipe;
-  const activeRecipe =
-    recipeData && Object.keys(recipeData).length > 0
-      ? showOriginal && recipeData.original ? recipeData.original : recipeData.english || recipeData
-      : null;
+  const activeRecipe = selectLocalizedRecipe(recipeData, useOriginalLanguage);
 
   let workoutData = parseMaybeJson<any>(v.workout, null);
   if (workoutData && Object.keys(workoutData).length === 0) workoutData = null;
@@ -449,14 +693,15 @@ export const buildViewModel = (
     transcript = typeof v.transcript === 'string' ? v.transcript : v.transcript.text || '';
   }
 
-  const bullets: any[] =
+  const bullets: any[] = filterDisplayHeadlines(
     Array.isArray(langBlock.headlines)
       ? langBlock.headlines
       : Array.isArray(v.summary_bullets)
         ? v.summary_bullets
         : Array.isArray(v.bullets)
           ? v.bullets
-          : [];
+          : [],
+  );
 
   const rawDate = v.savedAt || v.createdat || v.created_at;
   const savedAt = rawDate
@@ -469,7 +714,6 @@ export const buildViewModel = (
 
   const sourceUrl = safe(v.source_url || v.originalUrl);
 
-  const rawContentType = resolveInternalContentType(v);
   const contentType = rawContentType === 'location'
     ? 'location'
     : resolveContentType(rawContentType);
@@ -496,20 +740,17 @@ export const buildViewModel = (
     toolsItemsPresent &&
     ((structureAnalysis?.mode === 'structured' && !!structuredType) || !!structuredType);
 
-  const resolvedTitle = firstNonEmpty(
-    langBlock.title,
-    summaryObj.title,
-    v.summary_title,
-    v.title,
-    typeof v.caption === 'string' ? v.caption.split('\n')[0]?.substring(0, 56) : undefined,
-  ) || 'Saved Reel';
+  const resolvedTitle =
+    extractLocalizedText(summaryObj, 'title', useOriginalLanguage) ||
+    extractLocalizedText(v.summary_title, 'title', useOriginalLanguage) ||
+    extractLocalizedText(v.title, 'title', useOriginalLanguage) ||
+    displayFallbackFromCaption(v.caption) ||
+    'Saved Reel';
 
-  const resolvedSummary = firstNonEmpty(
-    langBlock.summary,
-    summaryObj.summary,
-    v.summary_text,
-    v.list_summary,
-  );
+  const resolvedSummary =
+    extractLocalizedText(summaryObj, 'summary', useOriginalLanguage) ||
+    extractLocalizedText(v.summary_text, 'summary', useOriginalLanguage) ||
+    extractLocalizedText(v.list_summary, 'summary', useOriginalLanguage);
 
   return {
     id: v.id || v.process_id,

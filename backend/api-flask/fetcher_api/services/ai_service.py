@@ -45,12 +45,7 @@ class AIService:
     def __init__(self):
         self.extractor = UniversalExtractor()
 
-        api_key = os.getenv("MISTRAL_API_KEY")
-        logger.info(
-            "🚀 AI SERVICE STARTED — MISTRAL KEY: %s",
-            (api_key[:12] + "...") if api_key else "MISSING",
-        )
-        logger.info("✅ AI Service initialized (%s)", PIPELINE_VERSION)
+        logger.info("AI Service initialized (%s)", PIPELINE_VERSION)
 
     def _normalize_ui_output(self, out: Dict) -> Dict:
         """Ensure output has all required fields for UI compatibility."""
@@ -212,6 +207,7 @@ class AIService:
         video_path: str = None,
         duration_seconds: int = None,
         is_silent: bool = False,
+        fail_on_extractor_error: bool = False,
     ) -> Dict:
         transcript = transcript or ""
         caption = caption or ""
@@ -295,10 +291,20 @@ class AIService:
             )
         except Exception as e:
             logger.error(
-                "❌ extractor.extract() raised unexpectedly — using fallback. error=%s",
+                "❌ extractor.extract() raised unexpectedly. error=%s",
                 e,
                 exc_info=True,
             )
+            if fail_on_extractor_error:
+                return {
+                    "_extraction_failed": True,
+                    "_extraction_error": str(e),
+                    "content_type": "general",
+                    "detected_language": language_code or "unknown",
+                    "pipeline_version": PIPELINE_VERSION,
+                    "classification": classification,
+                }
+            logger.info("↩️ Using fallback extraction for non-refresh ingestion")
             out = self.extractor.fallback(caption, classification)
 
         out["pipeline_version"] = PIPELINE_VERSION
@@ -330,6 +336,7 @@ def analyze_instagram_video(
     video_path: str = None,
     duration_seconds: int = None,
     is_silent: bool = False,
+    fail_on_extractor_error: bool = False,
 ) -> Dict:
     return ai_service.analyze_content(
         transcript,
@@ -338,4 +345,5 @@ def analyze_instagram_video(
         video_path,
         duration_seconds,
         is_silent,
+        fail_on_extractor_error,
     )
