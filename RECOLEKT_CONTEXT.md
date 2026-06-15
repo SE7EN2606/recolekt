@@ -1,6 +1,6 @@
 # Recolekt Project Context
 
-**Context version:** 2026-06-15  
+**Context version:** 2026-06-15.2
 **Repository:** `/Users/greg/Downloads/Apps/recolekt-app`  
 **Purpose:** Persistent source of truth for ChatGPT, Codex, and future development sessions.
 
@@ -372,8 +372,7 @@ Completed or substantially implemented:
 - WhatsApp account linking V1;
 - WhatsApp inbound reel ingestion V1;
 - background processing;
-- reel refresh lifecycle and retry-safety work;
-- error UX for missing or unavailable reels.
+- reel refresh lifecycle and retry-safety work.
 
 Before creating any supposedly missing feature, inspect the repository. Older handoffs may describe planned work that has since been partly or fully implemented.
 
@@ -382,31 +381,46 @@ Before creating any supposedly missing feature, inspect the repository. Older ha
 # 7. Current Working Snapshot
 
 **Snapshot date:** 2026-06-15  
-**Status:** Must be verified against Git and deployed routes at the beginning of the next session.
+**Status:** Verified locally at session close.
 
-## 7.1 Git snapshot reported in the latest handoff
+## 7.1 Verified Git Snapshot
 
-Reported branch:
-
-```text
-staging
-```
-
-Reported latest commit:
-
-```text
-8e7a33d Repair reel refresh lifecycle and retry safety
-```
-
-Reported refs at that time:
+Final branch:
 
 ```text
 staging
-origin/staging
-repair-video-detail-refresh
 ```
 
-These reportedly pointed to the same commit.
+Final commit:
+
+```text
+6afb04f Add persistent Recolekt project context
+```
+
+Recent log at close:
+
+```text
+6afb04f (HEAD -> staging, origin/staging) Add persistent Recolekt project context
+8e7a33d (repair-video-detail-refresh) Repair reel refresh lifecycle and retry safety
+df7056e (restore-stable-ui-shell) Restore stable pre-PWA application shell
+6922a6f Avoid iOS PWA fixed-layer compositor bug
+835b931 Reload broken iOS PWA viewport on first launch
+1689323 Stabilize iOS PWA header and bottom navigation
+4b78b8d Add Recolekt product design context
+c13ca7b Add Recolekt product design context
+```
+
+Working tree at close:
+
+```text
+ M frontend/src/pages/VideoDetail.tsx
+```
+
+Deployed environment:
+
+```text
+Not deployed from this working tree. The final change is local only.
+```
 
 Always verify with:
 
@@ -417,33 +431,7 @@ git branch --show-current
 git log --oneline --decorate -8
 ```
 
-## 7.2 Recently shipped refresh work
-
-Commit `8e7a33d` reportedly included changes around:
-
-Backend:
-
-```text
-meta_client.py
-processing.py
-reel.py
-video.py
-background_process.py
-extractor_assembly.py
-extractor_call2.py
-db_insert.py
-```
-
-Frontend:
-
-```text
-VideoDetail.tsx
-VideoDetailViewModel.ts
-DataContext.tsx
-tests
-```
-
-## 7.3 Error UX reportedly added after that commit
+## 7.2 Completed Local Work Since Last Commit
 
 Missing reel behavior:
 
@@ -453,13 +441,33 @@ When:
 GET /api/reel/:id
 ```
 
-returns `404`, display a clear missing-reel message and a route back to Gallery.
+returns `404`, `VideoDetail.tsx` now displays:
+
+```text
+This saved reel no longer exists. It may have been deleted or replaced during refresh. Go back to Gallery.
+```
 
 Extraction failure behavior:
 
-When a Facebook or download failure ends with `status=error`, display a clear message explaining that the source may be deleted, private, expired, or blocked.
+When a Facebook or download failure ends with `status=error`, `VideoDetail.tsx` now displays:
 
-Reported validation:
+```text
+This Facebook reel could not be accessed. It may be deleted, private, expired, or blocked by Facebook.
+```
+
+Confirmed root cause:
+
+```text
+VideoDetail's detail fetch threw a generic HTTP error without preserving response status. A 404 could therefore leave the page in a skeleton/null view-model path. Separately, processing error rows could leave stale refresh banners instead of a clear source-access message.
+```
+
+Files changed:
+
+```text
+frontend/src/pages/VideoDetail.tsx
+```
+
+Validations passed:
 
 ```text
 npx tsc --noEmit
@@ -467,141 +475,50 @@ VITE_GOOGLE_MAPS_API_KEY=dummy npm run build
 git diff --check
 ```
 
-The latest handoff said this specific UI work had not yet been committed. Verify rather than assuming it remains uncommitted.
+Remaining blocker:
+
+```text
+The VideoDetail error UX change is validated locally but uncommitted and undeployed.
+```
+
+Exact next task:
+
+```text
+Review the single-file VideoDetail.tsx diff, commit it intentionally, deploy staging, and verify:
+1. an authenticated /api/reel/:id 404 renders the missing-reel message;
+2. a status=error Facebook/download failure renders the Facebook access message;
+3. no stale refresh banner remains on either error page.
+```
 
 ---
 
 # 8. Immediate Critical Bug
 
-## Refresh request blocked by failed preflight
+## Uncommitted VideoDetail Error UX
 
-Observed Railway request:
-
-```text
-404 OPTIONS /api/reels/:id/refresh
-```
-
-Example shape:
+Current critical task is release hygiene, not a new diagnosis:
 
 ```text
-OPTIONS /api/reels/<reel-id>/refresh
+frontend/src/pages/VideoDetail.tsx contains a validated local fix for missing-reel and Facebook/download-error UX, but the change is not committed or deployed.
 ```
 
-Frontend intends to call:
+Do not start another broad refresh or extraction refactor before landing this single-file UX fix.
+
+## Exact next Codex task
 
 ```text
-POST /api/reels/:id/refresh
+Review the current VideoDetail.tsx diff only.
+Confirm it does not touch shell, PWA, Header, MobileMenu, MobileBottomNav, App shell CSS, Home, or Gallery design.
+Run:
+git diff --check
+cd frontend
+npx tsc --noEmit
+VITE_GOOGLE_MAPS_API_KEY=dummy npm run build
+
+If validation still passes, commit the VideoDetail error UX fix with a concise message, push staging, and verify the staging UI for:
+- /api/reel/:id returning 404;
+- status=error with facebook_extraction_failed or download failure.
 ```
-
-The browser sends an `OPTIONS` CORS preflight before the POST. The backend returns `404`, so the browser blocks the POST completely and reports a CORS or `Failed to fetch` error.
-
-## Supported diagnosis
-
-This is currently a backend routing, route-registration, deployment, or OPTIONS-handling problem.
-
-It is not evidence of a Facebook extraction failure because the POST never reaches refresh processing.
-
-Possible causes:
-
-1. The route is absent from the staging deployment.
-2. The frontend and backend disagree on singular versus plural route paths.
-3. The route exists under a different blueprint or prefix.
-4. The blueprint is not registered.
-5. Flask-CORS or explicit OPTIONS handling does not cover the route.
-6. Frontend deployment reached staging before the backend deployment.
-
-## First files to inspect
-
-```text
-backend/api-flask/fetcher_api/api/routes/reel.py
-backend/api-flask/fetcher_api/api/routes/video.py
-backend/api-flask/fetcher_api/api/__init__.py
-backend/api-flask/fetcher_api/api/routes/__init__.py
-backend/api-flask/app.py
-frontend/src/pages/VideoDetail.tsx
-frontend/src/context/DataContext.tsx
-```
-
-## Required investigation sequence
-
-1. Find every refresh route and every frontend refresh URL.
-2. Print or inspect Flask’s URL map.
-3. Verify the blueprint prefix and registration.
-4. Test OPTIONS directly against local and staging.
-5. Test POST only after OPTIONS succeeds.
-6. Compare local route behavior with the deployed staging backend.
-7. Fix the smallest failing layer without changing the UI.
-
-## Codex prompt for the immediate task
-
-```text
-Investigate the Recolekt reel refresh endpoint failure.
-
-Observed behavior:
-
-Frontend intends to send:
-POST /api/reels/:id/refresh
-
-The browser first sends:
-OPTIONS /api/reels/:id/refresh
-
-Railway staging logs show:
-404 OPTIONS /api/reels/:id/refresh
-
-The POST is therefore blocked by CORS and refresh processing never starts.
-
-Tasks:
-
-1. Find all backend refresh endpoint implementations.
-2. Find the exact frontend URL construction.
-3. Verify singular/plural route consistency.
-4. Verify Flask blueprint prefixes and blueprint registration.
-5. Verify the route is present in Flask's URL map.
-6. Verify whether Flask-CORS or the route handles OPTIONS.
-7. Determine whether the staging backend can be missing the latest route.
-8. Fix the smallest root cause without changing the UI or app shell.
-9. Add or update focused tests where practical.
-10. Validate backend syntax and frontend TypeScript.
-
-Return:
-
-- exact root cause;
-- files changed;
-- route before and after;
-- validation results;
-- exact local curl command for OPTIONS;
-- exact staging curl command for OPTIONS;
-- exact authenticated POST curl shape, using placeholders rather than secrets.
-```
-
-## Direct diagnostic commands
-
-Search route definitions and frontend calls:
-
-```zsh
-cd /Users/greg/Downloads/Apps/recolekt-app
-rg -n "refresh|/api/reels|/api/reel" backend/api-flask frontend/src
-```
-
-Inspect current Git state:
-
-```zsh
-cd /Users/greg/Downloads/Apps/recolekt-app
-git status --short
-git branch --show-current
-git log --oneline --decorate -8
-```
-
-Test staging preflight shape:
-
-```zsh
-curl -i -X OPTIONS "https://recolekt-staging.up.railway.app/api/reels/REEL_ID/refresh" \
-  -H "Origin: https://staging.recolekt.app" \
-  -H "Access-Control-Request-Method: POST" \
-  -H "Access-Control-Request-Headers: authorization,content-type"
-```
-
-A successful preflight should not return `404`. It should return a successful status and appropriate CORS headers.
 
 ---
 
@@ -613,8 +530,7 @@ That specific failure was not proof of:
 
 - a refresh regression;
 - a database bug;
-- a frontend bug;
-- the current CORS preflight bug.
+- a frontend bug.
 
 Maintain clear user-facing distinctions among:
 
@@ -659,16 +575,20 @@ unless the task explicitly requires it.
 
 ## First
 
-Stabilize reel refresh end to end:
+Land and deploy the validated VideoDetail error UX:
 
 ```text
-Click Refresh
-→ OPTIONS succeeds
-→ POST executes
-→ background refresh starts
-→ status updates correctly
-→ success or meaningful error appears
+review single-file diff
+→ commit intentionally
+→ deploy staging
+→ verify missing-reel message
+→ verify Facebook/download access-failure message
+→ confirm stale refresh banners do not appear
 ```
+
+## Then
+
+Resume refresh lifecycle verification only if staging evidence shows a current refresh failure.
 
 ## Then
 
@@ -756,11 +676,11 @@ cd /Users/greg/Downloads/Apps/recolekt-app
 rg -n "TASK_KEYWORD" backend frontend
 ```
 
-For the current refresh task:
+For the current VideoDetail error UX task:
 
 ```zsh
 cd /Users/greg/Downloads/Apps/recolekt-app
-rg -n "refresh|/api/reels|/api/reel" backend/api-flask frontend/src
+git diff -- frontend/src/pages/VideoDetail.tsx
 ```
 
 Use the returned evidence to give the next exact Codex prompt or command block.
@@ -819,5 +739,6 @@ Never add:
 - Consolidated the May 18 handoff, investor UX principles, and June 15 refresh-debugging handoff.
 - Separated stable product context from mutable working status.
 - Marked WhatsApp as parked.
-- Made the failed `OPTIONS /api/reels/:id/refresh` preflight the immediate engineering task.
 - Added a protocol for updating this file instead of rebuilding full handoffs.
+- Replaced obsolete refresh-preflight temporary status with the verified local state: branch `staging`, final commit `6afb04f`, and one uncommitted `VideoDetail.tsx` error-UX change.
+- Recorded the confirmed error-UX root cause, files changed, local validation passed, remaining blocker, and exact next task.
