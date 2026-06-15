@@ -43,6 +43,7 @@ export interface RecipeDetailsCardProps {
   cookStatusLoading?: boolean;
   openCookModeSignal?: number;
   secondaryAction?: React.ReactNode;
+  showStartCookingButton?: boolean;
 }
 
 function getServings(recipe: any) {
@@ -93,6 +94,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     askLoading,
     handleAskRecipe,
   } = useRecipeAssistant({ recipeId });
+
+  const showStartCooking = showStartCookingButton ?? true;
 
   const baseIngredientSections = useMemo(
     () => (!recipe || recipe.is_compilation ? [] : normalizeIngredientSections(recipe)),
@@ -230,7 +233,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
         </div>
 
-        {hasSteps && (
+        {hasSteps && showStartCooking && (
           <div className="px-4 py-4 sm:px-5 bg-stone-50 border-b border-gray-100">
             <button
               type="button"

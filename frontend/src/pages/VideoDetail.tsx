@@ -301,6 +301,7 @@ export const VideoDetail: React.FC = () => {
     const p = readShoppingPreferences();
     return p.rounding === 'exact' ? 'exact' : 'rounded';
   });
+  const [activeTab, setActiveTab] = useState<'ingredients' | 'steps' | 'ask'>('ingredients');
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1204,6 +1205,39 @@ export const VideoDetail: React.FC = () => {
           {/* Recipe card */}
           {showRecipeCard && stableRecipeForCard && (
             <div className="mb-5">
+              {/* Tab row */}
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => setActiveTab('ingredients')}
+                  className={`flex-1 px-3 py-2 rounded-xl font-medium text-sm ${
+                    activeTab === 'ingredients'
+                      ? 'bg-primary-50 text-primary-700'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {t('videoDetail:tabIngredients', 'Ingredients')}
+                </button>
+                <button
+                  onClick={() => setActiveTab('steps')}
+                  className={`flex-1 px-3 py-2 rounded-xl font-medium text-sm ${
+                    activeTab === 'steps'
+                      ? 'bg-primary-50 text-primary-700'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {t('videoDetail:tabSteps', 'Steps')}
+                </button>
+                <button
+                  onClick={() => setActiveTab('ask')}
+                  className={`flex-1 px-3 py-2 rounded-xl font-medium text-sm ${
+                    activeTab === 'ask'
+                      ? 'bg-primary-50 text-primary-700'
+                      : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {t('videoDetail:tabAsk', 'Ask')}
+                </button>
+              </div>
               <RecipeDetailsCard
                 recipe={stableRecipeForCard}
                 recipeId={currentVideoId}
@@ -1221,7 +1255,6 @@ export const VideoDetail: React.FC = () => {
                 onAddCookingNote={openRecipeNotes}
                 hasActiveSession={cookStatus.hasActiveSession}
                 cookStatusLoading={cookStatusLoading}
-                openCookModeSignal={cookModeOpenSignal}
                 secondaryAction={(
                   <button
                     type="button"
@@ -1374,11 +1407,6 @@ export const VideoDetail: React.FC = () => {
             onMarkCooked={markCooked}
             onResetCookStatus={resetCookState}
             onStartCooking={() => setCookModeOpenSignal((value) => value + 1)}
-            shoppingPlanned={plannedRecipeIds.has(currentVideoId)}
-            shoppingLoading={shoppingLoading}
-            shoppingSaving={shoppingSaving}
-            onAddToShoppingList={() => addRecipeToShoppingList(currentVideoId, null)}
-            onRemoveFromShoppingList={() => removeRecipeFromShoppingList(currentVideoId)}
           />
         ) : (
           <div className="hidden md:flex flex-col w-full gap-5 mt-0">
