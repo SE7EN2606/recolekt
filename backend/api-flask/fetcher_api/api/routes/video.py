@@ -777,6 +777,7 @@ def summarize():
     })
 
 
+# Explicit preflight support for browser-triggered reel refreshes.
 @video_bp.route("/reels/<path:reel_id>/refresh", methods=["POST", "OPTIONS"])
 def refresh_reel(reel_id):
     if request.method == "OPTIONS":
