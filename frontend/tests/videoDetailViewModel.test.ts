@@ -197,6 +197,41 @@ assert.equal(terminalFacebookError.status, 'error', 'terminal error should repla
 assert.equal(terminalFacebookError.error_message, 'facebook_extraction_failed');
 assert.equal(terminalFacebookError.thumbnailUrl, 'old-thumb.webp', 'terminal error should preserve stable content where available');
 assert.equal(isFacebookAccessError(terminalFacebookError), true, 'facebook terminal errors should trigger the full-page access message');
+assert.equal(
+  isFacebookAccessError({
+    status: 'error',
+    error_message: 'facebook_extraction_failed',
+  }),
+  true,
+  'explicit facebook_extraction_failed should qualify without a URL',
+);
+assert.equal(
+  isFacebookAccessError({
+    status: 'error',
+    error_message: 'download failed',
+    source_url: 'https://www.facebook.com/reel/123',
+  }),
+  true,
+  'Facebook URLs plus generic download failures should qualify',
+);
+assert.equal(
+  isFacebookAccessError({
+    status: 'error',
+    error_message: 'download failed',
+    source_url: 'https://www.instagram.com/reel/abc',
+  }),
+  false,
+  'Instagram download failures should not trigger the Facebook access message',
+);
+assert.equal(
+  isFacebookAccessError({
+    status: 'error',
+    error_message: 'login required',
+    sourceUrl: 'https://www.tiktok.com/@chef/video/123',
+  }),
+  false,
+  'TikTok login-required failures should not trigger the Facebook access message',
+);
 
 assert.equal(
   refreshFailureMessage(new TypeError('Failed to fetch')),

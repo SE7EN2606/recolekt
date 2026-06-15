@@ -1,27 +1,79 @@
 export const FACEBOOK_ACCESS_ERROR_MESSAGE =
   'This Facebook reel could not be accessed. It may be deleted, private, expired, or blocked by Facebook.';
 
-export const isFacebookAccessError = (value: any): boolean => {
-  const message = String(
-    value?.error_message ||
-    value?.errorMessage ||
-    value?.error ||
-    ''
-  ).toLowerCase();
-  const status = String(value?.status || '').toLowerCase();
+const terminalStatuses = new Set(['error', 'failed', 'failure']);
 
-  if (status !== 'error' && status !== 'failed' && status !== 'failure') {
+const explicitFacebookErrorCodes = [
+  'facebook_extraction_failed',
+  'facebook_media_unavailable',
+];
+
+const genericAccessIndicators = [
+  'download',
+  'cannot parse data',
+  'login required',
+  'social_login_required',
+  'social_cookies_expired',
+];
+
+const normalizeText = (value: unknown): string =>
+  String(value || '').trim().toLowerCase();
+
+const getErrorText = (value: any): string =>
+  [
+    value?.error_message,
+    value?.errorMessage,
+    value?.error,
+    value?.message,
+    value?.error_code,
+    value?.errorCode,
+    value?.code,
+  ]
+    .map(normalizeText)
+    .filter(Boolean)
+    .join(' ');
+
+const isFacebookUrl = (value: unknown): boolean => {
+  const text = normalizeText(value);
+  return (
+    text.includes('facebook.com') ||
+    text.includes('fb.com') ||
+    text.includes('fb.watch')
+  );
+};
+
+const isFacebookPayload = (value: any): boolean => {
+  const platform = normalizeText(value?.platform);
+  if (platform === 'facebook' || platform === 'fb') {
+    return true;
+  }
+
+  return [
+    value?.source_url,
+    value?.sourceUrl,
+    value?.original_url,
+    value?.originalUrl,
+  ].some(isFacebookUrl);
+};
+
+export const isFacebookAccessError = (value: any): boolean => {
+  const message = getErrorText(value);
+  const status = normalizeText(value?.status);
+
+  if (!terminalStatuses.has(status)) {
     return false;
   }
 
-  return (
-    message.includes('facebook_extraction_failed') ||
-    message.includes('download') ||
-    message.includes('cannot parse data') ||
-    message.includes('login required') ||
-    message.includes('social_login_required') ||
-    message.includes('social_cookies_expired') ||
-    message.includes('facebook_media_unavailable')
+  if (explicitFacebookErrorCodes.some((code) => message.includes(code))) {
+    return true;
+  }
+
+  if (!isFacebookPayload(value)) {
+    return false;
+  }
+
+  return genericAccessIndicators.some((indicator) =>
+    message.includes(indicator),
   );
 };
 
