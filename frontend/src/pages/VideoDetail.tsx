@@ -112,9 +112,68 @@ const fetchBackendAuthed = async (url: string, signal?: AbortSignal) => {
     cache: 'no-store',
     signal,
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const error = new Error(`HTTP ${res.status}`) as Error & { status?: number };
+    error.status = res.status;
+    throw error;
+  }
   return res.json();
 };
+
+const FACEBOOK_ACCESS_ERROR_MESSAGE =
+  'This Facebook reel could not be accessed. It may be deleted, private, expired, or blocked by Facebook.';
+
+const isFacebookAccessError = (value: any): boolean => {
+  const message = String(
+    value?.error_message ||
+    value?.errorMessage ||
+    value?.error ||
+    ''
+  ).toLowerCase();
+  const status = String(value?.status || '').toLowerCase();
+
+  if (status !== 'error' && status !== 'failed' && status !== 'failure') {
+    return false;
+  }
+
+  return (
+    message.includes('facebook_extraction_failed') ||
+    message.includes('download') ||
+    message.includes('cannot parse data') ||
+    message.includes('login required') ||
+    message.includes('social_login_required') ||
+    message.includes('social_cookies_expired') ||
+    message.includes('facebook_media_unavailable')
+  );
+};
+
+function ReelErrorState({
+  message,
+  onBack,
+}: {
+  message: string;
+  onBack: () => void;
+}) {
+  return (
+    <div className="animate-fade-in relative z-0 flex min-h-[55vh] items-center justify-center px-4 pb-20 md:pb-6">
+      <div className="w-full max-w-md rounded-3xl border border-gray-100 bg-white/85 p-6 text-center shadow-sm">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-700">
+          <AlertCircle size={22} aria-hidden="true" />
+        </div>
+        <p className="text-base font-bold leading-relaxed text-gray-900">
+          {message}
+        </p>
+        <button
+          type="button"
+          onClick={onBack}
+          className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-primary-600 px-5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+        >
+          Go back to Gallery
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const extractLocationPlaces = (location: any): any[] => {
   if (!location) return [];
@@ -285,6 +344,7 @@ export const VideoDetail: React.FC = () => {
   const [isRefreshingVideo, setIsRefreshingVideo] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState('');
   const [refreshError, setRefreshError] = useState('');
+  const [detailErrorMessage, setDetailErrorMessage] = useState('');
   const detailHydratedRef = useRef(false);
   const lastStableVideoRef = useRef<any>(null);
   const refreshAbortRef = useRef<AbortController | null>(null);
@@ -306,6 +366,7 @@ export const VideoDetail: React.FC = () => {
     setIsRefreshingVideo(false);
     setRefreshMessage('');
     setRefreshError('');
+    setDetailErrorMessage('');
   }, [id]);
 
   useEffect(() => {
@@ -370,6 +431,14 @@ export const VideoDetail: React.FC = () => {
       }
     } catch (err) {
       console.error('Enrichment error', err);
+      if ((err as any)?.status === 404) {
+        setDetailErrorMessage(
+          'This saved reel no longer exists. It may have been deleted or replaced during refresh. Go back to Gallery.',
+        );
+        setIsRefreshingVideo(false);
+        setRefreshMessage('');
+        setRefreshError('');
+      }
     } finally {
       setLoading(false);
     }
@@ -510,6 +579,14 @@ export const VideoDetail: React.FC = () => {
       controller.abort();
     };
   }, [id, video?.status, fetchHydratedVideo, hydrateVideo]);
+
+  useEffect(() => {
+    if (!isFacebookAccessError(video)) return;
+    setIsRefreshingVideo(false);
+    setRefreshMessage('');
+    setRefreshError('');
+    setDetailErrorMessage(FACEBOOK_ACCESS_ERROR_MESSAGE);
+  }, [video]);
 
   useEffect(() => {
     if (isEditing && video) {
@@ -744,6 +821,19 @@ export const VideoDetail: React.FC = () => {
     loading: shoppingLoading,
     saving: shoppingSaving,
   } = useShoppingList();
+
+  const pageErrorMessage =
+    detailErrorMessage ||
+    (isFacebookAccessError(video) ? FACEBOOK_ACCESS_ERROR_MESSAGE : '');
+
+  if (pageErrorMessage) {
+    return (
+      <ReelErrorState
+        message={pageErrorMessage}
+        onBack={() => navigate('/gallery')}
+      />
+    );
+  }
 
   if (loading || !viewModel) return <Skeleton />;
 
