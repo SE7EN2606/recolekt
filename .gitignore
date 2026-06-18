@@ -38,3 +38,6 @@ __pycache__/
 *.bak
 
 .agents/settings.json
+
+# Graphify generated knowledge graph
+graphify-out/
