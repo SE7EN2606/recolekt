@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, Trash2, Heart, FolderInput, AlertCircle, X,
   EllipsisVertical, AlignLeft, Pencil, Save, Globe, Folder, Archive,
-  MapPin, ShoppingBasket, RefreshCw, Loader2,
+  MapPin, ShoppingBasket, RefreshCw, Loader2, Clock3, Flame, Timer,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -103,6 +103,25 @@ const getAuthToken = (): string => {
     return '';
   }
 };
+
+function useDesktopRecipeDetailLayout() {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : false
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mediaQuery = window.matchMedia('(min-width: 768px)');
+    const handleChange = () => setIsDesktop(mediaQuery.matches);
+
+    handleChange();
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
+  return isDesktop;
+}
 
 const fetchBackendAuthed = async (url: string, signal?: AbortSignal) => {
   const token = getAuthToken();
@@ -211,6 +230,41 @@ function getRecipeMetaChips(recipe: any, video?: any): RecipeMetaChip[] {
   ].filter(Boolean) as RecipeMetaChip[];
 }
 
+function getRecipeCardMetaItems(recipe: any) {
+  const read = (...values: any[]) =>
+    values
+      .map((value) => String(value || '').trim())
+      .find((value) => value && value.toLowerCase() !== 'general') || '—';
+
+  return [
+    { label: 'Yield', value: read(recipe?.servings, recipe?.yield, recipe?.portions) },
+    { label: 'Prep', value: read(recipe?.prep_time, recipe?.prepTime) },
+    { label: 'Cook', value: read(recipe?.cook_time, recipe?.cookTime) },
+    { label: 'Total', value: read(recipe?.total_time, recipe?.totalTime) },
+    { label: 'Cuisine', value: read(recipe?.cuisine, recipe?.cuisine_type) },
+    { label: 'Style', value: read(recipe?.style, recipe?.recipe_style) },
+    { label: 'Method', value: read(recipe?.cooking_style, recipe?.cooking_method, recipe?.method) },
+  ];
+}
+
+function getEnglishSummaryContent(video: any) {
+  const summary = parseSummaryObject(video?.summary);
+  const english = summary?.english && typeof summary.english === 'object' ? summary.english : summary;
+  const summaryText = String(english?.summary || english?.text || '').trim();
+  const headlines = Array.isArray(english?.headlines)
+    ? english.headlines
+        .map((item: any) => ({
+          emoji: String(item?.emoji || '').trim(),
+          headline: String(item?.headline || item?.title || '').trim(),
+          text: String(item?.text || item?.description || '').trim(),
+        }))
+        .filter((item: any) => item.headline || item.text)
+    : [];
+
+  return { summaryText, headlines };
+}
+
+
 function RecipeMetaPanel({ chips }: { chips: RecipeMetaChip[] }) {
   const readChip = (...labels: string[]) =>
     chips.find((chip) =>
@@ -228,22 +282,22 @@ function RecipeMetaPanel({ chips }: { chips: RecipeMetaChip[] }) {
   return (
     <div className="flex gap-3">
       {cuisineStyle && (
-        <div className="flex-1 bg-orange-50 border border-orange-100 rounded-2xl shadow-sm p-4 flex flex-col items-center justify-center gap-1">
-          <span className="text-[9px] font-black text-orange-600/80 uppercase tracking-widest text-center">
+        <div className="flex-1 bg-orange-50 border border-orange-100 rounded-xl p-4 flex flex-col items-center justify-center gap-1">
+          <span className="text-[10px] font-semibold text-orange-700 text-center">
             Cuisine
           </span>
-          <div className="text-sm font-black text-orange-900 leading-snug text-center">
+          <div className="text-sm font-bold text-orange-950 leading-snug text-center">
             {cuisineStyle}
           </div>
         </div>
       )}
 
       {method && (
-        <div className="flex-1 bg-rose-50 border border-rose-100 rounded-2xl shadow-sm p-4 flex flex-col items-center justify-center gap-1">
-          <span className="text-[9px] font-black text-rose-600/80 uppercase tracking-widest text-center">
+        <div className="flex-1 bg-rose-50 border border-rose-100 rounded-xl p-4 flex flex-col items-center justify-center gap-1">
+          <span className="text-[10px] font-semibold text-rose-700 text-center">
             Method
           </span>
-          <div className="text-sm font-black text-rose-900 leading-snug text-center">
+          <div className="text-sm font-bold text-rose-950 leading-snug text-center">
             {method}
           </div>
         </div>
@@ -271,6 +325,7 @@ export const VideoDetail: React.FC = () => {
 
   const { showOriginal, toggleLanguage } = useLanguage();
   const { t } = useTranslation(['videoDetail', 'common', 'modals']);
+  const isDesktopRecipeDetailLayout = useDesktopRecipeDetailLayout();
 
   const [video, setVideo] = useState<any>(null);
   const [galleryThumbnail, setGalleryThumbnail] = useState<string | undefined>();
@@ -301,7 +356,6 @@ export const VideoDetail: React.FC = () => {
     const p = readShoppingPreferences();
     return p.rounding === 'exact' ? 'exact' : 'rounded';
   });
-  const [activeTab, setActiveTab] = useState<'ingredients' | 'steps' | 'ask'>('ingredients');
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -854,12 +908,16 @@ export const VideoDetail: React.FC = () => {
     Array.isArray(toolsCategories) &&
     toolsCategories.some((cat: any) => Array.isArray(cat?.items) && cat.items.length > 0);
   const hasBullets = Array.isArray(viewModel.bullets) && viewModel.bullets.length > 0;
+  const englishSummaryContent = getEnglishSummaryContent(video);
+  const hasEnglishSummaryContent =
+    Boolean(englishSummaryContent.summaryText) || englishSummaryContent.headlines.length > 0;
   const structuredBadgeSubtype = isBadgeToolsSubtype(viewModel.structuredType)
     ? viewModel.structuredType
     : undefined;
   const derivedSubtype = deriveToolsSubtype(viewModel.toolsList);
   const safeDerivedSubtype = isBadgeToolsSubtype(derivedSubtype) ? derivedSubtype : 'picks';
   const recipeMetaChips = getRecipeMetaChips(stableRecipeForCard || viewModel.recipe, viewModel);
+  const recipeCardMetaItems = getRecipeCardMetaItems(stableRecipeForCard || viewModel.recipe);
 
   const cleanMetadataValue = (value: any) => {
     const text = String(value || '').trim();
@@ -917,6 +975,23 @@ export const VideoDetail: React.FC = () => {
   const showFolderBadge = Boolean(folderName && !showRecipeCard);
   const hasRecipeSourceDetails =
     showRecipeCard && Boolean(viewModel.caption || viewModel.transcript || viewModel.originalUrl || viewModel.tags?.length);
+  const recipeDetailMetaItems = ['Cuisine', 'Style', 'Method'].map((label) => ({
+    label,
+    value: recipeCardMetaItems.find((item) => item.label === label)?.value || '—',
+  }));
+  const primaryRecipeStatItems = [
+    { label: 'Prep', sourceLabel: 'Prep' },
+    { label: 'Cook', sourceLabel: 'Cook' },
+    { label: 'Total', sourceLabel: 'Total' },
+  ].map((item) => ({
+    label: item.label,
+    value: recipeCardMetaItems.find((metaItem) => metaItem.label === item.sourceLabel)?.value || '—',
+  }));
+  const statIconByLabel: Record<string, React.ReactNode> = {
+    Prep: <Clock3 size={18} aria-hidden="true" />,
+    Cook: <Flame size={18} aria-hidden="true" />,
+    Total: <Timer size={18} aria-hidden="true" />,
+  };
 
   const actionItems = (video
     ? [
@@ -954,6 +1029,54 @@ export const VideoDetail: React.FC = () => {
     : []) as unknown as ActionItem[];
 
   const cameFromCookbook = (location.state as any)?.from === 'cookbook';
+  const hasRecipeNote = recipeNote.trim().length > 0;
+  const returnStateItems = [
+    cookStatus.hasActiveSession ? 'Resume cooking' : '',
+    cookStatus.cookedCount > 0
+      ? `Cooked ${cookStatus.cookedCount}x${cookStatus.lastCookedLabel ? ` · last ${cookStatus.lastCookedLabel}` : ''}`
+      : '',
+    hasRecipeNote ? 'Note saved' : '',
+  ].filter(Boolean);
+  const showReturnState = showRecipeCard && !cookStatusLoading && returnStateItems.length > 0;
+  const recipeMemoryLine = cookStatus.hasActiveSession
+    ? 'Your place is saved for this recipe.'
+    : cookStatus.cookedCount > 0 && hasRecipeNote
+      ? 'You have a cooking note waiting for next time.'
+      : cookStatus.cookedCount > 0
+        ? 'A recipe you have already brought to the table.'
+        : hasRecipeNote
+          ? 'Your note is ready for next time.'
+          : '';
+  const mobileShoppingAction = showRecipeCard ? (
+    <div className="md:hidden">
+      <button
+        type="button"
+        onClick={() => plannedRecipeIds.has(currentVideoId)
+          ? removeRecipeFromShoppingList(currentVideoId)
+          : addRecipeToShoppingList(currentVideoId, null)}
+        disabled={shoppingLoading || shoppingSaving}
+        className="flex w-full items-center gap-3 rounded-xl border border-emerald-100 bg-white p-3.5 text-left text-emerald-950 shadow-sm transition-[background-color,box-shadow,transform] hover:bg-emerald-50/60 hover:shadow-md active:translate-y-px active:bg-emerald-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+          <ShoppingBasket size={19} aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-emerald-950">
+            {shoppingSaving
+              ? 'Updating shopping list...'
+              : plannedRecipeIds.has(currentVideoId)
+                ? 'In your shopping plan'
+                : 'Add ingredients to shopping list'}
+          </span>
+          <span className="mt-0.5 block text-xs font-medium text-emerald-800/75">
+            {plannedRecipeIds.has(currentVideoId)
+              ? 'Tap to remove it from groceries.'
+              : 'Plan groceries for this recipe.'}
+          </span>
+        </span>
+      </button>
+    </div>
+  ) : null;
 
   return (
     <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
@@ -983,21 +1106,28 @@ export const VideoDetail: React.FC = () => {
             <button
               type="button"
               onClick={() => navigate(-1)}
-              className="mb-3 inline-flex w-fit items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-black text-amber-800 ring-1 ring-amber-100 transition-colors hover:bg-white"
+              className="mb-3 inline-flex w-fit items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-bold text-gray-600 ring-1 ring-gray-200 transition-colors hover:bg-white"
             >
               <ArrowLeft size={14} aria-hidden="true" />
               Back to Cookbook
             </button>
           )}
 
-          <div className={`relative z-0 w-full aspect-9/8 bg-black overflow-hidden shadow-sm group mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] md:mt-0 ${
-            showRecipeCard ? 'mb-6 rounded-[26px]' : 'mb-5 rounded-2xl'
+          <div
+            className={
+              showRecipeCard
+                ? 'mb-5 mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] overflow-hidden rounded-2xl border border-white/70 bg-white/90 shadow-sm md:mt-0'
+                : ''
+            }
+          >
+          <div className={`relative z-0 w-full aspect-5/4 bg-black overflow-hidden group ${
+            showRecipeCard ? 'mb-0 rounded-none' : 'mb-5 mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] rounded-2xl shadow-sm md:mt-0'
           }`}>
             {viewModel.thumbnailUrl && (
               <img
                 src={viewModel.thumbnailUrl}
                 alt={viewModel.title}
-                className="w-full h-full object-cover opacity-90"
+                className="w-full h-full object-cover opacity-90 motion-safe:transition-transform motion-safe:duration-500 md:group-hover:scale-[1.015]"
                 loading="eager"
                 decoding="async"
               />
@@ -1009,7 +1139,7 @@ export const VideoDetail: React.FC = () => {
             >
               <button
                 onClick={() => navigate(-1)}
-                className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-lg hover:bg-white/40 transition-colors md:w-10 md:h-10"
+                className="w-11 h-11 rounded-full bg-white/25 backdrop-blur-md border border-white/40 text-white flex items-center justify-center shadow-sm hover:bg-white/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 md:w-10 md:h-10"
               >
                 <ArrowLeft size={20} />
               </button>
@@ -1018,13 +1148,13 @@ export const VideoDetail: React.FC = () => {
                   <>
                     <button
                       onClick={handleSaveEdit}
-                      className="hidden md:flex h-10 px-4 rounded-full bg-emerald-500 text-white items-center justify-center shadow-lg font-bold text-sm gap-2"
+                      className="hidden md:flex h-10 px-4 rounded-full border border-white/50 bg-white/90 text-gray-800 items-center justify-center shadow-sm font-bold text-sm gap-2 transition-colors hover:bg-white"
                     >
                       <Save size={18} /> {t('common:save', 'Save')}
                     </button>
                     <button
                       onClick={() => setIsEditing(false)}
-                      className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center md:w-10 md:h-10"
+                      className="w-11 h-11 rounded-full bg-white/25 backdrop-blur-md border border-white/40 text-white flex items-center justify-center transition-colors hover:bg-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 md:w-10 md:h-10"
                     >
                       <X size={20} />
                     </button>
@@ -1032,7 +1162,7 @@ export const VideoDetail: React.FC = () => {
                 ) : (
                   <button
                     onClick={() => setIsActionSheetOpen(true)}
-                    className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md border border-white/40 text-white flex items-center justify-center hover:bg-white/40 transition-colors md:w-9 md:h-9"
+                    className="w-11 h-11 rounded-full bg-white/25 backdrop-blur-md border border-white/40 text-white flex items-center justify-center hover:bg-white/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 md:w-9 md:h-9"
                   >
                     <EllipsisVertical size={18} />
                   </button>
@@ -1043,7 +1173,7 @@ export const VideoDetail: React.FC = () => {
             <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between z-30 pointer-events-none">
               <div className="flex items-center gap-2 pointer-events-auto">
                 {showFolderBadge && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-lg">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full shadow-sm">
                     <Folder size={12} className="text-primary-400" strokeWidth={2.5} />
                     <span className="text-[11px] font-bold text-white uppercase tracking-wide">
                       {folderName}
@@ -1071,7 +1201,7 @@ export const VideoDetail: React.FC = () => {
           </div>
 
           {/* Title */}
-          <div className={showRecipeCard ? 'mb-2 px-0.5 md:mb-3' : 'mb-3'}>
+          <div className={showRecipeCard ? 'mb-2 px-4 pt-4 md:mb-3 md:px-5 md:pt-5' : 'mb-3'}>
             <div className="flex items-start justify-between gap-3">
               <EditableTitle
                 title={viewModel.title}
@@ -1083,7 +1213,7 @@ export const VideoDetail: React.FC = () => {
                 <button
                   type="button"
                   onClick={(e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); toggleLanguage(); }}
-                  className="mt-1 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-primary-600 px-3 text-white shadow-sm transition-colors hover:bg-primary-700"
+                  className="mt-1 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
                   aria-label={showOriginal ? 'Show English' : `Show ${viewModel.languageCode}`}
                 >
                   <Globe size={14} aria-hidden="true" />
@@ -1096,28 +1226,46 @@ export const VideoDetail: React.FC = () => {
           </div>
 
           {/* Author + date */}
-          <div className={`flex items-center justify-between ${showRecipeCard ? 'mb-5 px-0.5' : 'mb-6'}`}>
+          <div className={`flex items-center justify-between ${showRecipeCard ? 'mb-5 px-4 md:px-5' : 'mb-6'}`}>
             <a
               href={viewModel.originalUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 group/author"
+              className="inline-flex items-center gap-2 group/author rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
             >
               <PlatformIconAuthor platform={viewModel.platform} />
-              <span className="text-xs font-medium text-gray-500 truncate group-hover/author:text-gray-900 transition-colors">
+              <span className="text-xs font-medium text-gray-600 truncate group-hover/author:text-gray-900 transition-colors">
                 {viewModel.author.replace('@', '')}
               </span>
             </a>
             {viewModel.savedAt && (
-              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+              <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                <Save size={13} aria-hidden="true" className="shrink-0 text-gray-500" />
                 <span>{viewModel.savedAt}</span>
               </div>
             )}
           </div>
 
-          {showRecipeCard && !cookStatusLoading && cookStatus.hasActiveSession && (
-            <div className="mb-5 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
-              Active cook session saved. Use Resume cooking to pick up where you left off.
+          {showReturnState && (
+            <div
+              className="mx-4 mb-5 rounded-xl border border-green-100 bg-green-50 px-3 py-3 md:mx-5"
+              aria-live="polite"
+            >
+              {recipeMemoryLine && (
+                <p className="mb-2 text-sm font-semibold leading-snug text-green-950">
+                  {recipeMemoryLine}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {returnStateItems.map((item) => (
+                  <span
+                    key={item}
+                    className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-bold text-green-900 ring-1 ring-green-100"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1202,42 +1350,60 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
+          </div>
+
+          {showRecipeCard && hasEnglishSummaryContent && (
+            <section className="mb-8 rounded-2xl border border-primary-100 bg-primary-50/85 p-5 md:p-6">
+              <div className="max-w-[72ch]">
+                <h3 className="text-base font-bold text-primary-950">
+                  AI Summary
+                </h3>
+                {englishSummaryContent.summaryText && (
+                  <p className="mt-2 text-sm font-medium leading-relaxed text-primary-950/85">
+                    {englishSummaryContent.summaryText}
+                  </p>
+                )}
+              </div>
+
+              {englishSummaryContent.headlines.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="text-sm font-bold text-primary-950">
+                    Key Highlights
+                  </h4>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {englishSummaryContent.headlines.map((item: any, index: number) => (
+                      <div
+                        key={`${item.headline || item.text}-${index}`}
+                        className="flex min-w-0 gap-3 rounded-xl bg-white/75 p-3 ring-1 ring-primary-100/80"
+                      >
+                        {item.emoji && (
+                          <span className="mt-0.5 shrink-0 text-lg leading-none" aria-hidden="true">
+                            {item.emoji}
+                          </span>
+                        )}
+                        <div className="min-w-0">
+                          {item.headline && (
+                            <div className="text-sm font-bold leading-snug text-primary-950">
+                              {item.headline}
+                            </div>
+                          )}
+                          {item.text && (
+                            <div className="mt-1 text-sm font-medium leading-relaxed text-primary-950/75">
+                              {item.text}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Recipe card */}
           {showRecipeCard && stableRecipeForCard && (
-            <div className="mb-5">
-              {/* Tab row */}
-              <div className="flex gap-2 mb-4">
-                <button
-                  onClick={() => setActiveTab('ingredients')}
-                  className={`flex-1 px-3 py-2 rounded-xl font-medium text-sm ${
-                    activeTab === 'ingredients'
-                      ? 'bg-primary-50 text-primary-700'
-                      : 'bg-white text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  {t('videoDetail:tabIngredients', 'Ingredients')}
-                </button>
-                <button
-                  onClick={() => setActiveTab('steps')}
-                  className={`flex-1 px-3 py-2 rounded-xl font-medium text-sm ${
-                    activeTab === 'steps'
-                      ? 'bg-primary-50 text-primary-700'
-                      : 'bg-white text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  {t('videoDetail:tabSteps', 'Steps')}
-                </button>
-                <button
-                  onClick={() => setActiveTab('ask')}
-                  className={`flex-1 px-3 py-2 rounded-xl font-medium text-sm ${
-                    activeTab === 'ask'
-                      ? 'bg-primary-50 text-primary-700'
-                      : 'bg-white text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  {t('videoDetail:tabAsk', 'Ask')}
-                </button>
-              </div>
+            <section className="mb-5">
               <RecipeDetailsCard
                 recipe={stableRecipeForCard}
                 recipeId={currentVideoId}
@@ -1253,45 +1419,59 @@ export const VideoDetail: React.FC = () => {
                 rounding={rounding}
                 onMarkCooked={markCooked}
                 onAddCookingNote={openRecipeNotes}
-                hasActiveSession={cookStatus.hasActiveSession}
-                cookStatusLoading={cookStatusLoading}
-                secondaryAction={(
-                  <button
-                    type="button"
-                    onClick={() => plannedRecipeIds.has(currentVideoId)
-                      ? removeRecipeFromShoppingList(currentVideoId)
-                      : addRecipeToShoppingList(currentVideoId, null)}
-                    disabled={shoppingLoading || shoppingSaving}
-                    className={`flex w-full items-center gap-3 rounded-[22px] border p-3.5 text-left shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 md:hidden ${
-                      plannedRecipeIds.has(currentVideoId)
-                        ? 'border-emerald-100 bg-emerald-50'
-                        : 'border-gray-100 bg-white active:bg-emerald-50'
-                    }`}
-                  >
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
-                      <ShoppingBasket size={19} aria-hidden="true" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-black text-gray-950">
-                        {shoppingSaving
-                          ? 'Updating shopping list...'
-                          : plannedRecipeIds.has(currentVideoId)
-                            ? 'Planned'
-                            : 'Add ingredients to shopping list'}
-                      </span>
-                      <span className="mt-0.5 block text-xs font-medium text-gray-500">
-                        {plannedRecipeIds.has(currentVideoId)
-                          ? 'Already in your shopping plan.'
-                          : 'Plan this recipe for groceries.'}
-                      </span>
-                    </span>
-                  </button>
+                    cookStatusLoading={cookStatusLoading}
+                openCookModeSignal={cookModeOpenSignal}
+                secondaryAction={mobileShoppingAction}
+                showStartCookingButton={!isDesktopRecipeDetailLayout}
+                embedded={false}
+                headerContent={(
+                  <div className="bg-white">
+                    <div className="flex flex-wrap gap-2 px-4 py-3 sm:px-5">
+                      {recipeDetailMetaItems.map((item) => (
+                        <div
+                          key={item.label}
+                          className="min-w-[7.5rem] flex-1 rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2"
+                        >
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                            {item.label}
+                          </div>
+                          <div className="mt-0.5 truncate text-sm font-bold text-gray-950" title={item.value}>
+                            {item.value}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-3 divide-x divide-rose-100 border-y border-rose-100 bg-white px-4 py-3 sm:px-5">
+                      {primaryRecipeStatItems.map((item) => (
+                        <div key={item.label} className="flex min-w-0 flex-col items-center px-3 text-center first:pl-0 last:pr-0">
+                          <div className="mb-1.5 text-rose-600">{statIconByLabel[item.label]}</div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                            {item.label}
+                          </div>
+                          <div className="mt-0.5 truncate text-base font-bold text-rose-700" title={item.value}>
+                            {item.value}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
+              />
+            </section>
+          )}
+
+          {showRecipeCard && viewModel.originalUrl && (
+            <div className="md:hidden mb-4">
+              <OriginalLink
+                url={viewModel.originalUrl}
+                platform={viewModel.platform}
+                t={t}
               />
             </div>
           )}
 
-          {showRecipeCard && (
+          {showRecipeCard && !isDesktopRecipeDetailLayout && (
             <RecipeMobileStateSection
               note={recipeNote}
               onNoteChange={setRecipeNote}
@@ -1312,6 +1492,7 @@ export const VideoDetail: React.FC = () => {
           {hasRecipeSourceDetails && (
             <div className="md:hidden">
               <Accordion
+                key={currentVideoId}
                 icon={<AlignLeft size={16} />}
                 label={t('videoDetail:sourceDetails', 'Source details')}
               >
@@ -1321,7 +1502,7 @@ export const VideoDetail: React.FC = () => {
                   originalUrl={viewModel.originalUrl}
                   platform={viewModel.platform}
                   t={t}
-                  showOriginalLink
+                  showOriginalLink={false}
                   tags={viewModel.tags}
                 />
               </Accordion>
@@ -1369,7 +1550,7 @@ export const VideoDetail: React.FC = () => {
               </button>
               <button
                 onClick={handleSaveEdit}
-                className="flex-1 py-3 bg-primary-600 rounded-xl text-sm font-bold text-white shadow-lg"
+                className="flex-1 rounded-xl border border-gray-200 bg-white py-3 text-sm font-bold text-gray-800 shadow-sm transition-colors hover:bg-gray-50"
               >
                 {t('common:saveChanges', 'Save Changes')}
               </button>
@@ -1387,8 +1568,9 @@ export const VideoDetail: React.FC = () => {
         </div>
 
         {/* Desktop right column */}
-        {showRecipeCard ? (
+        {showRecipeCard && isDesktopRecipeDetailLayout ? (
           <RecipeCookbookRail
+            key={currentVideoId}
             folderName={folderName}
             metaChips={recipeMetaChips}
             caption={viewModel.caption}
@@ -1406,9 +1588,14 @@ export const VideoDetail: React.FC = () => {
             cookStatusLoading={cookStatusLoading}
             onMarkCooked={markCooked}
             onResetCookStatus={resetCookState}
+            shoppingPlanned={plannedRecipeIds.has(currentVideoId)}
+            shoppingLoading={shoppingLoading}
+            shoppingSaving={shoppingSaving}
             onStartCooking={() => setCookModeOpenSignal((value) => value + 1)}
+            onAddToShoppingList={() => addRecipeToShoppingList(currentVideoId, null)}
+            onRemoveFromShoppingList={() => removeRecipeFromShoppingList(currentVideoId)}
           />
-        ) : (
+        ) : !showRecipeCard ? (
           <div className="hidden md:flex flex-col w-full gap-5 mt-0">
             <RecipeMetaPanel chips={recipeMetaChips} />
             <MetadataPanel
@@ -1437,7 +1624,7 @@ export const VideoDetail: React.FC = () => {
               <OriginalLink url={viewModel.originalUrl} platform={viewModel.platform} t={t} />
             )}
           </div>
-        )}
+        ) : null}
       </div>
 
       <ActionSheet

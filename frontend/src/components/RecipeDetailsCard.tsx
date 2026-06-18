@@ -22,7 +22,7 @@ import {
   useRecipeEditing,
 } from '../features/recipe-editing/useRecipeEditing';
 
-type RecipeSecondaryTabKey = 'nutrition' | 'ask';
+export type RecipeTabKey = 'ingredients' | 'steps' | 'nutrition' | 'ask';
 
 export interface RecipeDetailsCardProps {
   recipe?: any;
@@ -44,6 +44,10 @@ export interface RecipeDetailsCardProps {
   openCookModeSignal?: number;
   secondaryAction?: React.ReactNode;
   showStartCookingButton?: boolean;
+  showRecipeHeader?: boolean;
+  headerContent?: React.ReactNode;
+  activeTab?: RecipeTabKey;
+  embedded?: boolean;
 }
 
 function getServings(recipe: any) {
@@ -71,10 +75,14 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   cookStatusLoading = false,
   openCookModeSignal = 0,
   secondaryAction,
+  showStartCookingButton = true,
+  showRecipeHeader = true,
+  headerContent,
+  activeTab,
+  embedded = false,
 }) => {
   const { t } = useTranslation(['videoDetail']);
   const [isCookModeOpen, setIsCookModeOpen] = useState(false);
-  const [activeSecondaryTab, setActiveSecondaryTab] = useState<RecipeSecondaryTabKey | null>(null);
   const cookSessionEnabled = Boolean(recipeId && recipeId !== 'recipe');
   const {
     currentStepIndex,
@@ -95,7 +103,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     handleAskRecipe,
   } = useRecipeAssistant({ recipeId });
 
-  const showStartCooking = showStartCookingButton ?? true;
+  const showStartCooking = showStartCookingButton;
 
   const baseIngredientSections = useMemo(
     () => (!recipe || recipe.is_compilation ? [] : normalizeIngredientSections(recipe)),
@@ -155,19 +163,18 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const stepCountLabel = `${allInstructions.length} ${allInstructions.length === 1 ? 'step' : 'steps'}`;
   const recipeBodyLoading = loadingOverrides && !isEditing;
   const cookModeLoading = recipeBodyLoading || cookStatusLoading;
+  const [selectedTab, setSelectedTab] = useState<RecipeTabKey>('ingredients');
+  const recipeTabs = useMemo(
+    () => [
+      ...(hasIngredients ? [{ key: 'ingredients' as RecipeTabKey, label: 'Ingredients', meta: ingredientCountLabel }] : []),
+      ...(hasSteps ? [{ key: 'steps' as RecipeTabKey, label: 'Recipe Steps', meta: stepCountLabel }] : []),
+      ...(hasIngredients ? [{ key: 'nutrition' as RecipeTabKey, label: 'Nutrition Value', meta: 'Per serving' }] : []),
+      { key: 'ask' as RecipeTabKey, label: 'Ask Recipe', meta: 'Assistant' },
+    ],
+    [hasIngredients, hasSteps, ingredientCountLabel, stepCountLabel]
+  );
+  const activeRecipeTab = activeTab ?? selectedTab;
 
-  const secondaryTabs = useMemo(() => {
-    const tabs: { key: RecipeSecondaryTabKey; label: string }[] = [];
-
-    if (hasIngredients) tabs.push({ key: 'nutrition', label: 'Nutrition details' });
-    tabs.push({ key: 'ask', label: 'Ask recipe' });
-
-    return tabs;
-  }, [hasIngredients]);
-
-  const visibleSecondaryTab = secondaryTabs.some((tab) => tab.key === activeSecondaryTab)
-    ? activeSecondaryTab
-    : null;
   const checkedSteps = useMemo(
     () =>
       new Set(
@@ -189,57 +196,65 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     }
   }, [openCookModeSignal, hasSteps, cookModeLoading]);
 
+  useEffect(() => {
+    if (activeTab) return;
+    if (recipeTabs.some((tab) => tab.key === selectedTab)) return;
+    setSelectedTab(recipeTabs[0]?.key ?? 'ask');
+  }, [activeTab, recipeTabs, selectedTab]);
+
   if (!recipe) return null;
   if (recipe.is_compilation) return <RecipeCompilationCard recipe={recipe} />;
   if (!hasIngredients && !hasSteps) return null;
 
   return (
     <>
-      <div className="bg-white border border-gray-200 rounded-[22px] shadow-sm overflow-hidden mt-3 mb-6">
-        <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-5 border-b border-gray-100 bg-white">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600">
-              <ChefHat size={17} aria-hidden="true" />
+      <div
+        className={
+          embedded
+            ? 'bg-white overflow-hidden'
+            : 'bg-white border border-gray-200 rounded-[22px] shadow-sm overflow-hidden mt-3 mb-6'
+        }
+      >
+        {showRecipeHeader && (
+        <div className="flex items-center justify-between gap-3 border-b border-rose-100 bg-rose-50/70 px-4 py-3 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center text-rose-600">
+              <ChefHat size={20} aria-hidden="true" />
             </span>
-            <h3 className="font-bold text-gray-900 text-base tracking-tight truncate">
-              Recipe
+            <h3 className="truncate text-base font-bold tracking-tight text-gray-950">
+              Recipe Details
             </h3>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {recipeOverrides.verifiedByUser && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700 ring-1 ring-emerald-100">
-                <CheckCircle2 size={13} aria-hidden="true" />
-                Verified
-              </span>
-            )}
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={() => setIsEditing((value) => !value)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-3 py-1.5 text-[11px] font-bold text-gray-700 transition-colors hover:bg-white"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-gray-600 shadow-sm ring-1 ring-rose-100 transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              aria-label={isEditing ? 'Done editing recipe' : 'Edit recipe'}
             >
-              {isEditing ? <X size={13} aria-hidden="true" /> : <Pencil size={13} aria-hidden="true" />}
-              {isEditing ? 'Done' : 'Edit recipe'}
+              {isEditing ? <X size={14} aria-hidden="true" /> : <Pencil size={14} aria-hidden="true" />}
             </button>
             {onToggleMetric && hasIngredients && (
               <button
                 type="button"
                 onClick={() => onToggleMetric(!useMetric)}
-                className="px-3 py-1.5 bg-gray-50 border border-gray-200 text-gray-700 rounded-xl text-[11px] font-bold hover:bg-white transition-colors"
+                className="rounded-full border border-rose-100 bg-white px-3 py-1.5 text-xs font-bold text-gray-800 shadow-sm transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
               >
                 {useMetric ? 'Imperial' : 'Metric'}
               </button>
             )}
           </div>
         </div>
+        )}
 
         {hasSteps && showStartCooking && (
-          <div className="px-4 py-4 sm:px-5 bg-stone-50 border-b border-gray-100">
+          <div className="px-4 py-4 sm:px-5 bg-green-50/70 border-b border-green-100">
             <button
               type="button"
               onClick={() => setIsCookModeOpen(true)}
               disabled={cookModeLoading}
-              className="flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-gray-950 px-5 py-4 text-[15px] font-black text-white shadow-sm transition-colors hover:bg-gray-800 active:bg-gray-900"
+              className="flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-green-600 px-5 py-4 text-[15px] font-bold text-white shadow-sm transition-colors hover:bg-green-700 active:bg-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <ChefHat size={18} aria-hidden="true" />
               {cookModeLoading ? 'Loading recipe state...' : hasActiveSession ? 'Resume cooking' : 'Start cooking'}
@@ -274,13 +289,53 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                 onClick={toggleVerified}
                 className={`inline-flex items-center justify-center gap-2 rounded-2xl px-3.5 py-2 text-xs font-black transition-colors ${
                   recipeOverrides.verifiedByUser
-                    ? 'bg-emerald-600 text-white'
-                    : 'border border-emerald-100 bg-white text-emerald-700 hover:bg-emerald-50'
+                    ? 'border border-gray-200 bg-white text-gray-800 hover:bg-gray-50'
+                    : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
                 }`}
               >
                 <CheckCircle2 size={15} aria-hidden="true" />
                 {recipeOverrides.verifiedByUser ? 'Verified by me' : 'Mark verified by me'}
               </button>
+            </div>
+          </div>
+        )}
+
+        {headerContent && (
+          <div className="border-b border-gray-100">{headerContent}</div>
+        )}
+
+        {recipeTabs.length > 0 && (
+          <div className="border-b border-gray-100 bg-white px-4 sm:px-5">
+            <div
+              role="tablist"
+              aria-label="Recipe sections"
+              className="-mb-px flex gap-5 overflow-x-auto"
+            >
+              {recipeTabs.map((tab) => {
+                const isActive = activeRecipeTab === tab.key;
+
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => {
+                      if (!activeTab) setSelectedTab(tab.key);
+                    }}
+                    className={`flex min-h-14 shrink-0 flex-col items-start justify-center whitespace-nowrap border-b-2 py-2 text-left transition-colors ${
+                      isActive
+                        ? 'border-primary-600 text-gray-950'
+                        : 'border-transparent text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <span className="text-sm font-bold leading-tight">{tab.label}</span>
+                    <span className={`mt-0.5 text-[11px] font-medium leading-tight ${isActive ? 'text-primary-700' : 'text-gray-500'}`}>
+                      {tab.meta}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -312,7 +367,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
         ) : (
         <div className="divide-y divide-gray-100">
-          {hasIngredients && (
+          {hasIngredients && activeRecipeTab === 'ingredients' && (
             <section className="py-5">
               <div className="px-4 sm:px-5 pb-3 flex items-center justify-between gap-3">
                 <h4 className="text-[15px] font-black tracking-tight text-gray-950">Ingredients</h4>
@@ -343,7 +398,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                             <button
                               type="button"
                               onClick={() => removeIngredient(entry.id)}
-                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-rose-700 transition-colors hover:bg-rose-50"
                               aria-label="Remove ingredient"
                             >
                               <Trash2 size={15} aria-hidden="true" />
@@ -391,7 +446,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
             </section>
           )}
 
-          {hasSteps && (
+          {hasSteps && activeRecipeTab === 'steps' && (
             <section className="bg-amber-50/45 px-4 py-5 sm:px-5">
               <div className="pb-4 flex items-center justify-between gap-3">
                 <h4 className="text-[15px] font-black tracking-tight text-gray-950">Steps</h4>
@@ -436,59 +491,30 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               )}
             </section>
           )}
+
+          {!recipeBodyLoading && activeRecipeTab === 'nutrition' && hasIngredients && (
+            <section className="bg-gray-50/60 px-4 py-5 sm:px-5">
+              <RecipeNutritionSummary
+                ingredients={allIngredients}
+                servings={getServings(recipe)}
+                recipeName={recipeName}
+              />
+            </section>
+          )}
+
+          {!recipeBodyLoading && activeRecipeTab === 'ask' && (
+            <section className="px-5 py-5">
+              <RecipeAskPanel
+                question={askQuestion}
+                response={askAnswer}
+                onAsk={handleAskRecipe}
+                loading={askLoading}
+              />
+            </section>
+          )}
+
         </div>
         )}
-
-        {!recipeBodyLoading && secondaryTabs.length > 0 && (
-          <div className="bg-gray-50 px-3 py-3 border-t border-gray-100">
-            <div
-              className="grid gap-1 rounded-2xl bg-gray-100 p-1 text-[12px] font-bold"
-              style={{ gridTemplateColumns: `repeat(${secondaryTabs.length}, minmax(0, 1fr))` }}
-            >
-              {secondaryTabs.map((tab) => {
-                const active = visibleSecondaryTab === tab.key;
-
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setActiveSecondaryTab((current) => (current === tab.key ? null : tab.key))}
-                    className={`rounded-xl px-2 py-2.5 transition-all ${
-                      active
-                        ? 'bg-white text-violet-600 shadow-sm'
-                        : 'text-gray-500 hover:bg-white/50 hover:text-gray-700'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {!recipeBodyLoading && visibleSecondaryTab === 'nutrition' && hasIngredients && (
-          <div className="border-t border-gray-50">
-            <RecipeNutritionSummary
-              ingredients={allIngredients}
-              servings={getServings(recipe)}
-              recipeName={recipeName}
-            />
-          </div>
-        )}
-
-        {!recipeBodyLoading && visibleSecondaryTab === 'ask' && (
-          <div className="px-5 py-5 border-t border-gray-50">
-            <RecipeAskPanel
-              question={askQuestion}
-              response={askAnswer}
-              onAsk={handleAskRecipe}
-              loading={askLoading}
-            />
-          </div>
-        )}
-
-
       </div>
 
       {hasSteps && (
