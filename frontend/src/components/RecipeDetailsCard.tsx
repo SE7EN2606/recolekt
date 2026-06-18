@@ -167,9 +167,9 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const recipeTabs = useMemo(
     () => [
       ...(hasIngredients ? [{ key: 'ingredients' as RecipeTabKey, label: 'Ingredients', meta: ingredientCountLabel }] : []),
-      ...(hasSteps ? [{ key: 'steps' as RecipeTabKey, label: 'Recipe Steps', meta: stepCountLabel }] : []),
-      ...(hasIngredients ? [{ key: 'nutrition' as RecipeTabKey, label: 'Nutrition Value', meta: 'Per serving' }] : []),
-      { key: 'ask' as RecipeTabKey, label: 'Ask Recipe', meta: 'Assistant' },
+      ...(hasSteps ? [{ key: 'steps' as RecipeTabKey, label: 'Recipe', meta: stepCountLabel }] : []),
+      ...(hasIngredients ? [{ key: 'nutrition' as RecipeTabKey, label: 'Nutrition', meta: 'Per serving' }] : []),
+      { key: 'ask' as RecipeTabKey, label: 'Recipe Assistant', meta: 'Assistant' },
     ],
     [hasIngredients, hasSteps, ingredientCountLabel, stepCountLabel]
   );
@@ -301,15 +301,17 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         )}
 
         {headerContent && (
-          <div className="border-b border-gray-100">{headerContent}</div>
+          <div className="border-b border-gray-100 [&>div>div:first-child]:grid [&>div>div:first-child]:w-full [&>div>div:first-child]:grid-cols-3 [&>div>div:first-child]:gap-0 [&>div>div:first-child]:border-y [&>div>div:first-child]:border-gray-100 [&>div>div:first-child]:bg-gray-50/60 [&>div>div:first-child]:px-4 [&>div>div:first-child]:py-2.5 [&>div>div:first-child]:sm:px-5 [&>div>div:first-child>div]:min-w-0 [&>div>div:first-child>div]:rounded-none [&>div>div:first-child>div]:border-0 [&>div>div:first-child>div]:border-r [&>div>div:first-child>div]:border-gray-100 [&>div>div:first-child>div]:bg-transparent [&>div>div:first-child>div]:px-2 [&>div>div:first-child>div]:py-0 [&>div>div:first-child>div]:text-center [&>div>div:first-child>div:last-child]:border-r-0 [&>div>div:last-child]:py-2.5 [&>div>div:last-child>div>div:last-child]:!text-sm">
+            {headerContent}
+          </div>
         )}
 
         {recipeTabs.length > 0 && (
-          <div className="border-b border-gray-100 bg-white px-4 sm:px-5">
+          <div className="border-b border-gray-100 bg-white px-4 py-2.5 sm:px-5">
             <div
               role="tablist"
               aria-label="Recipe sections"
-              className="-mb-px flex gap-5 overflow-x-auto"
+              className="grid grid-cols-4 gap-1 rounded-[18px] border border-gray-100 bg-gray-100/80 p-1"
             >
               {recipeTabs.map((tab) => {
                 const isActive = activeRecipeTab === tab.key;
@@ -323,15 +325,21 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                     onClick={() => {
                       if (!activeTab) setSelectedTab(tab.key);
                     }}
-                    className={`flex min-h-14 shrink-0 flex-col items-start justify-center whitespace-nowrap border-b-2 py-2 text-left transition-colors ${
+                    className={`flex min-h-11 min-w-0 items-center justify-center rounded-xl px-2 py-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-100 ${
                       isActive
-                        ? 'border-primary-600 text-gray-950'
-                        : 'border-transparent text-gray-600 hover:text-gray-900'
+                        ? 'bg-white text-rose-700 shadow-sm ring-1 ring-rose-200/80'
+                        : 'text-gray-500 hover:bg-rose-50/60 hover:text-rose-700'
                     }`}
                   >
-                    <span className="text-sm font-bold leading-tight">{tab.label}</span>
-                    <span className={`mt-0.5 text-[11px] font-medium leading-tight ${isActive ? 'text-primary-700' : 'text-gray-500'}`}>
-                      {tab.meta}
+                    <span className={`max-w-full text-[12px] font-bold leading-tight sm:text-sm ${tab.key === 'ask' ? 'whitespace-normal' : 'truncate'}`}>
+                      {tab.key === 'ask' ? (
+                        <>
+                          Recipe
+                          <span className="block">Assistant</span>
+                        </>
+                      ) : (
+                        tab.label
+                      )}
                     </span>
                   </button>
                 );
