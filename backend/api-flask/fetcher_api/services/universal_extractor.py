@@ -111,6 +111,11 @@ BOOKMARK_MESSAGES = {
 
 _CAPTION_MENTION_RE = re.compile(r"(?<![\w.])@([A-Za-z0-9._]{2,})")
 
+
+def _is_instagram_source_platform(source_platform: str | None) -> bool:
+    platform = (source_platform or "").strip().lower()
+    return platform in {"ig", "instagram"}
+
 _RECIPE_ACTION_RE = re.compile(
     r"\b(?:"
     r"recipe|cook|cooking|bake|baking|oven|air\s*fryer|pan|pot|tray|"
@@ -209,7 +214,15 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         result_data: Dict[str, Any],
         classification: Dict[str, Any],
         caption: str = "",
+        source_platform: str | None = None,
     ) -> None:
+        if not _is_instagram_source_platform(source_platform):
+            logger.info(
+                "📍 Skipping Instagram account enrichment for source_platform=%s",
+                source_platform or "unknown",
+            )
+            return
+
         location_payload = parsed.get("location")
         if not location_payload:
             return
@@ -236,6 +249,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                         locations=locations_before,
                         mentioned_accounts=candidate_accounts,
                         fetch_account=meta_client.get_instagram_profile,
+                        fetch_timeout_seconds=3.0,
                     )
                 )
             finally:
@@ -341,6 +355,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         video_path: str = None,
         duration_seconds: int = None,
         is_silent: bool = False,
+        source_platform: str | None = None,
     ) -> Dict:
         logger.info("🔍 UniversalExtractor.extract() called!")
         self.api_call_count = 0
@@ -350,6 +365,12 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         caption = caption or ""
         lang = (lang or "unknown").strip() or "unknown"
         classification = classification or {}
+        source_platform = (
+            source_platform
+            or classification.get("source_platform")
+            or classification.get("platform")
+            or "instagram"
+        )
 
         requested_public_content_type = _normalize_requested_public_content_type(classification)
         signals = classification.get("signals", {}) or {}
@@ -582,6 +603,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             "transcript_preview": transcript[:300] if transcript else "",
             "caption_preview": caption[:300] if caption else "",
             "caption": caption,
+            "source_platform": source_platform,
         }
 
         logger.info("📞 CALL 1: Extracting structured data...")
@@ -632,6 +654,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                 result_data=result_data if isinstance(result_data, dict) else {},
                 classification=classification,
                 caption=caption,
+                source_platform=source_platform,
             )
 
         final_content_type = public_content_type
@@ -730,6 +753,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             is_english_content,
             prompt_trace=prompt_trace,
             call1_raw_tools=call1_raw_tools,
+            source_platform=source_platform,
         )
         result["_content_payload"] = self._call_log
         return result

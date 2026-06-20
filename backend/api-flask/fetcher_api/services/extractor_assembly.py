@@ -66,6 +66,11 @@ from fetcher_api.services.summary_formatter import validate_and_repair_summary_p
 logger = logging.getLogger(__name__)
 
 
+def _is_instagram_source_platform(source_platform: str | None) -> bool:
+    platform = (source_platform or "").strip().lower()
+    return platform in {"ig", "instagram"}
+
+
 _PUBLIC_CONTENT_TYPES = (
     "recipe",
     "workout",
@@ -833,6 +838,7 @@ class AssemblyMixin:
         is_english_content: bool,
         prompt_trace: dict | None = None,
         call1_raw_tools: list[dict] | None = None,
+        source_platform: str | None = None,
     ) -> dict:
         lang = repair_language_if_obviously_wrong(lang, prompt_trace)
         is_english_content = (lang or "").lower().startswith("en")
@@ -928,9 +934,11 @@ class AssemblyMixin:
             parsed["location"] = None
 
 
+        source_platform = source_platform or (prompt_trace or {}).get("source_platform")
+
         if not has_location and tools_list and tools_cats_en:
             caption_text = (prompt_trace or {}).get("caption", "")
-            if caption_text:
+            if caption_text and _is_instagram_source_platform(source_platform):
                 try:
                     loop = asyncio.new_event_loop()
                     try:
@@ -940,6 +948,7 @@ class AssemblyMixin:
                                 tools_categories=tools_cats_en,
                                 caption=caption_text,
                                 fetch_account=meta_client.get_instagram_profile,
+                                fetch_timeout_seconds=3.0,
                             )
                         )
                     finally:
@@ -977,6 +986,11 @@ class AssemblyMixin:
                             )
                 except Exception as _ig_err:
                     logger.warning("📍 IG bio enrichment failed (non-fatal): %s", _ig_err)
+            elif caption_text:
+                logger.info(
+                    "📍 Skipping Instagram bio enrichment for source_platform=%s",
+                    source_platform or "unknown",
+                )
 
 
         promoted = False

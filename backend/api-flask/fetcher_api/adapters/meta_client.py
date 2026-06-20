@@ -41,6 +41,7 @@ _GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v25.0")
 _GRAPH_BASE_URL = f"https://graph.facebook.com/{_GRAPH_VERSION}"
 _FACEBOOK_DOWNLOAD_LOCK = threading.Lock()
 _INSTAGRAM_DOWNLOAD_LOCK = threading.Lock()
+MAX_EXTERNAL_ATTEMPTS = 3
 _SOCIAL_REQUIRED_COOKIES = {
     "FB_COOKIES_CONTENT": {"c_user", "xs"},
     "IG_COOKIES_CONTENT": {"sessionid"},
@@ -412,7 +413,7 @@ class MetaClient:
             with requests.get(
                 video_url,
                 stream=True,
-                timeout=(5, 45),
+                timeout=(5, 15),
                 headers={
                     "User-Agent": _FACEBOOK_USER_AGENT,
                     "Referer": referer,
@@ -856,8 +857,10 @@ class MetaClient:
             ydl_opts = {
                 "quiet": True,
                 "no_warnings": False,
-                "retries": 1,
-                "fragment_retries": 1,
+                "retries": 0,
+                "fragment_retries": 0,
+                "extractor_retries": 0,
+                "socket_timeout": 10,
                 "http_headers": {
                     "User-Agent": _FACEBOOK_USER_AGENT,
                 },
@@ -869,7 +872,10 @@ class MetaClient:
             else:
                 logger.debug("ℹ️ FB_COOKIES_CONTENT not set — proceeding without cookies")
 
-            for candidate_url in self._facebook_url_candidates(url):
+            for attempt_index, candidate_url in enumerate(self._facebook_url_candidates(url), start=1):
+                if attempt_index > MAX_EXTERNAL_ATTEMPTS:
+                    logger.warning("⚠️ Facebook metadata enrichment stopped after %d attempts", MAX_EXTERNAL_ATTEMPTS)
+                    break
                 try:
                     logger.info("ℹ️ Facebook yt-dlp metadata attempt url=%s", candidate_url)
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -1055,8 +1061,10 @@ class MetaClient:
                 "merge_output_format": "mp4",
                 "quiet": True,
                 "no_warnings": True,
-                "retries": 1,
-                "fragment_retries": 1,
+                "retries": 0,
+                "fragment_retries": 0,
+                "extractor_retries": 0,
+                "socket_timeout": 10,
                 "http_headers": {
                     "User-Agent": (
                         "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
@@ -1184,7 +1192,7 @@ class MetaClient:
                 "Referer": "https://www.instagram.com/",
             }
 
-            resp = requests.get(post.video_url, stream=True, headers=headers, timeout=30)
+            resp = requests.get(post.video_url, stream=True, headers=headers, timeout=15)
             if resp.status_code != 200:
                 raise ValueError(f"Video download failed: {resp.status_code}")
 
@@ -1253,9 +1261,11 @@ class MetaClient:
             with self._social_download_slot("facebook"):
                 cookies_path = None
                 last_error = None
+                attempt_count = 0
                 try:
                     graph_info = self._get_facebook_graph_info(url)
                     if graph_info and graph_info.get("video_url"):
+                        attempt_count += 1
                         if self._download_direct_video_url(graph_info["video_url"], output_path, "https://www.facebook.com/"):
                             logger.info("✅ Facebook video downloaded via Meta Graph")
                             return {
@@ -1271,7 +1281,11 @@ class MetaClient:
                         logger.info("ℹ️ Facebook Graph unavailable for this media; falling back to yt-dlp")
 
                     if not post_info:
-                        post_info = self.get_post_info(url)
+                        try:
+                            post_info = self.get_post_info(url)
+                        except Exception as exc:
+                            post_info = None
+                            logger.warning("⚠️ Facebook metadata enrichment failed; continuing download: %s", exc)
                     if not post_info:
                         logger.info("ℹ️ Facebook metadata unavailable; attempting yt-dlp download candidates directly")
 
@@ -1282,8 +1296,10 @@ class MetaClient:
                         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                         "quiet": True,
                         "no_warnings": True,
-                        "retries": 1,
-                        "fragment_retries": 1,
+                        "retries": 0,
+                        "fragment_retries": 0,
+                        "extractor_retries": 0,
+                        "socket_timeout": 10,
                         "http_headers": {
                             "User-Agent": _FACEBOOK_USER_AGENT,
                         },
@@ -1296,8 +1312,17 @@ class MetaClient:
                         logger.debug("ℹ️ FB_COOKIES_CONTENT not set — downloading without cookies")
 
                     for candidate_url in self._facebook_url_candidates(url):
+                        if attempt_count >= MAX_EXTERNAL_ATTEMPTS:
+                            logger.warning("⚠️ Facebook download stopped after %d attempts", MAX_EXTERNAL_ATTEMPTS)
+                            break
+                        attempt_count += 1
                         try:
-                            logger.info("⬇️ Facebook yt-dlp download attempt url=%s", candidate_url)
+                            logger.info(
+                                "⬇️ Facebook yt-dlp download attempt %d/%d url=%s",
+                                attempt_count,
+                                MAX_EXTERNAL_ATTEMPTS,
+                                candidate_url,
+                            )
                             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                                 info = ydl.extract_info(candidate_url, download=True)
 
@@ -1339,9 +1364,29 @@ class MetaClient:
                     raise ValueError("Facebook download failed")
 
                 except Exception as e:
-                    error_code = self._classified_failure(e, default="facebook_extraction_failed")
-                    logger.error("❌ Facebook download error code=%s error=%s", error_code, e)
-                    return {"success": False, "error": str(e), "error_code": error_code}
+                    classified = self._classified_failure(e, default="facebook_extraction_failed")
+                    error_code = (
+                        "facebook_download_failed_after_3_attempts"
+                        if attempt_count >= MAX_EXTERNAL_ATTEMPTS
+                        else classified
+                    )
+                    error_message = (
+                        "Facebook video download failed after 3 attempts."
+                        if error_code == "facebook_download_failed_after_3_attempts"
+                        else str(e)
+                    )
+                    logger.error(
+                        "❌ Facebook download error code=%s attempts=%s error=%s",
+                        error_code,
+                        attempt_count,
+                        e,
+                    )
+                    return {
+                        "success": False,
+                        "error": error_message,
+                        "error_code": error_code,
+                        "attempts": attempt_count,
+                    }
 
                 finally:
                     if cookies_path and os.path.exists(cookies_path):

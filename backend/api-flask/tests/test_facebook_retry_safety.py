@@ -86,6 +86,48 @@ class FacebookRetrySafetyTest(unittest.TestCase):
         self.assertTrue(any("SET status = 'error'" in sql for sql, _ in executed))
         self.assertFalse(any("DELETE FROM reels" in sql for sql, _ in executed))
 
+    def test_failed_facebook_download_after_three_attempts_saves_clear_error(self):
+        from fetcher_api.api.helpers import processing
+
+        saved_payloads = []
+        result = {
+            "process_id": "872789235085022--20260228_0221_41--6be765c3",
+            "id": "872789235085022--20260228_0221_41--6be765c3",
+            "user_id": "user-1",
+            "summary": {},
+            "caption": "",
+            "gcs_urls": {},
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video_path = os.path.join(temp_dir, "input.mp4")
+            with patch.object(processing, "download_instagram_video", return_value={
+                "success": False,
+                "error_code": "facebook_download_failed_after_3_attempts",
+                "error": "Facebook video download failed after 3 attempts.",
+                "attempts": 3,
+                "metadata": {},
+            }):
+                with patch.object(processing, "insert_reel_into_db", side_effect=lambda payload: saved_payloads.append(dict(payload))):
+                    processing.background_process(
+                        result,
+                        video_path,
+                        temp_dir,
+                        "872789235085022",
+                        "",
+                        "https://www.facebook.com/reel/872789235085022",
+                        True,
+                        "",
+                        None,
+                        "user-1",
+                        force=False,
+                    )
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_message"], "Facebook video download failed after 3 attempts.")
+        self.assertEqual(saved_payloads[0]["status"], "error")
+        self.assertEqual(saved_payloads[0]["error_message"], "Facebook video download failed after 3 attempts.")
+
     def test_existing_error_retry_reuses_same_id_without_preemptive_delete(self):
         from fetcher_api.api.routes import video
 
@@ -276,6 +318,67 @@ class FacebookRetrySafetyTest(unittest.TestCase):
             ],
         )
         self.assertTrue(all(opts.get("cookiefile") for opts in option_sets))
+        self.assertTrue(all(opts.get("retries") == 0 for opts in option_sets))
+        self.assertTrue(all(opts.get("fragment_retries") == 0 for opts in option_sets))
+
+    def test_facebook_download_stops_after_three_failed_ytdlp_attempts(self):
+        from fetcher_api.adapters import meta_client as meta_module
+
+        client = meta_module.MetaClient.__new__(meta_module.MetaClient)
+        attempts = []
+        option_sets = []
+
+        class FakeYDL:
+            def __init__(self, opts):
+                self.opts = opts
+                option_sets.append(dict(opts))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def extract_info(self, url, download=False):
+                attempts.append(url)
+                raise ValueError("Cannot parse data")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = os.path.join(temp_dir, "fb.mp4")
+
+            with patch.object(client, "_get_facebook_graph_info", return_value=None):
+                with patch.object(client, "get_post_info", return_value=None):
+                    with patch.object(client, "_write_cookies", return_value=None):
+                        with patch.object(
+                            client,
+                            "_facebook_url_candidates",
+                            return_value=[
+                                "https://www.facebook.com/reel/1",
+                                "https://www.facebook.com/reel/2",
+                                "https://www.facebook.com/reel/3",
+                                "https://www.facebook.com/reel/4",
+                                "https://www.facebook.com/reel/5",
+                            ],
+                        ):
+                            with patch.object(meta_module.yt_dlp, "YoutubeDL", FakeYDL):
+                                result = client.download_video(
+                                    "https://www.facebook.com/reel/872789235085022",
+                                    output_path,
+                                )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_code"], "facebook_download_failed_after_3_attempts")
+        self.assertEqual(result["attempts"], 3)
+        self.assertEqual(
+            attempts,
+            [
+                "https://www.facebook.com/reel/1",
+                "https://www.facebook.com/reel/2",
+                "https://www.facebook.com/reel/3",
+            ],
+        )
+        self.assertTrue(all(opts.get("retries") == 0 for opts in option_sets))
+        self.assertTrue(all(opts.get("fragment_retries") == 0 for opts in option_sets))
 
 
 if __name__ == "__main__":

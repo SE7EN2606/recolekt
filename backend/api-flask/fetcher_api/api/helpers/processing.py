@@ -608,6 +608,7 @@ def background_process(
                     duration_seconds=yt_duration_seconds,
                     is_silent=is_silent_input,
                     fail_on_extractor_error=force,
+                    source_platform=platform_code,
                 )
             )
             if _abort_if_forced_extraction_failed(result, ai_res, force):
@@ -759,6 +760,7 @@ def background_process(
                             duration_seconds=0,
                             is_silent=False,
                             fail_on_extractor_error=force,
+                            source_platform=platform_code,
                         )
                     )
                     if _abort_if_forced_extraction_failed(result, ai_res, force):
@@ -856,9 +858,14 @@ def background_process(
                         shutil.rmtree(temp_dir, ignore_errors=True)
                     return
 
+                download_error_message = (
+                    dl_result.get("error")
+                    if dl_result.get("error_code") == "facebook_download_failed_after_3_attempts"
+                    else dl_result.get("error_code") or dl_result.get("error")
+                )
                 _fail_processing(
                     result,
-                    dl_result.get("error_code") or dl_result.get("error") or "social_extraction_failed",
+                    download_error_message or "social_extraction_failed",
                     force,
                 )
                 return
@@ -977,6 +984,7 @@ def background_process(
                 duration_seconds=duration_seconds,
                 is_silent=is_silent_input,
                 fail_on_extractor_error=force,
+                source_platform=platform_code,
             )
         )
         if _abort_if_forced_extraction_failed(result, ai_res, force):

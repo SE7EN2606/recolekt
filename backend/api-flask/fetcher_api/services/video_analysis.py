@@ -215,6 +215,10 @@ def get_instagram_video_duration(url: str) -> Optional[int]:
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
+            "retries": 0,
+            "fragment_retries": 0,
+            "extractor_retries": 0,
+            "socket_timeout": 10,
         }
 
         if "tiktok.com" in url_lower:
@@ -511,6 +515,10 @@ def _yt_dlp_download(url: str, output_path: str, platform: str) -> Dict:
             "merge_output_format": "mp4",
             "quiet": True,
             "no_warnings": True,
+            "retries": 0,
+            "fragment_retries": 0,
+            "extractor_retries": 0,
+            "socket_timeout": 10,
         }
 
         if platform == "TikTok":
@@ -619,6 +627,7 @@ def download_instagram_video(url: str, output_path: str) -> Dict:
                     "video_path": None,
                     "error": fb_result.get("error"),
                     "error_code": fb_result.get("error_code") or "extraction_failed",
+                    "attempts": fb_result.get("attempts"),
                 }
 
             fb_meta = ensure_dict_local(fb_result.get("metadata", {}))

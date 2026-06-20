@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import logging
 import re
@@ -7,6 +8,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 
 logger = logging.getLogger(__name__)
+
+MAX_ENRICHMENT_FETCH_ATTEMPTS = 3
 
 
 COUNTRY_ALIASES: Dict[str, str] = {
@@ -1128,6 +1131,7 @@ async def _fetch_account_if_needed(
     base_account: Dict[str, Any],
     fetch_account: Optional[Callable[[str], Any]],
     log: Optional[logging.Logger] = None,
+    fetch_timeout_seconds: float = 3.0,
 ) -> Dict[str, Any]:
     base_account = base_account or {}
     username = base_account.get("username")
@@ -1142,31 +1146,72 @@ async def _fetch_account_if_needed(
         return base_account
 
     try:
-        fetched = await _maybe_await(fetch_account(username))
+        if inspect.iscoroutinefunction(fetch_account):
+            fetched = await asyncio.wait_for(fetch_account(username), timeout=fetch_timeout_seconds)
+        else:
+            loop = asyncio.get_running_loop()
+            fetched = await asyncio.wait_for(
+                loop.run_in_executor(None, fetch_account, username),
+                timeout=fetch_timeout_seconds,
+            )
         if isinstance(fetched, dict):
             merged = dict(base_account)
             merged.update({k: v for k, v in fetched.items() if v is not None})
             merged["username"] = _username_from_any(merged) or username
             return merged
+    except asyncio.TimeoutError:
+        if log:
+            log.warning("IG account metadata fetch timed out for @%s", username)
     except Exception as exc:
         if log:
-            log.warning("Failed to fetch IG account metadata for @%s: %s", username, exc)
+            log.warning("IG account metadata fetch failed for @%s: %s", username, exc)
 
     return base_account
+
+
+def _account_needs_external_fetch(
+    account: Dict[str, Any],
+    fetch_account: Optional[Callable[[str], Any]],
+) -> bool:
+    if not account or not account.get("username") or not fetch_account:
+        return False
+
+    return not any([
+        _bio_from_account(account),
+        _clean_text(account.get("address")),
+        _clean_text(account.get("city")),
+        _clean_text(account.get("country")),
+    ])
 
 
 async def _build_account_candidates_async(
     mentioned_accounts: Iterable[Any],
     fetch_account: Optional[Callable[[str], Any]],
     log: Optional[logging.Logger] = None,
+    fetch_timeout_seconds: float = 3.0,
+    max_fetch_attempts: int = MAX_ENRICHMENT_FETCH_ATTEMPTS,
 ) -> List[Dict[str, Any]]:
     candidates: List[Dict[str, Any]] = []
+    fetch_attempts = 0
+    fetch_cap_logged = False
 
     for raw_account in mentioned_accounts:
         candidate = account_to_enrichment_candidate(raw_account)
         if not candidate:
             continue
-        candidate = await _fetch_account_if_needed(candidate, fetch_account, log=log)
+        if _account_needs_external_fetch(candidate, fetch_account):
+            if fetch_attempts >= max_fetch_attempts:
+                if log and not fetch_cap_logged:
+                    log.warning("IG account enrichment stopped after %d attempts", max_fetch_attempts)
+                    fetch_cap_logged = True
+            else:
+                fetch_attempts += 1
+                candidate = await _fetch_account_if_needed(
+                    candidate,
+                    fetch_account,
+                    log=log,
+                    fetch_timeout_seconds=fetch_timeout_seconds,
+                )
         candidates.append(candidate)
 
     return candidates
@@ -1227,6 +1272,8 @@ async def enrich_locations_with_accounts(
     fetch_account: Optional[Callable[[str], Any]] = None,
     min_match_score: float = 0.88,
     log: Optional[logging.Logger] = None,
+    fetch_timeout_seconds: float = 3.0,
+    max_fetch_attempts: int = MAX_ENRICHMENT_FETCH_ATTEMPTS,
 ) -> List[Dict[str, Any]]:
     log = log or logger
     locations = deepcopy(locations or [])
@@ -1239,6 +1286,8 @@ async def enrich_locations_with_accounts(
         mentioned_accounts=mentioned_accounts,
         fetch_account=fetch_account,
         log=log,
+        fetch_timeout_seconds=fetch_timeout_seconds,
+        max_fetch_attempts=max_fetch_attempts,
     )
     if not account_candidates:
         return locations
@@ -1356,6 +1405,8 @@ async def enrich_tools_with_instagram_locations(
     fetch_account: Optional[Callable[[str], Any]] = None,
     min_match_score: float = 0.88,
     log: Optional[logging.Logger] = None,
+    fetch_timeout_seconds: float = 3.0,
+    max_fetch_attempts: int = MAX_ENRICHMENT_FETCH_ATTEMPTS,
 ) -> List[Dict[str, Any]]:
     log = log or logger
     tools_categories = tools_categories or []
@@ -1387,6 +1438,8 @@ async def enrich_tools_with_instagram_locations(
         fetch_account=fetch_account,
         min_match_score=min_match_score,
         log=log,
+        fetch_timeout_seconds=fetch_timeout_seconds,
+        max_fetch_attempts=max_fetch_attempts,
     )
 
     output_rows: List[Dict[str, Any]] = []

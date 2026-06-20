@@ -208,6 +208,7 @@ class AIService:
         duration_seconds: int = None,
         is_silent: bool = False,
         fail_on_extractor_error: bool = False,
+        source_platform: str | None = None,
     ) -> Dict:
         transcript = transcript or ""
         caption = caption or ""
@@ -288,6 +289,7 @@ class AIService:
                 video_path=video_path,
                 duration_seconds=duration_seconds,
                 is_silent=is_silent,
+                source_platform=source_platform,
             )
         except Exception as e:
             logger.error(
@@ -337,6 +339,7 @@ def analyze_instagram_video(
     duration_seconds: int = None,
     is_silent: bool = False,
     fail_on_extractor_error: bool = False,
+    source_platform: str | None = None,
 ) -> Dict:
     return ai_service.analyze_content(
         transcript,
@@ -346,4 +349,5 @@ def analyze_instagram_video(
         duration_seconds,
         is_silent,
         fail_on_extractor_error,
+        source_platform,
     )
