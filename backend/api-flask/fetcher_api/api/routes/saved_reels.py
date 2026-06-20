@@ -9,6 +9,7 @@ from fetcher_api.adapters.db import fetch_all, fetch_one
 from fetcher_api.api.helpers.auth import get_user_id_from_request
 from fetcher_api.api.helpers.media_aliases import apply_media_aliases
 from fetcher_api.api.helpers.recipe_formatters import normalize_recipe_for_display
+from fetcher_api.services.processing_recovery import recover_stale_processing_reels
 
 logger = logging.getLogger("saved_reels")
 
@@ -285,6 +286,10 @@ def saved_reels():
         user_id = get_user_id_from_request()
     except ValueError:
         return jsonify({"error": "Authentication required"}), 401
+    try:
+        recover_stale_processing_reels(user_id=user_id)
+    except Exception as exc:
+        logger.warning("⚠️ Stale processing recovery skipped user=%s error=%s", user_id, exc)
 
     page = max(int(request.args.get("page", 1) or 1), 1)
     per_page = min(max(int(request.args.get("per_page", 100) or 100), 1), 1000)

@@ -25,6 +25,7 @@ from fetcher_api.services.social_ingestion import (
     create_reused_social_reel,
     find_reusable_social_reel,
 )
+from fetcher_api.services.processing_recovery import recover_stale_processing_reels
 from fetcher_api.services.storage import generate_gcs_paths
 from fetcher_api.services.social_urls import (
     SocialUrlResult,
@@ -43,6 +44,20 @@ NON_RETRYABLE_SOCIAL_ERRORS = {
     "social_login_required",
     "social_rate_limited",
 }
+
+
+def _recover_stale_processing_for_user(user_id: str) -> None:
+    try:
+        recovery = recover_stale_processing_reels(user_id=user_id)
+        if recovery.get("cleaned"):
+            logger.warning(
+                "Recovered %s stale processing reel(s) for user=%s ids=%s",
+                recovery["cleaned"],
+                user_id,
+                recovery.get("reel_ids"),
+            )
+    except Exception as exc:
+        logger.warning("⚠️ Stale processing recovery skipped user=%s error=%s", user_id, exc)
 
 
 def _count_extractions_today() -> int:
@@ -561,6 +576,7 @@ def summarize():
     except ValueError as e:
         logger.error(f"❌ Auth failed: {e}")
         return jsonify({"error": "Authentication required"}), 401
+    _recover_stale_processing_for_user(user_id)
 
     request_json = _get_request_json()
 
@@ -790,6 +806,7 @@ def refresh_reel(reel_id):
     except ValueError as e:
         logger.error("❌ Refresh auth failed: %s", e)
         return jsonify({"error": "Authentication required"}), 401
+    _recover_stale_processing_for_user(user_id)
 
     reel = fetch_one(
         """

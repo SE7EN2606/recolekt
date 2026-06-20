@@ -16,6 +16,7 @@ from flask import Blueprint, jsonify, request
 from fetcher_api.adapters.db import fetch_one, fetch_all, execute, get_user_tier, count_user_reels
 from fetcher_api.api.helpers.auth import get_user_id_from_request
 from fetcher_api.services.social_urls import canonicalize_social_url, is_facebook_share_url
+from fetcher_api.services.processing_recovery import recover_stale_processing_reels
 
 logger = logging.getLogger("api")
 
@@ -286,6 +287,10 @@ def saved_reels():
         user_id = get_user_id_from_request()
     except ValueError:
         return jsonify({"error": "Authentication required"}), 401
+    try:
+        recover_stale_processing_reels(user_id=user_id)
+    except Exception as exc:
+        logger.warning("⚠️ Stale processing recovery skipped user=%s error=%s", user_id, exc)
 
     page = max(int(request.args.get("page", 1) or 1), 1)
     per_page = min(max(int(request.args.get("per_page", 100) or 100), 1), 200)

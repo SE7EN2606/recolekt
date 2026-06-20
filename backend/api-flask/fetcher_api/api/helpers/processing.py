@@ -1,10 +1,13 @@
 """Background processing logic - Cleaned Transcription & Single-JSON Storage"""
 import asyncio
+import gc
 import os
 import json
 import shutil
 import logging
 import requests
+import sys
+import time
 
 from fetcher_api.services.transcription import (
     transcribe_video,
@@ -41,6 +44,7 @@ logger = logging.getLogger("api")
 FREE_MAX_DURATION = 180
 PRO_MAX_DURATION = 360
 MAX_DURATION_SECONDS = 300
+PROCESSING_JOB_TIMEOUT_SECONDS = int(os.getenv("RECOLEKT_PROCESSING_TIMEOUT_SECONDS", "900"))
 
 
 _PUBLIC_CONTENT_TYPES = {
@@ -436,6 +440,81 @@ def _abort_if_forced_extraction_failed(result: dict, ai_res: dict, force: bool) 
     return True
 
 
+class ProcessingTimeoutError(TimeoutError):
+    pass
+
+
+def _rss_mb() -> float | None:
+    try:
+        import resource
+
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if rss <= 0:
+            return None
+        if sys.platform == "darwin":
+            return rss / (1024 * 1024)
+        return rss / 1024
+    except Exception:
+        return None
+
+
+def _log_processing_stage(stage: str, result: dict, started_at: float) -> None:
+    elapsed = time.monotonic() - started_at
+    rss = _rss_mb()
+    if rss is None:
+        logger.info(
+            "🧠 processing stage=%s process_id=%s elapsed=%.1fs",
+            stage,
+            result.get("process_id"),
+            elapsed,
+        )
+        return
+    logger.info(
+        "🧠 processing stage=%s process_id=%s elapsed=%.1fs rss_max=%.1fMB",
+        stage,
+        result.get("process_id"),
+        elapsed,
+        rss,
+    )
+
+
+def _check_processing_timeout(started_at: float, result: dict, stage: str) -> None:
+    elapsed = time.monotonic() - started_at
+    if elapsed <= PROCESSING_JOB_TIMEOUT_SECONDS:
+        return
+    logger.error(
+        "⏱️ Processing timeout process_id=%s stage=%s elapsed=%.1fs limit=%ss",
+        result.get("process_id"),
+        stage,
+        elapsed,
+        PROCESSING_JOB_TIMEOUT_SECONDS,
+    )
+    raise ProcessingTimeoutError("processing_worker_killed_or_timeout")
+
+
+def _collect_after_stage(stage: str, result: dict, started_at: float) -> None:
+    gc.collect()
+    _log_processing_stage(stage, result, started_at)
+
+
+def _cleanup_local_file(path: str | None, label: str, result: dict, started_at: float) -> None:
+    if not path or not os.path.exists(path):
+        return
+    try:
+        size_mb = os.path.getsize(path) / (1024 * 1024)
+    except Exception:
+        size_mb = 0
+    cleanup_file(path)
+    logger.info(
+        "🧹 Deleted local %s process_id=%s path=%s size=%.1fMB",
+        label,
+        result.get("process_id"),
+        path,
+        size_mb,
+    )
+    _collect_after_stage(f"cleanup_{label}", result, started_at)
+
+
 def background_process(
     result,
     video_path,
@@ -452,6 +531,7 @@ def background_process(
     from fetcher_api.adapters.gcs_client import gcs_client
     from fetcher_api.adapters.meta_client import meta_client
 
+    job_started_at = time.monotonic()
     url_lower = (url or "").lower()
     is_youtube = "youtube.com" in url_lower or "youtu.be" in url_lower
     is_facebook = "facebook.com" in url_lower or "fb." in url_lower
@@ -464,6 +544,7 @@ def background_process(
         logger.info("🔄 FORCED re-process for %s (user=%s)", url, user_id)
 
     try:
+        _log_processing_stage("start", result, job_started_at)
         result["user_id"] = user_id
         result["source_url"] = url
         result["caption"] = caption
@@ -599,6 +680,8 @@ def background_process(
                     merged_text,
                 )
 
+            _check_processing_timeout(job_started_at, result, "before_youtube_extraction")
+            _log_processing_stage("before_youtube_extraction", result, job_started_at)
             ai_res = ensure_dict(
                 analyze_instagram_video(
                     merged_text,
@@ -611,6 +694,10 @@ def background_process(
                     source_platform=platform_code,
                 )
             )
+            _cleanup_local_file(yt_video_path, "youtube_video_after_extraction", result, job_started_at)
+            yt_video_path = None
+            _check_processing_timeout(job_started_at, result, "after_youtube_extraction")
+            _collect_after_stage("after_youtube_extraction", result, job_started_at)
             if _abort_if_forced_extraction_failed(result, ai_res, force):
                 return
 
@@ -881,12 +968,17 @@ def background_process(
             meta = {}
             dl_result = {}
 
+        _check_processing_timeout(job_started_at, result, "after_download")
+        _collect_after_stage("after_download", result, job_started_at)
+
         duration, duration_seconds = get_video_duration(video_path)
         is_too_long = duration_seconds > MAX_DURATION_SECONDS
+        _log_processing_stage("after_duration_probe", result, job_started_at)
 
         if is_too_long:
             logger.info(f"⏳ Video > 5min ({duration_seconds}s). Smart Bookmark Fallback.")
             t_result = None
+            prompt_transcript = ""
             transcription_data = {
                 "status": "bookmark_only",
                 "transcript": "",
@@ -897,6 +989,7 @@ def background_process(
             }
         else:
             t_result = _run_transcription(video_path)
+            prompt_transcript = get_prompt_transcript(t_result)
             transcription_data = _transcription_result_to_dict(t_result)
             logger.info(
                 "transcription: 📊 Final — status=%s source=%s chars=%d",
@@ -904,6 +997,8 @@ def background_process(
                 t_result.transcription_source,
                 len(t_result.transcript),
             )
+            del t_result
+            _collect_after_stage("after_transcription", result, job_started_at)
 
         if (
             not transcription_data["detected_language"]
@@ -951,7 +1046,6 @@ def background_process(
                 gcs_client=gcs_client,
             )
 
-        prompt_transcript = get_prompt_transcript(t_result) if t_result else ""
         merged_text = prompt_transcript
         ocr_text = ""
 
@@ -975,6 +1069,8 @@ def background_process(
                 merged_text,
             )
 
+        _check_processing_timeout(job_started_at, result, "before_extraction")
+        _log_processing_stage("before_extraction", result, job_started_at)
         ai_res = ensure_dict(
             analyze_instagram_video(
                 merged_text,
@@ -987,6 +1083,10 @@ def background_process(
                 source_platform=platform_code,
             )
         )
+        _cleanup_local_file(video_path, "video_after_extraction", result, job_started_at)
+        video_path = None
+        _check_processing_timeout(job_started_at, result, "after_extraction")
+        _collect_after_stage("after_extraction", result, job_started_at)
         if _abort_if_forced_extraction_failed(result, ai_res, force):
             return
 
@@ -1060,15 +1160,21 @@ def background_process(
         )
 
         _save_content_payload(content_payload, result["process_id"], gcs_paths, temp_dir, gcs_client)
+        content_payload = None
+        ai_res = None
+        _collect_after_stage("after_payload_save", result, job_started_at)
 
         insert_reel_into_db(result)
 
-        cleanup_file(video_path)
         if os.path.exists(thumbnail_path):
             cleanup_file(thumbnail_path)
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
+        _collect_after_stage("done", result, job_started_at)
 
+    except ProcessingTimeoutError as e:
+        logger.error("❌ Background Process Timed Out: %s", e, exc_info=True)
+        _fail_processing(result, "processing_worker_killed_or_timeout", force)
     except Exception as e:
         logger.error(f"❌ Background Process Failed: {e}", exc_info=True)
         _fail_processing(result, str(e), force)

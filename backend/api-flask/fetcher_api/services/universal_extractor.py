@@ -31,6 +31,7 @@ MODEL CHAIN NOTE:
 from __future__ import annotations
 
 import asyncio
+import gc
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -617,6 +618,11 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         except AIRequestExhaustedError as exc:
             logger.error("❌ CALL 1 exhausted retries, using fallback extractor: %s", exc, exc_info=True)
             return self.fallback(caption, classification)
+        finally:
+            if frame_images:
+                logger.info("🧹 Releasing %d extracted frame image(s) after Call 1", len(frame_images))
+            frame_images = []
+            gc.collect()
 
         prompt_trace["call1_response_keys"] = (
             list(result_data.keys()) if isinstance(result_data, dict) else []
