@@ -8,7 +8,7 @@ from fetcher_api.adapters.db import execute, fetch_all
 logger = logging.getLogger("processing_recovery")
 
 PROCESSING_WORKER_KILLED_ERROR = "processing_worker_killed_or_timeout"
-DEFAULT_PROCESSING_TIMEOUT_SECONDS = int(os.getenv("RECOLEKT_PROCESSING_TIMEOUT_SECONDS", "900"))
+DEFAULT_PROCESSING_TIMEOUT_SECONDS = 180
 
 
 def _coerce_timeout_seconds(timeout_seconds: Optional[int]) -> int:

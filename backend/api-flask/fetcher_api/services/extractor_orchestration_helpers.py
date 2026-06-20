@@ -13,7 +13,7 @@ from fetcher_api.services.location_account_enrichment import account_to_enrichme
 
 logger = logging.getLogger(__name__)
 
-_STRUCTURED_PRODUCT_FAMILIES = {"products", "software", "finance"}
+_STRUCTURED_PRODUCT_FAMILIES = {"products", "software"}
 _PUBLIC_CONTENT_TYPES = {
     "recipe",
     "workout",
@@ -334,26 +334,6 @@ def _route_public_family(
 
     if is_location_list:
         return "location"
-
-    if is_tools:
-        if requested in _STRUCTURED_PRODUCT_FAMILIES:
-            return requested
-
-        inferred = classify_structured_family(
-            transcript=transcript,
-            caption=caption,
-            category=requested if requested in _PUBLIC_CONTENT_TYPES else "",
-            topic="",
-        )
-
-        if inferred == "places":
-            return "location"
-        if inferred in _STRUCTURED_PRODUCT_FAMILIES:
-            return inferred
-        return "products"
-
-    if requested in _PUBLIC_CONTENT_TYPES:
-        return requested
 
     return "general"
 

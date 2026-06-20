@@ -17,6 +17,7 @@ from fetcher_api.api.helpers.formatters import (
     extract_english_preview_and_title,
 )
 from fetcher_api.api.helpers.recipe_formatters import normalize_recipe_for_display
+from fetcher_api.services.processing_recovery import recover_stale_processing_reels
 from fetcher_api.services.storage import generate_gcs_paths, platform_reels_folder
 from fetcher_api.services.recipe_assistant import answer_recipe_question
 from fetcher_api.utils.geocode import geocode_one, reverse_geocode_one
@@ -769,6 +770,11 @@ def _get_reel(process_id):
             user_id = get_user_id_from_request()
         except ValueError:
             return jsonify({"error": "Authentication required"}), 401
+
+        try:
+            recover_stale_processing_reels(user_id=user_id, timeout_seconds=180)
+        except Exception as exc:
+            logger.warning("⚠️ Stale processing recovery skipped user=%s error=%s", user_id, exc)
 
         row_dict = _build_reel_payload_for_api(process_id, user_id, include_prompt=True)
         if not row_dict:

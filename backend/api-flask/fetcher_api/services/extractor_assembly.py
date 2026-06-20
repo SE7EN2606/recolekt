@@ -875,13 +875,16 @@ class AssemblyMixin:
                 tools_cats_og = translated
 
 
-        if content_type == "recipe":
+        if content_type in {"recipe", "general"}:
             tools_list = None
             tools_cats_en = None
             tools_cats_og = None
             parsed["list_subtype"] = None
             parsed["is_ranked"] = False
-            logger.info("🧹 Recipe content: suppressing tools_list assembly")
+            if content_type == "recipe":
+                logger.info("🧹 Recipe content: suppressing tools_list assembly")
+            else:
+                logger.info("🧹 General content: suppressing tools_list assembly")
         else:
             tools_list = build_tools_list(
                 tools_categories_en=tools_cats_en,

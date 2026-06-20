@@ -541,6 +541,9 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             is_location_list = False
             logger.info("🍳 Spoken recipe guard: routing content as recipe")
 
+        if requested_public_content_type not in {"recipe", "workout", "location"}:
+            requested_public_content_type = "general"
+
         if requested_public_content_type in {"recipe", "workout"} and is_location_list:
             is_location_list = False
             logger.info(
@@ -590,6 +593,9 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             )
         )
 
+        if requested_public_content_type == "general":
+            is_tools = False
+
         if looks_spoken_recipe and is_tools:
             is_tools = False
             logger.info("🍳 Spoken recipe guard: suppressing tools/list extraction")
@@ -600,6 +606,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             not is_tools
             and not is_location_list
             and requested_public_content_type != "recipe"
+            and requested_public_content_type != "general"
             and promised_count >= 3
             and not looks_educational_explainer
         ):
@@ -617,6 +624,9 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             is_location_list,
             is_tools,
         )
+
+        if public_content_type == "general":
+            is_tools = False
 
         if requested_public_content_type in {"recipe", "workout"}:
             extraction_content_type = requested_public_content_type
@@ -815,6 +825,13 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
 
         final_content_type = public_content_type
 
+        if final_content_type == "general":
+            parsed["tools_categories"] = None
+            parsed["items"] = None
+            parsed["structure_analysis"] = None
+            parsed["list_subtype"] = None
+            parsed["is_ranked"] = False
+
         if parsed.get("location"):
             final_content_type = "location"
             logger.info("📍 public content_type confirmed -> 'location' (location populated)")
@@ -868,7 +885,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
         elif parsed.get("tools_categories"):
             logger.info("🧩 Ignoring structured-list promotion because content is recipe")
 
-        if parsed.get("tools_categories") and final_content_type != "recipe":
+        if parsed.get("tools_categories") and final_content_type not in {"recipe", "general"}:
             structure_analysis = analyze_structure(
                 tools_categories=parsed.get("tools_categories") or [],
                 category=parsed.get("category", ""),
@@ -899,7 +916,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
 
         compact_call1_raw_tools = call1_raw_tools if parsed.get("tools_categories") else []
         should_compact_structured_call2 = bool(
-            parsed.get("tools_categories") and final_content_type != "recipe"
+            parsed.get("tools_categories") and final_content_type not in {"recipe", "general"}
         )
         call2_result_data = (
             None

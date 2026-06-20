@@ -288,7 +288,7 @@ def saved_reels():
     except ValueError:
         return jsonify({"error": "Authentication required"}), 401
     try:
-        recover_stale_processing_reels(user_id=user_id)
+        recover_stale_processing_reels(user_id=user_id, timeout_seconds=180)
     except Exception as exc:
         logger.warning("⚠️ Stale processing recovery skipped user=%s error=%s", user_id, exc)
 
