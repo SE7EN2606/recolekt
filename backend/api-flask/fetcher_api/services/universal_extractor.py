@@ -117,6 +117,83 @@ def _rss_mb() -> float | None:
     except Exception:
         return None
 
+
+def _approx_object_size_bytes(obj: Any) -> int | None:
+    if obj is None:
+        return None
+
+    seen: set[int] = set()
+    stack: list[Any] = [obj]
+    total = 0
+
+    while stack:
+        current = stack.pop()
+        current_id = id(current)
+        if current_id in seen:
+            continue
+        seen.add(current_id)
+
+        try:
+            total += sys.getsizeof(current)
+        except Exception:
+            continue
+
+        if isinstance(
+            current,
+            (str, bytes, bytearray, memoryview, int, float, bool, complex, type(None)),
+        ):
+            continue
+
+        try:
+            stack.extend(gc.get_referents(current))
+        except Exception:
+            continue
+
+    return total
+
+
+def _format_size_bytes(value: int | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value}B"
+
+
+def _frame_payloads_still_referenced(
+    frame_payload_sample: Any,
+    frame_images: Optional[List[str]],
+) -> bool:
+    if frame_payload_sample is None:
+        return False
+
+    try:
+        if frame_images and frame_payload_sample in frame_images:
+            return True
+        return sys.getrefcount(frame_payload_sample) > 2
+    except Exception:
+        return False
+
+
+def _log_call1_memory(
+    *,
+    stage: str,
+    transcript: str,
+    frame_images: Optional[List[str]] = None,
+    raw_response: Any = None,
+    parsed: Any = None,
+    frame_payload_sample: Any = None,
+) -> None:
+    rss = _rss_mb()
+    logger.info(
+        "💾 Call 1 memory stage=%s rss=%s transcript_chars=%d raw_response_size=%s parsed_object_size=%s frame_count=%d frame_payloads_referenced=%s",
+        stage,
+        f"{rss:.1f}MB" if rss is not None else "n/a",
+        len(transcript or ""),
+        _format_size_bytes(_approx_object_size_bytes(raw_response)),
+        _format_size_bytes(_approx_object_size_bytes(parsed)),
+        len(frame_images or []),
+        _frame_payloads_still_referenced(frame_payload_sample, frame_images),
+    )
+
 BOOKMARK_MESSAGES = {
     "en": "Bookmark saved. The creator did not provide a detailed caption or transcript for this video.",
     "fr": "Signet enregistré. Le créateur n'a pas fourni de légende ou de transcription détaillée pour cette vidéo.",
@@ -613,6 +690,7 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             is_location_list=is_location_list,
             promised_count=promised_count,
         )
+        frame_payload_sample = frame_images[0] if frame_images else None
 
         call1_prompt = build_data_extraction_prompt(
             transcript=transcript,
@@ -657,6 +735,12 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             "source_platform": source_platform,
         }
 
+        _log_call1_memory(
+            stage="before Call 1",
+            transcript=transcript,
+            frame_images=frame_images,
+            frame_payload_sample=frame_payload_sample,
+        )
         logger.info("📞 CALL 1: Extracting structured data...")
         try:
             result_data = self._call_ai(
@@ -674,6 +758,13 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             frame_images = []
             gc.collect()
 
+        _log_call1_memory(
+            stage="after Call 1",
+            transcript=transcript,
+            frame_images=frame_images,
+            raw_response=result_data,
+            frame_payload_sample=frame_payload_sample,
+        )
         prompt_trace["call1_response_keys"] = (
             list(result_data.keys()) if isinstance(result_data, dict) else []
         )
@@ -689,6 +780,15 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             logger.info("🔧 Captured %d raw Call 1 tool categories", len(call1_raw_tools))
 
         parsed = self._parse_call1(result_data, caption, extraction_content_type, transcript=transcript)
+
+        _log_call1_memory(
+            stage="after Call 1 parsing",
+            transcript=transcript,
+            frame_images=frame_images,
+            raw_response=result_data,
+            parsed=parsed,
+            frame_payload_sample=frame_payload_sample,
+        )
 
         if is_tools and parsed.get("tools_categories"):
             before = sum(len(c.get("items", [])) for c in parsed["tools_categories"])
@@ -783,12 +883,31 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             call1_prompt=call1_prompt,
             call1_raw_tools=call1_raw_tools,
         )
+
+        _log_call1_memory(
+            stage="after Call 1 cleanup",
+            transcript=transcript,
+            frame_images=frame_images,
+            raw_response=result_data,
+            parsed=parsed,
+            frame_payload_sample=frame_payload_sample,
+        )
+
         result_data = call2_result_data
         call1_raw_tools = compact_call1_raw_tools
         call1_prompt = ""
         if should_compact_structured_call2:
             transcript = ""
             combined_text = ""
+
+        _log_call1_memory(
+            stage="before Call 2",
+            transcript=transcript,
+            frame_images=frame_images,
+            raw_response=result_data,
+            parsed=parsed,
+            frame_payload_sample=frame_payload_sample,
+        )
 
         if is_english_content:
             logger.info("📞 CALL 2: English summary...")
