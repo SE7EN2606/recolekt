@@ -34,6 +34,7 @@ import asyncio
 import gc
 import logging
 import re
+import sys
 from typing import Any, Dict, List, Optional
 
 from fetcher_api.adapters.meta_client import meta_client
@@ -102,6 +103,20 @@ logger = logging.getLogger(__name__)
 
 EXTRACTOR_VERSION = "universal-v24"
 
+
+def _rss_mb() -> float | None:
+    try:
+        import resource
+
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if rss <= 0:
+            return None
+        if sys.platform == "darwin":
+            return rss / (1024 * 1024)
+        return rss / 1024
+    except Exception:
+        return None
+
 BOOKMARK_MESSAGES = {
     "en": "Bookmark saved. The creator did not provide a detailed caption or transcript for this video.",
     "fr": "Signet enregistré. Le créateur n'a pas fourni de légende ou de transcription détaillée pour cette vidéo.",
@@ -169,6 +184,41 @@ def _call_classify_structured_family_safe(
 
 class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
     EXTRACTOR_VERSION = EXTRACTOR_VERSION
+
+    def _cleanup_after_call1_before_call2(
+        self,
+        *,
+        frame_images: Optional[List[str]] = None,
+        result_data: Any = None,
+        call1_prompt: str = "",
+        call1_raw_tools: Optional[List[dict]] = None,
+    ) -> None:
+        frame_count = len(frame_images or [])
+        raw_tool_count = len(call1_raw_tools or [])
+        result_keys = list(result_data.keys()) if isinstance(result_data, dict) else []
+
+        frame_images = None
+        result_data = None
+        call1_prompt = ""
+        call1_raw_tools = None
+        gc.collect()
+
+        rss = _rss_mb()
+        if rss is None:
+            logger.info(
+                "🧹 Call 1 cleanup complete before Call 2 frames=%d raw_tool_categories=%d result_keys=%s",
+                frame_count,
+                raw_tool_count,
+                result_keys[:12],
+            )
+            return
+        logger.info(
+            "🧹 Call 1 cleanup complete before Call 2 frames=%d raw_tool_categories=%d rss_max=%.1fMB result_keys=%s",
+            frame_count,
+            raw_tool_count,
+            rss,
+            result_keys[:12],
+        )
 
     def _extract_caption_mentions(self, caption: str) -> List[str]:
         if not caption:
@@ -717,6 +767,28 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
             parsed["structure_analysis"] = None
             parsed["list_subtype"] = None
             parsed["is_ranked"] = False
+
+        compact_call1_raw_tools = call1_raw_tools if parsed.get("tools_categories") else []
+        should_compact_structured_call2 = bool(
+            parsed.get("tools_categories") and final_content_type != "recipe"
+        )
+        call2_result_data = (
+            None
+            if should_compact_structured_call2
+            else result_data
+        )
+        self._cleanup_after_call1_before_call2(
+            frame_images=frame_images,
+            result_data=result_data,
+            call1_prompt=call1_prompt,
+            call1_raw_tools=call1_raw_tools,
+        )
+        result_data = call2_result_data
+        call1_raw_tools = compact_call1_raw_tools
+        call1_prompt = ""
+        if should_compact_structured_call2:
+            transcript = ""
+            combined_text = ""
 
         if is_english_content:
             logger.info("📞 CALL 2: English summary...")

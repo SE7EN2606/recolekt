@@ -25,6 +25,26 @@ from fetcher_api.services.extractor_helpers import safe_str
 
 logger = logging.getLogger(__name__)
 
+MAX_RECOVERED_TRANSCRIPT_ITEMS = 12
+
+_JUNK_TRANSCRIPT_RECOVERY_RE = re.compile(
+    r"^(?:"
+    r"il\s+en\s+prend|"
+    r"elle\s+en\s+prend|"
+    r"ca\s+fait|"
+    r"ça\s+fait|"
+    r"cela\s+fait|"
+    r"pour|"
+    r"avec|"
+    r"mais|"
+    r"donc|"
+    r"et\s+puis|"
+    r"en\s+fait|"
+    r"du\s+coup"
+    r")(?:\b|$)",
+    re.IGNORECASE,
+)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ASR CORRECTIONS
@@ -459,6 +479,28 @@ def is_valid_tool_name(name: str) -> bool:
     if len(cleaned) < 2:
         return False
 
+    return True
+
+
+def is_valid_recovered_transcript_item(name: str) -> bool:
+    cleaned_raw = safe_str(name).strip(" ,.-–—:;")
+    cleaned = cleaned_raw.lower()
+
+    if not is_valid_tool_name(cleaned_raw):
+        return False
+    if _JUNK_TRANSCRIPT_RECOVERY_RE.search(cleaned):
+        return False
+    if len(cleaned_raw) < 3:
+        return False
+    if len(cleaned_raw.split()) <= 2 and cleaned in {
+        "pour",
+        "avec",
+        "mais",
+        "donc",
+        "ça fait",
+        "ca fait",
+    }:
+        return False
     return True
 
 
@@ -1075,7 +1117,8 @@ def add_missing_transcript_items(
         )
         canonical = canonicalize_tool_name(resolved)
 
-        if not canonical or not is_valid_tool_name(canonical):
+        if not canonical or not is_valid_recovered_transcript_item(canonical):
+            logger.debug("add_missing: rejected weak transcript fragment '%s'", canonical or fragment)
             continue
 
         fragment_keys = _loose_name_keys(fragment) | _loose_name_keys(canonical)
@@ -1126,6 +1169,13 @@ def add_missing_transcript_items(
             rank,
             fragment,
         )
+
+        if len(added) >= MAX_RECOVERED_TRANSCRIPT_ITEMS:
+            logger.warning(
+                "add_missing: capped transcript recovery at %d items",
+                MAX_RECOVERED_TRANSCRIPT_ITEMS,
+            )
+            break
 
     if not added:
         return _sort_ranked_tools_categories(tools_categories)

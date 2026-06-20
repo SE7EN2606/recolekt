@@ -49,6 +49,7 @@ from fetcher_api.services.extractor_call1_helpers import (
     add_missing_transcript_items,
     sanitize_location,
     normalize_recipe_trust_layer,
+    is_valid_recovered_transcript_item,
 )
 
 logger = logging.getLogger(__name__)
@@ -300,7 +301,12 @@ def _clean_and_dedup_recovery_items(categories: list) -> list:
                 cleaned.append(item)
                 continue
             name = (item.get("name") or "").strip()
-            if not name or len(name) > 50 or _GARBAGE_NAME_START_RE.search(name):
+            if (
+                not name
+                or len(name) > 50
+                or _GARBAGE_NAME_START_RE.search(name)
+                or not is_valid_recovered_transcript_item(name)
+            ):
                 logger.debug("🗑️ Dropping garbage recovery item: %r", name)
                 continue
             cleaned.append(item)
