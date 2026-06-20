@@ -836,6 +836,35 @@ class UniversalExtractor(HttpMixin, Call1Mixin, Call2Mixin, AssemblyMixin):
                 "🧩 public content_type confirmed from structured list -> %r",
                 final_content_type,
             )
+            if final_content_type == "finance":
+                logger.info("Structured finance fast path: skipping Call 2")
+                summary_en, _ = format_ai_summary(
+                    title_en=parsed.get("title", ""),
+                    summary_en_raw=parsed.get("brief_description", ""),
+                    highlights_raw=parsed.get("highlights", []),
+                    content_type=final_content_type,
+                    max_bullets=len(parsed.get("highlights", []) or []) or 4,
+                )
+                summary_result = {
+                    "summary_en": summary_en,
+                    "summary_original": summary_en,
+                    "title_original": parsed.get("title", ""),
+                    "headlines_en": list(parsed.get("highlights", [])),
+                    "headlines_og": list(parsed.get("highlights", [])),
+                }
+                prompt_trace["total_api_calls"] = self.api_call_count
+                result = self._assemble_output(
+                    parsed,
+                    summary_result,
+                    final_content_type,
+                    effective_lang,
+                    is_english_content,
+                    prompt_trace=prompt_trace,
+                    call1_raw_tools=call1_raw_tools,
+                    source_platform=source_platform,
+                )
+                result["_content_payload"] = self._call_log
+                return result
         elif parsed.get("tools_categories"):
             logger.info("🧩 Ignoring structured-list promotion because content is recipe")
 
