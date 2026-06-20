@@ -4,14 +4,33 @@ command = "npm run build"
 publish = "dist"
 
 [[headers]]
+for = "/"
+[headers.values]
+Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+for = "/index.html"
+[headers.values]
+Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+for = "/*.html"
+[headers.values]
+Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
 for = "/assets/*.js"
 [headers.values]
+Cache-Control = "public, max-age=31536000, immutable"
 Content-Type = "application/javascript; charset=utf-8"
+X-Content-Type-Options = "nosniff"
 
 [[headers]]
 for = "/assets/*.css"
 [headers.values]
+Cache-Control = "public, max-age=31536000, immutable"
 Content-Type = "text/css; charset=utf-8"
+X-Content-Type-Options = "nosniff"
 
 # 1. Redirect Netlify subdomain to custom domain
 [[redirects]]
@@ -27,7 +46,13 @@ to = "https://api.recolekt.app/api/:splat"
 status = 200
 force = true
 
-# 3. SPA fallback for React Router (MUST be last)
+# 3. Missing static assets must 404, not fall through to the SPA fallback.
+[[redirects]]
+from = "/assets/*"
+to = "/404.html"
+status = 404
+
+# 4. SPA fallback for React Router (MUST be last)
 [[redirects]]
 from = "/*"
 to = "/index.html"
