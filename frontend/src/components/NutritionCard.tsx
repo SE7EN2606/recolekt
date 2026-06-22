@@ -61,7 +61,6 @@ const riPct = (value: number, reference: number) =>
 export default function NutritionCard({ ingredients, servings, recipeName }: NutritionCardProps) {
   const [mode, setMode] = useState<ViewMode>("serving");
   const [portionScale, setPortionScale] = useState(1);
-  const [showExcludedDetails, setShowExcludedDetails] = useState(false);
   const nutrition = useMemo(
     () => calculateNutrition(ingredients, servings, { recipeName }),
     [ingredients, servings, recipeName]
@@ -255,211 +254,180 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
   };
 
   if (!hasUsableNutrition) {
-    return (
-      
-<RecipeNutritionCard>
-  {/* nutrition content moved here temporarily */}
-</RecipeNutritionCard>
-
-    );
+    return <RecipeNutritionCard />;
   }
 
+  const detailItems = [
+    ...nutritionNotes.assumptions,
+    ...(nutritionNotes.missing.length > 0
+      ? [`Missing quantities excluded from calculation: ${nutritionNotes.missing.join(", ")}.`]
+      : []),
+    ...(nutrition.unmatchedIngredients && nutrition.unmatchedIngredients.length > 0
+      ? [`Not matched: ${nutrition.unmatchedIngredients.join(", ")}.`]
+      : []),
+  ];
+
+  const healthNotes = [
+    adjustedPerServing.protein_g >= 20 ? "High protein per serving." : null,
+    nutrition.per100g.fat_g >= 17.5 ? "High fat per 100g." : null,
+    nutrition.per100g.saturates_g >= 5 ? "High saturated fat per 100g." : null,
+    nutrition.per100g.carbs_g <= 5 ? "Low carbohydrate estimate." : null,
+    saltMissing ? "Salt is present but quantity is unknown." : null,
+  ].filter(Boolean);
+
+  const portionValue =
+    mode === "per100g" ? "100g" :
+    activePortionSizeG ? formatPortionSize(activePortionSizeG) :
+    null;
+
+  const portionHelper =
+    mode === "per100g" ? "reference amount" :
+    activePortionSizeG ? activePortionHelper :
+    "Serving size unavailable";
+
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="mb-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-              Estimated
-            </p>
-            <h3 className="text-lg font-semibold text-gray-950">
-              Nutrition values
-            </h3>
-
-            <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-gray-500">
-              <span>
-                {nutrition.matchedCount} of {nutritionDisplayTotal} main ingredients calculated
-              </span>
-            </div>
-          </div>
-
-          {excludedNutritionItems.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowExcludedDetails((prev) => !prev)}
-              aria-expanded={showExcludedDetails}
-              className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-gray-500 transition hover:border-gray-300 hover:bg-white hover:text-gray-800"
-            >
-              {excludedNutritionLabel}
-            </button>
-          )}
-        </div>
-
-        {showExcludedDetails && excludedNutritionItems.length > 0 && (
-          <div className="mt-3 rounded-2xl border border-gray-200 bg-gray-50/80 p-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-              Excluded from nutrition estimate
-            </p>
-
-            <div className="mt-2 space-y-1.5">
-              {excludedNutritionItems.map((item) => (
-                <p key={`${item.name}-${item.reason}`} className="text-[11px] leading-snug text-gray-600">
-                  <span className="font-bold text-gray-900">{item.name}</span>
-                  <span className="text-gray-400"> — {item.reason}</span>
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
+    <section className="space-y-2 bg-white p-2">
+      <div className="space-y-0.5">
+        <h3 className="text-lg font-semibold text-gray-950">
+          Nutrition
+        </h3>
+        <p className="text-sm leading-relaxed text-gray-500">
+          Values adjust with your serving size.
+        </p>
       </div>
 
-      <div>
-          <div className="mb-4 grid grid-cols-3 rounded-2xl bg-gray-100 p-1 text-xs font-bold">
-            {[
-              { key: "serving", label: "Serving" },
-              { key: "per100g", label: "Per 100g" },
-              { key: "table", label: "Table" },
-            ].map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setMode(item.key as ViewMode)}
-                className={`rounded-xl px-2 py-2 transition ${mode === item.key ? "bg-white text-rose-600 shadow-sm" : "text-gray-500"}`}
-              >
-                {item.label}
-              </button>
-            ))}
+      <div className="space-y-1.5 rounded-xl border border-gray-100 bg-gray-50/70 p-2">
+        <div className="grid w-full grid-cols-3 rounded-xl bg-gray-100 p-1 text-xs font-bold">
+          {[
+            { key: "serving", label: "Serving" },
+            { key: "per100g", label: "Per 100g" },
+            { key: "table", label: "Table" },
+          ].map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setMode(item.key as ViewMode)}
+              className={`min-w-0 whitespace-nowrap rounded-lg px-2 py-0.5 text-center leading-none transition ${mode === item.key ? "bg-white text-rose-600 shadow-sm" : "text-gray-500 hover:text-rose-600"}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid gap-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-gray-400">
+              Portion size
+            </p>
+            <p className="mt-0.5 text-sm font-bold leading-snug text-gray-900">
+              {portionValue && (
+                <span className="whitespace-nowrap">{portionValue}</span>
+              )}
+              <span className={portionValue ? "ml-1 text-gray-500" : "text-gray-500"}>
+                {portionHelper}
+              </span>
+            </p>
           </div>
 
-          {mode === "serving" && adjustedServingSizeG && (
-            <div className="mb-4 rounded-[24px] border border-rose-100 bg-rose-50/60 px-4 py-4">
-              <div className="grid min-h-[44px] grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5">
-                <div className="min-w-0">
-                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-rose-400">
-                    Portion size
-                  </p>
-                  <p className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-base font-black text-gray-950">
-                    <span>{formatPortionSize(adjustedServingSizeG)}</span>
-                    <span className="truncate text-xs font-bold text-gray-400">
-                      estimated serving weight
-                    </span>
-                  </p>
-                </div>
-
-                <div className="flex h-10 w-[132px] shrink-0 items-center justify-between rounded-[16px] border border-rose-100 bg-white px-1.5 shadow-sm">
-                  <button
-                    type="button"
-                    onClick={() => handlePortionScale(portionScale - 0.25)}
-                    className="flex h-7 w-7 items-center justify-center rounded-xl bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
-                  >
-                    −
-                  </button>
-                  <span className="min-w-[42px] text-center text-[11px] font-black text-rose-600 tabular-nums">
-                    {Math.round(portionScale * 100)}%
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handlePortionScale(portionScale + 0.25)}
-                    className="flex h-7 w-7 items-center justify-center rounded-xl bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
+          {adjustedServingSizeG && (
+            <div className="flex h-7 w-[118px] shrink-0 items-center justify-between rounded-full border border-rose-100 bg-white px-1.5 shadow-sm">
+              <button
+                type="button"
+                onClick={() => handlePortionScale(portionScale - 0.25)}
+                className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
+              >
+                −
+              </button>
+              <span className="min-w-[42px] text-center text-[11px] font-black text-rose-600 tabular-nums">
+                {Math.round(portionScale * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => handlePortionScale(portionScale + 0.25)}
+                className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
+              >
+                +
+              </button>
             </div>
           )}
+        </div>
+      </div>
 
-          {mode === "serving" ? (
-            <div className="space-y-4">
-              <MacroRingGrid values={adjustedPerServing} />
-              <NutrientTrafficStrip
-                per100g={nutrition.per100g}
-                perServing={adjustedPerServing}
-                saltMissing={saltMissing}
-                servingSizeG={adjustedServingSizeG}
-              />
-            </div>
-          ) : mode === "per100g" ? (
-            <div className="space-y-4">
-              <MacroRingGrid values={nutrition.per100g} />
-              <NutrientTrafficStrip
-                per100g={nutrition.per100g}
-                perServing={nutrition.per100g}
-                saltMissing={saltMissing}
-                servingSizeG={100}
-              />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <NutritionFactsTable
-                servingValues={adjustedPerServing}
-                totalValues={nutrition.totalRecipe}
-                servingSizeG={adjustedServingSizeG}
-                totalWeightG={nutrition.totalWeightG}
-                saltMissing={saltMissing}
-              />
-              <NutriScoreVisual letter={nutrition.nutriScore.letter} />
-            </div>
-          )}
+      {mode === "serving" ? (
+        <MacroRingGrid values={adjustedPerServing} />
+      ) : mode === "per100g" ? (
+        <MacroRingGrid values={nutrition.per100g} />
+      ) : (
+        <div className="space-y-3">
+          <NutritionFactsTable
+            servingValues={adjustedPerServing}
+            totalValues={nutrition.totalRecipe}
+            servingSizeG={adjustedServingSizeG}
+            totalWeightG={nutrition.totalWeightG}
+            saltMissing={saltMissing}
+          />
+          <NutriScoreVisual letter={nutrition.nutriScore.letter} />
+        </div>
+      )}
 
-          <div className="my-4 border-t border-gray-100" />
+      <details className="border-t border-gray-100 pt-1.5 text-xs text-gray-500">
+        <summary className="cursor-pointer text-sm font-bold text-gray-700 transition hover:text-gray-950">
+          More nutrition details
+        </summary>
 
-          {(nutritionNotes.assumptions.length > 0 || nutritionNotes.missing.length > 0 || nutrition.unmatchedIngredients.length > 0) && (
-            <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
-              <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">
-                Estimate notes
-              </p>
+        <div className="mt-1.5 space-y-2 leading-relaxed">
+          <section className="space-y-1.5">
+            <h4 className="text-sm font-black text-gray-900">Traffic light guide</h4>
+            <NutrientTrafficStrip
+              per100g={nutrition.per100g}
+              perServing={mode === "per100g" ? nutrition.per100g : adjustedPerServing}
+              saltMissing={saltMissing}
+              servingSizeG={mode === "per100g" ? 100 : adjustedServingSizeG}
+            />
+          </section>
 
-              <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-amber-900">
-                {nutritionNotes.assumptions.map((note, idx) => (
-                  <li key={`assumption-${idx}`}>• {note}</li>
+          <p>
+            {nutrition.matchedCount} of {nutritionDisplayTotal} main ingredients calculated.
+          </p>
+
+          {excludedNutritionItems.length > 0 && (
+            <div>
+              <p className="font-bold text-gray-700">{excludedNutritionLabel}</p>
+              <ul className="mt-1 space-y-1">
+                {excludedNutritionItems.map((item) => (
+                  <li key={`${item.name}-${item.reason}`}>
+                    <span className="font-semibold text-gray-800">{item.name}</span>
+                    <span className="text-gray-400"> — {item.reason}</span>
+                  </li>
                 ))}
-
-                {nutritionNotes.missing.length > 0 && (
-                  <li>
-                    • Missing quantities excluded from calculation: {nutritionNotes.missing.join(", ")}.
-                  </li>
-                )}
-
-                {nutrition.unmatchedIngredients && nutrition.unmatchedIngredients.length > 0 && (
-                  <li>
-                    • Not matched: {nutrition.unmatchedIngredients.join(", ")}.
-                  </li>
-                )}
               </ul>
             </div>
           )}
 
-          <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-                  Health estimate
-                </p>
-                <h4 className="mt-1 text-sm font-black text-gray-950">
-                  Needs review
-                </h4>
-              </div>
-              <span className="rounded-full bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
-                Estimated
-              </span>
-            </div>
-
-            <ul className="space-y-1.5 text-xs leading-relaxed text-gray-600">
-              {adjustedPerServing.protein_g >= 20 && <li>• High protein per serving.</li>}
-              {nutrition.per100g.fat_g >= 17.5 && <li>• High fat per 100g.</li>}
-              {nutrition.per100g.saturates_g >= 5 && <li>• High saturated fat per 100g.</li>}
-              {nutrition.per100g.carbs_g <= 5 && <li>• Low carbohydrate estimate.</li>}
-              {nutritionNotes.missing.some((x) => x.toLowerCase().includes("salt") || x.toLowerCase().includes("sel")) && (
-                <li>• Salt is present but quantity is unknown.</li>
-              )}
+          {detailItems.length > 0 && (
+            <ul className="space-y-1.5">
+              {detailItems.map((note, idx) => (
+                <li key={`detail-${idx}`}>• {note}</li>
+              ))}
             </ul>
+          )}
 
-            <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
-              This is a Recolekt estimate based on detected ingredients and usable quantities. It is not an official Nutri-Score or medical nutrition label.
-            </p>
-          </div>
-      </div>
+          {healthNotes.length > 0 && (
+            <div>
+              <p className="font-bold text-gray-700">Health notes</p>
+              <ul className="mt-1 space-y-1.5">
+                {healthNotes.map((note, idx) => (
+                  <li key={`health-${idx}`}>• {note}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <p className="text-[11px] text-gray-400">
+            This is a Recolekt estimate based on detected ingredients and usable quantities. It is not an official Nutri-Score or medical nutrition label.
+          </p>
+        </div>
+      </details>
     </section>
   );
 }

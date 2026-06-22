@@ -1077,6 +1077,49 @@ export const VideoDetail: React.FC = () => {
       </button>
     </div>
   ) : null;
+  const desktopQuickActions = showRecipeCard ? (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <button
+        type="button"
+        onClick={() => setIsMoveModalOpen(true)}
+        className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50/60 px-3 py-3 text-left transition-colors hover:bg-gray-100/70"
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-gray-700 ring-1 ring-gray-100">
+          <FolderInput size={16} aria-hidden="true" />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm font-bold text-gray-950">Collection</span>
+          <span className="block text-xs font-medium text-gray-500">Move or organize</span>
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={handleShare}
+        className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50/60 px-3 py-3 text-left transition-colors hover:bg-gray-100/70"
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-gray-700 ring-1 ring-gray-100">
+          <IOSShareIcon />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm font-bold text-gray-950">Share</span>
+          <span className="block text-xs font-medium text-gray-500">Send the recipe out</span>
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={() => setIsEditing(true)}
+        className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50/60 px-3 py-3 text-left transition-colors hover:bg-gray-100/70 sm:col-span-2"
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-gray-700 ring-1 ring-gray-100">
+          <Pencil size={16} aria-hidden="true" />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm font-bold text-gray-950">Edit details</span>
+          <span className="block text-xs font-medium text-gray-500">Adjust the saved recipe for yourself</span>
+        </span>
+      </button>
+    </div>
+  ) : null;
 
   return (
     <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
@@ -1226,7 +1269,7 @@ export const VideoDetail: React.FC = () => {
           </div>
 
           {/* Author + date */}
-          <div className={`flex items-center justify-between ${showRecipeCard ? 'mb-5 px-4 md:px-5' : 'mb-6'}`}>
+          <div className={`flex items-center justify-between ${showRecipeCard ? 'px-4 md:px-5' : 'mb-6'}`}>
             <a
               href={viewModel.originalUrl}
               target="_blank"
@@ -1245,6 +1288,20 @@ export const VideoDetail: React.FC = () => {
               </div>
             )}
           </div>
+
+          {showRecipeCard && recipeMetaChips.length > 0 && (
+            <div className="mb-5 flex flex-wrap gap-2 px-4 pt-4 md:px-5">
+              {recipeMetaChips.map((chip) => (
+                <span
+                  key={`${chip.label}-${chip.value}`}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-gray-100 bg-gray-50/75 px-3 py-1.5 text-[11px] font-bold text-gray-600"
+                >
+                  <span className="text-gray-400">{chip.label}</span>
+                  <span className="text-gray-900">{chip.value}</span>
+                </span>
+              ))}
+            </div>
+          )}
 
           {showReturnState && (
             <div
@@ -1353,51 +1410,68 @@ export const VideoDetail: React.FC = () => {
           </div>
 
           {showRecipeCard && hasEnglishSummaryContent && (
-            <section className="mb-8 rounded-2xl border border-primary-100 bg-primary-50/85 p-5 md:p-6">
-              <div className="max-w-[72ch]">
-                <h3 className="text-base font-bold text-primary-950">
-                  AI Summary
-                </h3>
-                {englishSummaryContent.summaryText && (
-                  <p className="mt-2 text-sm font-medium leading-relaxed text-primary-950/85">
-                    {englishSummaryContent.summaryText}
-                  </p>
-                )}
-              </div>
-
-              {englishSummaryContent.headlines.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="text-sm font-bold text-primary-950">
-                    Key Highlights
-                  </h4>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    {englishSummaryContent.headlines.map((item: any, index: number) => (
-                      <div
-                        key={`${item.headline || item.text}-${index}`}
-                        className="flex min-w-0 gap-3 rounded-xl bg-white/75 p-3 ring-1 ring-primary-100/80"
-                      >
-                        {item.emoji && (
-                          <span className="mt-0.5 shrink-0 text-lg leading-none" aria-hidden="true">
-                            {item.emoji}
-                          </span>
-                        )}
-                        <div className="min-w-0">
-                          {item.headline && (
-                            <div className="text-sm font-bold leading-snug text-primary-950">
-                              {item.headline}
-                            </div>
-                          )}
-                          {item.text && (
-                            <div className="mt-1 text-sm font-medium leading-relaxed text-primary-950/75">
-                              {item.text}
-                            </div>
-                          )}
-                        </div>
+            <section className="mb-6">
+              <details open className="overflow-hidden rounded-2xl border border-primary-100 bg-primary-50/85">
+                <summary className="cursor-pointer list-none px-5 py-4 md:px-6">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-widest text-primary-700/70">
+                        AI Summary
                       </div>
-                    ))}
+                      <div className="mt-1 text-base font-bold text-primary-950">
+                        A quick read before you cook
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-bold text-primary-700 ring-1 ring-primary-100">
+                      Open
+                    </span>
                   </div>
+                </summary>
+
+                <div className="border-t border-primary-100/80 px-5 pb-5 pt-4 md:px-6 md:pb-6">
+                  <div className="max-w-[72ch]">
+                    {englishSummaryContent.summaryText && (
+                      <p className="text-sm font-medium leading-relaxed text-primary-950/85">
+                        {englishSummaryContent.summaryText}
+                      </p>
+                    )}
+                  </div>
+
+                  {englishSummaryContent.headlines.length > 0 && (
+                    <div className="mt-4">
+                      <h4 className="text-sm font-bold text-primary-950">
+                        Key Highlights
+                      </h4>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {englishSummaryContent.headlines.map((item: any, index: number) => (
+                          <div
+                            key={`${item.headline || item.text}-${index}`}
+                            className="flex min-w-0 gap-3 rounded-xl bg-white/75 p-3 ring-1 ring-primary-100/80"
+                          >
+                            {item.emoji && (
+                              <span className="mt-0.5 shrink-0 text-lg leading-none" aria-hidden="true">
+                                {item.emoji}
+                              </span>
+                            )}
+                            <div className="min-w-0">
+                              {item.headline && (
+                                <div className="text-sm font-bold leading-snug text-primary-950">
+                                  {item.headline}
+                                </div>
+                              )}
+                              {item.text && (
+                                <div className="mt-1 text-sm font-medium leading-relaxed text-primary-950/75">
+                                  {item.text}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
+              </details>
             </section>
           )}
 
@@ -1458,6 +1532,48 @@ export const VideoDetail: React.FC = () => {
                   </div>
                 )}
               />
+            </section>
+          )}
+
+          {showRecipeCard && (recipeMetaChips.length > 0 || hasRecipeSourceDetails) && (
+            <section className="mb-5">
+              <Accordion
+                key={`recipe-more-${currentVideoId}`}
+                icon={<AlignLeft size={16} />}
+                label="More details"
+              >
+                <div className="space-y-5">
+                  {recipeMetaChips.length > 0 && (
+                    <div>
+                      <h4 className="mb-2 text-[11px] font-black uppercase tracking-widest text-gray-400">
+                        Recipe metadata
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {recipeMetaChips.map((chip) => (
+                          <span
+                            key={`details-${chip.label}-${chip.value}`}
+                            className="rounded-full bg-gray-50 px-3 py-1.5 text-[12px] font-bold text-gray-600 ring-1 ring-gray-100"
+                          >
+                            {chip.label}: {chip.value}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {hasRecipeSourceDetails && (
+                    <SourceDetailsContent
+                      caption={viewModel.caption}
+                      transcript={viewModel.transcript}
+                      originalUrl={viewModel.originalUrl}
+                      platform={viewModel.platform}
+                      t={t}
+                      showOriginalLink={false}
+                      tags={viewModel.tags}
+                    />
+                  )}
+                </div>
+              </Accordion>
             </section>
           )}
 
@@ -1594,6 +1710,9 @@ export const VideoDetail: React.FC = () => {
             onStartCooking={() => setCookModeOpenSignal((value) => value + 1)}
             onAddToShoppingList={() => addRecipeToShoppingList(currentVideoId, null)}
             onRemoveFromShoppingList={() => removeRecipeFromShoppingList(currentVideoId)}
+            quickActions={desktopQuickActions}
+            memoryLine={recipeMemoryLine || undefined}
+            memoryItems={returnStateItems}
           />
         ) : !showRecipeCard ? (
           <div className="hidden md:flex flex-col w-full gap-5 mt-0">

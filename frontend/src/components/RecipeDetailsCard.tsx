@@ -13,7 +13,6 @@ import {
   normalizeInstructionSections,
   parseRawIngredient,
 } from '../features/recipe-core/recipePayload';
-import { useTranslation } from 'react-i18next';
 import CookModeModal from './CookModeModal';
 import useRecipeCookSession from '../features/recipe-cook-session/useRecipeCookSession';
 import {
@@ -50,6 +49,19 @@ export interface RecipeDetailsCardProps {
   embedded?: boolean;
 }
 
+function sliceInstructionSections(sections: Array<{ title?: string; instructions: any[] }>, limit: number) {
+  let remaining = limit;
+  return sections
+    .map((section) => {
+      if (remaining <= 0) return null;
+      const instructions = section.instructions.slice(0, remaining);
+      remaining -= instructions.length;
+      if (instructions.length === 0) return null;
+      return { ...section, instructions };
+    })
+    .filter(Boolean) as Array<{ title?: string; instructions: any[] }>;
+}
+
 function getServings(recipe: any) {
   if (typeof recipe?.servings === 'number') return recipe.servings;
   const parsed = Number(recipe?.servings);
@@ -81,7 +93,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   activeTab,
   embedded = false,
 }) => {
-  const { t } = useTranslation(['videoDetail']);
   const [isCookModeOpen, setIsCookModeOpen] = useState(false);
   const cookSessionEnabled = Boolean(recipeId && recipeId !== 'recipe');
   const {
@@ -163,17 +174,17 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const stepCountLabel = `${allInstructions.length} ${allInstructions.length === 1 ? 'step' : 'steps'}`;
   const recipeBodyLoading = loadingOverrides && !isEditing;
   const cookModeLoading = recipeBodyLoading || cookStatusLoading;
-  const [selectedTab, setSelectedTab] = useState<RecipeTabKey>('ingredients');
-  const recipeTabs = useMemo(
-    () => [
-      ...(hasIngredients ? [{ key: 'ingredients' as RecipeTabKey, label: 'Ingredients', meta: ingredientCountLabel }] : []),
-      ...(hasSteps ? [{ key: 'steps' as RecipeTabKey, label: 'Recipe', meta: stepCountLabel }] : []),
-      ...(hasIngredients ? [{ key: 'nutrition' as RecipeTabKey, label: 'Nutrition', meta: 'Per serving' }] : []),
-      { key: 'ask' as RecipeTabKey, label: 'Recipe Assistant', meta: 'Assistant' },
-    ],
-    [hasIngredients, hasSteps, ingredientCountLabel, stepCountLabel]
+  const [stepsExpanded, setStepsExpanded] = useState(false);
+  const previewInstructionSections = useMemo(
+    () => sliceInstructionSections(instructionSections, 4),
+    [instructionSections]
   );
-  const activeRecipeTab = activeTab ?? selectedTab;
+  const displayedInstructionSections = isEditing || stepsExpanded ? instructionSections : previewInstructionSections;
+  const hasHiddenSteps = !isEditing && allInstructions.length > 4;
+  const showIngredientsSection = !activeTab || activeTab === 'ingredients';
+  const showStepsSection = !activeTab || activeTab === 'steps';
+  const showNutritionSection = hasIngredients && (!activeTab || activeTab === 'nutrition');
+  const showAskSection = !activeTab || activeTab === 'ask';
 
   const checkedSteps = useMemo(
     () =>
@@ -195,12 +206,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
       setIsCookModeOpen(true);
     }
   }, [openCookModeSignal, hasSteps, cookModeLoading]);
-
-  useEffect(() => {
-    if (activeTab) return;
-    if (recipeTabs.some((tab) => tab.key === selectedTab)) return;
-    setSelectedTab(recipeTabs[0]?.key ?? 'ask');
-  }, [activeTab, recipeTabs, selectedTab]);
 
   if (!recipe) return null;
   if (recipe.is_compilation) return <RecipeCompilationCard recipe={recipe} />;
@@ -306,48 +311,6 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
         )}
 
-        {recipeTabs.length > 0 && (
-          <div className="border-b border-gray-100 bg-white px-4 py-2.5 sm:px-5">
-            <div
-              role="tablist"
-              aria-label="Recipe sections"
-              className="grid grid-cols-4 gap-1 rounded-[18px] border border-gray-100 bg-gray-100/80 p-1"
-            >
-              {recipeTabs.map((tab) => {
-                const isActive = activeRecipeTab === tab.key;
-
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    onClick={() => {
-                      if (!activeTab) setSelectedTab(tab.key);
-                    }}
-                    className={`flex min-h-11 min-w-0 items-center justify-center rounded-xl px-2 py-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-100 ${
-                      isActive
-                        ? 'bg-white text-rose-700 shadow-sm ring-1 ring-rose-200/80'
-                        : 'text-gray-500 hover:bg-rose-50/60 hover:text-rose-700'
-                    }`}
-                  >
-                    <span className={`max-w-full text-[12px] font-bold leading-tight sm:text-sm ${tab.key === 'ask' ? 'whitespace-normal' : 'truncate'}`}>
-                      {tab.key === 'ask' ? (
-                        <>
-                          Recipe
-                          <span className="block">Assistant</span>
-                        </>
-                      ) : (
-                        tab.label
-                      )}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
         {recipeBodyLoading ? (
           <div className="space-y-5 px-4 py-5 sm:px-5" aria-label="Loading your recipe edits">
             <div>
@@ -375,7 +338,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </div>
         ) : (
         <div className="divide-y divide-gray-100">
-          {hasIngredients && activeRecipeTab === 'ingredients' && (
+          {hasIngredients && showIngredientsSection && (
             <section className="py-5">
               <div className="px-4 sm:px-5 pb-3 flex items-center justify-between gap-3">
                 <h4 className="text-[15px] font-black tracking-tight text-gray-950">Ingredients</h4>
@@ -454,7 +417,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
             </section>
           )}
 
-          {hasSteps && activeRecipeTab === 'steps' && (
+          {hasSteps && showStepsSection && (
             <section className="bg-amber-50/45 px-4 py-5 sm:px-5">
               <div className="pb-4 flex items-center justify-between gap-3">
                 <h4 className="text-[15px] font-black tracking-tight text-gray-950">Steps</h4>
@@ -490,33 +453,48 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               ) : (
                 <div className="rounded-2xl bg-white/80 p-4 ring-1 ring-amber-100/80">
                   <RecipeStepsPanel
-                    instructionSections={instructionSections}
+                    instructionSections={displayedInstructionSections}
                     checkedSteps={checkedSteps}
                     toggleStep={toggleCompletedStepId}
                     temperatureUnit={temperatureUnit}
                   />
+                  {hasHiddenSteps && (
+                    <button
+                      type="button"
+                      onClick={() => setStepsExpanded((value) => !value)}
+                      className="mt-4 inline-flex rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-black text-amber-800 transition-colors hover:bg-amber-50"
+                    >
+                      {stepsExpanded ? 'Show fewer steps' : `View all ${allInstructions.length} steps`}
+                    </button>
+                  )}
                 </div>
               )}
             </section>
           )}
 
-          {!recipeBodyLoading && activeRecipeTab === 'nutrition' && hasIngredients && (
-            <section className="bg-gray-50/60 px-4 py-5 sm:px-5">
-              <RecipeNutritionSummary
-                ingredients={allIngredients}
-                servings={getServings(recipe)}
-                recipeName={recipeName}
-              />
-            </section>
-          )}
-
-          {!recipeBodyLoading && activeRecipeTab === 'ask' && (
+          {!recipeBodyLoading && showAskSection && (
             <section className="px-5 py-5">
+              <div className="mb-4">
+                <h4 className="text-[15px] font-black tracking-tight text-gray-950">AI Recipe Assistant</h4>
+                <p className="mt-1 text-sm font-medium text-gray-500">
+                  Tweak it, swap it, or adapt it to how you cook.
+                </p>
+              </div>
               <RecipeAskPanel
                 question={askQuestion}
                 response={askAnswer}
                 onAsk={handleAskRecipe}
                 loading={askLoading}
+              />
+            </section>
+          )}
+
+          {!recipeBodyLoading && showNutritionSection && (
+            <section className="bg-gray-50/60 px-4 py-5 sm:px-5">
+              <RecipeNutritionSummary
+                ingredients={allIngredients}
+                servings={getServings(recipe)}
+                recipeName={recipeName}
               />
             </section>
           )}

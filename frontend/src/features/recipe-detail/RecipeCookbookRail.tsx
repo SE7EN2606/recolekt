@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlignLeft, ChefHat, ChevronDown, Clock3, Folder, ShoppingBasket, StickyNote } from 'lucide-react';
+import { AlignLeft, ChefHat, ChevronDown, Clock3, Link2, ShoppingBasket, StickyNote } from 'lucide-react';
 import { OriginalLink } from '../../components/VideoDetailWidgets';
 
 export type RecipeMetaChip = {
@@ -388,6 +388,9 @@ export function RecipeCookbookRail({
   shoppingSaving = false,
   onAddToShoppingList,
   onRemoveFromShoppingList,
+  quickActions,
+  memoryLine,
+  memoryItems = [],
 }: {
   folderName: string | null;
   metaChips: RecipeMetaChip[];
@@ -412,6 +415,9 @@ export function RecipeCookbookRail({
   shoppingSaving?: boolean;
   onAddToShoppingList?: () => void;
   onRemoveFromShoppingList?: () => void;
+  quickActions?: React.ReactNode;
+  memoryLine?: string;
+  memoryItems?: string[];
 }) {
   const [sourceOpen, setSourceOpen] = React.useState(false);
   const tagValues = React.useMemo(() => {
@@ -427,6 +433,8 @@ export function RecipeCookbookRail({
       });
   }, [folderName, metaChips]);
   const hasSourceDetails = Boolean(caption || transcript || originalUrl || tagValues.length > 0);
+  const hasRecipeMemory = Boolean(memoryLine || memoryItems.length > 0);
+  const hasQuickActions = Boolean(quickActions || onAddToShoppingList || onRemoveFromShoppingList || folderName);
 
   return (
     <div className="hidden md:flex flex-col w-full gap-5 mt-0">
@@ -462,47 +470,69 @@ export function RecipeCookbookRail({
         </button>
       )}
 
-      {(onAddToShoppingList || onRemoveFromShoppingList) && (
-        shoppingLoading ? (
-          <div className="rounded-[24px] border border-gray-100 bg-white p-4 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 animate-pulse rounded-2xl bg-emerald-50" />
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className="h-4 w-44 animate-pulse rounded-full bg-gray-100" />
-                <div className="h-3 w-36 animate-pulse rounded-full bg-gray-100" />
+      {hasQuickActions && (
+        <div className="rounded-[24px] border border-gray-100 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
+          <div className="mb-3 flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+              <ShoppingBasket size={16} aria-hidden="true" />
+            </div>
+            <div>
+              <div className="text-[11px] font-black text-gray-400 uppercase tracking-widest">
+                Quick actions
               </div>
+              {folderName && (
+                <div className="text-xs font-medium text-gray-400">
+                  Saved in {folderName}
+                </div>
+              )}
             </div>
           </div>
-        ) : (
-        <button
-          type="button"
-          onClick={shoppingPlanned ? onRemoveFromShoppingList : onAddToShoppingList}
-          disabled={shoppingSaving}
-          className={`group rounded-[24px] border p-4 text-left shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-            shoppingPlanned
-              ? 'border-emerald-100 bg-emerald-50/80 hover:bg-emerald-50'
-              : 'border-gray-100 bg-white hover:bg-emerald-50/50'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
-              <ShoppingBasket size={19} aria-hidden="true" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-sm font-black text-gray-950">
-                {shoppingSaving
-                  ? 'Updating shopping list...'
-                  : shoppingPlanned
-                    ? 'Planned'
-                    : 'Add ingredients to shopping list'}
-              </span>
-              <span className="mt-0.5 block text-xs font-medium text-gray-500">
-                {shoppingPlanned ? 'Already in your shopping plan.' : 'Plan this recipe for groceries.'}
-              </span>
-            </span>
+          <div className="space-y-3">
+            {(onAddToShoppingList || onRemoveFromShoppingList) && (
+              shoppingLoading ? (
+                <div className="rounded-2xl border border-gray-100 bg-gray-50/50 p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 animate-pulse rounded-2xl bg-emerald-50" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="h-4 w-44 animate-pulse rounded-full bg-gray-100" />
+                      <div className="h-3 w-36 animate-pulse rounded-full bg-gray-100" />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={shoppingPlanned ? onRemoveFromShoppingList : onAddToShoppingList}
+                  disabled={shoppingSaving}
+                  className={`group w-full rounded-2xl border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                    shoppingPlanned
+                      ? 'border-emerald-100 bg-emerald-50/80 hover:bg-emerald-50'
+                      : 'border-gray-100 bg-gray-50/35 hover:bg-emerald-50/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
+                      <ShoppingBasket size={19} aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-black text-gray-950">
+                        {shoppingSaving
+                          ? 'Updating shopping list...'
+                          : shoppingPlanned
+                            ? 'Planned'
+                            : 'Add ingredients to shopping list'}
+                      </span>
+                      <span className="mt-0.5 block text-xs font-medium text-gray-500">
+                        {shoppingPlanned ? 'Already in your shopping plan.' : 'Plan this recipe for groceries.'}
+                      </span>
+                    </span>
+                  </div>
+                </button>
+              )
+            )}
+            {quickActions}
           </div>
-        </button>
-        )
+        </div>
       )}
 
       <RecipeCookStatusCard
@@ -521,12 +551,39 @@ export function RecipeCookbookRail({
         status={noteStatus}
       />
 
-      {folderName && (
+      {hasRecipeMemory && (
         <RecipeRailCard
-          icon={<Folder size={16} aria-hidden="true" />}
-          label="Collection"
-          title={folderName}
-        />
+          icon={<Clock3 size={16} aria-hidden="true" />}
+          label="Recipe memory"
+          title={memoryLine || 'You have not cooked this one yet.'}
+        >
+          {memoryItems.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {memoryItems.map((item) => (
+                <span
+                  key={item}
+                  className="rounded-full bg-emerald-50 px-3 py-1.5 text-[12px] font-bold text-emerald-800 ring-1 ring-emerald-100"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          ) : (
+            'Cook it, rate it, or add a note to build your memory here.'
+          )}
+        </RecipeRailCard>
+      )}
+
+      {originalUrl && (
+        <RecipeRailCard
+          icon={<Link2 size={16} aria-hidden="true" />}
+          label="Source"
+          title="View the original post"
+        >
+          <div className="mt-3">
+            <OriginalLink url={originalUrl} platform={platform} t={t} />
+          </div>
+        </RecipeRailCard>
       )}
 
       {hasSourceDetails && (

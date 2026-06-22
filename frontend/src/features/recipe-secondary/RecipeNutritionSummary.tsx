@@ -13,7 +13,7 @@ const RecipeNutritionSummary: React.FC<Props> = ({
   recipeName,
 }) => {
   return (
-    <div className="px-5 py-5 border-t border-gray-50">
+    <div className="border-t border-gray-50 px-2 py-2 sm:px-3">
       <NutritionCard
         ingredients={ingredients}
         servings={servings}
