@@ -1214,7 +1214,7 @@ export const VideoDetail: React.FC = () => {
     <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
       <style>{HASHTAG_STYLE}</style>
 
-      <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-6 items-start">
+      <div className="flex flex-col items-start md:grid md:grid-cols-[minmax(0,1.7fr)_22rem] md:gap-4 lg:grid-cols-[minmax(0,1.75fr)_23rem] lg:gap-5">
         <div className="min-w-0 w-full flex flex-col">
           {(refreshMessage || refreshError) && (
             <div
