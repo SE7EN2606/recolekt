@@ -84,7 +84,7 @@ export function RecipeNotesCard({
 
   if (status === 'loading') {
     return (
-      <div id="recipe-notes" className="scroll-mt-24 rounded-[24px] border border-amber-100/80 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
+      <div id="recipe-notes" className="scroll-mt-24 rounded-[24px] border border-amber-100/80 bg-white p-4 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
         <div className="mb-3 flex items-center gap-2">
           <div className="h-8 w-8 animate-pulse rounded-xl bg-amber-50" />
           <div className="space-y-1.5">
@@ -92,7 +92,7 @@ export function RecipeNotesCard({
             <div className="h-3 w-36 animate-pulse rounded-full bg-gray-100" />
           </div>
         </div>
-        <div className="h-[132px] animate-pulse rounded-2xl bg-amber-50/55" />
+        <div className="h-[116px] animate-pulse rounded-2xl bg-amber-50/55" />
       </div>
     );
   }
@@ -107,7 +107,7 @@ export function RecipeNotesCard({
             : 'Saved automatically';
 
   return (
-    <div ref={containerRef} id="recipe-notes" className="scroll-mt-24 rounded-[24px] border border-amber-100/80 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
+    <div ref={containerRef} id="recipe-notes" className="scroll-mt-24 rounded-[24px] border border-amber-100/80 bg-white p-4 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
       <div className="flex items-center gap-2 mb-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
           <StickyNote size={16} aria-hidden="true" />
@@ -140,7 +140,7 @@ export function RecipeNotesCard({
         onChange={(event) => onChange(event.target.value)}
         onFocus={() => setIsWriting(true)}
         placeholder="Substitutions, timing tweaks, mistakes, serving feedback..."
-        className="min-h-[132px] w-full resize-none rounded-2xl border border-amber-100 bg-amber-50/35 px-3 py-3 text-sm font-medium leading-relaxed text-gray-800 placeholder:text-amber-700/45 focus:border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-100"
+        className="min-h-[116px] w-full resize-none rounded-2xl border border-amber-100 bg-amber-50/35 px-3 py-3 text-sm font-medium leading-relaxed text-gray-800 placeholder:text-amber-700/45 focus:border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-100"
       />
       <div className="mt-2 flex items-center justify-between gap-3">
         <div
@@ -437,7 +437,7 @@ export function RecipeCookbookRail({
   const hasQuickActions = Boolean(quickActions || onAddToShoppingList || onRemoveFromShoppingList || folderName);
 
   return (
-    <div className="hidden md:flex flex-col w-full gap-5 mt-0">
+    <div className="hidden md:flex flex-col w-full gap-4 mt-0">
       {cookStatusLoading ? (
         <div className="rounded-[28px] bg-emerald-600/85 p-5 shadow-[0_24px_54px_-28px_rgba(5,150,105,0.9)]">
           <div className="flex items-center gap-3">
@@ -452,7 +452,7 @@ export function RecipeCookbookRail({
         <button
           type="button"
           onClick={onStartCooking}
-          className="group rounded-[28px] bg-emerald-600 p-5 text-left text-white shadow-[0_24px_54px_-28px_rgba(5,150,105,0.9)] transition-colors hover:bg-emerald-700"
+          className="group rounded-[28px] bg-emerald-600 p-6 text-left text-white shadow-[0_24px_54px_-28px_rgba(5,150,105,0.9)] transition-colors hover:bg-emerald-700"
         >
           <div className="flex items-center gap-3">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white ring-1 ring-white/20">
@@ -471,7 +471,7 @@ export function RecipeCookbookRail({
       )}
 
       {hasQuickActions && (
-        <div className="rounded-[24px] border border-gray-100 bg-white p-5 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
+        <div className="rounded-[24px] border border-gray-100 bg-white p-4 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.42)]">
           <div className="mb-3 flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
               <ShoppingBasket size={16} aria-hidden="true" />
@@ -487,7 +487,7 @@ export function RecipeCookbookRail({
               )}
             </div>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {(onAddToShoppingList || onRemoveFromShoppingList) && (
               shoppingLoading ? (
                 <div className="rounded-2xl border border-gray-100 bg-gray-50/50 p-4">
@@ -504,7 +504,7 @@ export function RecipeCookbookRail({
                   type="button"
                   onClick={shoppingPlanned ? onRemoveFromShoppingList : onAddToShoppingList}
                   disabled={shoppingSaving}
-                  className={`group w-full rounded-2xl border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                  className={`group w-full rounded-2xl border p-3.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                     shoppingPlanned
                       ? 'border-emerald-100 bg-emerald-50/80 hover:bg-emerald-50'
                       : 'border-gray-100 bg-gray-50/35 hover:bg-emerald-50/50'

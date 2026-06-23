@@ -1290,40 +1290,20 @@ export const VideoDetail: React.FC = () => {
           </div>
 
           {showRecipeCard && recipeMetaChips.length > 0 && (
-            <div className="mb-5 flex flex-wrap gap-2 px-4 pt-4 md:px-5">
-              {recipeMetaChips.map((chip) => (
-                <span
-                  key={`${chip.label}-${chip.value}`}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-gray-100 bg-gray-50/75 px-3 py-1.5 text-[11px] font-bold text-gray-600"
-                >
-                  <span className="text-gray-400">{chip.label}</span>
-                  <span className="text-gray-900">{chip.value}</span>
-                </span>
-              ))}
-            </div>
-          )}
-
-          {showReturnState && (
-            <div
-              className="mx-4 mb-5 rounded-xl border border-green-100 bg-green-50 px-3 py-3 md:mx-5"
-              aria-live="polite"
-            >
-              {recipeMemoryLine && (
-                <p className="mb-2 text-sm font-semibold leading-snug text-green-950">
-                  {recipeMemoryLine}
-                </p>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {returnStateItems.map((item) => (
+            <>
+              <hr className="mx-4 border-t border-gray-100 md:mx-5" />
+              <div className="mb-4 flex flex-wrap gap-2 px-4 py-3 md:px-5">
+                {recipeMetaChips.map((chip) => (
                   <span
-                    key={item}
-                    className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-bold text-green-900 ring-1 ring-green-100"
+                    key={`${chip.label}-${chip.value}`}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-gray-100 bg-gray-50/75 px-3 py-1.5 text-[11px] font-bold text-gray-600"
                   >
-                    {item}
+                    <span className="text-gray-400">{chip.label}</span>
+                    <span className="text-gray-900">{chip.value}</span>
                   </span>
                 ))}
               </div>
-            </div>
+            </>
           )}
 
           {/* Metadata (mobile) */}
@@ -1410,15 +1390,15 @@ export const VideoDetail: React.FC = () => {
           </div>
 
           {showRecipeCard && hasEnglishSummaryContent && (
-            <section className="mb-6">
-              <details open className="overflow-hidden rounded-2xl border border-primary-100 bg-primary-50/85">
-                <summary className="cursor-pointer list-none px-5 py-4 md:px-6">
+            <section className="mb-5">
+              <details open className="overflow-hidden rounded-2xl border border-primary-100 bg-primary-50/70">
+                <summary className="cursor-pointer list-none px-4 py-3.5 md:px-5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="text-[11px] font-black uppercase tracking-widest text-primary-700/70">
                         AI Summary
                       </div>
-                      <div className="mt-1 text-base font-bold text-primary-950">
+                      <div className="mt-1 text-sm font-bold text-primary-950">
                         A quick read before you cook
                       </div>
                     </div>
@@ -1428,7 +1408,7 @@ export const VideoDetail: React.FC = () => {
                   </div>
                 </summary>
 
-                <div className="border-t border-primary-100/80 px-5 pb-5 pt-4 md:px-6 md:pb-6">
+                <div className="border-t border-primary-100/80 px-4 pb-4 pt-3.5 md:px-5 md:pb-5">
                   <div className="max-w-[72ch]">
                     {englishSummaryContent.summaryText && (
                       <p className="text-sm font-medium leading-relaxed text-primary-950/85">
@@ -1438,11 +1418,11 @@ export const VideoDetail: React.FC = () => {
                   </div>
 
                   {englishSummaryContent.headlines.length > 0 && (
-                    <div className="mt-4">
-                      <h4 className="text-sm font-bold text-primary-950">
+                    <div className="mt-3">
+                      <h4 className="text-xs font-bold uppercase tracking-wide text-primary-950/75">
                         Key Highlights
                       </h4>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="mt-2 grid gap-2.5 sm:grid-cols-2">
                         {englishSummaryContent.headlines.map((item: any, index: number) => (
                           <div
                             key={`${item.headline || item.text}-${index}`}
@@ -1535,7 +1515,7 @@ export const VideoDetail: React.FC = () => {
             </section>
           )}
 
-          {showRecipeCard && (recipeMetaChips.length > 0 || hasRecipeSourceDetails) && (
+          {showRecipeCard && (recipeMetaChips.length > 0 || (viewModel.tags?.length > 0)) && (
             <section className="mb-5">
               <Accordion
                 key={`recipe-more-${currentVideoId}`}
@@ -1543,11 +1523,32 @@ export const VideoDetail: React.FC = () => {
                 label="More details"
               >
                 <div className="space-y-5">
+                  {viewModel.tags?.length > 0 && (
+                    <div>
+                      <h4 className="mb-2 text-[11px] font-black uppercase tracking-widest text-gray-400">
+                        Tags &amp; hashtags
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {(viewModel.tags as string[]).map((tag: string) => (
+                          <span
+                            key={tag}
+                            className="rounded-full bg-gray-50 px-3 py-1.5 text-[12px] font-bold text-gray-600 ring-1 ring-gray-100"
+                          >
+                            {tag.startsWith('#') ? tag : `#${tag}`}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {recipeMetaChips.length > 0 && (
                     <div>
                       <h4 className="mb-2 text-[11px] font-black uppercase tracking-widest text-gray-400">
-                        Recipe metadata
+                        AI extraction details
                       </h4>
+                      <p className="mb-2 text-[11px] font-medium text-gray-400">
+                        Metadata extracted automatically from the video.
+                      </p>
                       <div className="flex flex-wrap gap-2">
                         {recipeMetaChips.map((chip) => (
                           <span
@@ -1559,18 +1560,6 @@ export const VideoDetail: React.FC = () => {
                         ))}
                       </div>
                     </div>
-                  )}
-
-                  {hasRecipeSourceDetails && (
-                    <SourceDetailsContent
-                      caption={viewModel.caption}
-                      transcript={viewModel.transcript}
-                      originalUrl={viewModel.originalUrl}
-                      platform={viewModel.platform}
-                      t={t}
-                      showOriginalLink={false}
-                      tags={viewModel.tags}
-                    />
                   )}
                 </div>
               </Accordion>

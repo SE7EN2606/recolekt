@@ -49,6 +49,16 @@ export interface RecipeDetailsCardProps {
   embedded?: boolean;
 }
 
+function sectionCardClass(tone: 'default' | 'warm' | 'soft' = 'default') {
+  if (tone === 'warm') {
+    return 'rounded-[22px] border border-amber-100 bg-amber-50/45 p-4 shadow-sm sm:p-5';
+  }
+  if (tone === 'soft') {
+    return 'rounded-[22px] border border-gray-100 bg-gray-50/55 p-4 shadow-sm sm:p-5';
+  }
+  return 'rounded-[22px] border border-gray-200 bg-white p-4 shadow-sm sm:p-5';
+}
+
 function sliceInstructionSections(sections: Array<{ title?: string; instructions: any[] }>, limit: number) {
   let remaining = limit;
   return sections
@@ -185,6 +195,10 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const showStepsSection = !activeTab || activeTab === 'steps';
   const showNutritionSection = hasIngredients && (!activeTab || activeTab === 'nutrition');
   const showAskSection = !activeTab || activeTab === 'ask';
+  const ingredientLayoutClass =
+    !isEditing && ingredientSections.length > 1
+      ? 'grid gap-4 xl:grid-cols-2'
+      : 'space-y-4';
 
   const checkedSteps = useMemo(
     () =>
@@ -213,151 +227,152 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
   return (
     <>
-      <div
-        className={
-          embedded
-            ? 'bg-white overflow-hidden'
-            : 'bg-white border border-gray-200 rounded-[22px] shadow-sm overflow-hidden mt-3 mb-6'
-        }
-      >
-        {showRecipeHeader && (
-        <div className="flex items-center justify-between gap-3 border-b border-rose-100 bg-rose-50/70 px-4 py-3 sm:px-5">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center text-rose-600">
-              <ChefHat size={20} aria-hidden="true" />
-            </span>
-            <h3 className="truncate text-base font-bold tracking-tight text-gray-950">
-              Recipe Details
-            </h3>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsEditing((value) => !value)}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-gray-600 shadow-sm ring-1 ring-rose-100 transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-              aria-label={isEditing ? 'Done editing recipe' : 'Edit recipe'}
-            >
-              {isEditing ? <X size={14} aria-hidden="true" /> : <Pencil size={14} aria-hidden="true" />}
-            </button>
-            {onToggleMetric && hasIngredients && (
-              <button
-                type="button"
-                onClick={() => onToggleMetric(!useMetric)}
-                className="rounded-full border border-rose-100 bg-white px-3 py-1.5 text-xs font-bold text-gray-800 shadow-sm transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-              >
-                {useMetric ? 'Imperial' : 'Metric'}
-              </button>
-            )}
-          </div>
-        </div>
-        )}
-
+      <div className={embedded ? 'space-y-4' : 'mt-3 mb-6 space-y-4'}>
         {hasSteps && showStartCooking && (
-          <div className="px-4 py-4 sm:px-5 bg-green-50/70 border-b border-green-100">
+          <section className="rounded-[22px] border border-green-100 bg-green-50/75 p-4 shadow-sm sm:p-5">
             <button
               type="button"
               onClick={() => setIsCookModeOpen(true)}
               disabled={cookModeLoading}
-              className="flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-green-600 px-5 py-4 text-[15px] font-bold text-white shadow-sm transition-colors hover:bg-green-700 active:bg-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex min-h-[58px] w-full items-center justify-center gap-2 rounded-2xl bg-green-600 px-5 py-4 text-[15px] font-bold text-white shadow-sm transition-colors hover:bg-green-700 active:bg-green-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <ChefHat size={18} aria-hidden="true" />
               {cookModeLoading ? 'Loading recipe state...' : hasActiveSession ? 'Resume cooking' : 'Start cooking'}
             </button>
-            {secondaryAction && (
-              <div className="mt-3">
-                {secondaryAction}
-              </div>
-            )}
-          </div>
+            {secondaryAction && <div className="mt-3">{secondaryAction}</div>}
+          </section>
         )}
 
-        {isEditing && (
-          <div className="border-b border-amber-100 bg-amber-50/55 px-4 py-3 sm:px-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-[12px] font-black uppercase tracking-widest text-amber-700">Personal recipe edits</p>
-                <p className="mt-0.5 text-xs font-medium text-amber-800/75">
-                  {loadingOverrides
-                    ? 'Loading your recipe edits...'
-                    : overrideError
-                      ? overrideError
-                      : savingOverrides
-                        ? 'Saving edits...'
-                        : overridesSaved
-                          ? 'Saved. The extracted recipe stays unchanged.'
-                          : 'Your changes save as personal overrides. The extracted recipe stays unchanged.'}
-                </p>
+        <section className={sectionCardClass()}>
+          {showRecipeHeader && (
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+                    <ChefHat size={18} aria-hidden="true" />
+                  </span>
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Recipe details</p>
+                    <h3 className="text-base font-bold tracking-tight text-gray-950">Times, yield, and cooking setup</h3>
+                  </div>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={toggleVerified}
-                className={`inline-flex items-center justify-center gap-2 rounded-2xl px-3.5 py-2 text-xs font-black transition-colors ${
-                  recipeOverrides.verifiedByUser
-                    ? 'border border-gray-200 bg-white text-gray-800 hover:bg-gray-50'
-                    : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
-                }`}
-              >
-                <CheckCircle2 size={15} aria-hidden="true" />
-                {recipeOverrides.verifiedByUser ? 'Verified by me' : 'Mark verified by me'}
-              </button>
+
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditing((value) => !value)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-gray-600 shadow-sm ring-1 ring-rose-100 transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                  aria-label={isEditing ? 'Done editing recipe' : 'Edit recipe'}
+                >
+                  {isEditing ? <X size={14} aria-hidden="true" /> : <Pencil size={14} aria-hidden="true" />}
+                </button>
+                {onToggleMetric && hasIngredients && (
+                  <button
+                    type="button"
+                    onClick={() => onToggleMetric(!useMetric)}
+                    className="rounded-full border border-rose-100 bg-white px-3 py-1.5 text-xs font-bold text-gray-800 shadow-sm transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                  >
+                    {useMetric ? 'Imperial' : 'Metric'}
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {headerContent && (
-          <div className="border-b border-gray-100 [&>div>div:first-child]:grid [&>div>div:first-child]:w-full [&>div>div:first-child]:grid-cols-3 [&>div>div:first-child]:gap-0 [&>div>div:first-child]:border-y [&>div>div:first-child]:border-gray-100 [&>div>div:first-child]:bg-gray-50/60 [&>div>div:first-child]:px-4 [&>div>div:first-child]:py-2.5 [&>div>div:first-child]:sm:px-5 [&>div>div:first-child>div]:min-w-0 [&>div>div:first-child>div]:rounded-none [&>div>div:first-child>div]:border-0 [&>div>div:first-child>div]:border-r [&>div>div:first-child>div]:border-gray-100 [&>div>div:first-child>div]:bg-transparent [&>div>div:first-child>div]:px-2 [&>div>div:first-child>div]:py-0 [&>div>div:first-child>div]:text-center [&>div>div:first-child>div:last-child]:border-r-0 [&>div>div:last-child]:py-2.5 [&>div>div:last-child>div>div:last-child]:!text-sm">
-            {headerContent}
-          </div>
-        )}
+          {isEditing && (
+            <div className={`${showRecipeHeader ? 'mt-4' : ''} rounded-2xl border border-amber-100 bg-amber-50/65 px-4 py-3`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[12px] font-black uppercase tracking-widest text-amber-700">Personal recipe edits</p>
+                  <p className="mt-0.5 text-xs font-medium text-amber-800/75">
+                    {loadingOverrides
+                      ? 'Loading your recipe edits...'
+                      : overrideError
+                        ? overrideError
+                        : savingOverrides
+                          ? 'Saving edits...'
+                          : overridesSaved
+                            ? 'Saved. The extracted recipe stays unchanged.'
+                            : 'Your changes save as personal overrides. The extracted recipe stays unchanged.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleVerified}
+                  className={`inline-flex items-center justify-center gap-2 rounded-2xl px-3.5 py-2 text-xs font-black transition-colors ${
+                    recipeOverrides.verifiedByUser
+                      ? 'border border-gray-200 bg-white text-gray-800 hover:bg-gray-50'
+                      : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  <CheckCircle2 size={15} aria-hidden="true" />
+                  {recipeOverrides.verifiedByUser ? 'Verified by me' : 'Mark verified by me'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {headerContent && (
+            <div className={`${showRecipeHeader || isEditing ? 'mt-4' : ''} overflow-hidden rounded-2xl border border-gray-100 bg-gray-50/55 [&>div>div:first-child]:grid [&>div>div:first-child]:w-full [&>div>div:first-child]:grid-cols-2 [&>div>div:first-child]:gap-2 [&>div>div:first-child]:px-3 [&>div>div:first-child]:py-3 [&>div>div:first-child]:sm:grid-cols-3 [&>div>div:first-child]:sm:px-4 [&>div>div:first-child>div]:min-w-0 [&>div>div:first-child>div]:rounded-xl [&>div>div:first-child>div]:border [&>div>div:first-child>div]:border-gray-100 [&>div>div:first-child>div]:bg-white [&>div>div:first-child>div]:px-3 [&>div>div:first-child>div]:py-3 [&>div>div:last-child]:grid [&>div>div:last-child]:grid-cols-3 [&>div>div:last-child]:gap-3 [&>div>div:last-child]:border-t [&>div>div:last-child]:border-gray-100 [&>div>div:last-child]:bg-white/80 [&>div>div:last-child]:px-3 [&>div>div:last-child]:py-3 [&>div>div:last-child]:sm:px-4 [&>div>div:last-child>div]:rounded-xl [&>div>div:last-child>div]:bg-rose-50/70 [&>div>div:last-child>div]:px-2 [&>div>div:last-child>div]:py-3`}>
+              {headerContent}
+            </div>
+          )}
+        </section>
 
         {recipeBodyLoading ? (
-          <div className="space-y-5 px-4 py-5 sm:px-5" aria-label="Loading your recipe edits">
-            <div>
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="h-4 w-24 animate-pulse rounded-full bg-gray-100" />
-                <div className="h-6 w-16 animate-pulse rounded-full bg-gray-100" />
+          <div className={sectionCardClass()} aria-label="Loading your recipe edits">
+            <div className="space-y-5">
+              <div>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="h-4 w-24 animate-pulse rounded-full bg-gray-100" />
+                  <div className="h-6 w-16 animate-pulse rounded-full bg-gray-100" />
+                </div>
+                <div className="space-y-2">
+                  {[0, 1, 2].map((item) => (
+                    <div key={item} className="h-11 animate-pulse rounded-2xl bg-gray-100" />
+                  ))}
+                </div>
               </div>
-              <div className="space-y-2">
-                {[0, 1, 2].map((item) => (
-                  <div key={item} className="h-11 animate-pulse rounded-2xl bg-gray-100" />
-                ))}
-              </div>
-            </div>
-            <div className="rounded-2xl bg-amber-50/60 p-4">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div className="h-4 w-16 animate-pulse rounded-full bg-amber-100" />
-                <div className="h-6 w-14 animate-pulse rounded-full bg-white/80" />
-              </div>
-              <div className="space-y-3">
-                {[0, 1].map((item) => (
-                  <div key={item} className="h-16 animate-pulse rounded-2xl bg-white/80" />
-                ))}
+              <div className="rounded-2xl bg-amber-50/60 p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="h-4 w-16 animate-pulse rounded-full bg-amber-100" />
+                  <div className="h-6 w-14 animate-pulse rounded-full bg-white/80" />
+                </div>
+                <div className="space-y-3">
+                  {[0, 1].map((item) => (
+                    <div key={item} className="h-16 animate-pulse rounded-2xl bg-white/80" />
+                  ))}
+                </div>
               </div>
             </div>
           </div>
         ) : (
-        <div className="divide-y divide-gray-100">
+          <>
           {hasIngredients && showIngredientsSection && (
-            <section className="py-5">
-              <div className="px-4 sm:px-5 pb-3 flex items-center justify-between gap-3">
-                <h4 className="text-[15px] font-black tracking-tight text-gray-950">Ingredients</h4>
+            <section className={sectionCardClass()}>
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Ingredients</p>
+                  <h4 className="mt-1 text-[15px] font-black tracking-tight text-gray-950">What you need</h4>
+                  <p className="mt-1 text-sm font-medium text-gray-500">Check ingredients off as you gather them.</p>
+                </div>
                 <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-bold text-gray-500">
                   {ingredientCountLabel}
                 </span>
               </div>
 
-              <div className="space-y-3">
+              <div className={ingredientLayoutClass}>
                 {(isEditing ? editableIngredientSections : ingredientSections).map((section, sectionIndex) => (
-                  <div key={sectionIndex}>
+                  <div key={sectionIndex} className={!isEditing ? 'overflow-hidden rounded-2xl border border-gray-100 bg-white/90' : ''}>
                     {section.title && (
-                      <h5 className="px-4 sm:px-5 pb-1.5 text-[11px] font-black uppercase tracking-widest text-gray-400">
+                      <h5 className={isEditing ? 'pb-2 text-[11px] font-black uppercase tracking-widest text-gray-400' : 'px-4 pt-4 pb-2 text-[11px] font-black uppercase tracking-widest text-gray-400 sm:px-5'}>
                         {section.title}
                       </h5>
                     )}
 
                     {isEditing ? (
-                      <div className="space-y-2 px-4 sm:px-5">
+                      <div className="space-y-2">
                         {section.items.map((entry: any) => (
                           <div key={entry.id} className="flex items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50/70 p-2">
                             <input
@@ -387,28 +402,24 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                       </div>
                     ) : (
                       <ul className="divide-y divide-gray-100">
-                        {section.items.map((item, itemIndex) => {
-                          const id = `section-${sectionIndex}-ingredient-${itemIndex}`;
-
-                          return (
-                            <IngredientRow
-                              key={id}
-                              id={id}
-                              raw={item}
-                              servingScale={servingScale}
-                              scaleQuantity={scaleQuantity}
-                              checked={checkedIngredientIds.has(id)}
-                              onToggle={toggleCheckedIngredientId}
-                              useMetric={useMetric}
-                              recipeConversion={recipeConversion}
-                              volumePreference={volumePreference}
-                              rounding={rounding}
-                              parseRawIngredient={parseRawIngredient}
-                              formatQty={formatQty}
-                              assumedLabel={assumedLabel}
-                            />
-                          );
-                        })}
+                        {section.items.map((item, itemIndex) => (
+                          <IngredientRow
+                            key={'section-' + sectionIndex + '-ingredient-' + itemIndex}
+                            id={'section-' + sectionIndex + '-ingredient-' + itemIndex}
+                            raw={item}
+                            servingScale={servingScale}
+                            scaleQuantity={scaleQuantity}
+                            checked={checkedIngredientIds.has('section-' + sectionIndex + '-ingredient-' + itemIndex)}
+                            onToggle={toggleCheckedIngredientId}
+                            useMetric={useMetric}
+                            recipeConversion={recipeConversion}
+                            volumePreference={volumePreference}
+                            rounding={rounding}
+                            parseRawIngredient={parseRawIngredient}
+                            formatQty={formatQty}
+                            assumedLabel={assumedLabel}
+                          />
+                        ))}
                       </ul>
                     )}
                   </div>
@@ -418,9 +429,13 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           )}
 
           {hasSteps && showStepsSection && (
-            <section className="bg-amber-50/45 px-4 py-5 sm:px-5">
-              <div className="pb-4 flex items-center justify-between gap-3">
-                <h4 className="text-[15px] font-black tracking-tight text-gray-950">Steps</h4>
+            <section className={sectionCardClass('warm')}>
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-amber-700/70">Steps</p>
+                  <h4 className="mt-1 text-[15px] font-black tracking-tight text-gray-950">Cooking flow</h4>
+                  <p className="mt-1 text-sm font-medium text-gray-600">Start with the first steps, then expand when you need the full flow.</p>
+                </div>
                 <span className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-bold text-amber-700 ring-1 ring-amber-100">
                   {stepCountLabel}
                 </span>
@@ -452,6 +467,11 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                 </div>
               ) : (
                 <div className="rounded-2xl bg-white/80 p-4 ring-1 ring-amber-100/80">
+                  {hasHiddenSteps && !stepsExpanded && (
+                    <div className="mb-4 inline-flex rounded-full bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-700 ring-1 ring-amber-100">
+                      Previewing the first 4 steps
+                    </div>
+                  )}
                   <RecipeStepsPanel
                     instructionSections={displayedInstructionSections}
                     checkedSteps={checkedSteps}
@@ -464,7 +484,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                       onClick={() => setStepsExpanded((value) => !value)}
                       className="mt-4 inline-flex rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-black text-amber-800 transition-colors hover:bg-amber-50"
                     >
-                      {stepsExpanded ? 'Show fewer steps' : `View all ${allInstructions.length} steps`}
+                      {stepsExpanded ? 'Show fewer steps' : 'View all ' + allInstructions.length + ' steps'}
                     </button>
                   )}
                 </div>
@@ -473,11 +493,12 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           )}
 
           {!recipeBodyLoading && showAskSection && (
-            <section className="px-5 py-5">
+            <section className={sectionCardClass('soft')}>
               <div className="mb-4">
-                <h4 className="text-[15px] font-black tracking-tight text-gray-950">AI Recipe Assistant</h4>
+                <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">AI Recipe Assistant</p>
+                <h4 className="mt-1 text-[15px] font-black tracking-tight text-gray-950">Tweak it, make it yours</h4>
                 <p className="mt-1 text-sm font-medium text-gray-500">
-                  Tweak it, swap it, or adapt it to how you cook.
+                  Ask for swaps, scaling help, or ways to adapt it to how you cook.
                 </p>
               </div>
               <RecipeAskPanel
@@ -490,7 +511,11 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           )}
 
           {!recipeBodyLoading && showNutritionSection && (
-            <section className="bg-gray-50/60 px-4 py-5 sm:px-5">
+            <section className={sectionCardClass()}>
+              <div className="mb-4">
+                <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Nutrition</p>
+                <h4 className="mt-1 text-[15px] font-black tracking-tight text-gray-950">Estimated nutrition</h4>
+              </div>
               <RecipeNutritionSummary
                 ingredients={allIngredients}
                 servings={getServings(recipe)}
@@ -498,8 +523,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               />
             </section>
           )}
-
-        </div>
+          </>
         )}
       </div>
 
