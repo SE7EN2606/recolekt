@@ -100,14 +100,14 @@ const IngredientRow: React.FC<Props> = ({
   return (
     <li
       onClick={interactive ? () => onToggle?.(id) : undefined}
-      className={`flex items-center gap-3 px-4 py-3 group transition-all ${
+      className={`grid grid-cols-[36px_96px_minmax(0,1fr)] items-center gap-x-3 px-0 py-3 group transition-all ${
         interactive ? 'cursor-pointer' : ''
       } ${
         checked ? 'bg-emerald-50/40 opacity-80' : interactive ? 'hover:bg-gray-50/70' : ''
       }`}
     >
       {interactive && (
-        <div className="shrink-0">
+        <div className="flex h-full items-center justify-center">
           <div
             className={`flex h-[22px] w-[22px] items-center justify-center rounded-[7px] border-[1.5px] transition-all ${
               checked
@@ -122,41 +122,38 @@ const IngredientRow: React.FC<Props> = ({
         </div>
       )}
 
-      <div className="grid min-w-0 flex-1 grid-cols-[72px_minmax(0,1fr)] items-center gap-x-3">
-        {hasMeasurement && !needsReview && (
-          <span
-            className={`tabular-nums text-[13px] font-black ${
-              checked ? 'text-gray-500' : 'text-primary-600'
-            }`}
-          >
-            {displayQty}
-            {displayUnit && <span className="font-bold"> {displayUnit}</span>}
-          </span>
-        )}
-        {!hasMeasurement && (
-          <span
-            className={`text-[12px] italic ${
-              checked ? 'text-gray-400' : 'text-gray-400'
-            }`}
-          >
-            {needsReview && assumed && !checked
-              ? assumed
-              : !needsReview && quantityTypeText && !checked
-                ? quantityTypeText
-                : ''}
-          </span>
-        )}
-
+      {hasMeasurement && !needsReview ? (
         <span
-          className={`min-w-0 text-[13.5px] leading-snug ${
-            checked
-              ? 'text-gray-500 line-through decoration-gray-400'
-              : 'text-gray-800 font-medium'
+          className={`tabular-nums text-[13px] font-black ${
+            checked ? 'text-gray-500' : 'text-primary-600'
           }`}
         >
-          {name}
+          {displayQty}
+          {displayUnit && <span className="font-bold"> {displayUnit}</span>}
         </span>
-      </div>
+      ) : (
+        <span
+          className={`text-[12px] italic ${
+            checked ? 'text-gray-400' : 'text-gray-400'
+          }`}
+        >
+          {needsReview && assumed && !checked
+            ? assumed
+            : !needsReview && quantityTypeText && !checked
+              ? quantityTypeText
+              : ''}
+        </span>
+      )}
+
+      <span
+        className={`min-w-0 text-[13.5px] leading-snug ${
+          checked
+            ? 'text-gray-500 line-through decoration-gray-400'
+            : 'text-gray-800 font-medium'
+        }`}
+      >
+        {name}
+      </span>
     </li>
   );
 };

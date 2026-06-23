@@ -38,7 +38,7 @@ const RecipeStepsPanel: React.FC<Props> = ({
   let globalIndex = 0;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 border-y border-gray-100">
       {instructionSections.map((section, sectionIndex) => {
         const visibleInstructions = (section.instructions || [])
           .map((instruction) => ({
@@ -57,7 +57,7 @@ const RecipeStepsPanel: React.FC<Props> = ({
               </h4>
             )}
 
-            <div className="space-y-2.5">
+            <div className="space-y-0">
               {visibleInstructions.map(({ text }) => {
                 const stepIndex = globalIndex++;
                 const checked = checkedSteps.has(stepIndex);
@@ -67,25 +67,25 @@ const RecipeStepsPanel: React.FC<Props> = ({
                     key={`${sectionIndex}-${stepIndex}-${text.slice(0, 24)}`}
                     type="button"
                     onClick={() => toggleStep(stepIndex)}
-                    className={`flex w-full items-start gap-3.5 border-b border-gray-100 px-0 py-3 text-left transition-all last:border-b-0 ${
+                    className={`grid w-full grid-cols-[36px_minmax(0,1fr)] items-start gap-x-3 border-b border-gray-100 px-0 py-3.5 text-left transition-all last:border-b-0 ${
                       checked
                         ? 'opacity-80'
                         : 'hover:bg-transparent'
                     }`}
                   >
                     <div
-                      className={`flex h-[32px] w-[32px] flex-shrink-0 items-center justify-center rounded-[12px] transition-all ${
+                      className={`mt-[1px] flex h-[22px] w-[22px] items-center justify-center rounded-[7px] transition-all ${
                         checked
                           ? 'bg-gradient-to-br from-primary-600 to-secondary-600 text-white shadow-sm'
                           : 'bg-gradient-to-br from-primary-100 to-secondary-100 text-primary-700'
                       }`}
                     >
-                      <span className={`text-[13px] font-black`}>
+                      <span className={`text-[10px] font-black`}>
                         {stepIndex + 1}
                       </span>
                     </div>
 
-                    <div className="flex-1 pt-[3px]">
+                    <div className="min-w-0 pt-[1px]">
                       <p
                         className={`text-[14.5px] leading-[1.6] font-medium ${
                           checked ? 'text-gray-400 line-through' : 'text-gray-700'
