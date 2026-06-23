@@ -408,7 +408,7 @@ export function RecipeCookbookRail({
   const hasMemory = memoryItems.length > 0 || Boolean(memoryLine);
 
   return (
-    <div className="hidden md:flex w-full flex-col gap-4 py-5 px-[18px] mt-0">
+    <div className="mt-0 hidden w-full flex-col gap-4 pb-5 md:flex">
 
       {/* 1. Start cooking */}
       {cookStatusLoading ? (

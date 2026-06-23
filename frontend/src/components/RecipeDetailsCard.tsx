@@ -49,6 +49,10 @@ export interface RecipeDetailsCardProps {
   embedded?: boolean;
 }
 
+const RECIPE_LIST_MARKER_COLUMN = '40px';
+const RECIPE_LIST_AMOUNT_COLUMN = '96px';
+const RECIPE_LIST_MARKER_SIZE = 24;
+
 function sectionCardClass(tone: 'default' | 'warm' = 'default') {
   if (tone === 'warm') {
     return 'overflow-hidden rounded-[26px] border border-white/75 bg-white/90 backdrop-blur-sm p-5 sm:p-6 shadow-[0_4px_18px_rgba(15,23,42,0.06)]';
@@ -196,6 +200,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     !isEditing
       ? 'space-y-0'
       : 'space-y-4';
+  const sharedListBodyClass = 'border-y border-gray-100';
   const checkedIngredientCount = useMemo(
     () =>
       ingredientSections.reduce((total, section, sectionIndex) => (
@@ -440,7 +445,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                         </button>
                       </div>
                     ) : (
-                      <ul className={`${ingredientLayoutClass} border-y border-gray-100`}>
+                      <ul className={`${ingredientLayoutClass} ${sharedListBodyClass}`}>
                         {section.items.map((item, itemIndex) => (
                           <IngredientRow
                             key={'section-' + sectionIndex + '-ingredient-' + itemIndex}
@@ -457,6 +462,9 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                             parseRawIngredient={parseRawIngredient}
                             formatQty={formatQty}
                             assumedLabel={assumedLabel}
+                            markerColumnWidth={RECIPE_LIST_MARKER_COLUMN}
+                            amountColumnWidth={RECIPE_LIST_AMOUNT_COLUMN}
+                            markerSize={RECIPE_LIST_MARKER_SIZE}
                           />
                         ))}
                       </ul>
@@ -511,6 +519,9 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                     checkedSteps={checkedSteps}
                     toggleStep={toggleCompletedStepId}
                     temperatureUnit={temperatureUnit}
+                    markerColumnWidth={RECIPE_LIST_MARKER_COLUMN}
+                    markerSize={RECIPE_LIST_MARKER_SIZE}
+                    bodyClass={sharedListBodyClass}
                   />
                   {hasHiddenSteps && (
                     <button

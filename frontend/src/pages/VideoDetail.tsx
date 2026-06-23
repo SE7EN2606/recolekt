@@ -172,6 +172,31 @@ function ReelErrorState({
   );
 }
 
+function ReelPendingState() {
+  return (
+    <section className="animate-fade-in mb-5 mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] overflow-hidden rounded-[26px] border border-white/75 bg-white/90 shadow-[0_8px_28px_rgba(15,23,42,0.08)] backdrop-blur-sm md:mt-0">
+      <div className="px-4 py-5 md:px-6 md:py-6">
+        <div className="flex items-start gap-4">
+          <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-600">
+            <Loader2 size={20} aria-hidden="true" className="animate-spin" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-black uppercase tracking-[0.12em] text-primary-600/70">
+              Saved Reel
+            </p>
+            <h2 className="mt-1 text-[22px] font-bold tracking-tight text-slate-950">
+              Loading saved reel…
+            </h2>
+            <p className="mt-2 max-w-[48ch] text-sm font-medium leading-6 text-slate-500">
+              Pulling the final recipe detail before we render the page.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const extractLocationPlaces = (location: any): any[] => {
   if (!location) return [];
   if (Array.isArray(location)) return location;
@@ -353,7 +378,6 @@ function RecipeAiSummaryCard({
   );
 }
 
-
 function RecipeMetaPanel({ chips }: { chips: RecipeMetaChip[] }) {
   const readChip = (...labels: string[]) =>
     chips.find((chip) =>
@@ -467,6 +491,7 @@ export const VideoDetail: React.FC = () => {
   const [refreshMessage, setRefreshMessage] = useState('');
   const [refreshError, setRefreshError] = useState('');
   const [detailErrorMessage, setDetailErrorMessage] = useState('');
+  const [detailHydrationSettled, setDetailHydrationSettled] = useState(false);
   const detailHydratedRef = useRef(false);
   const lastStableVideoRef = useRef<any>(null);
   const refreshAbortRef = useRef<AbortController | null>(null);
@@ -489,6 +514,7 @@ export const VideoDetail: React.FC = () => {
     setRefreshMessage('');
     setRefreshError('');
     setDetailErrorMessage('');
+    setDetailHydrationSettled(false);
   }, [id]);
 
   useEffect(() => {
@@ -525,6 +551,7 @@ export const VideoDetail: React.FC = () => {
 
   const enrichVideo = useCallback(async () => {
     if (!id || !navigator.onLine) {
+      setDetailHydrationSettled(true);
       setLoading(false);
       return;
     }
@@ -562,6 +589,7 @@ export const VideoDetail: React.FC = () => {
         setRefreshError('');
       }
     } finally {
+      setDetailHydrationSettled(true);
       setLoading(false);
     }
   }, [id, fetchHydratedVideo]);
@@ -948,6 +976,20 @@ export const VideoDetail: React.FC = () => {
     recipeContentAvailable ||
     (rawContentType === 'recipe' && stableRecipeForCard)
   );
+  const isLikelyRecipeContent = Boolean(
+    recipeContentAvailable ||
+    stableRecipeForCard ||
+    recipeForCard ||
+    rawContentType === 'recipe' ||
+    String(viewModel?.contentType || '').toLowerCase() === 'recipe'
+  );
+  const recipeResolutionPending =
+    !showRecipeCard &&
+    !detailHydrationSettled &&
+    navigator.onLine;
+  const isDetailPresentationReady =
+    !recipeResolutionPending || !isLikelyRecipeContent;
+  const showNonRecipeFallback = !showRecipeCard && !recipeResolutionPending;
 
   const {
     note: recipeNote,
@@ -991,6 +1033,20 @@ export const VideoDetail: React.FC = () => {
   }
 
   if (loading || !viewModel) return <Skeleton />;
+  if (!isDetailPresentationReady) {
+    return (
+      <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
+        <div className="flex w-full flex-col items-start md:grid md:grid-cols-[minmax(0,1fr)_20rem] md:gap-5 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
+          <div className="min-w-0 w-full flex flex-col">
+            <ReelPendingState />
+          </div>
+          {isDesktopRecipeDetailLayout ? (
+            <aside className="hidden w-full md:block" aria-hidden="true" />
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   const toolsCategories = getToolsCategoriesForLanguage(viewModel.toolsList, showOriginal);
   const hasToolsList =
@@ -1214,7 +1270,7 @@ export const VideoDetail: React.FC = () => {
     <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
       <style>{HASHTAG_STYLE}</style>
 
-      <div className="flex flex-col items-start md:grid md:grid-cols-[minmax(0,1.7fr)_22rem] md:gap-4 lg:grid-cols-[minmax(0,1.75fr)_23rem] lg:gap-5">
+      <div className="flex w-full flex-col items-start md:grid md:grid-cols-[minmax(0,1fr)_20rem] md:gap-5 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
         <div className="min-w-0 w-full flex flex-col">
           {(refreshMessage || refreshError) && (
             <div
@@ -1396,7 +1452,7 @@ export const VideoDetail: React.FC = () => {
           )}
 
           {/* Metadata (mobile) */}
-          {!showRecipeCard && (
+          {showNonRecipeFallback && (
           <MetadataPanel
             variant="mobile"
             category={metadataCategory}
@@ -1410,7 +1466,7 @@ export const VideoDetail: React.FC = () => {
           )}
 
           {/* AI Summary */}
-          {!showRecipeCard && (
+          {showNonRecipeFallback && (
             <div className="bg-primary-50 rounded-2xl p-5 md:p-6 mb-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-primary-700 font-bold text-sm uppercase tracking-wide">
@@ -1628,7 +1684,7 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
-          {!showRecipeCard && viewModel.caption && (
+          {showNonRecipeFallback && viewModel.caption && (
             <Accordion icon={<AlignLeft size={16} />} label={t('videoDetail:caption', 'Caption')}>
               <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
                 {viewModel.caption}
@@ -1636,7 +1692,7 @@ export const VideoDetail: React.FC = () => {
             </Accordion>
           )}
 
-          {!showRecipeCard && viewModel.transcript && (
+          {showNonRecipeFallback && viewModel.transcript && (
             <div className="md:hidden">
               <Accordion
                 icon={<CustomMessageSquareMoreIcon size={16} />}
@@ -1666,7 +1722,7 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
-          {!showRecipeCard && viewModel.originalUrl && (
+          {showNonRecipeFallback && viewModel.originalUrl && (
             <OriginalLink
               url={viewModel.originalUrl}
               platform={viewModel.platform}
@@ -1707,7 +1763,7 @@ export const VideoDetail: React.FC = () => {
             memoryLine={recipeMemoryLine || undefined}
             memoryItems={returnStateItems}
           />
-        ) : !showRecipeCard ? (
+        ) : showNonRecipeFallback ? (
           <div className="hidden md:flex flex-col w-full gap-5 mt-0">
             <RecipeMetaPanel chips={recipeMetaChips} />
             <MetadataPanel
