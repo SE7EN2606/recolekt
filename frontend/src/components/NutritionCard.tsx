@@ -286,16 +286,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
     "Serving size unavailable";
 
   return (
-    <section className="space-y-2 bg-white p-2">
-      <div className="space-y-0.5">
-        <h3 className="text-lg font-semibold text-gray-950">
-          Nutrition
-        </h3>
-        <p className="text-sm leading-relaxed text-gray-500">
-          Values adjust with your serving size.
-        </p>
-      </div>
-
+    <section className="space-y-3">
       <div className="space-y-1.5 rounded-xl border border-gray-100 bg-gray-50/70 p-2">
         <div className="grid w-full grid-cols-3 rounded-xl bg-gray-100 p-1 text-xs font-bold">
           {[
@@ -334,7 +325,7 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
               <button
                 type="button"
                 onClick={() => handlePortionScale(portionScale - 0.25)}
-                className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
+                className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-50 text-sm font-black text-primary-600 transition hover:bg-primary-100"
               >
                 −
               </button>
@@ -344,13 +335,18 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
               <button
                 type="button"
                 onClick={() => handlePortionScale(portionScale + 0.25)}
-                className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-50 text-sm font-black text-rose-600 transition hover:bg-rose-100"
+                className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-50 text-sm font-black text-primary-600 transition hover:bg-primary-100"
               >
                 +
               </button>
             </div>
           )}
         </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-primary-50 px-2.5 py-0.5 text-[11px] font-bold text-primary-600">AI estimated</span>
+        <span className="text-[11px] text-gray-400">Values adjust with serving size</span>
       </div>
 
       {mode === "serving" ? (

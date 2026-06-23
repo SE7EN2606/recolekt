@@ -70,20 +70,20 @@ const RecipeStepsPanel: React.FC<Props> = ({
                     className="flex w-full items-start gap-3.5 text-left cursor-pointer select-none transition-all group"
                   >
                     <div
-                      className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all border-2 ${
+                      className={`flex-shrink-0 w-[29px] h-[29px] rounded-[10px] flex items-center justify-center transition-all ${
                         checked
-                          ? 'bg-primary-600 border-primary-600 text-white'
-                          : 'bg-white border-primary-200 group-hover:border-primary-400'
+                          ? 'bg-gradient-to-br from-primary-600 to-secondary-600 text-white shadow-sm'
+                          : 'bg-gradient-to-br from-primary-100 to-secondary-100 text-primary-700'
                       }`}
                     >
-                      <span className={`text-[11px] font-black ${checked ? 'text-white' : 'text-primary-600'}`}>
+                      <span className={`text-[13px] font-black`}>
                         {stepIndex + 1}
                       </span>
                     </div>
 
                     <div className="flex-1 pt-[4px]">
                       <p
-                        className={`text-[13px] leading-relaxed font-medium ${
+                        className={`text-[14.5px] leading-[1.55] font-medium ${
                           checked ? 'text-gray-400 line-through' : 'text-gray-700'
                         }`}
                       >

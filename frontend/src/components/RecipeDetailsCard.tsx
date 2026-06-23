@@ -49,14 +49,11 @@ export interface RecipeDetailsCardProps {
   embedded?: boolean;
 }
 
-function sectionCardClass(tone: 'default' | 'warm' | 'soft' = 'default') {
+function sectionCardClass(tone: 'default' | 'warm' = 'default') {
   if (tone === 'warm') {
-    return 'rounded-[22px] border border-amber-100 bg-amber-50/45 p-4 shadow-sm sm:p-5';
+    return 'overflow-hidden rounded-[26px] border border-white/75 bg-white/90 backdrop-blur-sm p-5 sm:p-6 shadow-[0_4px_18px_rgba(15,23,42,0.06)]';
   }
-  if (tone === 'soft') {
-    return 'rounded-[22px] border border-gray-100 bg-gray-50/55 p-4 shadow-sm sm:p-5';
-  }
-  return 'rounded-[22px] border border-gray-200 bg-white p-4 shadow-sm sm:p-5';
+  return 'overflow-hidden rounded-[26px] border border-white/75 bg-white/90 backdrop-blur-sm p-5 sm:p-6 shadow-[0_4px_18px_rgba(15,23,42,0.06)]';
 }
 
 function sliceInstructionSections(sections: Array<{ title?: string; instructions: any[] }>, limit: number) {
@@ -197,7 +194,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const showAskSection = !activeTab || activeTab === 'ask';
   const ingredientLayoutClass =
     !isEditing && ingredientSections.length > 1
-      ? 'grid gap-4 xl:grid-cols-2'
+      ? 'grid gap-4 sm:grid-cols-2'
       : 'space-y-4';
 
   const checkedSteps = useMemo(
@@ -227,7 +224,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
   return (
     <>
-      <div className={embedded ? 'space-y-4' : 'mt-3 mb-6 space-y-4'}>
+      <div className={embedded ? 'space-y-5' : 'mt-3 mb-6 space-y-5'}>
         {hasSteps && showStartCooking && (
           <section className="rounded-[22px] border border-green-100 bg-green-50/75 p-4 shadow-sm sm:p-5">
             <button
@@ -245,15 +242,14 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
         <section className={sectionCardClass()}>
           {showRecipeHeader && (
-            <div className="flex items-start justify-between gap-4">
+            <div className="-mx-5 -mt-5 mb-4 flex items-start justify-between gap-3 border-b border-gray-100/80 bg-gradient-to-br from-primary-50/80 to-secondary-50/50 px-5 pt-5 pb-4 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6">
               <div className="min-w-0">
                 <div className="flex items-center gap-2.5">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-100 to-secondary-100 text-secondary-600">
                     <ChefHat size={18} aria-hidden="true" />
                   </span>
                   <div>
                     <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Recipe details</p>
-                    <h3 className="text-base font-bold tracking-tight text-gray-950">Times, yield, and cooking setup</h3>
                   </div>
                 </div>
               </div>
@@ -314,7 +310,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           )}
 
           {headerContent && (
-            <div className={`${showRecipeHeader || isEditing ? 'mt-4' : ''} overflow-hidden rounded-2xl border border-gray-100 bg-gray-50/55 [&>div>div:first-child]:grid [&>div>div:first-child]:w-full [&>div>div:first-child]:grid-cols-2 [&>div>div:first-child]:gap-2 [&>div>div:first-child]:px-3 [&>div>div:first-child]:py-3 [&>div>div:first-child]:sm:grid-cols-3 [&>div>div:first-child]:sm:px-4 [&>div>div:first-child>div]:min-w-0 [&>div>div:first-child>div]:rounded-xl [&>div>div:first-child>div]:border [&>div>div:first-child>div]:border-gray-100 [&>div>div:first-child>div]:bg-white [&>div>div:first-child>div]:px-3 [&>div>div:first-child>div]:py-3 [&>div>div:last-child]:grid [&>div>div:last-child]:grid-cols-3 [&>div>div:last-child]:gap-3 [&>div>div:last-child]:border-t [&>div>div:last-child]:border-gray-100 [&>div>div:last-child]:bg-white/80 [&>div>div:last-child]:px-3 [&>div>div:last-child]:py-3 [&>div>div:last-child]:sm:px-4 [&>div>div:last-child>div]:rounded-xl [&>div>div:last-child>div]:bg-rose-50/70 [&>div>div:last-child>div]:px-2 [&>div>div:last-child>div]:py-3`}>
+            <div className={`${showRecipeHeader || isEditing ? 'mt-4' : ''} overflow-hidden rounded-2xl border border-gray-100 bg-gray-50/30`}>
               {headerContent}
             </div>
           )}
@@ -354,10 +350,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Ingredients</p>
-                  <h4 className="mt-1 text-[15px] font-black tracking-tight text-gray-950">What you need</h4>
-                  <p className="mt-1 text-sm font-medium text-gray-500">Check ingredients off as you gather them.</p>
                 </div>
-                <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-bold text-gray-500">
+                <span className="shrink-0 rounded-full bg-gradient-to-br from-primary-600 to-secondary-600 px-3 py-1 text-[13px] font-bold text-white">
                   {ingredientCountLabel}
                 </span>
               </div>
@@ -429,19 +423,17 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           )}
 
           {hasSteps && showStepsSection && (
-            <section className={sectionCardClass('warm')}>
+            <section className={sectionCardClass('default')}>
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-widest text-amber-700/70">Steps</p>
-                  <h4 className="mt-1 text-[15px] font-black tracking-tight text-gray-950">Cooking flow</h4>
-                  <p className="mt-1 text-sm font-medium text-gray-600">Start with the first steps, then expand when you need the full flow.</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Directions</p>
                 </div>
-                <span className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-bold text-amber-700 ring-1 ring-amber-100">
+                <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-bold text-gray-500">
                   {stepCountLabel}
                 </span>
               </div>
               {isEditing ? (
-                <div className="space-y-4 rounded-2xl bg-white/80 p-4 ring-1 ring-amber-100/80">
+                <div className="space-y-4 rounded-2xl bg-white/80 p-4 ring-1 ring-gray-100">
                   {editableInstructionSections.map((section, sectionIndex) => (
                     <div key={sectionIndex} className="space-y-3">
                       {section.title && (
@@ -466,12 +458,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                   ))}
                 </div>
               ) : (
-                <div className="rounded-2xl bg-white/80 p-4 ring-1 ring-amber-100/80">
-                  {hasHiddenSteps && !stepsExpanded && (
-                    <div className="mb-4 inline-flex rounded-full bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-700 ring-1 ring-amber-100">
-                      Previewing the first 4 steps
-                    </div>
-                  )}
+                <div className="rounded-2xl bg-white/80 p-4 ring-1 ring-gray-100">
                   <RecipeStepsPanel
                     instructionSections={displayedInstructionSections}
                     checkedSteps={checkedSteps}
@@ -482,7 +469,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                     <button
                       type="button"
                       onClick={() => setStepsExpanded((value) => !value)}
-                      className="mt-4 inline-flex rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-black text-amber-800 transition-colors hover:bg-amber-50"
+                      className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary-50 py-3 text-sm font-bold text-primary-700 transition-colors hover:bg-primary-100"
                     >
                       {stepsExpanded ? 'Show fewer steps' : 'View all ' + allInstructions.length + ' steps'}
                     </button>
@@ -493,14 +480,19 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           )}
 
           {!recipeBodyLoading && showAskSection && (
-            <section className={sectionCardClass('soft')}>
-              <div className="mb-4">
-                <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">AI Recipe Assistant</p>
-                <h4 className="mt-1 text-[15px] font-black tracking-tight text-gray-950">Tweak it, make it yours</h4>
-                <p className="mt-1 text-sm font-medium text-gray-500">
-                  Ask for swaps, scaling help, or ways to adapt it to how you cook.
-                </p>
+            <section className="relative overflow-hidden rounded-[26px] bg-gradient-to-br from-primary-600 to-secondary-600 p-5 shadow-[0_20px_44px_-14px_rgba(15,23,42,0.28)] sm:p-6">
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(130%_90%_at_100%_0%,rgba(255,255,255,0.22),rgba(255,255,255,0)_58%)]" />
+              <div className="relative mb-4 flex items-center gap-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-white/20">
+                  <ChefHat size={17} aria-hidden="true" className="text-white" />
+                </span>
+                <span className="text-[11px] font-black uppercase tracking-widest text-white/90">Recipe Assistant</span>
+                <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10.5px] font-black text-white">AI</span>
               </div>
+              <h4 className="relative mb-1.5 text-xl font-black tracking-tight text-white sm:text-2xl">Tweak it, make it yours</h4>
+              <p className="relative mb-4 text-sm font-medium leading-relaxed text-white/80">
+                Ask for swaps, scaling help, or ways to adapt it to how you cook.
+              </p>
               <RecipeAskPanel
                 question={askQuestion}
                 response={askAnswer}
@@ -512,9 +504,9 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
           {!recipeBodyLoading && showNutritionSection && (
             <section className={sectionCardClass()}>
-              <div className="mb-4">
+              <div className="mb-4 flex items-center justify-between gap-3">
                 <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Nutrition</p>
-                <h4 className="mt-1 text-[15px] font-black tracking-tight text-gray-950">Estimated nutrition</h4>
+                <span className="text-xs font-medium text-gray-400">per serving</span>
               </div>
               <RecipeNutritionSummary
                 ingredients={allIngredients}

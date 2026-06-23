@@ -101,7 +101,7 @@ const IngredientRow: React.FC<Props> = ({
   return (
     <li
       onClick={interactive ? () => onToggle?.(id) : undefined}
-      className={`flex items-start gap-3 px-5 py-2.5 group transition-all ${
+      className={`flex items-start gap-3 px-5 py-[11px] group transition-all ${
         interactive ? 'cursor-pointer' : ''
       } ${
         checked ? 'opacity-75' : interactive ? 'hover:bg-gray-50/60' : ''
@@ -110,7 +110,7 @@ const IngredientRow: React.FC<Props> = ({
       {interactive && (
         <div className="flex-shrink-0 mt-[3px]">
           <div
-            className={`w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center transition-all ${
+            className={`w-5 h-5 rounded-[6px] border-[1.5px] flex items-center justify-center transition-all ${
               checked
                 ? 'border-emerald-600 bg-emerald-600'
                 : 'border-gray-200 bg-transparent group-hover:border-primary-300'
@@ -136,7 +136,7 @@ const IngredientRow: React.FC<Props> = ({
       <div className="flex-1 min-w-0 flex items-baseline flex-wrap gap-x-1.5">
         {hasMeasurement && !needsReview && (
           <span
-            className={`text-[13px] font-black ${
+            className={`tabular-nums text-[13px] font-black ${
               checked ? 'text-gray-500' : 'text-primary-600'
             }`}
           >

@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, Trash2, Heart, FolderInput, AlertCircle, X,
   EllipsisVertical, AlignLeft, Pencil, Save, Globe, Folder, Archive,
-  MapPin, ShoppingBasket, RefreshCw, Loader2, Clock3, Flame, Timer,
+  MapPin, ShoppingBasket, RefreshCw, Loader2, Clock3, Flame, Timer, ChevronDown,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -1159,7 +1159,7 @@ export const VideoDetail: React.FC = () => {
           <div
             className={
               showRecipeCard
-                ? 'mb-5 mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] overflow-hidden rounded-2xl border border-white/70 bg-white/90 shadow-sm md:mt-0'
+                ? 'mb-5 mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] overflow-hidden rounded-[26px] border border-white/75 bg-white/90 backdrop-blur-sm shadow-[0_4px_18px_rgba(15,23,42,0.06)] md:mt-0'
                 : ''
             }
           >
@@ -1496,14 +1496,14 @@ export const VideoDetail: React.FC = () => {
                       ))}
                     </div>
 
-                    <div className="grid grid-cols-3 divide-x divide-rose-100 border-y border-rose-100 bg-white px-4 py-3 sm:px-5">
+                    <div className="grid grid-cols-3 divide-x divide-gray-100 border-t border-gray-100 bg-white/80 px-4 sm:px-5">
                       {primaryRecipeStatItems.map((item) => (
-                        <div key={item.label} className="flex min-w-0 flex-col items-center px-3 text-center first:pl-0 last:pr-0">
-                          <div className="mb-1.5 text-rose-600">{statIconByLabel[item.label]}</div>
-                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                        <div key={item.label} className="flex min-w-0 flex-col items-center px-3 py-4 text-center first:pl-0 last:pr-0">
+                          <div className="mb-2 text-secondary-600">{statIconByLabel[item.label]}</div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
                             {item.label}
                           </div>
-                          <div className="mt-0.5 truncate text-base font-bold text-rose-700" title={item.value}>
+                          <div className="mt-1 truncate text-[18px] font-black tabular-nums text-gray-950" title={item.value}>
                             {item.value}
                           </div>
                         </div>
@@ -1517,52 +1517,42 @@ export const VideoDetail: React.FC = () => {
 
           {showRecipeCard && (recipeMetaChips.length > 0 || (viewModel.tags?.length > 0)) && (
             <section className="mb-5">
-              <Accordion
-                key={`recipe-more-${currentVideoId}`}
-                icon={<AlignLeft size={16} />}
-                label="More details"
-              >
-                <div className="space-y-5">
-                  {viewModel.tags?.length > 0 && (
-                    <div>
-                      <h4 className="mb-2 text-[11px] font-black uppercase tracking-widest text-gray-400">
-                        Tags &amp; hashtags
-                      </h4>
-                      <div className="flex flex-wrap gap-2">
-                        {(viewModel.tags as string[]).map((tag: string) => (
-                          <span
-                            key={tag}
-                            className="rounded-full bg-gray-50 px-3 py-1.5 text-[12px] font-bold text-gray-600 ring-1 ring-gray-100"
-                          >
-                            {tag.startsWith('#') ? tag : `#${tag}`}
-                          </span>
-                        ))}
-                      </div>
+              <p className="mb-2.5 ml-0.5 text-[11px] font-bold uppercase tracking-[0.1em] text-gray-400">More details</p>
+              <div className="overflow-hidden rounded-[18px] border border-slate-200 bg-slate-50">
+                {viewModel.tags?.length > 0 && (
+                  <details className="group border-b border-slate-100 last:border-b-0">
+                    <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3.5 [&::-webkit-details-marker]:hidden">
+                      <span className="text-[14.5px] font-bold text-slate-700">Tags &amp; hashtags</span>
+                      <ChevronDown size={16} className="text-slate-300 transition-transform duration-200 group-open:rotate-180" />
+                    </summary>
+                    <div className="flex flex-wrap gap-1.5 border-t border-slate-100 bg-white px-4 pb-4 pt-3">
+                      {(viewModel.tags as string[]).map((tag: string) => (
+                        <span key={tag} className="rounded-full bg-slate-100 px-3 py-1.5 text-[12.5px] font-semibold text-slate-600">
+                          {tag.startsWith('#') ? tag : `#${tag}`}
+                        </span>
+                      ))}
                     </div>
-                  )}
-
-                  {recipeMetaChips.length > 0 && (
-                    <div>
-                      <h4 className="mb-2 text-[11px] font-black uppercase tracking-widest text-gray-400">
-                        AI extraction details
-                      </h4>
-                      <p className="mb-2 text-[11px] font-medium text-gray-400">
-                        Metadata extracted automatically from the video.
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {recipeMetaChips.map((chip) => (
-                          <span
-                            key={`details-${chip.label}-${chip.value}`}
-                            className="rounded-full bg-gray-50 px-3 py-1.5 text-[12px] font-bold text-gray-600 ring-1 ring-gray-100"
-                          >
-                            {chip.label}: {chip.value}
-                          </span>
-                        ))}
+                  </details>
+                )}
+                {recipeMetaChips.length > 0 && (
+                  <details className="group border-b border-slate-100 last:border-b-0">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 [&::-webkit-details-marker]:hidden">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-[14.5px] font-bold text-slate-700">AI extraction details</span>
+                        <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-bold text-primary-600">AI extracted</span>
                       </div>
+                      <ChevronDown size={16} className="shrink-0 text-slate-300 transition-transform duration-200 group-open:rotate-180" />
+                    </summary>
+                    <div className="flex flex-wrap gap-1.5 border-t border-slate-100 bg-white px-4 pb-4 pt-3">
+                      {recipeMetaChips.map((chip) => (
+                        <span key={`details-${chip.label}-${chip.value}`} className="rounded-full bg-slate-100 px-3 py-1.5 text-[12.5px] font-semibold text-slate-600">
+                          {chip.label}: {chip.value}
+                        </span>
+                      ))}
                     </div>
-                  )}
-                </div>
-              </Accordion>
+                  </details>
+                )}
+              </div>
             </section>
           )}
 
