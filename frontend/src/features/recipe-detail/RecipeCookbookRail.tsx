@@ -15,7 +15,7 @@ export type LocalCookStatus = {
 
 export type RecipeNoteStatus = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 
-const GLASS = 'bg-white/90 backdrop-blur-sm border border-white/75 rounded-[18px] shadow-[0_4px_18px_rgba(15,23,42,0.06)]';
+const GLASS = 'bg-white/90 backdrop-blur-sm border border-white/75 rounded-[24px] shadow-[0_4px_18px_rgba(15,23,42,0.06)]';
 
 export function RecipeNotesCard({
   note,
@@ -60,7 +60,7 @@ export function RecipeNotesCard({
 
   if (status === 'loading') {
     return (
-      <div id="recipe-notes" className="scroll-mt-24 rounded-[18px] border border-[#e0e7ff] bg-gradient-to-br from-[#f5f3ff] to-[#fff1f5] p-[18px]">
+      <div id="recipe-notes" className="scroll-mt-24 rounded-[24px] border border-[#e0e7ff] bg-gradient-to-br from-[#f5f3ff] to-[#fff1f5] p-[18px] shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
         <div className="mb-3 flex items-center gap-2">
           <div className="h-8 w-8 animate-pulse rounded-xl bg-primary-100" />
           <div className="h-4 w-24 animate-pulse rounded-full bg-primary-100" />
@@ -83,7 +83,7 @@ export function RecipeNotesCard({
     <div
       ref={containerRef}
       id="recipe-notes"
-      className="scroll-mt-24 rounded-[18px] border border-[#e0e7ff] bg-gradient-to-br from-[#f5f3ff] to-[#fff1f5] p-[18px]"
+      className="scroll-mt-24 rounded-[24px] border border-[#e0e7ff] bg-gradient-to-br from-[#f5f3ff] to-[#fff1f5] p-[18px] shadow-[0_4px_18px_rgba(15,23,42,0.06)]"
     >
       <div className="mb-3 flex items-center gap-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
@@ -159,7 +159,7 @@ export function RecipeCookStatusCard({
 
   if (loading) {
     return (
-      <div className="rounded-[18px] border border-[#D6EFE4] bg-gradient-to-br from-[#E9F8F0] to-[#E2F3F8] p-[18px]">
+      <div className="rounded-[24px] border border-[#D6EFE4] bg-gradient-to-br from-[#E9F8F0] to-[#E2F3F8] p-[18px] shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
         <div className="mb-2.5 flex items-center gap-[7px]">
           <div className="h-[7px] w-[7px] animate-pulse rounded-full bg-green-300" />
           <div className="h-3 w-20 animate-pulse rounded-full bg-green-200" />
@@ -175,7 +175,7 @@ export function RecipeCookStatusCard({
   }
 
   return (
-    <div className="rounded-[18px] border border-[#D6EFE4] bg-gradient-to-br from-[#E9F8F0] to-[#E2F3F8] p-[18px]">
+    <div className="rounded-[24px] border border-[#D6EFE4] bg-gradient-to-br from-[#E9F8F0] to-[#E2F3F8] p-[18px] shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
       <div className="mb-2.5 flex items-center gap-[7px]">
         <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-green-600" />
         <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-green-700">Cook status</span>
@@ -408,11 +408,11 @@ export function RecipeCookbookRail({
   const hasMemory = memoryItems.length > 0 || Boolean(memoryLine);
 
   return (
-    <div className="hidden md:flex flex-col gap-3 py-5 px-[18px] w-full mt-0">
+    <div className="hidden md:flex w-full flex-col gap-4 py-5 px-[18px] mt-0">
 
       {/* 1. Start cooking */}
       {cookStatusLoading ? (
-        <div className="rounded-[18px] bg-green-600/80 p-[18px]">
+        <div className="rounded-[24px] bg-green-600/80 p-[18px] shadow-[0_10px_26px_rgba(5,150,105,0.32)]">
           <div className="flex items-center gap-3.5">
             <div className="h-[46px] w-[46px] animate-pulse rounded-[13px] bg-white/20" />
             <div className="min-w-0 flex-1 space-y-2">
@@ -425,7 +425,7 @@ export function RecipeCookbookRail({
         <button
           type="button"
           onClick={onStartCooking}
-          className="rounded-[18px] bg-green-600 p-[18px] text-left text-white shadow-[0_10px_26px_rgba(5,150,105,0.32)] transition-colors hover:bg-green-700"
+          className="rounded-[24px] bg-green-600 p-5 text-left text-white shadow-[0_10px_26px_rgba(5,150,105,0.32)] transition-colors hover:bg-green-700"
         >
           <div className="flex items-center gap-3.5">
             <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[13px] bg-white/20">
@@ -455,7 +455,7 @@ export function RecipeCookbookRail({
 
       {/* 3. Quick actions */}
       {hasQuickActions && (
-        <div className={`${GLASS} p-2`}>
+        <div className={`${GLASS} p-2.5`}>
           {(onAddToShoppingList || onRemoveFromShoppingList) && (
             shoppingLoading ? (
               <div className="flex items-center gap-3 px-3 py-[11px] rounded-xl">

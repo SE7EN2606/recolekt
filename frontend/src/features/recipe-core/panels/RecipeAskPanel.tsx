@@ -35,7 +35,7 @@ const RecipeAskPanel: React.FC<Props> = ({ question, response, onAsk, loading })
             key={label}
             type="button"
             onClick={() => handleSuggestion(label)}
-            className="rounded-full border border-white/40 bg-white/16 px-3.5 py-2 text-[12.5px] font-semibold text-white backdrop-blur-sm transition hover:bg-white/25"
+            className="rounded-full border border-white/35 bg-white/15 px-3.5 py-2 text-[12.5px] font-semibold text-white backdrop-blur-sm transition hover:bg-white/25"
           >
             {label}
           </button>
@@ -46,7 +46,7 @@ const RecipeAskPanel: React.FC<Props> = ({ question, response, onAsk, loading })
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          className="h-12 flex-1 rounded-xl border-none bg-white px-4 text-[14.5px] text-gray-950 shadow-[0_2px_8px_rgba(15,23,42,0.12)] outline-none placeholder:text-gray-400"
+          className="h-12 flex-1 rounded-xl border border-white/30 bg-white px-4 text-[14.5px] text-gray-950 shadow-[0_2px_8px_rgba(15,23,42,0.12)] outline-none placeholder:text-gray-400"
           placeholder="e.g. swap almonds for hazelnuts…"
         />
         <button
@@ -61,7 +61,7 @@ const RecipeAskPanel: React.FC<Props> = ({ question, response, onAsk, loading })
         <div className="text-sm font-medium text-white/70">Thinking…</div>
       )}
       {response && (
-        <div className="flex gap-3 rounded-xl border border-white/25 bg-white/16 p-4">
+        <div className="flex gap-3 rounded-2xl border border-white/25 bg-white/16 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
           <p className="text-[13.5px] leading-relaxed text-white">{response}</p>
         </div>
       )}

@@ -60,7 +60,6 @@ const IngredientRow: React.FC<Props> = ({
     note,
     quantity,
     unit,
-    emoji,
     needsReview,
     isApprox,
     qtyRange,
@@ -101,19 +100,19 @@ const IngredientRow: React.FC<Props> = ({
   return (
     <li
       onClick={interactive ? () => onToggle?.(id) : undefined}
-      className={`flex items-start gap-3 px-5 py-[11px] group transition-all ${
+      className={`flex items-center gap-3 px-4 py-3 group transition-all ${
         interactive ? 'cursor-pointer' : ''
       } ${
-        checked ? 'opacity-75' : interactive ? 'hover:bg-gray-50/60' : ''
+        checked ? 'bg-emerald-50/40 opacity-80' : interactive ? 'hover:bg-gray-50/70' : ''
       }`}
     >
       {interactive && (
-        <div className="flex-shrink-0 mt-[3px]">
+        <div className="shrink-0">
           <div
-            className={`w-5 h-5 rounded-[6px] border-[1.5px] flex items-center justify-center transition-all ${
+            className={`flex h-[22px] w-[22px] items-center justify-center rounded-[7px] border-[1.5px] transition-all ${
               checked
-                ? 'border-emerald-600 bg-emerald-600'
-                : 'border-gray-200 bg-transparent group-hover:border-primary-300'
+                ? 'border-emerald-600 bg-emerald-600 shadow-[0_3px_10px_rgba(5,150,105,0.18)]'
+                : 'border-gray-200 bg-white group-hover:border-primary-300'
             }`}
           >
             {checked && (
@@ -123,17 +122,7 @@ const IngredientRow: React.FC<Props> = ({
         </div>
       )}
 
-      {emoji && (
-        <span
-          className={`text-[15px] leading-none flex-shrink-0 mt-[1px] ${
-            checked ? 'grayscale' : ''
-          }`}
-        >
-          {emoji}
-        </span>
-      )}
-
-      <div className="flex-1 min-w-0 flex items-baseline flex-wrap gap-x-1.5">
+      <div className="grid min-w-0 flex-1 grid-cols-[72px_minmax(0,1fr)] items-center gap-x-3">
         {hasMeasurement && !needsReview && (
           <span
             className={`tabular-nums text-[13px] font-black ${
@@ -144,21 +133,22 @@ const IngredientRow: React.FC<Props> = ({
             {displayUnit && <span className="font-bold"> {displayUnit}</span>}
           </span>
         )}
-
-        {needsReview && assumed && !checked && (
-          <span className="text-[12px] text-gray-400 italic font-normal">
-            {assumed}
-          </span>
-        )}
-
-        {!hasMeasurement && !needsReview && quantityTypeText && !checked && (
-          <span className="text-[12px] text-gray-400 italic font-normal">
-            {quantityTypeText}
+        {!hasMeasurement && (
+          <span
+            className={`text-[12px] italic ${
+              checked ? 'text-gray-400' : 'text-gray-400'
+            }`}
+          >
+            {needsReview && assumed && !checked
+              ? assumed
+              : !needsReview && quantityTypeText && !checked
+                ? quantityTypeText
+                : ''}
           </span>
         )}
 
         <span
-          className={`text-[13px] leading-snug ${
+          className={`min-w-0 text-[13.5px] leading-snug ${
             checked
               ? 'text-gray-500 line-through decoration-gray-400'
               : 'text-gray-800 font-medium'
@@ -166,18 +156,6 @@ const IngredientRow: React.FC<Props> = ({
         >
           {name}
         </span>
-
-        {isApprox && !checked && (
-          <span className="text-[10px] text-gray-400 italic">
-            (approx.)
-          </span>
-        )}
-
-        {note && !checked && (
-          <span className="text-[11px] text-gray-400 italic">
-            ({note})
-          </span>
-        )}
       </div>
     </li>
   );

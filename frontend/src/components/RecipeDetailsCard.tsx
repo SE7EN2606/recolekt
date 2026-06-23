@@ -193,9 +193,18 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const showNutritionSection = hasIngredients && (!activeTab || activeTab === 'nutrition');
   const showAskSection = !activeTab || activeTab === 'ask';
   const ingredientLayoutClass =
-    !isEditing && ingredientSections.length > 1
-      ? 'grid gap-4 sm:grid-cols-2'
+    !isEditing
+      ? 'grid gap-x-8 2xl:grid-cols-2'
       : 'space-y-4';
+  const checkedIngredientCount = useMemo(
+    () =>
+      ingredientSections.reduce((total, section, sectionIndex) => (
+        total + section.items.reduce((sectionTotal, _item, itemIndex) => (
+          sectionTotal + (checkedIngredientIds.has(`section-${sectionIndex}-ingredient-${itemIndex}`) ? 1 : 0)
+        ), 0)
+      ), 0),
+    [ingredientSections, checkedIngredientIds]
+  );
 
   const checkedSteps = useMemo(
     () =>
@@ -226,7 +235,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     <>
       <div className={embedded ? 'space-y-5' : 'mt-3 mb-6 space-y-5'}>
         {hasSteps && showStartCooking && (
-          <section className="rounded-[22px] border border-green-100 bg-green-50/75 p-4 shadow-sm sm:p-5">
+          <section className="rounded-[26px] border border-green-100/80 bg-gradient-to-br from-green-50 to-emerald-50 p-4 shadow-[0_8px_26px_rgba(22,163,74,0.10)] sm:p-5">
             <button
               type="button"
               onClick={() => setIsCookModeOpen(true)}
@@ -250,6 +259,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                   </span>
                   <div>
                     <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Recipe details</p>
+                    <h3 className="mt-1 text-[16px] font-bold tracking-tight text-gray-900">Times and setup</h3>
                   </div>
                 </div>
               </div>
@@ -347,51 +357,55 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           <>
           {hasIngredients && showIngredientsSection && (
             <section className={sectionCardClass()}>
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Ingredients</p>
-                  {onServingScaleChange && (
-                    <div className="flex h-7 items-center gap-1 rounded-full border border-gray-200 bg-white px-1.5 shadow-sm">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const base = getServings(recipe);
-                          const next = Math.max(1, Math.round(base * servingScale) - 1);
-                          onServingScaleChange(next / base);
-                        }}
-                        className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-50 text-sm font-black text-primary-600 transition hover:bg-primary-100"
-                        aria-label="Decrease yield"
-                      >
-                        −
-                      </button>
-                      <span className="min-w-[64px] text-center text-[11px] font-black tabular-nums text-gray-900">
-                        Yields {Math.round(getServings(recipe) * servingScale)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const base = getServings(recipe);
-                          const next = Math.round(base * servingScale) + 1;
-                          onServingScaleChange(next / base);
-                        }}
-                        className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-50 text-sm font-black text-primary-600 transition hover:bg-primary-100"
-                        aria-label="Increase yield"
-                      >
-                        +
-                      </button>
-                    </div>
-                  )}
+              <div className="mb-4 flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h4 className="text-[19px] font-bold tracking-tight text-gray-950">Ingredients</h4>
+                    <span className="rounded-full bg-primary-50 px-2.5 py-1 text-[11px] font-bold text-primary-700 ring-1 ring-primary-100">
+                      {`${checkedIngredientCount}/${allIngredients.length}`}
+                    </span>
+                  </div>
                 </div>
-                <span className="shrink-0 rounded-full bg-gradient-to-br from-primary-600 to-secondary-600 px-3 py-1 text-[13px] font-bold text-white">
-                  {ingredientCountLabel}
-                </span>
+
+                {onServingScaleChange && (
+                  <div className="flex shrink-0 items-center gap-2 rounded-full border border-gray-200 bg-white px-2.5 py-1.5 shadow-sm">
+                    <span className="text-[10px] font-black uppercase tracking-[0.12em] text-gray-400">Yields</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const base = getServings(recipe);
+                        const next = Math.max(1, Math.round(base * servingScale) - 1);
+                        onServingScaleChange(next / base);
+                      }}
+                      className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-[15px] font-black text-gray-700 transition hover:bg-gray-100"
+                      aria-label="Decrease yield"
+                    >
+                      −
+                    </button>
+                    <span className="min-w-[2ch] text-center text-[16px] font-black tabular-nums text-gray-950">
+                      {Math.round(getServings(recipe) * servingScale)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const base = getServings(recipe);
+                        const next = Math.round(base * servingScale) + 1;
+                        onServingScaleChange(next / base);
+                      }}
+                      className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-[15px] font-black text-gray-700 transition hover:bg-gray-100"
+                      aria-label="Increase yield"
+                    >
+                      +
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div className={ingredientLayoutClass}>
+              <div className="space-y-5">
                 {(isEditing ? editableIngredientSections : ingredientSections).map((section, sectionIndex) => (
-                  <div key={sectionIndex} className={!isEditing ? 'overflow-hidden rounded-2xl border border-gray-100 bg-white/90' : ''}>
+                  <div key={sectionIndex}>
                     {section.title && (
-                      <h5 className={isEditing ? 'pb-2 text-[11px] font-black uppercase tracking-widest text-gray-400' : 'px-4 pt-4 pb-2 text-[11px] font-black uppercase tracking-widest text-gray-400 sm:px-5'}>
+                      <h5 className={isEditing ? 'pb-2 text-[11px] font-black uppercase tracking-widest text-gray-400' : 'pb-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-gray-400'}>
                         {section.title}
                       </h5>
                     )}
@@ -426,7 +440,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                         </button>
                       </div>
                     ) : (
-                      <ul className="divide-y divide-gray-100 sm:grid sm:grid-cols-2 sm:divide-y-0 sm:[&>li]:border-b sm:[&>li]:border-gray-100">
+                      <ul className={`${ingredientLayoutClass} border-y border-gray-100`}>
                         {section.items.map((item, itemIndex) => (
                           <IngredientRow
                             key={'section-' + sectionIndex + '-ingredient-' + itemIndex}
@@ -500,7 +514,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                     <button
                       type="button"
                       onClick={() => setStepsExpanded((value) => !value)}
-                      className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary-50 py-3 text-sm font-bold text-primary-700 transition-colors hover:bg-primary-100"
+                      className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-primary-100 bg-primary-50/70 py-3 text-sm font-bold text-primary-700 transition-colors hover:bg-primary-100"
                     >
                       {stepsExpanded ? 'Show fewer steps' : 'View all ' + allInstructions.length + ' steps'}
                     </button>
