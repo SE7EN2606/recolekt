@@ -983,10 +983,11 @@ export const VideoDetail: React.FC = () => {
     { label: 'Prep', sourceLabel: 'Prep' },
     { label: 'Cook', sourceLabel: 'Cook' },
     { label: 'Total', sourceLabel: 'Total' },
-  ].map((item) => ({
-    label: item.label,
-    value: recipeCardMetaItems.find((metaItem) => metaItem.label === item.sourceLabel)?.value || '—',
-  }));
+  ].map((item) => {
+    const raw = recipeCardMetaItems.find((metaItem) => metaItem.label === item.sourceLabel)?.value || '—';
+    const value = /^\d+$/.test(raw.trim()) ? `${raw.trim()} min` : raw;
+    return { label: item.label, value };
+  });
   const statIconByLabel: Record<string, React.ReactNode> = {
     Prep: <Clock3 size={18} aria-hidden="true" />,
     Cook: <Flame size={18} aria-hidden="true" />,
@@ -1078,45 +1079,36 @@ export const VideoDetail: React.FC = () => {
     </div>
   ) : null;
   const desktopQuickActions = showRecipeCard ? (
-    <div className="grid gap-2 sm:grid-cols-2">
+    <div className="flex flex-col">
       <button
         type="button"
         onClick={() => setIsMoveModalOpen(true)}
-        className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50/60 px-3 py-3 text-left transition-colors hover:bg-gray-100/70"
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-[11px] text-left transition-colors hover:bg-slate-50"
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-gray-700 ring-1 ring-gray-100">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-amber-100 text-amber-700">
           <FolderInput size={16} aria-hidden="true" />
         </span>
-        <span className="min-w-0">
-          <span className="block text-sm font-bold text-gray-950">Collection</span>
-          <span className="block text-xs font-medium text-gray-500">Move or organize</span>
-        </span>
+        <span className="flex-1 text-sm font-semibold text-slate-800">Collection</span>
       </button>
       <button
         type="button"
         onClick={handleShare}
-        className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50/60 px-3 py-3 text-left transition-colors hover:bg-gray-100/70"
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-[11px] text-left transition-colors hover:bg-slate-50"
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-gray-700 ring-1 ring-gray-100">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-primary-50 text-primary-600">
           <IOSShareIcon />
         </span>
-        <span className="min-w-0">
-          <span className="block text-sm font-bold text-gray-950">Share</span>
-          <span className="block text-xs font-medium text-gray-500">Send the recipe out</span>
-        </span>
+        <span className="flex-1 text-sm font-semibold text-slate-800">Share</span>
       </button>
       <button
         type="button"
         onClick={() => setIsEditing(true)}
-        className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-gray-50/60 px-3 py-3 text-left transition-colors hover:bg-gray-100/70 sm:col-span-2"
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-[11px] text-left transition-colors hover:bg-slate-50"
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-gray-700 ring-1 ring-gray-100">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-rose-100 text-rose-600">
           <Pencil size={16} aria-hidden="true" />
         </span>
-        <span className="min-w-0">
-          <span className="block text-sm font-bold text-gray-950">Edit details</span>
-          <span className="block text-xs font-medium text-gray-500">Adjust the saved recipe for yourself</span>
-        </span>
+        <span className="flex-1 text-sm font-semibold text-slate-800">Edit details</span>
       </button>
     </div>
   ) : null;
@@ -1394,13 +1386,8 @@ export const VideoDetail: React.FC = () => {
               <details open className="overflow-hidden rounded-2xl border border-primary-100 bg-primary-50/70">
                 <summary className="cursor-pointer list-none px-4 py-3.5 md:px-5">
                   <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-[11px] font-black uppercase tracking-widest text-primary-700/70">
-                        AI Summary
-                      </div>
-                      <div className="mt-1 text-sm font-bold text-primary-950">
-                        A quick read before you cook
-                      </div>
+                    <div className="text-[11px] font-black uppercase tracking-widest text-primary-700/70">
+                      AI Summary
                     </div>
                     <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-bold text-primary-700 ring-1 ring-primary-100">
                       Open
@@ -1422,7 +1409,7 @@ export const VideoDetail: React.FC = () => {
                       <h4 className="text-xs font-bold uppercase tracking-wide text-primary-950/75">
                         Key Highlights
                       </h4>
-                      <div className="mt-2 grid gap-2.5 sm:grid-cols-2">
+                      <div className="mt-2 flex flex-col gap-2">
                         {englishSummaryContent.headlines.map((item: any, index: number) => (
                           <div
                             key={`${item.headline || item.text}-${index}`}
@@ -1479,24 +1466,8 @@ export const VideoDetail: React.FC = () => {
                 showStartCookingButton={!isDesktopRecipeDetailLayout}
                 embedded={false}
                 headerContent={(
-                  <div className="bg-white">
-                    <div className="flex flex-wrap gap-2 px-4 py-3 sm:px-5">
-                      {recipeDetailMetaItems.map((item) => (
-                        <div
-                          key={item.label}
-                          className="min-w-[7.5rem] flex-1 rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2"
-                        >
-                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
-                            {item.label}
-                          </div>
-                          <div className="mt-0.5 truncate text-sm font-bold text-gray-950" title={item.value}>
-                            {item.value}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-3 divide-x divide-gray-100 border-t border-gray-100 bg-white/80 px-4 sm:px-5">
+                  <div>
+                    <div className="grid grid-cols-3 divide-x divide-gray-100 bg-white/80 px-4 sm:px-5">
                       {primaryRecipeStatItems.map((item) => (
                         <div key={item.label} className="flex min-w-0 flex-col items-center px-3 py-4 text-center first:pl-0 last:pr-0">
                           <div className="mb-2 text-secondary-600">{statIconByLabel[item.label]}</div>

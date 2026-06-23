@@ -347,9 +347,40 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           <>
           {hasIngredients && showIngredientsSection && (
             <section className={sectionCardClass()}>
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
                   <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Ingredients</p>
+                  {onServingScaleChange && (
+                    <div className="flex h-7 items-center gap-1 rounded-full border border-gray-200 bg-white px-1.5 shadow-sm">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const base = getServings(recipe);
+                          const next = Math.max(1, Math.round(base * servingScale) - 1);
+                          onServingScaleChange(next / base);
+                        }}
+                        className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-50 text-sm font-black text-primary-600 transition hover:bg-primary-100"
+                        aria-label="Decrease yield"
+                      >
+                        −
+                      </button>
+                      <span className="min-w-[64px] text-center text-[11px] font-black tabular-nums text-gray-900">
+                        Yields {Math.round(getServings(recipe) * servingScale)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const base = getServings(recipe);
+                          const next = Math.round(base * servingScale) + 1;
+                          onServingScaleChange(next / base);
+                        }}
+                        className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-50 text-sm font-black text-primary-600 transition hover:bg-primary-100"
+                        aria-label="Increase yield"
+                      >
+                        +
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <span className="shrink-0 rounded-full bg-gradient-to-br from-primary-600 to-secondary-600 px-3 py-1 text-[13px] font-bold text-white">
                   {ingredientCountLabel}
@@ -395,7 +426,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                         </button>
                       </div>
                     ) : (
-                      <ul className="divide-y divide-gray-100">
+                      <ul className="divide-y divide-gray-100 sm:grid sm:grid-cols-2 sm:divide-y-0 sm:[&>li]:border-b sm:[&>li]:border-gray-100">
                         {section.items.map((item, itemIndex) => (
                           <IngredientRow
                             key={'section-' + sectionIndex + '-ingredient-' + itemIndex}
