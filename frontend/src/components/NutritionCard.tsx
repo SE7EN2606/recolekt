@@ -469,10 +469,10 @@ export default function NutritionCard({ ingredients, servings, recipeName }: Nut
         </div>
 
         <div className="mt-[13px] flex items-center gap-2 px-0.5">
-          <span className="rounded-full bg-primary-50 px-2.5 py-0.5 text-[11px] font-bold text-primary-600">
+          <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-primary-50 px-2.5 py-1 text-[11px] font-bold leading-none text-primary-600">
             AI estimated
           </span>
-          <span className="min-w-0 text-[12px] text-slate-400">
+          <span className="min-w-0 flex-1 text-[12px] leading-relaxed text-slate-400">
             {aiEstimateText}
           </span>
         </div>
