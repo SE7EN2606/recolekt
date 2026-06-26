@@ -1,9 +1,15 @@
 import { API_BASE } from '../utils/api';
+import { recordPerfApiCall } from './perf';
+
+export { isPerfModeEnabled } from './perf';
 
 type ApiRequestOptions = {
   body?: unknown;
   cache?: RequestCache;
+  signal?: AbortSignal;
 };
+
+const inflightGetRequests = new Map<string, Promise<any>>();
 
 function apiUrl(path: string) {
   const clean = String(path || '').replace(/^\/+/, '');
@@ -70,25 +76,79 @@ async function apiRequest<T>(
   options: ApiRequestOptions = {}
 ): Promise<T> {
   const hasBody = options.body !== undefined;
-  const res = await fetch(apiUrl(path), {
-    method,
-    headers: buildAuthHeaders(hasBody),
-    credentials: 'include',
-    ...(options.cache ? { cache: options.cache } : {}),
-    ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
-  });
+  const resolvedUrl = apiUrl(path);
+  const requestKey = method === 'GET' && !hasBody ? `${method}:${resolvedUrl}` : null;
 
-  const data = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    throw new Error(data?.error || `HTTP ${res.status}`);
+  if (requestKey && inflightGetRequests.has(requestKey)) {
+    return inflightGetRequests.get(requestKey) as Promise<T>;
   }
 
-  return data as T;
+  const requestPromise = (async () => {
+    const startedPerfMs = performance.now();
+    let res: Response | null = null;
+
+    try {
+      res = await fetch(resolvedUrl, {
+        method,
+        headers: buildAuthHeaders(hasBody),
+        credentials: 'include',
+        ...(options.cache ? { cache: options.cache } : {}),
+        ...(options.signal ? { signal: options.signal } : {}),
+        ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        recordPerfApiCall({
+          method,
+          path,
+          status: res.status,
+          durationMs: performance.now() - startedPerfMs,
+          failed: true,
+          startedPerfMs,
+        });
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+
+      recordPerfApiCall({
+        method,
+        path,
+        status: res.status,
+        durationMs: performance.now() - startedPerfMs,
+        failed: false,
+        startedPerfMs,
+      });
+
+      return data as T;
+    } catch (error) {
+      if (!res) {
+        recordPerfApiCall({
+          method,
+          path,
+          status: 0,
+          durationMs: performance.now() - startedPerfMs,
+          failed: true,
+          startedPerfMs,
+        });
+      }
+      throw error;
+    } finally {
+      if (requestKey) {
+        inflightGetRequests.delete(requestKey);
+      }
+    }
+  })();
+
+  if (requestKey) {
+    inflightGetRequests.set(requestKey, requestPromise);
+  }
+
+  return requestPromise;
 }
 
-export function apiGet<T>(path: string): Promise<T> {
-  return apiRequest<T>('GET', path, { cache: 'no-store' });
+export function apiGet<T>(path: string, options: Omit<ApiRequestOptions, 'body'> = {}): Promise<T> {
+  return apiRequest<T>('GET', path, { cache: 'no-store', ...options });
 }
 
 export function apiPost<T>(path: string, body?: unknown): Promise<T> {

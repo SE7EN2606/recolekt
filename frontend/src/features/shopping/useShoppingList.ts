@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { isPerfModeEnabled } from '../../lib/perf';
 import {
   addShoppingRecipe,
   fetchShoppingRecipePayload,
@@ -17,6 +18,67 @@ const EMPTY_RESPONSE: ShoppingListResponse = {
   recipeEntries: [],
   itemOverrides: [],
 };
+
+function logShoppingPerf(
+  action: 'add' | 'remove',
+  reelId: string,
+  rows: Array<Record<string, number | string | boolean | null>>
+) {
+  if (!isPerfModeEnabled()) return;
+
+  console.log(`[perf] shopping action ${action} ${reelId}`);
+  console.table(rows);
+}
+
+function buildShoppingPerfRows(
+  action: 'add' | 'remove',
+  reelId: string,
+  clickStartedPerfMs: number,
+  marks: {
+    optimisticUpdate: boolean;
+    apiStartedPerfMs: number;
+    apiResponsePerfMs: number;
+    localStateUpdatedPerfMs: number;
+    renderAfterActionPerfMs: number;
+  }
+) {
+  const rows = [
+    { step: 'click received', msFromClick: 0, durationMs: null, optimisticUpdate: marks.optimisticUpdate },
+    { step: 'optimistic update started', msFromClick: null, durationMs: null, optimisticUpdate: marks.optimisticUpdate },
+    {
+      step: 'API request started',
+      msFromClick: Math.round((marks.apiStartedPerfMs - clickStartedPerfMs) * 10) / 10,
+      durationMs: null,
+      optimisticUpdate: marks.optimisticUpdate,
+    },
+    {
+      step: 'API response received',
+      msFromClick: Math.round((marks.apiResponsePerfMs - clickStartedPerfMs) * 10) / 10,
+      durationMs: Math.round((marks.apiResponsePerfMs - marks.apiStartedPerfMs) * 10) / 10,
+      optimisticUpdate: marks.optimisticUpdate,
+    },
+    {
+      step: 'local state updated',
+      msFromClick: Math.round((marks.localStateUpdatedPerfMs - clickStartedPerfMs) * 10) / 10,
+      durationMs: Math.round((marks.localStateUpdatedPerfMs - marks.apiResponsePerfMs) * 10) / 10,
+      optimisticUpdate: marks.optimisticUpdate,
+    },
+    {
+      step: 'React render after action',
+      msFromClick: Math.round((marks.renderAfterActionPerfMs - clickStartedPerfMs) * 10) / 10,
+      durationMs: Math.round((marks.renderAfterActionPerfMs - marks.localStateUpdatedPerfMs) * 10) / 10,
+      optimisticUpdate: marks.optimisticUpdate,
+    },
+    {
+      step: 'total click-to-complete duration',
+      msFromClick: Math.round((marks.renderAfterActionPerfMs - clickStartedPerfMs) * 10) / 10,
+      durationMs: Math.round((marks.renderAfterActionPerfMs - clickStartedPerfMs) * 10) / 10,
+      optimisticUpdate: marks.optimisticUpdate,
+    },
+  ];
+
+  logShoppingPerf(action, reelId, rows);
+}
 
 function attachOverrides(recipe: any, source: any) {
   const overrides = source?.recipeUserOverrides || source?.recipe_user_overrides;
@@ -98,15 +160,28 @@ export default function useShoppingList() {
   );
 
   const addRecipe = useCallback(async (reelId: string, servings: number | null = null) => {
+    const clickStartedPerfMs = performance.now();
     setSaving(true);
     try {
+      const apiStartedPerfMs = performance.now();
       await addShoppingRecipe(reelId, servings);
+      const apiResponsePerfMs = performance.now();
       const next = await fetchShoppingList();
       const recipeEntries = await hydrateRecipeEntries(next.recipeEntries || []);
       setData({
         shoppingListId: next.shoppingListId,
         recipeEntries,
         itemOverrides: next.itemOverrides || [],
+      });
+      const localStateUpdatedPerfMs = performance.now();
+      window.requestAnimationFrame(() => {
+        buildShoppingPerfRows('add', reelId, clickStartedPerfMs, {
+          optimisticUpdate: false,
+          apiStartedPerfMs,
+          apiResponsePerfMs,
+          localStateUpdatedPerfMs,
+          renderAfterActionPerfMs: performance.now(),
+        });
       });
       setError(null);
     } catch (err) {
@@ -117,13 +192,26 @@ export default function useShoppingList() {
   }, []);
 
   const removeRecipe = useCallback(async (reelId: string) => {
+    const clickStartedPerfMs = performance.now();
     setSaving(true);
     try {
+      const apiStartedPerfMs = performance.now();
       await removeShoppingRecipe(reelId);
+      const apiResponsePerfMs = performance.now();
       setData((current) => ({
         ...current,
         recipeEntries: current.recipeEntries.filter((entry) => entry.reelId !== reelId),
       }));
+      const localStateUpdatedPerfMs = performance.now();
+      window.requestAnimationFrame(() => {
+        buildShoppingPerfRows('remove', reelId, clickStartedPerfMs, {
+          optimisticUpdate: false,
+          apiStartedPerfMs,
+          apiResponsePerfMs,
+          localStateUpdatedPerfMs,
+          renderAfterActionPerfMs: performance.now(),
+        });
+      });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not remove recipe');

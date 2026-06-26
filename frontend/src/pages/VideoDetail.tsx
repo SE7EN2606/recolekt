@@ -20,8 +20,18 @@ import { MetadataPanel } from '../components/MetadataPanel';
 import { Skeleton, Accordion, OriginalLink } from '../components/VideoDetailWidgets';
 import { ContentTypeBadge, deriveToolsSubtype } from '../components/ContentTypeBadge';
 import { useTranslation } from 'react-i18next';
+import { apiGet } from '../lib/apiClient';
+import {
+  getPerfStepTime,
+  getPerfTimelineRows,
+  getSlowestPerfApiCall,
+  isPerfModeEnabled,
+  markPerfStep,
+  measurePerfDuration,
+  startPerfSession,
+} from '../lib/perf';
 import { useScrollLock } from '../utils/useScrollLock';
-import { apiUrl, fetchGcsJson, HASHTAG_STYLE } from '../utils/videoDetailUtils';
+import { fetchGcsJson, HASHTAG_STYLE } from '../utils/videoDetailUtils';
 import { scaleQuantity } from '../utils/videoUtils';
 import { CustomMessageSquareMoreIcon, IOSShareIcon, PlatformIconAuthor } from '../components/CustomIcons';
 import {
@@ -37,7 +47,7 @@ import RecipeCookbookRail, {
 } from '../features/recipe-detail/RecipeCookbookRail';
 import useRecipeCookState from '../features/recipe-cook-state/useRecipeCookState';
 import useRecipeNotes from '../features/recipe-notes/useRecipeNotes';
-import useShoppingList from '../features/shopping/useShoppingList';
+import useShoppingRecipeStatus from '../features/shopping/useShoppingRecipeStatus';
 import { readShoppingPreferences } from '../features/shopping/shoppingPreferences';
 import {
   mergeVideoPayload,
@@ -67,42 +77,7 @@ const ReportModalExt = ReportModal as React.ComponentType<{
   videoId?: string;
 }>;
 
-const getAuthToken = (): string => {
-  try {
-    const direct =
-      (window as any).__REKOLEKT_TOKEN__ ||
-      localStorage.getItem('auth_token') ||
-      localStorage.getItem('token') ||
-      localStorage.getItem('access_token') ||
-      localStorage.getItem('jwt') ||
-      localStorage.getItem('recolekt_token') ||
-      '';
-
-    if (direct) {
-      return String(direct).replace(/^Bearer\s+/i, '').trim();
-    }
-
-    for (let i = 0; i < localStorage.length; i += 1) {
-      const key = localStorage.key(i);
-      if (!key) continue;
-      const value = localStorage.getItem(key);
-      if (!value) continue;
-      const lowerKey = key.toLowerCase();
-      const looksRelevant =
-        lowerKey.includes('token') ||
-        lowerKey.includes('jwt') ||
-        lowerKey.includes('auth');
-      const looksLikeJwt = value.split('.').length === 3;
-      if (looksRelevant && looksLikeJwt) {
-        return value.replace(/^Bearer\s+/i, '').trim();
-      }
-    }
-
-    return '';
-  } catch {
-    return '';
-  }
-};
+const PERF_SESSION_NAME = 'VideoDetail';
 
 function useDesktopRecipeDetailLayout() {
   const [isDesktop, setIsDesktop] = useState(() =>
@@ -122,27 +97,6 @@ function useDesktopRecipeDetailLayout() {
 
   return isDesktop;
 }
-
-const fetchBackendAuthed = async (url: string, signal?: AbortSignal) => {
-  const token = getAuthToken();
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      'Cache-Control': 'no-cache',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    credentials: 'include',
-    cache: 'no-store',
-    signal,
-  });
-  if (!res.ok) {
-    const error = new Error(`HTTP ${res.status}`) as Error & { status?: number };
-    error.status = res.status;
-    throw error;
-  }
-  return res.json();
-};
 
 function ReelErrorState({
   message,
@@ -496,6 +450,53 @@ export const VideoDetail: React.FC = () => {
   const lastStableVideoRef = useRef<any>(null);
   const refreshAbortRef = useRef<AbortController | null>(null);
   const refreshRunRef = useRef(0);
+  const perfEnabled = isPerfModeEnabled();
+  const perfTimelinePrintedRef = useRef(false);
+  const perfSummaryPrintedRef = useRef(false);
+  const perfSpanMarksRef = useRef<Record<string, string>>({});
+  const perfBrowserMetricsRef = useRef<{
+    fcpMs: number | null;
+    lcpMs: number | null;
+    cls: number;
+  }>({ fcpMs: null, lcpMs: null, cls: 0 });
+  const posterImageRef = useRef<HTMLImageElement | null>(null);
+
+  const startPerfSpan = useCallback((key: string, step: string) => {
+    if (!perfEnabled) return;
+    const startMark = `recolekt:${PERF_SESSION_NAME}:${key}:start`;
+    perfSpanMarksRef.current[key] = startMark;
+    try {
+      performance.mark(startMark);
+    } catch {
+      // Ignore unsupported mark failures.
+    }
+    markPerfStep(step);
+  }, [perfEnabled]);
+
+  const endPerfSpan = useCallback((key: string, step: string) => {
+    if (!perfEnabled) return;
+    const startMark = perfSpanMarksRef.current[key];
+    const endMark = `recolekt:${PERF_SESSION_NAME}:${key}:end`;
+    let durationMs: number | undefined;
+
+    try {
+      performance.mark(endMark);
+      if (startMark) {
+        const measured = measurePerfDuration(
+          startMark,
+          endMark,
+          `recolekt:${PERF_SESSION_NAME}:${key}:measure:${performance.now()}`
+        );
+        if (measured !== null) {
+          durationMs = measured;
+        }
+      }
+    } catch {
+      durationMs = undefined;
+    }
+
+    markPerfStep(step, durationMs !== undefined ? { durationMs } : {});
+  }, [perfEnabled]);
 
   useScrollLock(
     isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen,
@@ -503,6 +504,14 @@ export const VideoDetail: React.FC = () => {
 
   // Reset state whenever the user navigates to a different video
   useEffect(() => {
+    perfTimelinePrintedRef.current = false;
+    perfSummaryPrintedRef.current = false;
+    perfSpanMarksRef.current = {};
+    perfBrowserMetricsRef.current = { fcpMs: null, lcpMs: null, cls: 0 };
+    if (perfEnabled) {
+      startPerfSession(PERF_SESSION_NAME);
+      markPerfStep('VideoDetail component mounted');
+    }
     setServingScale(1);
     setIsEditing(false);
     detailHydratedRef.current = false;
@@ -515,7 +524,7 @@ export const VideoDetail: React.FC = () => {
     setRefreshError('');
     setDetailErrorMessage('');
     setDetailHydrationSettled(false);
-  }, [id]);
+  }, [id, perfEnabled]);
 
   useEffect(() => {
     return () => {
@@ -524,14 +533,95 @@ export const VideoDetail: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (perfEnabled && id) {
+      markPerfStep('route/video id resolved');
+    }
+  }, [id, perfEnabled]);
+
+  useEffect(() => {
+    if (!perfEnabled || typeof PerformanceObserver === 'undefined') return;
+
+    const cleanups: Array<() => void> = [];
+
+    try {
+      const paintObserver = new PerformanceObserver((entryList) => {
+        entryList.getEntries().forEach((entry) => {
+          if (entry.name !== 'first-contentful-paint') return;
+          if (perfBrowserMetricsRef.current.fcpMs !== null) return;
+          perfBrowserMetricsRef.current.fcpMs = Math.round(entry.startTime * 10) / 10;
+          console.log(`[perf] FCP ${perfBrowserMetricsRef.current.fcpMs}ms`);
+        });
+      });
+      paintObserver.observe({ type: 'paint', buffered: true });
+      cleanups.push(() => paintObserver.disconnect());
+    } catch {
+      // Ignore unsupported observer types.
+    }
+
+    try {
+      const lcpObserver = new PerformanceObserver((entryList) => {
+        const entries = entryList.getEntries();
+        const lastEntry = entries[entries.length - 1];
+        if (!lastEntry) return;
+        perfBrowserMetricsRef.current.lcpMs = Math.round(lastEntry.startTime * 10) / 10;
+      });
+      lcpObserver.observe({ type: 'largest-contentful-paint', buffered: true });
+      const flushLcp = () => {
+        if (perfBrowserMetricsRef.current.lcpMs !== null) {
+          console.log(`[perf] LCP ${perfBrowserMetricsRef.current.lcpMs}ms`);
+        }
+      };
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'hidden') {
+          flushLcp();
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      cleanups.push(() => {
+        flushLcp();
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        lcpObserver.disconnect();
+      });
+    } catch {
+      // Ignore unsupported observer types.
+    }
+
+    try {
+      const clsObserver = new PerformanceObserver((entryList) => {
+        entryList.getEntries().forEach((entry) => {
+          const layoutShiftEntry = entry as PerformanceEntry & { hadRecentInput?: boolean; value?: number };
+          if (layoutShiftEntry.hadRecentInput) return;
+          perfBrowserMetricsRef.current.cls += layoutShiftEntry.value || 0;
+        });
+      });
+      clsObserver.observe({ type: 'layout-shift', buffered: true });
+      cleanups.push(() => {
+        clsObserver.disconnect();
+        if (perfBrowserMetricsRef.current.cls > 0) {
+          console.log(`[perf] CLS ${Math.round(perfBrowserMetricsRef.current.cls * 1000) / 1000}`);
+        }
+      });
+    } catch {
+      // Ignore unsupported observer types.
+    }
+
+    return () => {
+      cleanups.forEach((cleanup) => cleanup());
+    };
+  }, [id, perfEnabled]);
+
   const fetchHydratedVideo = useCallback(async (signal?: AbortSignal) => {
     if (!id) return null;
-    const db = await fetchBackendAuthed(
-      apiUrl(`api/reel/${encodeURIComponent(id)}?ts=${Date.now()}`),
-      signal,
+    startPerfSpan('main-video-fetch', 'main video/reel fetch started');
+    const db = await apiGet<any>(
+      `api/reel/${encodeURIComponent(id)}`,
+      { signal }
     );
+    endPerfSpan('main-video-fetch', 'main video/reel fetch completed');
     if (!db) return null;
 
+    startPerfSpan('recipe-resolution', 'recipe resolution started');
     const resultJsonUrl =
       db?.result_json_url ||
       db?.resultJsonUrl ||
@@ -542,12 +632,13 @@ export const VideoDetail: React.FC = () => {
       null;
 
     const gcs = resultJsonUrl ? await fetchGcsJson(resultJsonUrl) : null;
+    endPerfSpan('recipe-resolution', 'recipe resolution completed');
     return {
       detail: db,
       resultJson: gcs,
       video: mergeVideoPayload(db, gcs, galleryThumbnail),
     };
-  }, [id, galleryThumbnail]);
+  }, [endPerfSpan, galleryThumbnail, id, startPerfSpan]);
 
   const enrichVideo = useCallback(async () => {
     if (!id || !navigator.onLine) {
@@ -922,9 +1013,15 @@ export const VideoDetail: React.FC = () => {
         ? editedVideo
         : String(video?.status || '').toLowerCase() === 'processing' && lastStableVideoRef.current
           ? { ...lastStableVideoRef.current, status: video.status, updated_at: video.updated_at }
-          : video;
+      : video;
     return buildViewModel(source, showOriginal, galleryThumbnail);
   }, [video, editedVideo, isEditing, showOriginal, galleryThumbnail]);
+
+  useEffect(() => {
+    if (perfEnabled && viewModel) {
+      markPerfStep('viewModel ready');
+    }
+  }, [perfEnabled, viewModel]);
 
   const localizedVideoRecipe = selectLocalizedRecipe((video as any)?.recipe, showOriginal);
   const recipeForCard = buildRecipeForCard(viewModel?.recipe || localizedVideoRecipe, localizedVideoRecipe || (video as any)?.recipe, [
@@ -991,6 +1088,74 @@ export const VideoDetail: React.FC = () => {
     !recipeResolutionPending || !isLikelyRecipeContent;
   const showNonRecipeFallback = !showRecipeCard && !recipeResolutionPending;
 
+  useEffect(() => {
+    if (perfEnabled && showRecipeCard) {
+      markPerfStep('showRecipeCard became true');
+    }
+  }, [perfEnabled, showRecipeCard]);
+
+  useEffect(() => {
+    if (!perfEnabled || loading || !viewModel || !isDetailPresentationReady) return;
+
+    markPerfStep('final detail body allowed to render');
+    if (!perfTimelinePrintedRef.current) {
+      perfTimelinePrintedRef.current = true;
+      console.log('[perf] VideoDetail timeline');
+      console.table(getPerfTimelineRows());
+    }
+  }, [isDetailPresentationReady, loading, perfEnabled, viewModel]);
+
+  const posterLoadedMs = getPerfStepTime('first image/poster loaded');
+  const recipeCardRenderedMs = getPerfStepTime('RecipeDetailsCard first rendered');
+  const rightRailRenderedMs = getPerfStepTime('RecipeCookbookRail first rendered');
+  const nutritionRenderedMs = getPerfStepTime('NutritionCard first rendered');
+
+  useEffect(() => {
+    if (!perfEnabled || !viewModel?.thumbnailUrl) return;
+    const poster = posterImageRef.current;
+    if (poster && poster.complete && poster.naturalWidth > 0) {
+      markPerfStep('first image/poster loaded');
+    }
+  }, [perfEnabled, viewModel?.thumbnailUrl]);
+
+  useEffect(() => {
+    if (!perfEnabled || perfSummaryPrintedRef.current) return;
+    if (!viewModel || loading || !isDetailPresentationReady) return;
+
+    const posterReady = !viewModel.thumbnailUrl || posterLoadedMs !== null;
+    const recipeCardReady = !showRecipeCard || recipeCardRenderedMs !== null;
+    const rightRailReady = !showRecipeCard || !isDesktopRecipeDetailLayout || rightRailRenderedMs !== null;
+    const nutritionReady = !showRecipeCard || currentIngredientCount === 0 || nutritionRenderedMs !== null;
+
+    if (!posterReady || !recipeCardReady || !rightRailReady || !nutritionReady) return;
+
+    perfSummaryPrintedRef.current = true;
+    markPerfStep('final page ready');
+    const slowestApiCall = getSlowestPerfApiCall();
+
+    console.log('[perf] VideoDetail summary');
+    console.table([{
+      totalTimeMountToFinalDetailBodyMs: getPerfStepTime('final detail body allowed to render'),
+      slowestApiRequest: slowestApiCall ? `${slowestApiCall.method} ${slowestApiCall.path}` : null,
+      slowestApiDurationMs: slowestApiCall?.durationMs ?? null,
+      timeUntilPosterImageLoadedMs: posterLoadedMs,
+      timeUntilRightRailRenderedMs: rightRailRenderedMs,
+      timeUntilRecipeCardRenderedMs: recipeCardRenderedMs,
+    }]);
+  }, [
+    currentIngredientCount,
+    isDesktopRecipeDetailLayout,
+    isDetailPresentationReady,
+    loading,
+    nutritionRenderedMs,
+    perfEnabled,
+    posterLoadedMs,
+    recipeCardRenderedMs,
+    rightRailRenderedMs,
+    showRecipeCard,
+    viewModel,
+  ]);
+
   const {
     note: recipeNote,
     setNote: setRecipeNote,
@@ -1012,12 +1177,12 @@ export const VideoDetail: React.FC = () => {
   const cookStatusLoading = cookStatusStatus === 'loading';
 
   const {
-    plannedRecipeIds,
-    addRecipe: addRecipeToShoppingList,
-    removeRecipe: removeRecipeFromShoppingList,
+    inShoppingList,
     loading: shoppingLoading,
     saving: shoppingSaving,
-  } = useShoppingList();
+    addRecipe: addRecipeToShoppingList,
+    removeRecipe: removeRecipeFromShoppingList,
+  } = useShoppingRecipeStatus(currentVideoId, showRecipeCard);
 
   const pageErrorMessage =
     detailErrorMessage ||
@@ -1197,9 +1362,9 @@ export const VideoDetail: React.FC = () => {
     <div className="md:hidden">
       <button
         type="button"
-        onClick={() => plannedRecipeIds.has(currentVideoId)
-          ? removeRecipeFromShoppingList(currentVideoId)
-          : addRecipeToShoppingList(currentVideoId, null)}
+        onClick={() => inShoppingList
+          ? removeRecipeFromShoppingList()
+          : addRecipeToShoppingList(null)}
         disabled={shoppingLoading || shoppingSaving}
         className="flex w-full items-center gap-3 rounded-xl border border-emerald-100 bg-white p-3.5 text-left text-emerald-950 shadow-sm transition-[background-color,box-shadow,transform] hover:bg-emerald-50/60 hover:shadow-md active:translate-y-px active:bg-emerald-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
       >
@@ -1210,12 +1375,12 @@ export const VideoDetail: React.FC = () => {
           <span className="block text-sm font-semibold text-emerald-950">
             {shoppingSaving
               ? 'Updating shopping list...'
-              : plannedRecipeIds.has(currentVideoId)
+              : inShoppingList
                 ? 'In your shopping plan'
                 : 'Add ingredients to shopping list'}
           </span>
           <span className="mt-0.5 block text-xs font-medium text-emerald-800/75">
-            {plannedRecipeIds.has(currentVideoId)
+            {inShoppingList
               ? 'Tap to remove it from groceries.'
               : 'Plan groceries for this recipe.'}
           </span>
@@ -1313,11 +1478,17 @@ export const VideoDetail: React.FC = () => {
           }`}>
             {viewModel.thumbnailUrl && (
               <img
+                ref={posterImageRef}
                 src={viewModel.thumbnailUrl}
                 alt={viewModel.title}
                 className="w-full h-full object-cover opacity-90 motion-safe:transition-transform motion-safe:duration-500 md:group-hover:scale-[1.015]"
                 loading="eager"
                 decoding="async"
+                onLoad={() => {
+                  if (perfEnabled) {
+                    markPerfStep('first image/poster loaded');
+                  }
+                }}
               />
             )}
 
@@ -1753,12 +1924,12 @@ export const VideoDetail: React.FC = () => {
             cookStatusLoading={cookStatusLoading}
             onMarkCooked={markCooked}
             onResetCookStatus={resetCookState}
-            shoppingPlanned={plannedRecipeIds.has(currentVideoId)}
+            shoppingPlanned={inShoppingList}
             shoppingLoading={shoppingLoading}
             shoppingSaving={shoppingSaving}
             onStartCooking={() => setCookModeOpenSignal((value) => value + 1)}
-            onAddToShoppingList={() => addRecipeToShoppingList(currentVideoId, null)}
-            onRemoveFromShoppingList={() => removeRecipeFromShoppingList(currentVideoId)}
+            onAddToShoppingList={() => addRecipeToShoppingList(null)}
+            onRemoveFromShoppingList={() => removeRecipeFromShoppingList()}
             quickActions={desktopQuickActions}
             memoryLine={recipeMemoryLine || undefined}
             memoryItems={returnStateItems}

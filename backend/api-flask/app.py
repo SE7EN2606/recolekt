@@ -18,8 +18,9 @@ elif IS_DOCKER and not IS_RAILWAY:
 
 import logging
 import warnings
+import time
 from datetime import timedelta
-from flask import send_from_directory, request, jsonify, render_template
+from flask import send_from_directory, request, jsonify, render_template, g
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException, NotFound
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -39,6 +40,7 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("app")
+PERF_LOG_ENABLED = os.getenv("RECOLEKT_PERF_LOG") == "1"
 
 from fetcher_api import create_app
 
@@ -121,6 +123,31 @@ app.extensions["oauth"] = oauth
 logger.info("✅ OAuth initialized with Google provider")
 
 from fetcher_api.services.rate_monitor import get_mistral_limits
+
+
+@app.before_request
+def perf_before_request():
+    if not PERF_LOG_ENABLED:
+        return
+    if not request.path.startswith("/api/"):
+        return
+    g._perf_started_at = time.perf_counter()
+
+
+@app.after_request
+def perf_after_request(response):
+    if not PERF_LOG_ENABLED:
+        return response
+    if not request.path.startswith("/api/"):
+        return response
+
+    started_at = getattr(g, "_perf_started_at", None)
+    if started_at is None:
+        return response
+
+    duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
+    logger.info("[perf] %s %s %.1fms status=%s", request.method, request.path, duration_ms, response.status_code)
+    return response
 
 @app.route("/api/rate-limits", methods=["GET"])
 def rate_limits():

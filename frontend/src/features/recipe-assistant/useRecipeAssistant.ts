@@ -49,65 +49,46 @@ export const useRecipeAssistant = ({
     [recipeId],
   );
 
-  React.useEffect(() => {
+  const loadAskHistory = React.useCallback(async () => {
     if (!askHistoryStorageKey || !recipeId) return;
 
-    let cancelled = false;
+    try {
+      const raw = localStorage.getItem(askHistoryStorageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      setAskHistory(Array.isArray(parsed) ? parsed.slice(0, 10) : []);
+    } catch {
+      setAskHistory([]);
+    }
 
-    const loadAskHistory = async () => {
-      try {
-        const token = getRecipeAssistantToken();
-
-        const res = await fetch(
-          apiUrl(`api/reel/${encodeURIComponent(recipeId)}/ask/history?limit=10`),
-          {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            credentials: 'include',
-          }
-        );
-
-        const data = (await res.json().catch(() => ({}))) as {
-          history?: RecipeAssistantHistoryEntry[];
-        };
-
-        if (!cancelled && res.ok && Array.isArray(data.history)) {
-          setAskHistory(data.history.slice(0, 10));
-
-          try {
-            localStorage.setItem(
-              askHistoryStorageKey,
-              JSON.stringify(data.history.slice(0, 10))
-            );
-          } catch {}
-
-          return;
+    try {
+      const token = getRecipeAssistantToken();
+      const res = await fetch(
+        apiUrl(`api/reel/${encodeURIComponent(recipeId)}/ask/history?limit=10`),
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          credentials: 'include',
         }
-      } catch {}
+      );
 
-      if (cancelled) return;
+      const data = (await res.json().catch(() => ({}))) as {
+        history?: RecipeAssistantHistoryEntry[];
+      };
 
-      try {
-        const raw = localStorage.getItem(askHistoryStorageKey);
-        const parsed = raw ? JSON.parse(raw) : [];
-
-        setAskHistory(
-          Array.isArray(parsed) ? parsed.slice(0, 10) : []
-        );
-      } catch {
-        setAskHistory([]);
+      if (res.ok && Array.isArray(data.history)) {
+        const nextHistory = data.history.slice(0, 10);
+        setAskHistory(nextHistory);
+        try {
+          localStorage.setItem(askHistoryStorageKey, JSON.stringify(nextHistory));
+        } catch {}
       }
-    };
-
-    loadAskHistory();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [recipeId, askHistoryStorageKey]);
+    } catch {
+      // Keep cached history only.
+    }
+  }, [askHistoryStorageKey, recipeId]);
 
   const handleAskRecipe = async () => {
     const question = askQuestion.trim();
@@ -183,6 +164,7 @@ export const useRecipeAssistant = ({
     askHistory,
     askHistoryStorageKey,
     setAskHistory,
+    loadAskHistory,
     handleAskRecipe,
   };
 };

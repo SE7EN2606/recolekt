@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Button } from "../components/Button";
 import { useTranslation } from "react-i18next";
+import { useAuth } from "../context/AuthContext";
 
 type SummarizeResponse = {
   reel_id?: string;
@@ -58,6 +59,7 @@ export const Home: React.FC = () => {
 
   const navigate = useNavigate();
   const { t } = useTranslation(["home", "common"]);
+  const { isAuthenticated, loading: authLoading } = useAuth();
 
   useEffect(() => {
     if (!error && !infoMsg) return;
@@ -71,32 +73,19 @@ export const Home: React.FC = () => {
   }, [error, infoMsg]);
 
   useEffect(() => {
-    const checkPendingVideo = async () => {
-      const storedPendingUrl = localStorage.getItem("pendingVideoUrl");
-      if (!storedPendingUrl) return;
+    if (authLoading || !isAuthenticated) return;
 
-      try {
-        const authResponse = await fetch(joinUrl(API_BASE, "/api/auth/me"), {
-          credentials: "include",
-        });
+    const storedPendingUrl = localStorage.getItem("pendingVideoUrl");
+    if (!storedPendingUrl) return;
 
-        if (authResponse.status === 401) return;
+    localStorage.removeItem("pendingVideoUrl");
+    setUrl(storedPendingUrl);
+    const timer = window.setTimeout(() => {
+      void handleSaveWithUrl(storedPendingUrl);
+    }, 500);
 
-        const authData = await authResponse.json();
-        if (authData?.authenticated) {
-          localStorage.removeItem("pendingVideoUrl");
-          setUrl(storedPendingUrl);
-          window.setTimeout(() => {
-            void handleSaveWithUrl(storedPendingUrl);
-          }, 500);
-        }
-      } catch (err) {
-        console.error("Error checking auth status:", err);
-      }
-    };
-
-    void checkPendingVideo();
-  }, []);
+    return () => window.clearTimeout(timer);
+  }, [authLoading, isAuthenticated]);
 
   const handlePaste = async () => {
     try {
