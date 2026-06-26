@@ -58,6 +58,7 @@ function getAuthHeaders(): HeadersInit {
 
 const LS_USER_KEY = 'auth_user';
 const LS_USER_TS_KEY = 'auth_user_updated_at';
+let authMeInflightPromise: Promise<{ ok: boolean; status: number; data: any }> | null = null;
 
 function loadCachedUserUnsafeInstant(): User | null {
   try {
@@ -121,13 +122,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const timeout = setTimeout(() => controller.abort(), 8000);
 
     try {
-      const response = await fetch(joinUrl(API_BASE, '/api/auth/me'), {
-        headers: getAuthHeaders(),
-        credentials: 'omit',
-        signal: controller.signal,
-      });
+      if (!authMeInflightPromise) {
+        authMeInflightPromise = fetch(joinUrl(API_BASE, '/api/auth/me'), {
+          headers: getAuthHeaders(),
+          credentials: 'omit',
+          signal: controller.signal,
+        })
+          .then(async (response) => ({
+            ok: response.ok,
+            status: response.status,
+            data: await response.json().catch(() => ({})),
+          }))
+          .finally(() => {
+            authMeInflightPromise = null;
+          });
+      }
+
+      const response = await authMeInflightPromise;
       if (response.ok) {
-        const data = await response.json();
+        const data = response.data;
         if (data.authenticated) {
           setUser(data.user);
           setIsAuthenticated(true);

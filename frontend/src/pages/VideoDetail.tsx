@@ -20,8 +20,18 @@ import { MetadataPanel } from '../components/MetadataPanel';
 import { Skeleton, Accordion, OriginalLink } from '../components/VideoDetailWidgets';
 import { ContentTypeBadge, deriveToolsSubtype } from '../components/ContentTypeBadge';
 import { useTranslation } from 'react-i18next';
+import { apiGet } from '../lib/apiClient';
+import {
+  getPerfStepTime,
+  getPerfTimelineRows,
+  getSlowestPerfApiCall,
+  isPerfModeEnabled,
+  markPerfStep,
+  measurePerfDuration,
+  startPerfSession,
+} from '../lib/perf';
 import { useScrollLock } from '../utils/useScrollLock';
-import { apiUrl, fetchGcsJson, HASHTAG_STYLE } from '../utils/videoDetailUtils';
+import { fetchGcsJson, HASHTAG_STYLE } from '../utils/videoDetailUtils';
 import { scaleQuantity } from '../utils/videoUtils';
 import { CustomMessageSquareMoreIcon, IOSShareIcon, PlatformIconAuthor } from '../components/CustomIcons';
 import {
@@ -37,7 +47,7 @@ import RecipeCookbookRail, {
 } from '../features/recipe-detail/RecipeCookbookRail';
 import useRecipeCookState from '../features/recipe-cook-state/useRecipeCookState';
 import useRecipeNotes from '../features/recipe-notes/useRecipeNotes';
-import useShoppingList from '../features/shopping/useShoppingList';
+import useShoppingRecipeStatus from '../features/shopping/useShoppingRecipeStatus';
 import { readShoppingPreferences } from '../features/shopping/shoppingPreferences';
 import {
   mergeVideoPayload,
@@ -67,42 +77,7 @@ const ReportModalExt = ReportModal as React.ComponentType<{
   videoId?: string;
 }>;
 
-const getAuthToken = (): string => {
-  try {
-    const direct =
-      (window as any).__REKOLEKT_TOKEN__ ||
-      localStorage.getItem('auth_token') ||
-      localStorage.getItem('token') ||
-      localStorage.getItem('access_token') ||
-      localStorage.getItem('jwt') ||
-      localStorage.getItem('recolekt_token') ||
-      '';
-
-    if (direct) {
-      return String(direct).replace(/^Bearer\s+/i, '').trim();
-    }
-
-    for (let i = 0; i < localStorage.length; i += 1) {
-      const key = localStorage.key(i);
-      if (!key) continue;
-      const value = localStorage.getItem(key);
-      if (!value) continue;
-      const lowerKey = key.toLowerCase();
-      const looksRelevant =
-        lowerKey.includes('token') ||
-        lowerKey.includes('jwt') ||
-        lowerKey.includes('auth');
-      const looksLikeJwt = value.split('.').length === 3;
-      if (looksRelevant && looksLikeJwt) {
-        return value.replace(/^Bearer\s+/i, '').trim();
-      }
-    }
-
-    return '';
-  } catch {
-    return '';
-  }
-};
+const PERF_SESSION_NAME = 'VideoDetail';
 
 function useDesktopRecipeDetailLayout() {
   const [isDesktop, setIsDesktop] = useState(() =>
@@ -122,27 +97,6 @@ function useDesktopRecipeDetailLayout() {
 
   return isDesktop;
 }
-
-const fetchBackendAuthed = async (url: string, signal?: AbortSignal) => {
-  const token = getAuthToken();
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      'Cache-Control': 'no-cache',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    credentials: 'include',
-    cache: 'no-store',
-    signal,
-  });
-  if (!res.ok) {
-    const error = new Error(`HTTP ${res.status}`) as Error & { status?: number };
-    error.status = res.status;
-    throw error;
-  }
-  return res.json();
-};
 
 function ReelErrorState({
   message,
@@ -169,6 +123,31 @@ function ReelErrorState({
         </button>
       </div>
     </div>
+  );
+}
+
+function ReelPendingState() {
+  return (
+    <section className="animate-fade-in mb-5 mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] overflow-hidden rounded-[26px] border border-white/75 bg-white/90 shadow-[0_8px_28px_rgba(15,23,42,0.08)] backdrop-blur-sm md:mt-0">
+      <div className="px-4 py-5 md:px-6 md:py-6">
+        <div className="flex items-start gap-4">
+          <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-600">
+            <Loader2 size={20} aria-hidden="true" className="animate-spin" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-black uppercase tracking-[0.12em] text-primary-600/70">
+              Saved Reel
+            </p>
+            <h2 className="mt-1 text-[22px] font-bold tracking-tight text-slate-950">
+              Loading saved reel…
+            </h2>
+            <p className="mt-2 max-w-[48ch] text-sm font-medium leading-6 text-slate-500">
+              Pulling the final recipe detail before we render the page.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -228,6 +207,13 @@ function getRecipeMetaChips(recipe: any, video?: any): RecipeMetaChip[] {
     read(recipe?.style) ? { label: 'Style', value: read(recipe?.style) } : null,
     read(recipe?.cooking_style, recipe?.method) ? { label: 'Method', value: read(recipe?.cooking_style, recipe?.method) } : null,
   ].filter(Boolean) as RecipeMetaChip[];
+}
+
+function getHeroRecipeMetaChips(chips: RecipeMetaChip[]) {
+  const preferredOrder = ['Cuisine', 'Topic', 'Style', 'Method'];
+  return preferredOrder
+    .map((label) => chips.find((chip) => chip.label === label))
+    .filter((chip): chip is RecipeMetaChip => Boolean(chip?.value));
 }
 
 function getRecipeCardMetaItems(recipe: any) {
@@ -353,7 +339,6 @@ function RecipeAiSummaryCard({
   );
 }
 
-
 function RecipeMetaPanel({ chips }: { chips: RecipeMetaChip[] }) {
   const readChip = (...labels: string[]) =>
     chips.find((chip) =>
@@ -467,10 +452,58 @@ export const VideoDetail: React.FC = () => {
   const [refreshMessage, setRefreshMessage] = useState('');
   const [refreshError, setRefreshError] = useState('');
   const [detailErrorMessage, setDetailErrorMessage] = useState('');
+  const [detailHydrationSettled, setDetailHydrationSettled] = useState(false);
   const detailHydratedRef = useRef(false);
   const lastStableVideoRef = useRef<any>(null);
   const refreshAbortRef = useRef<AbortController | null>(null);
   const refreshRunRef = useRef(0);
+  const perfEnabled = isPerfModeEnabled();
+  const perfTimelinePrintedRef = useRef(false);
+  const perfSummaryPrintedRef = useRef(false);
+  const perfSpanMarksRef = useRef<Record<string, string>>({});
+  const perfBrowserMetricsRef = useRef<{
+    fcpMs: number | null;
+    lcpMs: number | null;
+    cls: number;
+  }>({ fcpMs: null, lcpMs: null, cls: 0 });
+  const posterImageRef = useRef<HTMLImageElement | null>(null);
+
+  const startPerfSpan = useCallback((key: string, step: string) => {
+    if (!perfEnabled) return;
+    const startMark = `recolekt:${PERF_SESSION_NAME}:${key}:start`;
+    perfSpanMarksRef.current[key] = startMark;
+    try {
+      performance.mark(startMark);
+    } catch {
+      // Ignore unsupported mark failures.
+    }
+    markPerfStep(step);
+  }, [perfEnabled]);
+
+  const endPerfSpan = useCallback((key: string, step: string) => {
+    if (!perfEnabled) return;
+    const startMark = perfSpanMarksRef.current[key];
+    const endMark = `recolekt:${PERF_SESSION_NAME}:${key}:end`;
+    let durationMs: number | undefined;
+
+    try {
+      performance.mark(endMark);
+      if (startMark) {
+        const measured = measurePerfDuration(
+          startMark,
+          endMark,
+          `recolekt:${PERF_SESSION_NAME}:${key}:measure:${performance.now()}`
+        );
+        if (measured !== null) {
+          durationMs = measured;
+        }
+      }
+    } catch {
+      durationMs = undefined;
+    }
+
+    markPerfStep(step, durationMs !== undefined ? { durationMs } : {});
+  }, [perfEnabled]);
 
   useScrollLock(
     isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen,
@@ -478,6 +511,14 @@ export const VideoDetail: React.FC = () => {
 
   // Reset state whenever the user navigates to a different video
   useEffect(() => {
+    perfTimelinePrintedRef.current = false;
+    perfSummaryPrintedRef.current = false;
+    perfSpanMarksRef.current = {};
+    perfBrowserMetricsRef.current = { fcpMs: null, lcpMs: null, cls: 0 };
+    if (perfEnabled) {
+      startPerfSession(PERF_SESSION_NAME);
+      markPerfStep('VideoDetail component mounted');
+    }
     setServingScale(1);
     setIsEditing(false);
     detailHydratedRef.current = false;
@@ -489,7 +530,8 @@ export const VideoDetail: React.FC = () => {
     setRefreshMessage('');
     setRefreshError('');
     setDetailErrorMessage('');
-  }, [id]);
+    setDetailHydrationSettled(false);
+  }, [id, perfEnabled]);
 
   useEffect(() => {
     return () => {
@@ -498,14 +540,95 @@ export const VideoDetail: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (perfEnabled && id) {
+      markPerfStep('route/video id resolved');
+    }
+  }, [id, perfEnabled]);
+
+  useEffect(() => {
+    if (!perfEnabled || typeof PerformanceObserver === 'undefined') return;
+
+    const cleanups: Array<() => void> = [];
+
+    try {
+      const paintObserver = new PerformanceObserver((entryList) => {
+        entryList.getEntries().forEach((entry) => {
+          if (entry.name !== 'first-contentful-paint') return;
+          if (perfBrowserMetricsRef.current.fcpMs !== null) return;
+          perfBrowserMetricsRef.current.fcpMs = Math.round(entry.startTime * 10) / 10;
+          console.log(`[perf] FCP ${perfBrowserMetricsRef.current.fcpMs}ms`);
+        });
+      });
+      paintObserver.observe({ type: 'paint', buffered: true });
+      cleanups.push(() => paintObserver.disconnect());
+    } catch {
+      // Ignore unsupported observer types.
+    }
+
+    try {
+      const lcpObserver = new PerformanceObserver((entryList) => {
+        const entries = entryList.getEntries();
+        const lastEntry = entries[entries.length - 1];
+        if (!lastEntry) return;
+        perfBrowserMetricsRef.current.lcpMs = Math.round(lastEntry.startTime * 10) / 10;
+      });
+      lcpObserver.observe({ type: 'largest-contentful-paint', buffered: true });
+      const flushLcp = () => {
+        if (perfBrowserMetricsRef.current.lcpMs !== null) {
+          console.log(`[perf] LCP ${perfBrowserMetricsRef.current.lcpMs}ms`);
+        }
+      };
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'hidden') {
+          flushLcp();
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      cleanups.push(() => {
+        flushLcp();
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        lcpObserver.disconnect();
+      });
+    } catch {
+      // Ignore unsupported observer types.
+    }
+
+    try {
+      const clsObserver = new PerformanceObserver((entryList) => {
+        entryList.getEntries().forEach((entry) => {
+          const layoutShiftEntry = entry as PerformanceEntry & { hadRecentInput?: boolean; value?: number };
+          if (layoutShiftEntry.hadRecentInput) return;
+          perfBrowserMetricsRef.current.cls += layoutShiftEntry.value || 0;
+        });
+      });
+      clsObserver.observe({ type: 'layout-shift', buffered: true });
+      cleanups.push(() => {
+        clsObserver.disconnect();
+        if (perfBrowserMetricsRef.current.cls > 0) {
+          console.log(`[perf] CLS ${Math.round(perfBrowserMetricsRef.current.cls * 1000) / 1000}`);
+        }
+      });
+    } catch {
+      // Ignore unsupported observer types.
+    }
+
+    return () => {
+      cleanups.forEach((cleanup) => cleanup());
+    };
+  }, [id, perfEnabled]);
+
   const fetchHydratedVideo = useCallback(async (signal?: AbortSignal) => {
     if (!id) return null;
-    const db = await fetchBackendAuthed(
-      apiUrl(`api/reel/${encodeURIComponent(id)}?ts=${Date.now()}`),
-      signal,
+    startPerfSpan('main-video-fetch', 'main video/reel fetch started');
+    const db = await apiGet<any>(
+      `api/reel/${encodeURIComponent(id)}`,
+      { signal }
     );
+    endPerfSpan('main-video-fetch', 'main video/reel fetch completed');
     if (!db) return null;
 
+    startPerfSpan('recipe-resolution', 'recipe resolution started');
     const resultJsonUrl =
       db?.result_json_url ||
       db?.resultJsonUrl ||
@@ -516,15 +639,17 @@ export const VideoDetail: React.FC = () => {
       null;
 
     const gcs = resultJsonUrl ? await fetchGcsJson(resultJsonUrl) : null;
+    endPerfSpan('recipe-resolution', 'recipe resolution completed');
     return {
       detail: db,
       resultJson: gcs,
       video: mergeVideoPayload(db, gcs, galleryThumbnail),
     };
-  }, [id, galleryThumbnail]);
+  }, [endPerfSpan, galleryThumbnail, id, startPerfSpan]);
 
   const enrichVideo = useCallback(async () => {
     if (!id || !navigator.onLine) {
+      setDetailHydrationSettled(true);
       setLoading(false);
       return;
     }
@@ -562,6 +687,7 @@ export const VideoDetail: React.FC = () => {
         setRefreshError('');
       }
     } finally {
+      setDetailHydrationSettled(true);
       setLoading(false);
     }
   }, [id, fetchHydratedVideo]);
@@ -894,9 +1020,15 @@ export const VideoDetail: React.FC = () => {
         ? editedVideo
         : String(video?.status || '').toLowerCase() === 'processing' && lastStableVideoRef.current
           ? { ...lastStableVideoRef.current, status: video.status, updated_at: video.updated_at }
-          : video;
+      : video;
     return buildViewModel(source, showOriginal, galleryThumbnail);
   }, [video, editedVideo, isEditing, showOriginal, galleryThumbnail]);
+
+  useEffect(() => {
+    if (perfEnabled && viewModel) {
+      markPerfStep('viewModel ready');
+    }
+  }, [perfEnabled, viewModel]);
 
   const localizedVideoRecipe = selectLocalizedRecipe((video as any)?.recipe, showOriginal);
   const recipeForCard = buildRecipeForCard(viewModel?.recipe || localizedVideoRecipe, localizedVideoRecipe || (video as any)?.recipe, [
@@ -948,6 +1080,88 @@ export const VideoDetail: React.FC = () => {
     recipeContentAvailable ||
     (rawContentType === 'recipe' && stableRecipeForCard)
   );
+  const isLikelyRecipeContent = Boolean(
+    recipeContentAvailable ||
+    stableRecipeForCard ||
+    recipeForCard ||
+    rawContentType === 'recipe' ||
+    String(viewModel?.contentType || '').toLowerCase() === 'recipe'
+  );
+  const recipeResolutionPending =
+    !showRecipeCard &&
+    !detailHydrationSettled &&
+    navigator.onLine;
+  const isDetailPresentationReady =
+    !recipeResolutionPending || !isLikelyRecipeContent;
+  const showNonRecipeFallback = !showRecipeCard && !recipeResolutionPending;
+
+  useEffect(() => {
+    if (perfEnabled && showRecipeCard) {
+      markPerfStep('showRecipeCard became true');
+    }
+  }, [perfEnabled, showRecipeCard]);
+
+  useEffect(() => {
+    if (!perfEnabled || loading || !viewModel || !isDetailPresentationReady) return;
+
+    markPerfStep('final detail body allowed to render');
+    if (!perfTimelinePrintedRef.current) {
+      perfTimelinePrintedRef.current = true;
+      console.log('[perf] VideoDetail timeline');
+      console.table(getPerfTimelineRows());
+    }
+  }, [isDetailPresentationReady, loading, perfEnabled, viewModel]);
+
+  const posterLoadedMs = getPerfStepTime('first image/poster loaded');
+  const recipeCardRenderedMs = getPerfStepTime('RecipeDetailsCard first rendered');
+  const rightRailRenderedMs = getPerfStepTime('RecipeCookbookRail first rendered');
+  const nutritionRenderedMs = getPerfStepTime('NutritionCard first rendered');
+
+  useEffect(() => {
+    if (!perfEnabled || !viewModel?.thumbnailUrl) return;
+    const poster = posterImageRef.current;
+    if (poster && poster.complete && poster.naturalWidth > 0) {
+      markPerfStep('first image/poster loaded');
+    }
+  }, [perfEnabled, viewModel?.thumbnailUrl]);
+
+  useEffect(() => {
+    if (!perfEnabled || perfSummaryPrintedRef.current) return;
+    if (!viewModel || loading || !isDetailPresentationReady) return;
+
+    const posterReady = !viewModel.thumbnailUrl || posterLoadedMs !== null;
+    const recipeCardReady = !showRecipeCard || recipeCardRenderedMs !== null;
+    const rightRailReady = !showRecipeCard || !isDesktopRecipeDetailLayout || rightRailRenderedMs !== null;
+    const nutritionReady = !showRecipeCard || currentIngredientCount === 0 || nutritionRenderedMs !== null;
+
+    if (!posterReady || !recipeCardReady || !rightRailReady || !nutritionReady) return;
+
+    perfSummaryPrintedRef.current = true;
+    markPerfStep('final page ready');
+    const slowestApiCall = getSlowestPerfApiCall();
+
+    console.log('[perf] VideoDetail summary');
+    console.table([{
+      totalTimeMountToFinalDetailBodyMs: getPerfStepTime('final detail body allowed to render'),
+      slowestApiRequest: slowestApiCall ? `${slowestApiCall.method} ${slowestApiCall.path}` : null,
+      slowestApiDurationMs: slowestApiCall?.durationMs ?? null,
+      timeUntilPosterImageLoadedMs: posterLoadedMs,
+      timeUntilRightRailRenderedMs: rightRailRenderedMs,
+      timeUntilRecipeCardRenderedMs: recipeCardRenderedMs,
+    }]);
+  }, [
+    currentIngredientCount,
+    isDesktopRecipeDetailLayout,
+    isDetailPresentationReady,
+    loading,
+    nutritionRenderedMs,
+    perfEnabled,
+    posterLoadedMs,
+    recipeCardRenderedMs,
+    rightRailRenderedMs,
+    showRecipeCard,
+    viewModel,
+  ]);
 
   const {
     note: recipeNote,
@@ -970,12 +1184,12 @@ export const VideoDetail: React.FC = () => {
   const cookStatusLoading = cookStatusStatus === 'loading';
 
   const {
-    plannedRecipeIds,
-    addRecipe: addRecipeToShoppingList,
-    removeRecipe: removeRecipeFromShoppingList,
+    inShoppingList,
     loading: shoppingLoading,
     saving: shoppingSaving,
-  } = useShoppingList();
+    addRecipe: addRecipeToShoppingList,
+    removeRecipe: removeRecipeFromShoppingList,
+  } = useShoppingRecipeStatus(currentVideoId, showRecipeCard);
 
   const pageErrorMessage =
     detailErrorMessage ||
@@ -991,6 +1205,20 @@ export const VideoDetail: React.FC = () => {
   }
 
   if (loading || !viewModel) return <Skeleton />;
+  if (!isDetailPresentationReady) {
+    return (
+      <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
+        <div className="flex w-full flex-col items-start md:grid md:grid-cols-[minmax(0,1fr)_20rem] md:gap-5 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
+          <div className="min-w-0 w-full flex flex-col">
+            <ReelPendingState />
+          </div>
+          {isDesktopRecipeDetailLayout ? (
+            <aside className="hidden w-full md:block" aria-hidden="true" />
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   const toolsCategories = getToolsCategoriesForLanguage(viewModel.toolsList, showOriginal);
   const hasToolsList =
@@ -1006,6 +1234,7 @@ export const VideoDetail: React.FC = () => {
   const derivedSubtype = deriveToolsSubtype(viewModel.toolsList);
   const safeDerivedSubtype = isBadgeToolsSubtype(derivedSubtype) ? derivedSubtype : 'picks';
   const recipeMetaChips = getRecipeMetaChips(stableRecipeForCard || viewModel.recipe, viewModel);
+  const heroRecipeMetaChips = getHeroRecipeMetaChips(recipeMetaChips);
   const recipeCardMetaItems = getRecipeCardMetaItems(stableRecipeForCard || viewModel.recipe);
 
   const cleanMetadataValue = (value: any) => {
@@ -1141,9 +1370,9 @@ export const VideoDetail: React.FC = () => {
     <div className="md:hidden">
       <button
         type="button"
-        onClick={() => plannedRecipeIds.has(currentVideoId)
-          ? removeRecipeFromShoppingList(currentVideoId)
-          : addRecipeToShoppingList(currentVideoId, null)}
+        onClick={() => inShoppingList
+          ? removeRecipeFromShoppingList()
+          : addRecipeToShoppingList(null)}
         disabled={shoppingLoading || shoppingSaving}
         className="flex w-full items-center gap-3 rounded-xl border border-emerald-100 bg-white p-3.5 text-left text-emerald-950 shadow-sm transition-[background-color,box-shadow,transform] hover:bg-emerald-50/60 hover:shadow-md active:translate-y-px active:bg-emerald-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
       >
@@ -1154,12 +1383,12 @@ export const VideoDetail: React.FC = () => {
           <span className="block text-sm font-semibold text-emerald-950">
             {shoppingSaving
               ? 'Updating shopping list...'
-              : plannedRecipeIds.has(currentVideoId)
+              : inShoppingList
                 ? 'In your shopping plan'
                 : 'Add ingredients to shopping list'}
           </span>
           <span className="mt-0.5 block text-xs font-medium text-emerald-800/75">
-            {plannedRecipeIds.has(currentVideoId)
+            {inShoppingList
               ? 'Tap to remove it from groceries.'
               : 'Plan groceries for this recipe.'}
           </span>
@@ -1174,10 +1403,10 @@ export const VideoDetail: React.FC = () => {
         onClick={() => setIsMoveModalOpen(true)}
         className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-left transition-colors hover:border-amber-100 hover:bg-amber-50/40"
       >
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-amber-100 text-amber-700 ring-1 ring-amber-200/70">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-amber-100 text-amber-700 ring-1 ring-amber-200/70">
           <FolderInput size={16} aria-hidden="true" />
         </span>
-        <span className="flex-1">
+        <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-slate-800">Collection</span>
           <span className="block text-[12px] text-slate-400">Move or organize</span>
         </span>
@@ -1187,10 +1416,10 @@ export const VideoDetail: React.FC = () => {
         onClick={handleShare}
         className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-left transition-colors hover:border-primary-100 hover:bg-primary-50/40"
       >
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-primary-50 text-primary-600 ring-1 ring-primary-100">
-          <IOSShareIcon />
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-primary-50 text-primary-600 ring-1 ring-primary-100">
+          <IOSShareIcon size={16} />
         </span>
-        <span className="flex-1">
+        <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-slate-800">Share</span>
           <span className="block text-[12px] text-slate-400">Send the recipe out</span>
         </span>
@@ -1200,10 +1429,10 @@ export const VideoDetail: React.FC = () => {
         onClick={() => setIsEditing(true)}
         className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-left transition-colors hover:border-rose-100 hover:bg-rose-50/40"
       >
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-rose-100 text-rose-600 ring-1 ring-rose-200/70">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-rose-100 text-rose-600 ring-1 ring-rose-200/70">
           <Pencil size={16} aria-hidden="true" />
         </span>
-        <span className="flex-1">
+        <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-slate-800">Edit details</span>
           <span className="block text-[12px] text-slate-400">Adjust the saved recipe</span>
         </span>
@@ -1214,7 +1443,7 @@ export const VideoDetail: React.FC = () => {
     <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
       <style>{HASHTAG_STYLE}</style>
 
-      <div className="flex flex-col md:grid md:grid-cols-[1.5fr_1fr] md:gap-6 items-start">
+      <div className="flex w-full flex-col items-start md:grid md:grid-cols-[minmax(0,1fr)_20rem] md:gap-5 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
         <div className="min-w-0 w-full flex flex-col">
           {(refreshMessage || refreshError) && (
             <div
@@ -1257,11 +1486,17 @@ export const VideoDetail: React.FC = () => {
           }`}>
             {viewModel.thumbnailUrl && (
               <img
+                ref={posterImageRef}
                 src={viewModel.thumbnailUrl}
                 alt={viewModel.title}
                 className="w-full h-full object-cover opacity-90 motion-safe:transition-transform motion-safe:duration-500 md:group-hover:scale-[1.015]"
                 loading="eager"
                 decoding="async"
+                onLoad={() => {
+                  if (perfEnabled) {
+                    markPerfStep('first image/poster loaded');
+                  }
+                }}
               />
             )}
 
@@ -1332,71 +1567,104 @@ export const VideoDetail: React.FC = () => {
             </div>
           </div>
 
-          {/* Title */}
-          <div className={showRecipeCard ? 'mb-2 px-4 pt-5 md:mb-3 md:px-6 md:pt-6' : 'mb-3'}>
-            <div className="flex items-start justify-between gap-3">
-              <EditableTitle
-                title={viewModel.title}
-                isEditMode={isEditing}
-                value={viewModel.title}
-                onChange={(val: string) => handleEditField('title', val)}
-              />
-              {showRecipeCard && viewModel.hasTranslation && !isEditing && (
-                <button
-                  type="button"
-                  onClick={(e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); toggleLanguage(); }}
-                  className="mt-1 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
-                  aria-label={showOriginal ? 'Show English' : `Show ${viewModel.languageCode}`}
+          {showRecipeCard ? (
+            <div className="px-4 pb-5 pt-5 md:px-6 md:pb-6 md:pt-6">
+              <div className="flex items-start justify-between gap-3">
+                <EditableTitle
+                  title={viewModel.title}
+                  isEditMode={isEditing}
+                  value={viewModel.title}
+                  onChange={(val: string) => handleEditField('title', val)}
+                />
+                {viewModel.hasTranslation && !isEditing && (
+                  <button
+                    type="button"
+                    onClick={(e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); toggleLanguage(); }}
+                    className="mt-1 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+                    aria-label={showOriginal ? 'Show English' : `Show ${viewModel.languageCode}`}
+                  >
+                    <Globe size={14} aria-hidden="true" />
+                    <span className="text-[11px] font-bold uppercase">
+                      {showOriginal ? 'EN' : viewModel.languageCode}
+                    </span>
+                  </button>
+                )}
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <a
+                  href={viewModel.originalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-w-0 items-center gap-2 group/author rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
                 >
-                  <Globe size={14} aria-hidden="true" />
-                  <span className="text-[11px] font-bold uppercase">
-                    {showOriginal ? 'EN' : viewModel.languageCode}
+                  <PlatformIconAuthor platform={viewModel.platform} />
+                  <span className="truncate text-sm font-medium text-gray-600 transition-colors group-hover/author:text-gray-900">
+                    {viewModel.author.replace('@', '')}
                   </span>
-                </button>
+                </a>
+                {viewModel.savedAt && (
+                  <div className="flex items-center gap-1.5 text-sm text-gray-500 sm:justify-end">
+                    <Save size={13} aria-hidden="true" className="shrink-0 text-gray-400" />
+                    <span>{viewModel.savedAt}</span>
+                  </div>
+                )}
+              </div>
+
+              {heroRecipeMetaChips.length > 0 && (
+                <div className="mt-[18px] grid grid-cols-1 gap-[10px] border-t border-slate-100 pt-[18px] sm:grid-cols-2 lg:grid-cols-4">
+                  {heroRecipeMetaChips.map((chip) => (
+                    <div
+                      key={`${chip.label}-${chip.value}`}
+                      className="flex flex-col items-center justify-center gap-[5px] rounded-[12px] bg-slate-100 px-[10px] py-[14px] text-center"
+                    >
+                      <div className="text-[10px] font-bold uppercase tracking-[0.07em] text-slate-400">
+                        {chip.label}
+                      </div>
+                      <div className="text-[14.5px] font-bold leading-snug text-slate-950">
+                        {chip.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-          </div>
-
-          {/* Author + date */}
-          <div className={`flex items-center justify-between ${showRecipeCard ? 'px-4 md:px-6' : 'mb-6'}`}>
-            <a
-              href={viewModel.originalUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 group/author rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
-            >
-              <PlatformIconAuthor platform={viewModel.platform} />
-              <span className="text-xs font-medium text-gray-600 truncate group-hover/author:text-gray-900 transition-colors">
-                {viewModel.author.replace('@', '')}
-              </span>
-            </a>
-            {viewModel.savedAt && (
-              <div className="flex items-center gap-1.5 text-xs text-gray-600">
-                <Save size={13} aria-hidden="true" className="shrink-0 text-gray-500" />
-                <span>{viewModel.savedAt}</span>
-              </div>
-            )}
-          </div>
-
-          {showRecipeCard && recipeMetaChips.length > 0 && (
+          ) : (
             <>
-              <hr className="mx-4 border-t border-gray-100 md:mx-5" />
-              <div className="mb-4 flex flex-wrap gap-2 px-4 py-3 md:px-6">
-                {recipeMetaChips.map((chip) => (
-                  <span
-                    key={`${chip.label}-${chip.value}`}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-gray-100 bg-gray-50/80 px-3 py-1.5 text-[11px] font-bold text-gray-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
-                  >
-                    <span className="text-gray-400">{chip.label}</span>
-                    <span className="text-gray-900">{chip.value}</span>
+              <div className="mb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <EditableTitle
+                    title={viewModel.title}
+                    isEditMode={isEditing}
+                    value={viewModel.title}
+                    onChange={(val: string) => handleEditField('title', val)}
+                  />
+                </div>
+              </div>
+              <div className="mb-6 flex items-center justify-between">
+                <a
+                  href={viewModel.originalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 group/author rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+                >
+                  <PlatformIconAuthor platform={viewModel.platform} />
+                  <span className="truncate text-xs font-medium text-gray-600 transition-colors group-hover/author:text-gray-900">
+                    {viewModel.author.replace('@', '')}
                   </span>
-                ))}
+                </a>
+                {viewModel.savedAt && (
+                  <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                    <Save size={13} aria-hidden="true" className="shrink-0 text-gray-500" />
+                    <span>{viewModel.savedAt}</span>
+                  </div>
+                )}
               </div>
             </>
           )}
 
           {/* Metadata (mobile) */}
-          {!showRecipeCard && (
+          {showNonRecipeFallback && (
           <MetadataPanel
             variant="mobile"
             category={metadataCategory}
@@ -1410,7 +1678,7 @@ export const VideoDetail: React.FC = () => {
           )}
 
           {/* AI Summary */}
-          {!showRecipeCard && (
+          {showNonRecipeFallback && (
             <div className="bg-primary-50 rounded-2xl p-5 md:p-6 mb-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-primary-700 font-bold text-sm uppercase tracking-wide">
@@ -1509,20 +1777,26 @@ export const VideoDetail: React.FC = () => {
                 showStartCookingButton={!isDesktopRecipeDetailLayout}
                 embedded={false}
                 headerContent={(
-                  <div>
-                    <div className="grid grid-cols-3 divide-x divide-gray-100 bg-white/80 px-4 sm:px-5">
-                      {primaryRecipeStatItems.map((item) => (
-                        <div key={item.label} className="flex min-w-0 flex-col items-center px-3 py-4 text-center first:pl-0 last:pr-0">
-                          <div className="mb-2 text-secondary-600">{statIconByLabel[item.label]}</div>
-                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                            {item.label}
-                          </div>
-                          <div className="mt-1 truncate text-[18px] font-black tabular-nums text-gray-950" title={item.value}>
-                            {item.value}
-                          </div>
+                  <div className="grid grid-cols-3">
+                    {primaryRecipeStatItems.map((item, index) => (
+                      <div
+                        key={item.label}
+                        className="relative flex min-w-0 flex-col items-center gap-[5px] px-3 py-[13px] text-center"
+                      >
+                        {index < primaryRecipeStatItems.length - 1 && (
+                          <span className="pointer-events-none absolute right-0 top-1/2 h-10 w-px -translate-y-1/2 bg-slate-100" />
+                        )}
+                        <div className="text-secondary-600 [&_svg]:h-5 [&_svg]:w-5 [&_svg]:stroke-[1.9]">
+                          {statIconByLabel[item.label]}
                         </div>
-                      ))}
-                    </div>
+                        <div className="text-[11.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                          {item.label}
+                        </div>
+                        <div className="truncate text-[18px] font-extrabold tabular-nums text-slate-950" title={item.value}>
+                          {item.value}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               />
@@ -1628,7 +1902,7 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
-          {!showRecipeCard && viewModel.caption && (
+          {showNonRecipeFallback && viewModel.caption && (
             <Accordion icon={<AlignLeft size={16} />} label={t('videoDetail:caption', 'Caption')}>
               <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
                 {viewModel.caption}
@@ -1636,7 +1910,7 @@ export const VideoDetail: React.FC = () => {
             </Accordion>
           )}
 
-          {!showRecipeCard && viewModel.transcript && (
+          {showNonRecipeFallback && viewModel.transcript && (
             <div className="md:hidden">
               <Accordion
                 icon={<CustomMessageSquareMoreIcon size={16} />}
@@ -1666,7 +1940,7 @@ export const VideoDetail: React.FC = () => {
             </div>
           )}
 
-          {!showRecipeCard && viewModel.originalUrl && (
+          {showNonRecipeFallback && viewModel.originalUrl && (
             <OriginalLink
               url={viewModel.originalUrl}
               platform={viewModel.platform}
@@ -1697,17 +1971,17 @@ export const VideoDetail: React.FC = () => {
             cookStatusLoading={cookStatusLoading}
             onMarkCooked={markCooked}
             onResetCookStatus={resetCookState}
-            shoppingPlanned={plannedRecipeIds.has(currentVideoId)}
+            shoppingPlanned={inShoppingList}
             shoppingLoading={shoppingLoading}
             shoppingSaving={shoppingSaving}
             onStartCooking={() => setCookModeOpenSignal((value) => value + 1)}
-            onAddToShoppingList={() => addRecipeToShoppingList(currentVideoId, null)}
-            onRemoveFromShoppingList={() => removeRecipeFromShoppingList(currentVideoId)}
+            onAddToShoppingList={() => addRecipeToShoppingList(null)}
+            onRemoveFromShoppingList={() => removeRecipeFromShoppingList()}
             quickActions={desktopQuickActions}
             memoryLine={recipeMemoryLine || undefined}
             memoryItems={returnStateItems}
           />
-        ) : !showRecipeCard ? (
+        ) : showNonRecipeFallback ? (
           <div className="hidden md:flex flex-col w-full gap-5 mt-0">
             <RecipeMetaPanel chips={recipeMetaChips} />
             <MetadataPanel

@@ -48,105 +48,72 @@ export function NutriScoreVisual({
   letter: "A" | "B" | "C" | "D" | "E";
 }) {
   const slots = [
-    { l: "A", fill: "#038141", textFill: "white" },
-    { l: "B", fill: "#85BB2F", textFill: "white" },
-    { l: "C", fill: "#FECB02", textFill: "white" },
-    { l: "D", fill: "#EE8100", textFill: "white" },
-    { l: "E", fill: "#E63E11", textFill: "white" },
+    { l: "A", fill: "rgb(27,138,63)" },
+    { l: "B", fill: "rgb(122,192,67)" },
+    { l: "C", fill: "rgb(246,200,0)" },
+    { l: "D", fill: "rgb(239,130,0)" },
+    { l: "E", fill: "rgb(230,51,18)" },
   ] as const;
 
   const activeIdx = Math.max(0, slots.findIndex((slot) => slot.l === letter));
-  const activeSlot = slots[activeIdx];
-  const barX = 35;
-  const barY = 18;
-  const slotW = 48;
-  const barH = 52;
-  const pillW = 66;
-  const pillH = 76;
-  const pillX = barX + activeIdx * slotW + slotW / 2 - pillW / 2;
-  const pillY = 6;
-  const pillCx = pillX + pillW / 2;
-  const clipId = `nutri-score-bar-${letter}`;
+  const activeFill = slots[activeIdx]?.fill ?? slots[0].fill;
+  const shadowByLetter: Record<string, string> = {
+    A: "rgba(27, 138, 63, 0.35) 0px 8px 18px",
+    B: "rgba(122, 192, 67, 0.35) 0px 8px 18px",
+    C: "rgba(246, 200, 0, 0.35) 0px 8px 18px",
+    D: "rgba(239, 130, 0, 0.35) 0px 8px 18px",
+    E: "rgba(230, 51, 18, 0.35) 0px 8px 18px",
+  };
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+    <div>
+      <div className="mb-[18px] flex items-center justify-between gap-3 rounded-[18px] border border-[#eef2f7] bg-slate-50 px-5 py-[22px]">
+        <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
           Nutri-Score · estimated
         </p>
       </div>
 
-      <svg
-        viewBox="0 0 310 88"
+      <div
         role="img"
         aria-label={`Estimated Nutri-Score ${letter}`}
-        className="mx-auto block h-auto w-full max-w-[280px]"
+        className="mx-auto flex max-w-[380px] items-center justify-center"
       >
-        <defs>
-          <clipPath id={clipId}>
-            <rect x={barX} y={barY} width={slotW * slots.length} height={barH} rx="18" ry="18" />
-          </clipPath>
-        </defs>
-
-        <g clipPath={`url(#${clipId})`}>
-          {slots.map((slot, idx) => (
-            <rect
-              key={slot.l}
-              x={barX + idx * slotW}
-              y={barY}
-              width={slotW}
-              height={barH}
-              fill={slot.fill}
-            />
-          ))}
-        </g>
-
         {slots.map((slot, idx) => {
-          const isActive = slot.l === letter;
-          const cx = barX + idx * slotW + slotW / 2;
+          const isActive = idx === activeIdx;
+          const isFirst = idx === 0;
+          const isLast = idx === slots.length - 1;
+
+          if (isActive) {
+            return (
+              <div
+                key={slot.l}
+                className="relative z-10 flex h-[72px] w-[72px] items-center justify-center rounded-[18px] border-[3px] border-white text-[34px] font-extrabold text-white"
+                style={{
+                  margin: "0 -5px",
+                  backgroundColor: slot.fill,
+                  boxShadow: shadowByLetter[slot.l],
+                }}
+              >
+                {slot.l}
+              </div>
+            );
+          }
 
           return (
-            <text
+            <div
               key={slot.l}
-              x={cx}
-              y={barY + 35}
-              textAnchor="middle"
-              fill={isActive ? "transparent" : "rgba(255,255,255,0.42)"}
-              fontSize="24"
-              fontWeight="900"
-              fontFamily="Arial, Helvetica, sans-serif"
+              className={`flex h-[50px] flex-1 items-center justify-center text-[22px] font-extrabold text-white/55 ${
+                isFirst ? "rounded-l-[13px]" : ""
+              } ${isLast ? "rounded-r-[13px]" : ""}`}
+              style={{ backgroundColor: slot.fill }}
             >
               {slot.l}
-            </text>
+            </div>
           );
         })}
+      </div>
 
-        <rect
-          x={pillX}
-          y={pillY}
-          width={pillW}
-          height={pillH}
-          rx="24"
-          ry="24"
-          fill={activeSlot.fill}
-          stroke="white"
-          strokeWidth="5"
-        />
-
-        <text
-          x={pillCx}
-          y={pillY + 52}
-          textAnchor="middle"
-          fill={activeSlot.textFill}
-          fontSize="42"
-          fontWeight="900"
-          fontFamily="Arial, Helvetica, sans-serif"
-        >
-          {letter}
-        </text>
-      </svg>
-
-      <p className="mt-2 text-center text-[10px] leading-relaxed text-gray-400">
+      <p className="mt-[20px] text-center text-[12.5px] leading-[1.5] text-slate-400">
         Estimated from recipe ingredients. Not a certified regulatory label.
       </p>
     </div>

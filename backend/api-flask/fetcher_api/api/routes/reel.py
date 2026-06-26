@@ -4,6 +4,7 @@ Reel management routes - list, update, delete, search
 import os
 import json
 import logging
+import time
 from decimal import Decimal
 
 from flask import Blueprint, request, jsonify
@@ -23,6 +24,7 @@ from fetcher_api.services.recipe_assistant import answer_recipe_question
 from fetcher_api.utils.geocode import geocode_one, reverse_geocode_one
 
 logger = logging.getLogger("reels")
+PERF_LOG_ENABLED = os.getenv("RECOLEKT_PERF_LOG") == "1"
 
 reel_bp = Blueprint("reels", __name__)
 
@@ -81,6 +83,10 @@ def _json_safe_value(value):
 
 def _json_dumps_safe(value) -> str:
     return json.dumps(_json_safe_value(value), ensure_ascii=False)
+
+
+def _perf_ms(started_at: float) -> float:
+    return round((time.perf_counter() - started_at) * 1000, 1)
 
 
 def add_no_cache_headers(response):
@@ -1537,15 +1543,27 @@ def get_shopping_list():
     if request.method == "OPTIONS":
         return "", 200
 
+    total_started_at = time.perf_counter()
+    auth_lookup_ms = None
+    list_lookup_ms = None
+    entries_query_ms = None
+    recipe_join_or_hydration_ms = None
+    response_serialize_ms = None
+
     try:
         try:
+            auth_started_at = time.perf_counter()
             user_id = get_user_id_from_request()
+            auth_lookup_ms = _perf_ms(auth_started_at)
         except ValueError:
             return jsonify({"error": "Authentication required"}), 401
 
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                list_lookup_started_at = time.perf_counter()
                 shopping_list_id = _ensure_shopping_list(cur, user_id)
+                list_lookup_ms = _perf_ms(list_lookup_started_at)
+                entries_query_started_at = time.perf_counter()
                 cur.execute(
                     """
                     SELECT
@@ -1577,6 +1595,7 @@ def get_shopping_list():
                     (user_id, shopping_list_id, user_id),
                 )
                 entry_rows = cur.fetchall()
+                entries_query_ms = _perf_ms(entries_query_started_at)
                 cur.execute(
                     """
                     SELECT ingredient_key, checked, excluded, updated_at
@@ -1590,19 +1609,40 @@ def get_shopping_list():
                 override_rows = cur.fetchall()
             conn.commit()
 
-        return add_no_cache_headers(jsonify({
+        hydration_started_at = time.perf_counter()
+        recipe_entries = [_serialize_shopping_entry(row) for row in entry_rows]
+        item_overrides = [_serialize_shopping_override(row) for row in override_rows]
+        recipe_join_or_hydration_ms = _perf_ms(hydration_started_at)
+
+        serialize_started_at = time.perf_counter()
+        response_payload = {
             "shoppingListId": shopping_list_id,
-            "recipeEntries": [_serialize_shopping_entry(row) for row in entry_rows],
-            "itemOverrides": [_serialize_shopping_override(row) for row in override_rows],
-        }))
+            "recipeEntries": recipe_entries,
+            "itemOverrides": item_overrides,
+        }
+        response_serialize_ms = _perf_ms(serialize_started_at)
+
+        if PERF_LOG_ENABLED:
+            total_ms = _perf_ms(total_started_at)
+            logger.info(
+                "[perf] shopping list detail GET /api/shopping-list auth_user_lookup=%.1fms list_lookup=%.1fms entries_query=%.1fms recipe_join_or_hydration=%.1fms response_serialize=%.1fms total=%.1fms",
+                auth_lookup_ms or 0.0,
+                list_lookup_ms or 0.0,
+                entries_query_ms or 0.0,
+                recipe_join_or_hydration_ms or 0.0,
+                response_serialize_ms or 0.0,
+                total_ms,
+            )
+
+        return add_no_cache_headers(jsonify(response_payload))
 
     except Exception as e:
         logger.error("Error fetching shopping list: %s", e, exc_info=True)
         return jsonify({"error": "Shopping list fetch failed"}), 500
 
 
-@reel_bp.route("/shopping-list/recipes", methods=["POST", "OPTIONS"])
-def add_shopping_recipe():
+@reel_bp.route("/shopping-list/recipes/<reel_id>/status", methods=["GET", "OPTIONS"])
+def get_shopping_recipe_status(reel_id):
     if request.method == "OPTIONS":
         return "", 200
 
@@ -1612,23 +1652,82 @@ def add_shopping_recipe():
         except ValueError:
             return jsonify({"error": "Authentication required"}), 401
 
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                shopping_list_id = _ensure_shopping_list(cur, user_id)
+                cur.execute(
+                    """
+                    SELECT 1
+                    FROM shopping_recipe_entries
+                    WHERE shopping_list_id = %s
+                      AND user_id = %s
+                      AND reel_id = %s
+                    LIMIT 1
+                    """,
+                    (shopping_list_id, user_id, reel_id),
+                )
+                row = cur.fetchone()
+            conn.commit()
+
+        return add_no_cache_headers(jsonify({
+            "inShoppingList": bool(row),
+            "listId": shopping_list_id if row else None,
+        }))
+
+    except Exception as e:
+        logger.error("Error fetching shopping recipe status %s: %s", reel_id, e, exc_info=True)
+        return jsonify({"error": "Shopping recipe status failed"}), 500
+
+
+@reel_bp.route("/shopping-list/recipes", methods=["POST", "OPTIONS"])
+def add_shopping_recipe():
+    if request.method == "OPTIONS":
+        return "", 200
+
+    total_started_at = time.perf_counter()
+    request_entered_ms = 0.0
+    auth_total_ms = None
+    json_parse_validation_ms = None
+    auth_lookup_ms = None
+    db_connect_ms = None
+    reel_lookup_ms = None
+    list_create_find_ms = None
+    item_merge_upsert_ms = None
+    commit_ms = None
+    response_build_ms = None
+
+    try:
+        try:
+            auth_started_at = time.perf_counter()
+            user_id = get_user_id_from_request()
+            auth_total_ms = _perf_ms(auth_started_at)
+            auth_lookup_ms = auth_total_ms
+        except ValueError:
+            return jsonify({"error": "Authentication required"}), 401
+
+        json_parse_started_at = time.perf_counter()
         data = request.get_json(silent=True) or {}
         reel_id = str(data.get("reelId", data.get("reel_id", ""))).strip()
         servings_raw = data.get("servings")
 
         if not reel_id:
+            json_parse_validation_ms = _perf_ms(json_parse_started_at)
             return jsonify({"error": "reelId is required"}), 400
-        if not _reel_exists(reel_id, user_id):
-            return jsonify({"error": "Reel not found"}), 404
 
         try:
             servings = float(servings_raw) if servings_raw is not None else None
         except (TypeError, ValueError):
             servings = None
+        json_parse_validation_ms = _perf_ms(json_parse_started_at)
 
+        connect_started_at = time.perf_counter()
         with get_db_connection() as conn:
+            db_connect_ms = _perf_ms(connect_started_at)
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                ensure_started_at = time.perf_counter()
                 shopping_list_id = _ensure_shopping_list(cur, user_id)
+                list_create_find_ms = _perf_ms(ensure_started_at)
+                insert_started_at = time.perf_counter()
                 cur.execute(
                     """
                     INSERT INTO shopping_recipe_entries (
@@ -1638,23 +1737,60 @@ def add_shopping_recipe():
                         servings,
                         added_at
                     )
-                    VALUES (%s, %s, %s, %s, NOW())
+                    SELECT
+                        %s,
+                        %s,
+                        r.id,
+                        %s,
+                        NOW()
+                    FROM reels r
+                    WHERE r.id = %s
+                      AND r.user_id = %s
                     ON CONFLICT (shopping_list_id, reel_id) DO UPDATE SET
                         servings = EXCLUDED.servings,
                         added_at = shopping_recipe_entries.added_at
                     RETURNING id, reel_id, servings, added_at
                     """,
-                    (shopping_list_id, user_id, reel_id, servings),
+                    (shopping_list_id, user_id, servings, reel_id, user_id),
                 )
                 row = cur.fetchone()
-            conn.commit()
+                reel_lookup_ms = _perf_ms(insert_started_at)
+                item_merge_upsert_ms = reel_lookup_ms
 
-        return add_no_cache_headers(jsonify({
+                if not row:
+                    return jsonify({"error": "Reel not found"}), 404
+
+            commit_started_at = time.perf_counter()
+            conn.commit()
+            commit_ms = _perf_ms(commit_started_at)
+
+        response_build_started_at = time.perf_counter()
+        response_payload = {
             "id": row.get("id"),
             "reelId": row.get("reel_id"),
             "servings": float(row.get("servings")) if row.get("servings") is not None else None,
             "addedAt": row.get("added_at").isoformat() if row.get("added_at") else None,
-        }))
+        }
+        response_build_ms = _perf_ms(response_build_started_at)
+
+        if PERF_LOG_ENABLED:
+            total_ms = _perf_ms(total_started_at)
+            logger.info(
+                "[perf] shopping add detail POST /api/shopping-list/recipes request_entered=%.1fms auth_total=%.1fms json_parse_validation=%.1fms db_connect=%.1fms auth_user_lookup=%.1fms reel_recipe_lookup=%.1fms list_create_find=%.1fms item_merge_upsert=%.1fms commit=%.1fms response_build=%.1fms total=%.1fms",
+                request_entered_ms,
+                auth_total_ms or 0.0,
+                json_parse_validation_ms or 0.0,
+                db_connect_ms or 0.0,
+                auth_lookup_ms or 0.0,
+                reel_lookup_ms or 0.0,
+                list_create_find_ms or 0.0,
+                item_merge_upsert_ms or 0.0,
+                commit_ms or 0.0,
+                response_build_ms or 0.0,
+                total_ms,
+            )
+
+        return add_no_cache_headers(jsonify(response_payload))
 
     except Exception as e:
         logger.error("Error adding shopping recipe: %s", e, exc_info=True)
@@ -1666,30 +1802,80 @@ def remove_shopping_recipe(reel_id):
     if request.method == "OPTIONS":
         return "", 200
 
+    total_started_at = time.perf_counter()
+    auth_total_ms = None
+    db_connect_ms = None
+    list_lookup_ms = None
+    item_delete_update_ms = None
+    commit_ms = None
+    response_build_ms = None
+
     try:
         try:
+            auth_started_at = time.perf_counter()
             user_id = get_user_id_from_request()
+            auth_total_ms = _perf_ms(auth_started_at)
         except ValueError:
             return jsonify({"error": "Authentication required"}), 401
 
-        if not _reel_exists(reel_id, user_id):
-            return jsonify({"error": "Reel not found"}), 404
-
+        connect_started_at = time.perf_counter()
         with get_db_connection() as conn:
+            db_connect_ms = _perf_ms(connect_started_at)
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                list_lookup_started_at = time.perf_counter()
                 shopping_list_id = _ensure_shopping_list(cur, user_id)
+                list_lookup_ms = _perf_ms(list_lookup_started_at)
+                delete_started_at = time.perf_counter()
                 cur.execute(
                     """
                     DELETE FROM shopping_recipe_entries
                     WHERE shopping_list_id = %s
                       AND user_id = %s
                       AND reel_id = %s
+                    RETURNING reel_id
                     """,
                     (shopping_list_id, user_id, reel_id),
                 )
-            conn.commit()
+                deleted_row = cur.fetchone()
+                item_delete_update_ms = _perf_ms(delete_started_at)
 
-        return add_no_cache_headers(jsonify({"ok": True, "reelId": reel_id}))
+                if not deleted_row:
+                    cur.execute(
+                        """
+                        SELECT 1
+                        FROM reels
+                        WHERE id = %s
+                          AND user_id = %s
+                        LIMIT 1
+                        """,
+                        (reel_id, user_id),
+                    )
+                    if not cur.fetchone():
+                        return jsonify({"error": "Reel not found"}), 404
+
+            commit_started_at = time.perf_counter()
+            conn.commit()
+            commit_ms = _perf_ms(commit_started_at)
+
+        response_build_started_at = time.perf_counter()
+        response_payload = {"ok": True, "reelId": reel_id}
+        response_build_ms = _perf_ms(response_build_started_at)
+
+        if PERF_LOG_ENABLED:
+            total_ms = _perf_ms(total_started_at)
+            logger.info(
+                "[perf] shopping remove detail DELETE /api/shopping-list/recipes/%s auth_total=%.1fms db_connect=%.1fms list_lookup=%.1fms item_delete_update=%.1fms commit=%.1fms response_build=%.1fms total=%.1fms",
+                reel_id,
+                auth_total_ms or 0.0,
+                db_connect_ms or 0.0,
+                list_lookup_ms or 0.0,
+                item_delete_update_ms or 0.0,
+                commit_ms or 0.0,
+                response_build_ms or 0.0,
+                total_ms,
+            )
+
+        return add_no_cache_headers(jsonify(response_payload))
 
     except Exception as e:
         logger.error("Error removing shopping recipe %s: %s", reel_id, e, exc_info=True)

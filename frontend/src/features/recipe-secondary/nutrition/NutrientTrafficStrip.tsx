@@ -52,37 +52,60 @@ const NutrientTrafficStrip: React.FC<{
     ? `${Math.round(servingSizeG)}g`
     : "selected amount";
 
-  const levelClass = (
+  const levelTheme = (
     level: "low" | "medium" | "high" | "neutral"
   ) => {
-    if (level === "low") return "bg-[#12b24b] text-white";
-    if (level === "medium") return "bg-[#f59e0b] text-white";
-    if (level === "high") return "bg-[#ef233c] text-white";
-    return "bg-white text-gray-950";
+    if (level === "low") {
+      return {
+        card: "bg-[rgb(22,163,74)] shadow-[0_8px_18px_rgba(22,163,74,0.30)]",
+        levelText: "text-[rgb(22,163,74)]",
+      };
+    }
+    if (level === "medium") {
+      return {
+        card: "bg-[rgb(245,158,11)] shadow-[0_8px_18px_rgba(245,158,11,0.30)]",
+        levelText: "text-[rgb(245,158,11)]",
+      };
+    }
+    if (level === "high") {
+      return {
+        card: "bg-[rgb(225,29,72)] shadow-[0_8px_18px_rgba(225,29,72,0.30)]",
+        levelText: "text-[rgb(225,29,72)]",
+      };
+    }
+    return {
+      card: "bg-white border border-[#e8edf3] shadow-[0_2px_9px_rgba(15,23,42,0.07)]",
+      levelText: "text-slate-950",
+    };
+  };
+
+  const formatAmount = (value: number) => {
+    const rounded = Math.round(value * 10) / 10;
+    return Number.isInteger(rounded) ? String(Math.round(rounded)) : String(rounded);
   };
 
   const cells = [
     {
       title: "Energy",
-      value: `${energyKj}kJ\n${Math.round(perServing.calories || 0)}kcal`,
+      value: [`${energyKj}kJ`, `${Math.round(perServing.calories || 0)}kcal`],
       level: "neutral" as const,
       ri: `${Math.round(((perServing.calories || 0) / 2000) * 100)}%`,
     },
     {
       title: "Fat",
-      value: `${Math.round((perServing.fat_g || 0) * 10) / 10}g`,
+      value: `${formatAmount(perServing.fat_g || 0)}g`,
       level: nutrientLevel("fat", per100g.fat_g || 0),
       ri: `${Math.round(((perServing.fat_g || 0) / 70) * 100)}%`,
     },
     {
       title: "Saturates",
-      value: `${Math.round((perServing.saturates_g || 0) * 10) / 10}g`,
+      value: `${formatAmount(perServing.saturates_g || 0)}g`,
       level: nutrientLevel("saturates", per100g.saturates_g || 0),
       ri: `${Math.round(((perServing.saturates_g || 0) / 20) * 100)}%`,
     },
     {
       title: "Sugars",
-      value: `${Math.round((perServing.sugars_g || 0) * 10) / 10}g`,
+      value: `${formatAmount(perServing.sugars_g || 0)}g`,
       level: nutrientLevel("sugars", per100g.sugars_g || 0),
       ri: `${Math.round(((perServing.sugars_g || 0) / 90) * 100)}%`,
     },
@@ -90,7 +113,7 @@ const NutrientTrafficStrip: React.FC<{
       title: "Salt",
       value: saltMissing
         ? "—"
-        : `${Math.round((perServing.salt_g || 0) * 10) / 10}g`,
+        : `${formatAmount(perServing.salt_g || 0)}g`,
       level: nutrientLevel("salt", per100g.salt_g || 0),
       ri: saltMissing
         ? "—"
@@ -99,54 +122,75 @@ const NutrientTrafficStrip: React.FC<{
   ];
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white px-3 py-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">
+    <div className="rounded-[18px] border border-[#eef2f7] bg-slate-50 p-[18px]">
+      <div className="mb-[14px] flex items-center justify-between gap-3">
+        <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
           UK traffic light
         </p>
 
-        <p className="text-right text-[10px] font-black leading-tight text-gray-400">
+        <p className="text-right text-[11px] font-bold tracking-[0.06em] text-slate-400">
           % RI
         </p>
       </div>
 
-      <div className="grid grid-cols-5 gap-0 px-0.5">
-        {cells.map((cell, idx) => (
-          <div
-            key={cell.title}
-            className="relative min-w-0 overflow-hidden rounded-[28px] border border-black/10 bg-gray-100 text-center shadow-[0_2px_10px_rgba(15,23,42,0.10)] ring-1 ring-white/70 -ml-1 first:ml-0"
-          >
-            <div
-              className={`flex min-h-[88px] flex-col items-center px-1.5 pt-3 pb-2 ${levelClass(cell.level)}`}
-            >
-              <p className="text-[10px] font-black uppercase leading-tight">
-                {cell.title}
-              </p>
+      <div className="grid grid-cols-2 gap-[8px] lg:grid-cols-5">
+        {cells.map((cell) => {
+          const theme = levelTheme(cell.level);
 
-              <div className="mt-3 flex min-h-[34px] flex-col items-center justify-center text-[13px] font-extrabold leading-tight whitespace-pre-line">
-                {cell.value}
-              </div>
-            </div>
-
-            <div className="border-t border-black/10">
-              <div className="bg-gray-100 min-h-[16px] px-1 pt-0.5 pb-0 text-[9px] font-black uppercase leading-none text-gray-950">
-                {cell.level === "neutral"
-                  ? "\u00A0"
-                  : cell.level.toUpperCase()}
-              </div>
-
+          if (cell.level === "neutral") {
+            return (
               <div
-                className={`border-t border-black/10 px-1 pt-1.5 pb-1.5 text-[12px] font-black leading-none tabular-nums ${levelClass(cell.level)}`}
+                key={cell.title}
+                className={`flex flex-col overflow-hidden rounded-[15px] ${theme.card}`}
               >
+                <div className="flex flex-col items-center gap-2 px-[6px] py-[14px] text-center">
+                  <p className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-slate-600">
+                    {cell.title}
+                  </p>
+                  <div className="flex min-h-[40px] flex-col items-center justify-center gap-1 text-[15px] font-extrabold leading-tight text-slate-950">
+                    {(cell.value as string[]).map((line) => (
+                      <span key={line}>{line}</span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="h-[26px] border-y border-slate-100 bg-[#fbfcfe]" />
+
+                <div className="px-[9px] py-[9px] text-center text-[15px] font-extrabold text-slate-950">
+                  {cell.ri}
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div
+              key={cell.title}
+              className={`flex flex-col overflow-hidden rounded-[15px] ${theme.card}`}
+            >
+              <div className="flex flex-col items-center gap-[9px] px-[6px] py-[14px] text-center">
+                <p className="text-[10.5px] font-extrabold uppercase tracking-[0.08em] text-white">
+                  {cell.title}
+                </p>
+                <div className="text-[20px] font-extrabold leading-none text-white">
+                  {cell.value as string}
+                </div>
+              </div>
+
+              <div className={`bg-white/94 px-[6px] py-[6px] text-center text-[10.5px] font-extrabold uppercase tracking-[0.05em] ${theme.levelText}`}>
+                {cell.level.toUpperCase()}
+              </div>
+
+              <div className="px-[9px] py-[9px] text-center text-[15px] font-extrabold leading-none tabular-nums text-white">
                 {cell.ri}
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      <div className="mt-3 text-center text-xs leading-relaxed text-gray-400">
-        <p>% of adult's reference intake for the amount shown.</p>
+      <div className="mt-[14px] text-center text-[12.5px] leading-[1.55] text-slate-400">
+        <p>% of an adult&apos;s reference intake for the amount shown.</p>
         <p>
           Values shown for {shownAmountLabel}. Traffic-light colours use UK
           per-100g thresholds.

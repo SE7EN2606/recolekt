@@ -12,6 +12,9 @@ type Props = {
   checkedSteps: Set<number>;
   toggleStep: (index: number) => void;
   temperatureUnit?: 'celsius' | 'fahrenheit';
+  markerColumnWidth: string;
+  markerSize: number;
+  bodyClass: string;
 };
 
 function getInstructionText(raw: RawInstruction): string {
@@ -34,11 +37,14 @@ const RecipeStepsPanel: React.FC<Props> = ({
   checkedSteps,
   toggleStep,
   temperatureUnit = 'celsius',
+  markerColumnWidth,
+  markerSize,
+  bodyClass,
 }) => {
   let globalIndex = 0;
 
   return (
-    <div className="space-y-5 border-y border-gray-100">
+    <div className={`space-y-5 ${bodyClass}`}>
       {instructionSections.map((section, sectionIndex) => {
         const visibleInstructions = (section.instructions || [])
           .map((instruction) => ({
@@ -67,14 +73,16 @@ const RecipeStepsPanel: React.FC<Props> = ({
                     key={`${sectionIndex}-${stepIndex}-${text.slice(0, 24)}`}
                     type="button"
                     onClick={() => toggleStep(stepIndex)}
-                    className={`grid w-full grid-cols-[36px_minmax(0,1fr)] items-start gap-x-3 border-b border-gray-100 px-0 py-3.5 text-left transition-all last:border-b-0 ${
+                    style={{ gridTemplateColumns: `${markerColumnWidth} minmax(0, 1fr)` }}
+                    className={`grid w-full items-center gap-x-3 border-b border-gray-100 px-0 py-3.5 text-left transition-all last:border-b-0 ${
                       checked
                         ? 'opacity-80'
                         : 'hover:bg-transparent'
                     }`}
                   >
                     <div
-                      className={`mt-[1px] flex h-[22px] w-[22px] items-center justify-center rounded-[7px] transition-all ${
+                      style={{ width: markerSize, height: markerSize }}
+                      className={`flex items-center justify-center justify-self-center rounded-[7px] transition-all ${
                         checked
                           ? 'bg-gradient-to-br from-primary-600 to-secondary-600 text-white shadow-sm'
                           : 'bg-gradient-to-br from-primary-100 to-secondary-100 text-primary-700'
@@ -85,7 +93,7 @@ const RecipeStepsPanel: React.FC<Props> = ({
                       </span>
                     </div>
 
-                    <div className="min-w-0 pt-[1px]">
+                    <div className="min-w-0 self-center">
                       <p
                         className={`text-[14.5px] leading-[1.6] font-medium ${
                           checked ? 'text-gray-400 line-through' : 'text-gray-700'

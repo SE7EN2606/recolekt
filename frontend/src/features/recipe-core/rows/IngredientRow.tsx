@@ -38,6 +38,9 @@ type Props = {
     name?: string
   ) => string;
   assumedLabel: (name: string) => string | null;
+  markerColumnWidth: string;
+  amountColumnWidth: string;
+  markerSize: number;
 };
 
 const IngredientRow: React.FC<Props> = ({
@@ -54,6 +57,9 @@ const IngredientRow: React.FC<Props> = ({
   parseRawIngredient,
   formatQty,
   assumedLabel,
+  markerColumnWidth,
+  amountColumnWidth,
+  markerSize,
 }) => {
   const {
     name,
@@ -100,7 +106,8 @@ const IngredientRow: React.FC<Props> = ({
   return (
     <li
       onClick={interactive ? () => onToggle?.(id) : undefined}
-      className={`grid grid-cols-[36px_96px_minmax(0,1fr)] items-center gap-x-3 px-0 py-3 group transition-all ${
+      style={{ gridTemplateColumns: `${markerColumnWidth} ${amountColumnWidth} minmax(0, 1fr)` }}
+      className={`grid items-center gap-x-3 px-0 py-3.5 group transition-all ${
         interactive ? 'cursor-pointer' : ''
       } ${
         checked ? 'bg-emerald-50/40 opacity-80' : interactive ? 'hover:bg-gray-50/70' : ''
@@ -109,7 +116,8 @@ const IngredientRow: React.FC<Props> = ({
       {interactive && (
         <div className="flex h-full items-center justify-center">
           <div
-            className={`flex h-[22px] w-[22px] items-center justify-center rounded-[7px] border-[1.5px] transition-all ${
+            style={{ width: markerSize, height: markerSize }}
+            className={`flex items-center justify-center rounded-[7px] border-[1.5px] transition-all ${
               checked
                 ? 'border-emerald-600 bg-emerald-600 shadow-[0_3px_10px_rgba(5,150,105,0.18)]'
                 : 'border-gray-200 bg-white group-hover:border-primary-300'
@@ -124,7 +132,7 @@ const IngredientRow: React.FC<Props> = ({
 
       {hasMeasurement && !needsReview ? (
         <span
-          className={`tabular-nums text-[13px] font-black ${
+          className={`self-center tabular-nums text-[13px] font-black ${
             checked ? 'text-gray-500' : 'text-primary-600'
           }`}
         >
@@ -133,7 +141,7 @@ const IngredientRow: React.FC<Props> = ({
         </span>
       ) : (
         <span
-          className={`text-[12px] italic ${
+          className={`self-center text-[12px] italic ${
             checked ? 'text-gray-400' : 'text-gray-400'
           }`}
         >
@@ -146,7 +154,7 @@ const IngredientRow: React.FC<Props> = ({
       )}
 
       <span
-        className={`min-w-0 text-[13.5px] leading-snug ${
+        className={`min-w-0 self-center text-[13.5px] leading-snug ${
           checked
             ? 'text-gray-500 line-through decoration-gray-400'
             : 'text-gray-800 font-medium'

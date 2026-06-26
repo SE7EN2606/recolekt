@@ -22,8 +22,17 @@ export type ShoppingListResponse = {
   itemOverrides: ShoppingItemOverride[];
 };
 
+export type ShoppingRecipeStatusResponse = {
+  inShoppingList: boolean;
+  listId?: string | number | null;
+};
+
 export function fetchShoppingList(): Promise<ShoppingListResponse> {
   return apiGet<ShoppingListResponse>('api/shopping-list');
+}
+
+export function fetchShoppingRecipeStatus(reelId: string): Promise<ShoppingRecipeStatusResponse> {
+  return apiGet<ShoppingRecipeStatusResponse>(`api/shopping-list/recipes/${encodeURIComponent(reelId)}/status`);
 }
 
 function resultJsonUrl(payload: any): string {
