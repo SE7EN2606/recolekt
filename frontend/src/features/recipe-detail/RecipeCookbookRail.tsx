@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlignLeft, ChefHat, ChevronDown, ShoppingBasket, StickyNote } from 'lucide-react';
 import { OriginalLink } from '../../components/VideoDetailWidgets';
+import { markPerfStep } from '../../lib/perf';
 
 export type RecipeMetaChip = {
   label: string;
@@ -34,22 +35,12 @@ export function RecipeNotesCard({
 }) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
-  const [isWriting, setIsWriting] = React.useState(false);
   const hasNote = note.trim().length > 0;
-  const showEmptyState = !hasNote && !isWriting;
-
-  const activateNote = React.useCallback(() => {
-    setIsWriting(true);
-    window.requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-    });
-  }, []);
 
   React.useEffect(() => {
     if (focusSignal <= 0) return;
     if (status === 'loading') return;
 
-    setIsWriting(true);
     window.requestAnimationFrame(() => {
       const container = containerRef.current;
       if (!container || container.getClientRects().length === 0) return;
@@ -92,27 +83,10 @@ export function RecipeNotesCard({
         <span className="font-extrabold text-base text-gray-950">Your notes</span>
       </div>
 
-      {showEmptyState && (
-        <div className="mb-3 rounded-[13px] border border-dashed border-primary-200 bg-white/50 px-3 py-3">
-          <div className="text-sm font-bold text-gray-800">No notes yet</div>
-          <div className="mt-1 text-xs font-medium leading-relaxed text-gray-500">
-            Capture substitutions, timing tweaks, or what to improve next time.
-          </div>
-          <button
-            type="button"
-            onClick={activateNote}
-            className="mt-2 rounded-xl bg-white px-3 py-1.5 text-[11px] font-bold text-primary-700 ring-1 ring-primary-100 transition-colors hover:bg-primary-50"
-          >
-            Add note
-          </button>
-        </div>
-      )}
-
       <textarea
         ref={textareaRef}
         value={note}
         onChange={(event) => onChange(event.target.value)}
-        onFocus={() => setIsWriting(true)}
         placeholder="Substitutions, timing tweaks, mistakes, serving feedback..."
         className="min-h-[72px] w-full resize-y rounded-[13px] border border-slate-200 bg-white/70 p-3 text-sm leading-normal text-gray-800 placeholder:text-gray-400 outline-none focus:border-primary-300 focus:ring-2 focus:ring-primary-100"
       />
@@ -407,6 +381,10 @@ export function RecipeCookbookRail({
   const hasQuickActions = Boolean(quickActions || onAddToShoppingList || onRemoveFromShoppingList);
   const hasMemory = memoryItems.length > 0 || Boolean(memoryLine);
 
+  React.useEffect(() => {
+    markPerfStep('RecipeCookbookRail first rendered');
+  }, []);
+
   return (
     <div className="mt-0 hidden w-full flex-col gap-4 pb-5 md:flex">
 
@@ -458,7 +436,7 @@ export function RecipeCookbookRail({
         <div className={`${GLASS} p-2.5`}>
           {(onAddToShoppingList || onRemoveFromShoppingList) && (
             shoppingLoading ? (
-              <div className="flex items-center gap-3 px-3 py-[11px] rounded-xl">
+              <div className="flex items-center gap-3 rounded-2xl border border-transparent px-3 py-3">
                 <div className="h-8 w-8 animate-pulse rounded-[9px] bg-green-50" />
                 <div className="h-3.5 w-36 animate-pulse rounded-full bg-gray-100" />
               </div>
@@ -467,9 +445,9 @@ export function RecipeCookbookRail({
                 type="button"
                 onClick={shoppingPlanned ? onRemoveFromShoppingList : onAddToShoppingList}
                 disabled={shoppingSaving}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-[11px] transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-left transition-colors hover:border-emerald-100 hover:bg-emerald-50/40 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-green-100 text-green-700">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-green-100 text-green-700 ring-1 ring-emerald-200/70">
                   <ShoppingBasket size={16} aria-hidden="true" />
                 </span>
                 <span className="min-w-0 flex-1 text-left text-sm font-semibold text-slate-800">

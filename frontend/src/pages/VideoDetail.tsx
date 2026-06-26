@@ -209,6 +209,13 @@ function getRecipeMetaChips(recipe: any, video?: any): RecipeMetaChip[] {
   ].filter(Boolean) as RecipeMetaChip[];
 }
 
+function getHeroRecipeMetaChips(chips: RecipeMetaChip[]) {
+  const preferredOrder = ['Cuisine', 'Topic', 'Style', 'Method'];
+  return preferredOrder
+    .map((label) => chips.find((chip) => chip.label === label))
+    .filter((chip): chip is RecipeMetaChip => Boolean(chip?.value));
+}
+
 function getRecipeCardMetaItems(recipe: any) {
   const read = (...values: any[]) =>
     values
@@ -1227,6 +1234,7 @@ export const VideoDetail: React.FC = () => {
   const derivedSubtype = deriveToolsSubtype(viewModel.toolsList);
   const safeDerivedSubtype = isBadgeToolsSubtype(derivedSubtype) ? derivedSubtype : 'picks';
   const recipeMetaChips = getRecipeMetaChips(stableRecipeForCard || viewModel.recipe, viewModel);
+  const heroRecipeMetaChips = getHeroRecipeMetaChips(recipeMetaChips);
   const recipeCardMetaItems = getRecipeCardMetaItems(stableRecipeForCard || viewModel.recipe);
 
   const cleanMetadataValue = (value: any) => {
@@ -1395,10 +1403,10 @@ export const VideoDetail: React.FC = () => {
         onClick={() => setIsMoveModalOpen(true)}
         className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-left transition-colors hover:border-amber-100 hover:bg-amber-50/40"
       >
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-amber-100 text-amber-700 ring-1 ring-amber-200/70">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-amber-100 text-amber-700 ring-1 ring-amber-200/70">
           <FolderInput size={16} aria-hidden="true" />
         </span>
-        <span className="flex-1">
+        <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-slate-800">Collection</span>
           <span className="block text-[12px] text-slate-400">Move or organize</span>
         </span>
@@ -1408,10 +1416,10 @@ export const VideoDetail: React.FC = () => {
         onClick={handleShare}
         className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-left transition-colors hover:border-primary-100 hover:bg-primary-50/40"
       >
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-primary-50 text-primary-600 ring-1 ring-primary-100">
-          <IOSShareIcon />
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-primary-50 text-primary-600 ring-1 ring-primary-100">
+          <IOSShareIcon size={16} />
         </span>
-        <span className="flex-1">
+        <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-slate-800">Share</span>
           <span className="block text-[12px] text-slate-400">Send the recipe out</span>
         </span>
@@ -1421,10 +1429,10 @@ export const VideoDetail: React.FC = () => {
         onClick={() => setIsEditing(true)}
         className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-3 text-left transition-colors hover:border-rose-100 hover:bg-rose-50/40"
       >
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-rose-100 text-rose-600 ring-1 ring-rose-200/70">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-rose-100 text-rose-600 ring-1 ring-rose-200/70">
           <Pencil size={16} aria-hidden="true" />
         </span>
-        <span className="flex-1">
+        <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-slate-800">Edit details</span>
           <span className="block text-[12px] text-slate-400">Adjust the saved recipe</span>
         </span>
@@ -1559,65 +1567,98 @@ export const VideoDetail: React.FC = () => {
             </div>
           </div>
 
-          {/* Title */}
-          <div className={showRecipeCard ? 'mb-2 px-4 pt-5 md:mb-3 md:px-6 md:pt-6' : 'mb-3'}>
-            <div className="flex items-start justify-between gap-3">
-              <EditableTitle
-                title={viewModel.title}
-                isEditMode={isEditing}
-                value={viewModel.title}
-                onChange={(val: string) => handleEditField('title', val)}
-              />
-              {showRecipeCard && viewModel.hasTranslation && !isEditing && (
-                <button
-                  type="button"
-                  onClick={(e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); toggleLanguage(); }}
-                  className="mt-1 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
-                  aria-label={showOriginal ? 'Show English' : `Show ${viewModel.languageCode}`}
+          {showRecipeCard ? (
+            <div className="px-4 pb-5 pt-5 md:px-6 md:pb-6 md:pt-6">
+              <div className="flex items-start justify-between gap-3">
+                <EditableTitle
+                  title={viewModel.title}
+                  isEditMode={isEditing}
+                  value={viewModel.title}
+                  onChange={(val: string) => handleEditField('title', val)}
+                />
+                {viewModel.hasTranslation && !isEditing && (
+                  <button
+                    type="button"
+                    onClick={(e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); toggleLanguage(); }}
+                    className="mt-1 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+                    aria-label={showOriginal ? 'Show English' : `Show ${viewModel.languageCode}`}
+                  >
+                    <Globe size={14} aria-hidden="true" />
+                    <span className="text-[11px] font-bold uppercase">
+                      {showOriginal ? 'EN' : viewModel.languageCode}
+                    </span>
+                  </button>
+                )}
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <a
+                  href={viewModel.originalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-w-0 items-center gap-2 group/author rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
                 >
-                  <Globe size={14} aria-hidden="true" />
-                  <span className="text-[11px] font-bold uppercase">
-                    {showOriginal ? 'EN' : viewModel.languageCode}
+                  <PlatformIconAuthor platform={viewModel.platform} />
+                  <span className="truncate text-sm font-medium text-gray-600 transition-colors group-hover/author:text-gray-900">
+                    {viewModel.author.replace('@', '')}
                   </span>
-                </button>
+                </a>
+                {viewModel.savedAt && (
+                  <div className="flex items-center gap-1.5 text-sm text-gray-500 sm:justify-end">
+                    <Save size={13} aria-hidden="true" className="shrink-0 text-gray-400" />
+                    <span>{viewModel.savedAt}</span>
+                  </div>
+                )}
+              </div>
+
+              {heroRecipeMetaChips.length > 0 && (
+                <div className="mt-[18px] grid grid-cols-1 gap-[10px] border-t border-slate-100 pt-[18px] sm:grid-cols-2 lg:grid-cols-4">
+                  {heroRecipeMetaChips.map((chip) => (
+                    <div
+                      key={`${chip.label}-${chip.value}`}
+                      className="flex flex-col items-center justify-center gap-[5px] rounded-[12px] bg-slate-100 px-[10px] py-[14px] text-center"
+                    >
+                      <div className="text-[10px] font-bold uppercase tracking-[0.07em] text-slate-400">
+                        {chip.label}
+                      </div>
+                      <div className="text-[14.5px] font-bold leading-snug text-slate-950">
+                        {chip.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-          </div>
-
-          {/* Author + date */}
-          <div className={`flex items-center justify-between ${showRecipeCard ? 'px-4 md:px-6' : 'mb-6'}`}>
-            <a
-              href={viewModel.originalUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 group/author rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
-            >
-              <PlatformIconAuthor platform={viewModel.platform} />
-              <span className="text-xs font-medium text-gray-600 truncate group-hover/author:text-gray-900 transition-colors">
-                {viewModel.author.replace('@', '')}
-              </span>
-            </a>
-            {viewModel.savedAt && (
-              <div className="flex items-center gap-1.5 text-xs text-gray-600">
-                <Save size={13} aria-hidden="true" className="shrink-0 text-gray-500" />
-                <span>{viewModel.savedAt}</span>
-              </div>
-            )}
-          </div>
-
-          {showRecipeCard && recipeMetaChips.length > 0 && (
+          ) : (
             <>
-              <hr className="mx-4 border-t border-gray-100 md:mx-5" />
-              <div className="mb-4 flex flex-wrap gap-2 px-4 py-3 md:px-6">
-                {recipeMetaChips.map((chip) => (
-                  <span
-                    key={`${chip.label}-${chip.value}`}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-gray-100 bg-gray-50/80 px-3 py-1.5 text-[11px] font-bold text-gray-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
-                  >
-                    <span className="text-gray-400">{chip.label}</span>
-                    <span className="text-gray-900">{chip.value}</span>
+              <div className="mb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <EditableTitle
+                    title={viewModel.title}
+                    isEditMode={isEditing}
+                    value={viewModel.title}
+                    onChange={(val: string) => handleEditField('title', val)}
+                  />
+                </div>
+              </div>
+              <div className="mb-6 flex items-center justify-between">
+                <a
+                  href={viewModel.originalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 group/author rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+                >
+                  <PlatformIconAuthor platform={viewModel.platform} />
+                  <span className="truncate text-xs font-medium text-gray-600 transition-colors group-hover/author:text-gray-900">
+                    {viewModel.author.replace('@', '')}
                   </span>
-                ))}
+                </a>
+                {viewModel.savedAt && (
+                  <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                    <Save size={13} aria-hidden="true" className="shrink-0 text-gray-500" />
+                    <span>{viewModel.savedAt}</span>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -1736,20 +1777,26 @@ export const VideoDetail: React.FC = () => {
                 showStartCookingButton={!isDesktopRecipeDetailLayout}
                 embedded={false}
                 headerContent={(
-                  <div>
-                    <div className="grid grid-cols-3 divide-x divide-gray-100 bg-white/80 px-4 sm:px-5">
-                      {primaryRecipeStatItems.map((item) => (
-                        <div key={item.label} className="flex min-w-0 flex-col items-center px-3 py-4 text-center first:pl-0 last:pr-0">
-                          <div className="mb-2 text-secondary-600">{statIconByLabel[item.label]}</div>
-                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                            {item.label}
-                          </div>
-                          <div className="mt-1 truncate text-[18px] font-black tabular-nums text-gray-950" title={item.value}>
-                            {item.value}
-                          </div>
+                  <div className="grid grid-cols-3">
+                    {primaryRecipeStatItems.map((item, index) => (
+                      <div
+                        key={item.label}
+                        className="relative flex min-w-0 flex-col items-center gap-[5px] px-3 py-[13px] text-center"
+                      >
+                        {index < primaryRecipeStatItems.length - 1 && (
+                          <span className="pointer-events-none absolute right-0 top-1/2 h-10 w-px -translate-y-1/2 bg-slate-100" />
+                        )}
+                        <div className="text-secondary-600 [&_svg]:h-5 [&_svg]:w-5 [&_svg]:stroke-[1.9]">
+                          {statIconByLabel[item.label]}
                         </div>
-                      ))}
-                    </div>
+                        <div className="text-[11.5px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                          {item.label}
+                        </div>
+                        <div className="truncate text-[18px] font-extrabold tabular-nums text-slate-950" title={item.value}>
+                          {item.value}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               />

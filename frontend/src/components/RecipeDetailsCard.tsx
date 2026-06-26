@@ -20,6 +20,7 @@ import {
   getStepEditText,
   useRecipeEditing,
 } from '../features/recipe-editing/useRecipeEditing';
+import { markPerfStep } from '../lib/perf';
 
 export type RecipeTabKey = 'ingredients' | 'steps' | 'nutrition' | 'ask';
 
@@ -227,6 +228,10 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   };
 
   useEffect(() => {
+    markPerfStep('RecipeDetailsCard first rendered');
+  }, []);
+
+  useEffect(() => {
     if (openCookModeSignal > 0 && hasSteps && !cookModeLoading) {
       setIsCookModeOpen(true);
     }
@@ -325,7 +330,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           )}
 
           {headerContent && (
-            <div className={`${showRecipeHeader || isEditing ? 'mt-4' : ''} overflow-hidden rounded-2xl border border-gray-100 bg-gray-50/30`}>
+            <div className={showRecipeHeader || isEditing ? 'mt-3' : ''}>
               {headerContent}
             </div>
           )}
@@ -561,17 +566,11 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           )}
 
           {!recipeBodyLoading && showNutritionSection && (
-            <section className={sectionCardClass()}>
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Nutrition</p>
-                <span className="text-xs font-medium text-gray-400">per serving</span>
-              </div>
-              <RecipeNutritionSummary
-                ingredients={allIngredients}
-                servings={getServings(recipe)}
-                recipeName={recipeName}
-              />
-            </section>
+            <RecipeNutritionSummary
+              ingredients={allIngredients}
+              servings={getServings(recipe)}
+              recipeName={recipeName}
+            />
           )}
           </>
         )}

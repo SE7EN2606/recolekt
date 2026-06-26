@@ -4,11 +4,13 @@ type Props = {};
 
 const RecipeNutritionCard: React.FC<Props> = () => {
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="space-y-0.5">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Estimated</p>
-        <h3 className="text-lg font-semibold text-gray-950">Nutrition</h3>
-        <p className="mt-2 text-sm leading-relaxed text-gray-500">
+    <section className="rounded-[26px] border border-white/75 bg-white/90 p-5 shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:p-6">
+      <div className="flex items-end justify-between gap-3">
+        <h3 className="text-[20px] font-extrabold tracking-tight text-slate-950">Nutrition</h3>
+        <span className="text-[12px] font-medium text-slate-400">per serving</span>
+      </div>
+      <div className="mt-5 space-y-0.5">
+        <p className="text-sm leading-relaxed text-gray-500">
           Nutrition could not be estimated yet because usable quantities are missing or incomplete.
         </p>
         <p className="mt-3 text-xs leading-relaxed text-gray-400">
