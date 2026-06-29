@@ -52,6 +52,7 @@ _IG_SHORTCODE_RE = re.compile(
     r"/(?:reel|reels|p|tv)/([A-Za-z0-9_-]+)/?(?:\?|$)",
     re.IGNORECASE,
 )
+_INSTAGRAM_BLOCKED_MESSAGE = "Save accepted. Extraction failed because Instagram blocked server access. Retry possible."
 
 
 class MetaClient:
@@ -145,6 +146,43 @@ class MetaClient:
         if default.startswith("facebook") and any(marker in text for marker in unavailable_markers):
             return "facebook_media_unavailable"
         return default
+
+    def _normalize_instagram_failure(self, extractor: str, error: Exception | str, default: str) -> dict:
+        raw_error = str(error or "").strip()
+        text = raw_error.lower()
+        error_code = self._classified_failure(error, default=default)
+        user_message = raw_error or "Instagram extraction failed."
+
+        if "empty media response" in text:
+            error_code = "instagram_empty_media_response"
+            user_message = _INSTAGRAM_BLOCKED_MESSAGE
+        elif (
+            "403" in text or
+            "forbidden" in text or
+            "graphql/query" in text or
+            "nonetype" in text
+        ):
+            error_code = "instagram_server_access_blocked"
+            user_message = _INSTAGRAM_BLOCKED_MESSAGE
+
+        return {
+            "success": False,
+            "error": user_message,
+            "error_code": error_code,
+            "raw_error": raw_error,
+            "extractor": extractor,
+            "metadata": {},
+            "post": None,
+            "thumbnail_path": None,
+        }
+
+    def _should_try_instagram_fallback(self, extractor: str, failure: dict) -> bool:
+        error_code = str(failure.get("error_code") or "").strip().lower()
+        if extractor == "yt-dlp":
+            return error_code == "instagram_empty_media_response"
+        if extractor == "instaloader":
+            return error_code == "instagram_server_access_blocked"
+        return False
 
     def _facebook_url_candidates(self, url: str) -> list[str]:
         content_id = self.extract_shortcode(url)
@@ -1136,16 +1174,13 @@ class MetaClient:
             }
 
         except Exception as e:
-            error_code = self._classified_failure(e)
-            logger.error("❌ Instagram yt-dlp download error code=%s error=%s", error_code, e)
-            return {
-                "success": False,
-                "error": str(e),
-                "error_code": error_code,
-                "metadata": {},
-                "post": None,
-                "thumbnail_path": None,
-            }
+            failure = self._normalize_instagram_failure("yt-dlp", e, "instagram_extraction_failed")
+            logger.error(
+                "❌ Instagram yt-dlp download error code=%s raw_error=%s",
+                failure["error_code"],
+                failure.get("raw_error"),
+            )
+            return failure
         finally:
             if cookies_path and os.path.exists(cookies_path):
                 try:
@@ -1234,9 +1269,13 @@ class MetaClient:
             }
 
         except Exception as e:
-            error_code = self._classified_failure(e)
-            logger.error("❌ Instagram instaloader download error code=%s error=%s", error_code, e)
-            return {"success": False, "error": str(e), "error_code": error_code, "metadata": {}, "post": None, "thumbnail_path": None}
+            failure = self._normalize_instagram_failure("instaloader", e, "instagram_extraction_failed")
+            logger.error(
+                "❌ Instagram instaloader download error code=%s raw_error=%s",
+                failure["error_code"],
+                failure.get("raw_error"),
+            )
+            return failure
 
     # ----------------------------------------------------------------
     # download_video — routes by platform
@@ -1250,12 +1289,50 @@ class MetaClient:
         if self.is_instagram_url(url):
             with self._social_download_slot("instagram"):
                 use_ytdlp = os.environ.get("IG_USE_YTDLP_ONLY", "").lower() in ("true", "1", "yes")
-                if use_ytdlp:
-                    logger.info("⬇️ Instagram download via yt-dlp [IG_USE_YTDLP_ONLY]: %s", url)
-                    return self._download_instagram_video_ytdlp(url, output_path)
-                else:
-                    logger.info("⬇️ Instagram download via instaloader [local]: %s", url)
-                    return self._download_instagram_video_instaloader(url, output_path)
+                extractor_order = ["yt-dlp", "instaloader"] if use_ytdlp else ["instaloader", "yt-dlp"]
+                last_failure = None
+
+                for index, extractor in enumerate(extractor_order):
+                    if extractor == "yt-dlp":
+                        logger.info("⬇️ Instagram download via yt-dlp%s: %s", " [IG_USE_YTDLP_ONLY]" if use_ytdlp else " [fallback]", url)
+                        attempt = self._download_instagram_video_ytdlp(url, output_path)
+                    else:
+                        logger.info(
+                            "⬇️ Instagram download via instaloader [public/no-login mode%s]: %s",
+                            ", IG cookies are yt-dlp only" if os.getenv("IG_COOKIES_CONTENT") else "",
+                            url,
+                        )
+                        attempt = self._download_instagram_video_instaloader(url, output_path)
+
+                    if attempt.get("success"):
+                        return attempt
+
+                    last_failure = attempt
+                    logger.warning(
+                        "⚠️ Instagram extractor failed extractor=%s code=%s raw_error=%s",
+                        extractor,
+                        attempt.get("error_code"),
+                        attempt.get("raw_error") or attempt.get("error"),
+                    )
+
+                    if index >= len(extractor_order) - 1:
+                        break
+
+                    if not self._should_try_instagram_fallback(extractor, attempt):
+                        break
+
+                    logger.info(
+                        "↪️ Instagram fallback switching extractor from %s to %s after code=%s",
+                        extractor,
+                        extractor_order[index + 1],
+                        attempt.get("error_code"),
+                    )
+
+                return last_failure or self._normalize_instagram_failure(
+                    "instagram",
+                    "Instagram extraction failed.",
+                    "instagram_extraction_failed",
+                )
 
         elif self.is_facebook_url(url):
             with self._social_download_slot("facebook"):
