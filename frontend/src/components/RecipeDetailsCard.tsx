@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ChefHat, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { CheckCircle2, ChefHat, ChevronDown, Pencil, Plus, ShoppingBasket, Trash2, X } from 'lucide-react';
 import RecipeNutritionSummary from '../features/recipe-secondary/RecipeNutritionSummary';
 import RecipeStepsPanel from '../features/recipe-core/panels/RecipeStepsPanel';
 import RecipeAskPanel from '../features/recipe-core/panels/RecipeAskPanel';
@@ -22,7 +22,7 @@ import {
 } from '../features/recipe-editing/useRecipeEditing';
 import { markPerfStep } from '../lib/perf';
 
-export type RecipeTabKey = 'ingredients' | 'steps' | 'nutrition' | 'ask';
+export type RecipeTabKey = 'ingredients' | 'steps' | 'nutrition' | 'ask' | 'source';
 
 export interface RecipeDetailsCardProps {
   recipe?: any;
@@ -48,6 +48,16 @@ export interface RecipeDetailsCardProps {
   headerContent?: React.ReactNode;
   activeTab?: RecipeTabKey;
   embedded?: boolean;
+  askPlacement?: 'gated' | 'persistent' | 'hidden';
+  askInitiallyCollapsed?: boolean;
+  askVisible?: boolean;
+  flatSections?: boolean;
+  ingredientsHeaderContent?: React.ReactNode;
+  ingredientsActionContent?: React.ReactNode;
+  ingredientsServingContent?: React.ReactNode;
+  ingredientsFooterContent?: React.ReactNode;
+  stepsHeaderContent?: React.ReactNode;
+  sourceContent?: React.ReactNode;
 }
 
 const RECIPE_LIST_MARKER_COLUMN = '40px';
@@ -72,6 +82,19 @@ function sliceInstructionSections(sections: Array<{ title?: string; instructions
       return { ...section, instructions };
     })
     .filter(Boolean) as Array<{ title?: string; instructions: any[] }>;
+}
+
+function sliceIngredientSections(sections: Array<{ title?: string; items: any[] }>, limit: number) {
+  let remaining = limit;
+  return sections
+    .map((section) => {
+      if (remaining <= 0) return null;
+      const items = section.items.slice(0, remaining);
+      remaining -= items.length;
+      if (items.length === 0) return null;
+      return { ...section, items };
+    })
+    .filter(Boolean) as Array<{ title?: string; items: any[] }>;
 }
 
 function getServings(recipe: any) {
@@ -104,8 +127,19 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   headerContent,
   activeTab,
   embedded = false,
+  askPlacement = 'gated',
+  askInitiallyCollapsed = false,
+  askVisible = true,
+  flatSections = false,
+  ingredientsHeaderContent,
+  ingredientsActionContent,
+  ingredientsServingContent,
+  ingredientsFooterContent,
+  stepsHeaderContent,
+  sourceContent,
 }) => {
   const [isCookModeOpen, setIsCookModeOpen] = useState(false);
+  const [askOpen, setAskOpen] = useState(!askInitiallyCollapsed);
   const cookSessionEnabled = Boolean(recipeId && recipeId !== 'recipe');
   const {
     currentStepIndex,
@@ -186,17 +220,28 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const stepCountLabel = `${allInstructions.length} ${allInstructions.length === 1 ? 'step' : 'steps'}`;
   const recipeBodyLoading = loadingOverrides && !isEditing;
   const cookModeLoading = recipeBodyLoading || cookStatusLoading;
+  const [ingredientsExpanded, setIngredientsExpanded] = useState(false);
   const [stepsExpanded, setStepsExpanded] = useState(false);
+  const previewIngredientSections = useMemo(
+    () => sliceIngredientSections(ingredientSections, 4),
+    [ingredientSections]
+  );
   const previewInstructionSections = useMemo(
     () => sliceInstructionSections(instructionSections, 4),
     [instructionSections]
   );
+  const displayedIngredientSections = isEditing || ingredientsExpanded ? ingredientSections : previewIngredientSections;
   const displayedInstructionSections = isEditing || stepsExpanded ? instructionSections : previewInstructionSections;
+  const hasHiddenIngredients = !isEditing && allIngredients.length > 4;
   const hasHiddenSteps = !isEditing && allInstructions.length > 4;
   const showIngredientsSection = !activeTab || activeTab === 'ingredients';
   const showStepsSection = !activeTab || activeTab === 'steps';
   const showNutritionSection = hasIngredients && (!activeTab || activeTab === 'nutrition');
-  const showAskSection = !activeTab || activeTab === 'ask';
+  const showAskSection = askPlacement === 'persistent'
+    ? true
+    : askPlacement === 'gated'
+      ? (!activeTab || activeTab === 'ask')
+      : false;
   const ingredientLayoutClass =
     !isEditing
       ? 'space-y-0'
@@ -237,9 +282,18 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
     }
   }, [openCookModeSignal, hasSteps, cookModeLoading]);
 
+  useEffect(() => {
+    setAskOpen(!askInitiallyCollapsed);
+  }, [askInitiallyCollapsed, recipeId]);
+
   if (!recipe) return null;
   if (recipe.is_compilation) return <RecipeCompilationCard recipe={recipe} />;
   if (!hasIngredients && !hasSteps) return null;
+
+  const sectionClass = flatSections
+    ? 'px-4 py-4 sm:px-5 sm:py-5'
+    : sectionCardClass();
+  const flatSectionCardClass = 'rounded-[20px] border border-white/75 bg-white/90 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]';
 
   return (
     <>
@@ -259,82 +313,84 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           </section>
         )}
 
-        <section className={sectionCardClass()}>
-          {showRecipeHeader && (
-            <div className="-mx-5 -mt-5 mb-4 flex items-start justify-between gap-3 border-b border-gray-100/80 bg-gradient-to-br from-primary-50/80 to-secondary-50/50 px-5 pt-5 pb-4 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2.5">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-100 to-secondary-100 text-secondary-600">
-                    <ChefHat size={18} aria-hidden="true" />
-                  </span>
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Recipe details</p>
-                    <h3 className="mt-1 text-[16px] font-bold tracking-tight text-gray-900">Times and setup</h3>
+        {(showRecipeHeader || isEditing || headerContent) && (
+          <section className={sectionClass}>
+            {showRecipeHeader && (
+              <div className="-mx-5 -mt-5 mb-4 flex items-start justify-between gap-3 border-b border-gray-100/80 bg-gradient-to-br from-primary-50/80 to-secondary-50/50 px-5 pt-5 pb-4 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-100 to-secondary-100 text-secondary-600">
+                      <ChefHat size={18} aria-hidden="true" />
+                    </span>
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">Recipe details</p>
+                      <h3 className="mt-1 text-[16px] font-bold tracking-tight text-gray-900">Times and setup</h3>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsEditing((value) => !value)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-gray-600 shadow-sm ring-1 ring-rose-100 transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                  aria-label={isEditing ? 'Done editing recipe' : 'Edit recipe'}
-                >
-                  {isEditing ? <X size={14} aria-hidden="true" /> : <Pencil size={14} aria-hidden="true" />}
-                </button>
-                {onToggleMetric && hasIngredients && (
+                <div className="flex shrink-0 items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => onToggleMetric(!useMetric)}
-                    className="rounded-full border border-rose-100 bg-white px-3 py-1.5 text-xs font-bold text-gray-800 shadow-sm transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    onClick={() => setIsEditing((value) => !value)}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-gray-600 shadow-sm ring-1 ring-rose-100 transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    aria-label={isEditing ? 'Done editing recipe' : 'Edit recipe'}
                   >
-                    {useMetric ? 'Imperial' : 'Metric'}
+                    {isEditing ? <X size={14} aria-hidden="true" /> : <Pencil size={14} aria-hidden="true" />}
                   </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {isEditing && (
-            <div className={`${showRecipeHeader ? 'mt-4' : ''} rounded-2xl border border-amber-100 bg-amber-50/65 px-4 py-3`}>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-[12px] font-black uppercase tracking-widest text-amber-700">Personal recipe edits</p>
-                  <p className="mt-0.5 text-xs font-medium text-amber-800/75">
-                    {loadingOverrides
-                      ? 'Loading your recipe edits...'
-                      : overrideError
-                        ? overrideError
-                        : savingOverrides
-                          ? 'Saving edits...'
-                          : overridesSaved
-                            ? 'Saved. The extracted recipe stays unchanged.'
-                            : 'Your changes save as personal overrides. The extracted recipe stays unchanged.'}
-                  </p>
+                  {onToggleMetric && hasIngredients && (
+                    <button
+                      type="button"
+                      onClick={() => onToggleMetric(!useMetric)}
+                      className="rounded-full border border-rose-100 bg-white px-3 py-1.5 text-xs font-bold text-gray-800 shadow-sm transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    >
+                      {useMetric ? 'Imperial' : 'Metric'}
+                    </button>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={toggleVerified}
-                  className={`inline-flex items-center justify-center gap-2 rounded-2xl px-3.5 py-2 text-xs font-black transition-colors ${
-                    recipeOverrides.verifiedByUser
-                      ? 'border border-gray-200 bg-white text-gray-800 hover:bg-gray-50'
-                      : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
-                  }`}
-                >
-                  <CheckCircle2 size={15} aria-hidden="true" />
-                  {recipeOverrides.verifiedByUser ? 'Verified by me' : 'Mark verified by me'}
-                </button>
               </div>
-            </div>
-          )}
+            )}
 
-          {headerContent && (
-            <div className={showRecipeHeader || isEditing ? 'mt-3' : ''}>
-              {headerContent}
-            </div>
-          )}
-        </section>
+            {isEditing && (
+              <div className={`${showRecipeHeader ? 'mt-4' : ''} rounded-2xl border border-amber-100 bg-amber-50/65 px-4 py-3`}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-[12px] font-black uppercase tracking-widest text-amber-700">Personal recipe edits</p>
+                    <p className="mt-0.5 text-xs font-medium text-amber-800/75">
+                      {loadingOverrides
+                        ? 'Loading your recipe edits...'
+                        : overrideError
+                          ? overrideError
+                          : savingOverrides
+                            ? 'Saving edits...'
+                            : overridesSaved
+                              ? 'Saved. The extracted recipe stays unchanged.'
+                              : 'Your changes save as personal overrides. The extracted recipe stays unchanged.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={toggleVerified}
+                    className={`inline-flex items-center justify-center gap-2 rounded-2xl px-3.5 py-2 text-xs font-black transition-colors ${
+                      recipeOverrides.verifiedByUser
+                        ? 'border border-gray-200 bg-white text-gray-800 hover:bg-gray-50'
+                        : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+                    }`}
+                  >
+                    <CheckCircle2 size={15} aria-hidden="true" />
+                    {recipeOverrides.verifiedByUser ? 'Verified by me' : 'Mark verified by me'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {headerContent && (
+              <div className={showRecipeHeader || isEditing ? 'mt-3' : ''}>
+                {headerContent}
+              </div>
+            )}
+          </section>
+        )}
 
         {recipeBodyLoading ? (
           <div className={sectionCardClass()} aria-label="Loading your recipe edits">
@@ -366,132 +422,167 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
         ) : (
           <>
           {hasIngredients && showIngredientsSection && (
-            <section className={sectionCardClass()}>
-              <div className="mb-4 flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <h4 className="text-[19px] font-bold tracking-tight text-gray-950">Ingredients</h4>
-                    <span className="rounded-full bg-primary-50 px-2.5 py-1 text-[11px] font-bold text-primary-700 ring-1 ring-primary-100">
-                      {`${checkedIngredientCount}/${allIngredients.length}`}
-                    </span>
-                  </div>
-                </div>
-
-                {onServingScaleChange && (
-                  <div className="flex shrink-0 items-center gap-2 rounded-full border border-gray-200 bg-white px-2.5 py-1.5 shadow-sm">
-                    <span className="text-[10px] font-black uppercase tracking-[0.12em] text-gray-400">Yields</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const base = getServings(recipe);
-                        const next = Math.max(1, Math.round(base * servingScale) - 1);
-                        onServingScaleChange(next / base);
-                      }}
-                      className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-[15px] font-black text-gray-700 transition hover:bg-gray-100"
-                      aria-label="Decrease yield"
-                    >
-                      −
-                    </button>
-                    <span className="min-w-[2ch] text-center text-[16px] font-black tabular-nums text-gray-950">
-                      {Math.round(getServings(recipe) * servingScale)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const base = getServings(recipe);
-                        const next = Math.round(base * servingScale) + 1;
-                        onServingScaleChange(next / base);
-                      }}
-                      className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-[15px] font-black text-gray-700 transition hover:bg-gray-100"
-                      aria-label="Increase yield"
-                    >
-                      +
-                    </button>
+            <section className={sectionClass}>
+              <div className={flatSections ? flatSectionCardClass : ''}>
+                {ingredientsHeaderContent && (
+                  <div className={`mb-4 ${flatSections ? '' : 'border-b border-slate-100 pb-4'}`}>
+                    {ingredientsHeaderContent}
                   </div>
                 )}
-              </div>
-
-              <div className="space-y-5">
-                {(isEditing ? editableIngredientSections : ingredientSections).map((section, sectionIndex) => (
-                  <div key={sectionIndex}>
-                    {section.title && (
-                      <h5 className={isEditing ? 'pb-2 text-[11px] font-black uppercase tracking-widest text-gray-400' : 'pb-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-gray-400'}>
-                        {section.title}
-                      </h5>
-                    )}
-
-                    {isEditing ? (
-                      <div className="space-y-2">
-                        {section.items.map((entry: any) => (
-                          <div key={entry.id} className="flex items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50/70 p-2">
-                            <input
-                              value={getIngredientEditText(entry.value)}
-                              onChange={(event) => updateIngredient(entry.id, event.target.value)}
-                              className="min-w-0 flex-1 rounded-xl border border-transparent bg-white px-3 py-2 text-sm font-medium text-gray-800 outline-none transition-colors focus:border-amber-200 focus:ring-2 focus:ring-amber-100"
-                              placeholder="Add ingredient"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeIngredient(entry.id)}
-                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-rose-700 transition-colors hover:bg-rose-50"
-                              aria-label="Remove ingredient"
-                            >
-                              <Trash2 size={15} aria-hidden="true" />
-                            </button>
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => addIngredient(sectionIndex)}
-                          className="inline-flex items-center gap-2 rounded-2xl border border-dashed border-amber-200 bg-white px-3.5 py-2 text-xs font-black text-amber-700 transition-colors hover:bg-amber-50"
-                        >
-                          <Plus size={14} aria-hidden="true" />
-                          Add ingredient
-                        </button>
-                      </div>
-                    ) : (
-                      <ul className={`${ingredientLayoutClass} ${sharedListBodyClass}`}>
-                        {section.items.map((item, itemIndex) => (
-                          <IngredientRow
-                            key={'section-' + sectionIndex + '-ingredient-' + itemIndex}
-                            id={'section-' + sectionIndex + '-ingredient-' + itemIndex}
-                            raw={item}
-                            servingScale={servingScale}
-                            scaleQuantity={scaleQuantity}
-                            checked={checkedIngredientIds.has('section-' + sectionIndex + '-ingredient-' + itemIndex)}
-                            onToggle={toggleCheckedIngredientId}
-                            useMetric={useMetric}
-                            recipeConversion={recipeConversion}
-                            volumePreference={volumePreference}
-                            rounding={rounding}
-                            parseRawIngredient={parseRawIngredient}
-                            formatQty={formatQty}
-                            assumedLabel={assumedLabel}
-                            markerColumnWidth={RECIPE_LIST_MARKER_COLUMN}
-                            amountColumnWidth={RECIPE_LIST_AMOUNT_COLUMN}
-                            markerSize={RECIPE_LIST_MARKER_SIZE}
-                          />
-                        ))}
-                      </ul>
-                    )}
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <h4 className="text-[19px] font-bold tracking-tight text-gray-950">Ingredients</h4>
+                      <span className="rounded-full bg-primary-50 px-2.5 py-1 text-[11px] font-bold text-primary-700 ring-1 ring-primary-100">
+                        {`${checkedIngredientCount}/${allIngredients.length}`}
+                      </span>
+                    </div>
                   </div>
-                ))}
+
+                  {ingredientsActionContent ?? (onServingScaleChange && (
+                    <div className="flex shrink-0 items-center gap-2 rounded-full border border-gray-200 bg-white px-2.5 py-1.5 shadow-sm">
+                      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-gray-400">Yields</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const base = getServings(recipe);
+                          const next = Math.max(1, Math.round(base * servingScale) - 1);
+                          onServingScaleChange(next / base);
+                        }}
+                        className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-[15px] font-black text-gray-700 transition hover:bg-gray-100"
+                        aria-label="Decrease yield"
+                      >
+                        −
+                      </button>
+                      <span className="min-w-[2ch] text-center text-[16px] font-black tabular-nums text-gray-950">
+                        {Math.round(getServings(recipe) * servingScale)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const base = getServings(recipe);
+                          const next = Math.round(base * servingScale) + 1;
+                          onServingScaleChange(next / base);
+                        }}
+                        className="flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-[15px] font-black text-gray-700 transition hover:bg-gray-100"
+                        aria-label="Increase yield"
+                      >
+                        +
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {ingredientsServingContent && (
+                  <div className="mb-4">
+                    {ingredientsServingContent}
+                  </div>
+                )}
+
+                <div className="space-y-5">
+                  {(isEditing ? editableIngredientSections : displayedIngredientSections).map((section, sectionIndex) => (
+                    <div key={sectionIndex}>
+                      {section.title && (
+                        <h5 className={isEditing ? 'pb-2 text-[11px] font-black uppercase tracking-widest text-gray-400' : 'pb-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-gray-400'}>
+                          {section.title}
+                        </h5>
+                      )}
+
+                      {isEditing ? (
+                        <div className="space-y-2">
+                          {section.items.map((entry: any) => (
+                            <div key={entry.id} className="flex items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50/70 p-2">
+                              <input
+                                value={getIngredientEditText(entry.value)}
+                                onChange={(event) => updateIngredient(entry.id, event.target.value)}
+                                className="min-w-0 flex-1 rounded-xl border border-transparent bg-white px-3 py-2 text-sm font-medium text-gray-800 outline-none transition-colors focus:border-amber-200 focus:ring-2 focus:ring-amber-100"
+                                placeholder="Add ingredient"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeIngredient(entry.id)}
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-rose-700 transition-colors hover:bg-rose-50"
+                                aria-label="Remove ingredient"
+                              >
+                                <Trash2 size={15} aria-hidden="true" />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => addIngredient(sectionIndex)}
+                            className="inline-flex items-center gap-2 rounded-2xl border border-dashed border-amber-200 bg-white px-3.5 py-2 text-xs font-black text-amber-700 transition-colors hover:bg-amber-50"
+                          >
+                            <Plus size={14} aria-hidden="true" />
+                            Add ingredient
+                          </button>
+                        </div>
+                      ) : (
+                        <ul className={`${ingredientLayoutClass} ${sharedListBodyClass}`}>
+                          {section.items.map((item, itemIndex) => (
+                            <IngredientRow
+                              key={'section-' + sectionIndex + '-ingredient-' + itemIndex}
+                              id={'section-' + sectionIndex + '-ingredient-' + itemIndex}
+                              raw={item}
+                              servingScale={servingScale}
+                              scaleQuantity={scaleQuantity}
+                              checked={checkedIngredientIds.has('section-' + sectionIndex + '-ingredient-' + itemIndex)}
+                              onToggle={toggleCheckedIngredientId}
+                              useMetric={useMetric}
+                              recipeConversion={recipeConversion}
+                              volumePreference={volumePreference}
+                              rounding={rounding}
+                              parseRawIngredient={parseRawIngredient}
+                              formatQty={formatQty}
+                              assumedLabel={assumedLabel}
+                              markerColumnWidth={RECIPE_LIST_MARKER_COLUMN}
+                              amountColumnWidth={RECIPE_LIST_AMOUNT_COLUMN}
+                              markerSize={RECIPE_LIST_MARKER_SIZE}
+                            />
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {hasHiddenIngredients && (
+                  <button
+                    type="button"
+                    onClick={() => setIngredientsExpanded((value) => !value)}
+                    className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-primary-100 bg-primary-50/70 py-3 text-sm font-bold text-primary-700 transition-colors hover:bg-primary-100"
+                  >
+                    {ingredientsExpanded ? 'Show fewer ingredients' : 'View all ' + allIngredients.length + ' ingredients'}
+                  </button>
+                )}
+                {ingredientsFooterContent && (
+                  <div className="mt-5">
+                    {ingredientsFooterContent}
+                  </div>
+                )}
               </div>
             </section>
           )}
 
           {hasSteps && showStepsSection && (
-            <section className={sectionCardClass()}>
-              <div className="mb-4 flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2.5">
+            <section className={sectionClass}>
+              {flatSections && stepsHeaderContent ? (
+                <div className={`mb-4 ${flatSectionCardClass}`}>
+                  {stepsHeaderContent}
+                </div>
+              ) : stepsHeaderContent ? (
+                <div className="mb-4 border-b border-slate-100 pb-4">
+                  {stepsHeaderContent}
+                </div>
+              ) : null}
+              <div className={flatSections ? flatSectionCardClass : ''}>
+                <div className="mb-4">
+                  <div className="flex items-center gap-2.5">
                     <h4 className="text-[19px] font-bold tracking-tight text-gray-950">Directions</h4>
                     <span className="rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-bold text-gray-500">
                       {stepCountLabel}
                     </span>
                   </div>
                 </div>
-              </div>
               {isEditing ? (
                 <div className="space-y-4">
                   {editableInstructionSections.map((section, sectionIndex) => (
@@ -526,7 +617,8 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                     temperatureUnit={temperatureUnit}
                     markerColumnWidth={RECIPE_LIST_MARKER_COLUMN}
                     markerSize={RECIPE_LIST_MARKER_SIZE}
-                    bodyClass={sharedListBodyClass}
+                    bodyClass={flatSections ? '' : sharedListBodyClass}
+                    lineFree={flatSections}
                   />
                   {hasHiddenSteps && (
                     <button
@@ -539,38 +631,94 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
                   )}
                 </>
               )}
+              </div>
             </section>
           )}
 
           {!recipeBodyLoading && showAskSection && (
-            <section className="relative overflow-hidden rounded-[26px] bg-gradient-to-br from-primary-600 to-secondary-600 p-5 shadow-[0_20px_44px_-14px_rgba(15,23,42,0.28)] sm:p-6">
+            <section
+              className={`relative overflow-hidden ${flatSections ? 'mx-4 mb-4 rounded-[22px] sm:mx-5' : 'rounded-[26px]'} bg-gradient-to-br from-primary-600 to-secondary-600 p-5 shadow-[0_20px_44px_-14px_rgba(15,23,42,0.28)] sm:p-6 ${
+                askVisible ? '' : 'hidden'
+              }`}
+              aria-hidden={!askVisible}
+            >
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(130%_90%_at_100%_0%,rgba(255,255,255,0.22),rgba(255,255,255,0)_58%)]" />
-              <div className="relative mb-4 flex items-center gap-2.5">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-white/20">
-                  <ChefHat size={17} aria-hidden="true" className="text-white" />
-                </span>
-                <span className="text-[11px] font-black uppercase tracking-widest text-white/90">Recipe Assistant</span>
-                <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10.5px] font-black text-white">AI</span>
-              </div>
-              <h4 className="relative mb-1.5 text-xl font-black tracking-tight text-white sm:text-2xl">Tweak it, make it yours</h4>
-              <p className="relative mb-4 text-sm font-medium leading-relaxed text-white/80">
-                Ask for swaps, scaling help, or ways to adapt it to how you cook.
-              </p>
-              <RecipeAskPanel
-                question={askQuestion}
-                response={askAnswer}
-                onAsk={handleAskRecipe}
-                loading={askLoading}
-              />
+              {askPlacement === 'persistent' || askInitiallyCollapsed ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setAskOpen((value) => !value)}
+                    className="relative flex w-full items-center justify-between gap-3 text-left"
+                    aria-expanded={askOpen}
+                  >
+                    <div className="min-w-0">
+                      <div className="mb-4 flex items-center gap-2.5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-white/20">
+                          <ChefHat size={17} aria-hidden="true" className="text-white" />
+                        </span>
+                        <span className="text-[11px] font-black uppercase tracking-widest text-white/90">Recipe Assistant</span>
+                        <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10.5px] font-black text-white">AI</span>
+                      </div>
+                      <h4 className="relative mb-1.5 text-xl font-black tracking-tight text-white sm:text-2xl">Tweak it, make it yours</h4>
+                      <p className="relative text-sm font-medium leading-relaxed text-white/80">
+                        Ask for swaps, scaling help, or ways to adapt it to how you cook.
+                      </p>
+                    </div>
+                    <ChevronDown
+                      size={18}
+                      className={`shrink-0 text-white/80 transition-transform duration-200 ${askOpen ? 'rotate-180' : ''}`}
+                      aria-hidden="true"
+                    />
+                  </button>
+                  {askOpen && (
+                    <div className="relative mt-4">
+                      <RecipeAskPanel
+                        question={askQuestion}
+                        response={askAnswer}
+                        onAsk={handleAskRecipe}
+                        loading={askLoading}
+                      />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="relative mb-4 flex items-center gap-2.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-white/20">
+                      <ChefHat size={17} aria-hidden="true" className="text-white" />
+                    </span>
+                    <span className="text-[11px] font-black uppercase tracking-widest text-white/90">Recipe Assistant</span>
+                    <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10.5px] font-black text-white">AI</span>
+                  </div>
+                  <h4 className="relative mb-1.5 text-xl font-black tracking-tight text-white sm:text-2xl">Tweak it, make it yours</h4>
+                  <p className="relative mb-4 text-sm font-medium leading-relaxed text-white/80">
+                    Ask for swaps, scaling help, or ways to adapt it to how you cook.
+                  </p>
+                  <RecipeAskPanel
+                    question={askQuestion}
+                    response={askAnswer}
+                    onAsk={handleAskRecipe}
+                    loading={askLoading}
+                  />
+                </>
+              )}
             </section>
           )}
 
           {!recipeBodyLoading && showNutritionSection && (
-            <RecipeNutritionSummary
-              ingredients={allIngredients}
-              servings={getServings(recipe)}
-              recipeName={recipeName}
-            />
+            <div className={flatSections ? 'px-4 py-4 sm:px-5 sm:py-5' : ''}>
+              <RecipeNutritionSummary
+                ingredients={allIngredients}
+                servings={getServings(recipe)}
+                recipeName={recipeName}
+                embedded={flatSections}
+              />
+            </div>
+          )}
+          {sourceContent && activeTab === 'source' && (
+            <section className={sectionClass}>
+              {sourceContent}
+            </section>
           )}
           </>
         )}

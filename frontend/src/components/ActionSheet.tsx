@@ -13,10 +13,11 @@ interface ActionSheetProps {
   isOpen: boolean;
   onClose: () => void;
   title?: string;
-  actions: ActionItem[];
+  actions?: ActionItem[];
+  content?: React.ReactNode;
 }
 
-export const ActionSheet: React.FC<ActionSheetProps> = ({ isOpen, onClose, title, actions }) => {
+export const ActionSheet: React.FC<ActionSheetProps> = ({ isOpen, onClose, title, actions = [], content }) => {
   const [shouldRender, setShouldRender] = useState(false);
   const [animateOpen, setAnimateOpen] = useState(false);
   const { t } = useTranslation(['common']);
@@ -67,29 +68,33 @@ export const ActionSheet: React.FC<ActionSheetProps> = ({ isOpen, onClose, title
         )}
 
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pb-2">
-          <div className="bg-gray-50/80 rounded-3xl overflow-hidden border border-gray-100/50">
-            {(actions ?? []).map((action, index) => {
-              const isDanger  = action.variant === 'danger';
-              const isPrimary = action.variant === 'primary';
-              return (
-                <button
-                  key={index}
-                  onClick={() => { action.onClick(); onClose(); }}
-                  className={`w-full flex items-center gap-4 p-4 text-left border-b border-gray-100/50 last:border-0 transition-all duration-200 group hover:bg-white/90 hover:shadow-sm hover:backdrop-blur-md
-                    ${isDanger ? 'text-red-600' : isPrimary ? 'text-primary-600' : 'text-gray-700'}`}
-                >
-                  <div className={`p-2 rounded-xl transition-transform group-hover:scale-110 shadow-sm
-                    ${isDanger ? 'bg-red-50 text-red-600' : isPrimary ? 'bg-primary-50 text-primary-600' : 'bg-white text-gray-500'}`}>
-                    {action.icon}
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-bold text-sm">{action.label}</div>
-                    {action.description && <div className="text-xs text-gray-500 font-medium mt-0.5">{action.description}</div>}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          {content ? (
+            content
+          ) : (
+            <div className="bg-gray-50/80 rounded-3xl overflow-hidden border border-gray-100/50">
+              {actions.map((action, index) => {
+                const isDanger = action.variant === 'danger';
+                const isPrimary = action.variant === 'primary';
+                return (
+                  <button
+                    key={index}
+                    onClick={() => { action.onClick(); onClose(); }}
+                    className={`w-full flex items-center gap-4 p-4 text-left border-b border-gray-100/50 last:border-0 transition-all duration-200 group hover:bg-white/90 hover:shadow-sm hover:backdrop-blur-md
+                      ${isDanger ? 'text-red-600' : isPrimary ? 'text-primary-600' : 'text-gray-700'}`}
+                  >
+                    <div className={`p-2 rounded-xl transition-transform group-hover:scale-110 shadow-sm
+                      ${isDanger ? 'bg-red-50 text-red-600' : isPrimary ? 'bg-primary-50 text-primary-600' : 'bg-white text-gray-500'}`}>
+                      {action.icon}
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-bold text-sm">{action.label}</div>
+                      {action.description && <div className="text-xs text-gray-500 font-medium mt-0.5">{action.description}</div>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div

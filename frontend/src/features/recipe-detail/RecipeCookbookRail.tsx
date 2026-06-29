@@ -123,11 +123,13 @@ export function RecipeCookStatusCard({
   loading = false,
   onMarkCooked,
   onReset,
+  primaryAction,
 }: {
   status: LocalCookStatus;
   loading?: boolean;
   onMarkCooked: () => void;
   onReset: () => void;
+  primaryAction?: React.ReactNode;
 }) {
   const hasCooked = status.cookedCount > 0;
 
@@ -150,9 +152,12 @@ export function RecipeCookStatusCard({
 
   return (
     <div className="rounded-[24px] border border-[#D6EFE4] bg-gradient-to-br from-[#E9F8F0] to-[#E2F3F8] p-[18px] shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
-      <div className="mb-2.5 flex items-center gap-[7px]">
-        <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-green-600" />
-        <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-green-700">Cook status</span>
+      <div className="mb-2.5 flex items-start justify-between gap-3">
+        <div className="flex items-center gap-[7px]">
+          <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-green-600" />
+          <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-green-700">Cook status</span>
+        </div>
+        {primaryAction ? <div className="shrink-0">{primaryAction}</div> : null}
       </div>
 
       <div className="font-extrabold text-[21px] leading-tight text-gray-950">
