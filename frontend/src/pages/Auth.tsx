@@ -249,9 +249,12 @@ export const Auth: React.FC = () => {
             </h1>
             <p className="text-gray-400 text-lg leading-relaxed font-medium">{t('auth:creatorsJoin')}</p>
           </div>
-          <div className="flex gap-4 text-xs font-black uppercase tracking-widest text-gray-500">
-            <span>© 2026 recolekt</span>
-            <Link to="/help" className="hover:text-white transition-colors">{t('auth:help')}</Link>
+          <div className="text-xs text-gray-500">
+            <div>{t('common:footerCopyright')}</div>
+            <div className="mt-1">{t('common:footerBrandRelationship')}</div>
+            <Link to="/help" className="mt-2 inline-block font-black uppercase tracking-widest hover:text-white transition-colors">
+              {t('auth:help')}
+            </Link>
           </div>
         </div>
 
