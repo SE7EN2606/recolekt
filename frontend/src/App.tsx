@@ -104,7 +104,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 </ul>
               </div>
             </div>
-            <div className="pt-8 border-t border-gray-800 text-gray-500 text-sm">{t('common:footerCopyright')}</div>
+            <div className="pt-8 border-t border-gray-800 text-gray-500 text-sm">
+              <div>{t('common:footerCopyright')}</div>
+              <div className="mt-2">{t('common:footerBrandRelationship')}</div>
+            </div>
           </div>
         </footer>
       )}
