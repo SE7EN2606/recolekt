@@ -19,6 +19,9 @@ import os
 import re
 import logging
 import tempfile
+import threading
+import time
+from contextlib import contextmanager
 from typing import Any, Dict, Optional
 
 import instaloader
@@ -42,6 +45,27 @@ _IG_SHORTCODE_RE = re.compile(
 )
 
 
+class ProfileEnrichmentRateLimited(Exception):
+    def __init__(self, requested_sleep_seconds: float | None = None, query_type: str | None = None):
+        super().__init__("Instagram profile enrichment rate limited")
+        self.requested_sleep_seconds = requested_sleep_seconds
+        self.query_type = query_type
+
+
+class FailFastRateController(instaloader.RateController):
+    def sleep(self, secs: float):
+        raise ProfileEnrichmentRateLimited(requested_sleep_seconds=secs)
+
+    def handle_429(self, query_type: str) -> None:
+        current_time = time.monotonic()
+        waittime = self.query_waittime(query_type, current_time, True)
+        self._dump_query_timestamps(current_time, query_type)
+        raise ProfileEnrichmentRateLimited(
+            requested_sleep_seconds=waittime,
+            query_type=query_type,
+        )
+
+
 class MetaClient:
 
     def __init__(self):
@@ -50,7 +74,37 @@ class MetaClient:
             save_metadata=False,
             dirname_pattern="",
         )
+        self.profile_loader = instaloader.Instaloader(
+            download_video_thumbnails=False,
+            save_metadata=False,
+            dirname_pattern="",
+            rate_controller=lambda context: FailFastRateController(context),
+        )
+        self._profile_enrichment_context = threading.local()
         logger.info("ℹ️ MetaClient: instaloader ready (public mode, no login)")
+
+    @contextmanager
+    def profile_enrichment_scope(
+        self,
+        *,
+        process_id: str | None = None,
+        shortcode: str | None = None,
+        platform: str | None = None,
+    ):
+        previous = getattr(self._profile_enrichment_context, "value", None)
+        self._profile_enrichment_context.value = {
+            "process_id": process_id,
+            "shortcode": shortcode,
+            "platform": platform or "instagram",
+        }
+        try:
+            yield
+        finally:
+            self._profile_enrichment_context.value = previous
+
+    def _current_profile_enrichment_context(self) -> Dict[str, Any]:
+        value = getattr(self._profile_enrichment_context, "value", None)
+        return value if isinstance(value, dict) else {}
 
     # ----------------------------------------------------------------
     # URL detection
@@ -269,6 +323,18 @@ class MetaClient:
         username = self._normalize_instagram_username(username)
         if not username:
             return None
+        enrichment_context = self._current_profile_enrichment_context()
+        process_id = enrichment_context.get("process_id")
+        shortcode = enrichment_context.get("shortcode")
+        platform = enrichment_context.get("platform") or "instagram"
+
+        logger.info(
+            "before_profile_enrichment platform=%s username=%s shortcode=%s process_id=%s",
+            platform,
+            username,
+            shortcode,
+            process_id,
+        )
 
         profile_data: Dict[str, Any] = {
             "username": username,
@@ -285,7 +351,7 @@ class MetaClient:
         }
 
         try:
-            profile = instaloader.Profile.from_username(self.loader.context, username)
+            profile = instaloader.Profile.from_username(self.profile_loader.context, username)
             profile_data.update({
                 "username": getattr(profile, "username", username) or username,
                 "full_name": getattr(profile, "full_name", "") or "",
@@ -295,6 +361,24 @@ class MetaClient:
                 "source": "instagram_profile_instaloader",
             })
             logger.info("✅ Instagram profile fetched via instaloader: @%s", username)
+        except ProfileEnrichmentRateLimited as exc:
+            logger.warning(
+                'message="Instagram profile enrichment skipped due to rate limit" platform=%s username=%s shortcode=%s process_id=%s normalized_error=profile_enrichment_rate_limited requested_sleep_seconds=%s query_type=%s',
+                platform,
+                username,
+                shortcode,
+                process_id,
+                exc.requested_sleep_seconds,
+                exc.query_type,
+            )
+            logger.info(
+                "profile_enrichment_skipped platform=%s username=%s shortcode=%s process_id=%s normalized_error=profile_enrichment_rate_limited",
+                platform,
+                username,
+                shortcode,
+                process_id,
+            )
+            return None
         except Exception as e:
             logger.warning("⚠️ Instagram profile lookup via instaloader failed for @%s: %s", username, e)
 
@@ -316,6 +400,15 @@ class MetaClient:
         has_any_useful_data = any(
             profile_data.get(key)
             for key in ("full_name", "bio", "address", "city", "region", "country", "postal_code")
+        )
+        logger.info(
+            "after_profile_enrichment platform=%s username=%s shortcode=%s process_id=%s success=%s source=%s",
+            platform,
+            username,
+            shortcode,
+            process_id,
+            has_any_useful_data,
+            profile_data.get("source"),
         )
         return profile_data if has_any_useful_data else None
 

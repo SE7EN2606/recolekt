@@ -466,16 +466,21 @@ def background_process(
                     merged_text,
                 )
 
-            ai_res = ensure_dict(
-                analyze_instagram_video(
-                    merged_text,
-                    caption,
-                    detected_language,
-                    video_path=None,
-                    duration_seconds=0,
-                    is_silent=is_silent_input,
+            with meta_client.profile_enrichment_scope(
+                process_id=result.get("process_id"),
+                shortcode=shortcode,
+                platform=platform_code.lower(),
+            ):
+                ai_res = ensure_dict(
+                    analyze_instagram_video(
+                        merged_text,
+                        caption,
+                        detected_language,
+                        video_path=None,
+                        duration_seconds=0,
+                        is_silent=is_silent_input,
+                    )
                 )
-            )
 
             content_payload = ai_res.pop("_content_payload", None)
 
@@ -533,7 +538,9 @@ def background_process(
 
             _save_content_payload(content_payload, result["process_id"], gcs_paths, temp_dir, gcs_client)
 
+            logger.info("before_final_db_save process_id=%s status=%s platform=%s", result.get("process_id"), result.get("status"), platform_code)
             insert_reel_into_db(result)
+            logger.info("after_final_db_save process_id=%s status=%s platform=%s", result.get("process_id"), result.get("status"), platform_code)
 
             if os.path.exists(thumbnail_path):
                 cleanup_file(thumbnail_path)
@@ -659,16 +666,21 @@ def background_process(
                 merged_text,
             )
 
-        ai_res = ensure_dict(
-            analyze_instagram_video(
-                merged_text,
-                caption,
-                transcription_data["detected_language"],
-                video_path=video_path,
-                duration_seconds=duration_seconds,
-                is_silent=is_silent_input,
+        with meta_client.profile_enrichment_scope(
+            process_id=result.get("process_id"),
+            shortcode=shortcode,
+            platform="instagram" if platform_code == "IG" else platform_code.lower(),
+        ):
+            ai_res = ensure_dict(
+                analyze_instagram_video(
+                    merged_text,
+                    caption,
+                    transcription_data["detected_language"],
+                    video_path=video_path,
+                    duration_seconds=duration_seconds,
+                    is_silent=is_silent_input,
+                )
             )
-        )
 
         content_payload = ai_res.pop("_content_payload", None)
 
@@ -729,7 +741,9 @@ def background_process(
 
         _save_content_payload(content_payload, result["process_id"], gcs_paths, temp_dir, gcs_client)
 
+        logger.info("before_final_db_save process_id=%s status=%s platform=%s", result.get("process_id"), result.get("status"), platform_code)
         insert_reel_into_db(result)
+        logger.info("after_final_db_save process_id=%s status=%s platform=%s", result.get("process_id"), result.get("status"), platform_code)
 
         cleanup_file(video_path)
         if os.path.exists(thumbnail_path):

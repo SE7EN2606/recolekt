@@ -23,6 +23,7 @@ from fetcher_api.services.video_analysis import (
 from fetcher_api.api.helpers.processing import background_process
 from fetcher_api.services.storage import generate_gcs_paths
 from fetcher_api.api.helpers.auth import get_user_id_from_request
+from fetcher_api.services.db_insert import canonicalize_source_url
 
 logger = logging.getLogger("video")
 
@@ -282,7 +283,9 @@ def summarize():
     shortcode = "unknown"
 
     if url:
-        url = str(url).strip()
+        original_url = str(url).strip()
+        url = canonicalize_source_url(original_url)
+        logger.info("🔗 Canonicalized source URL original=%s canonical=%s", original_url, url)
         platform_id = detect_platform(url)
         shortcode = _extract_shortcode(url, platform_id)
         shortcode = (shortcode or "unknown").rstrip("-").strip()
@@ -300,10 +303,9 @@ def summarize():
             logger.info("📌 Duplicate reel blocked before processing: existing=%s user=%s url=%s", existing_id, user_id, url)
 
             if existing_status == "error" or force_retry:
-                logger.info("⚠️ Reprocessing requested for existing reel %s; deleting old DB row before retry", existing_id)
-                execute(
-                    "DELETE FROM reels WHERE id = %s AND user_id = %s",
-                    (existing_id, user_id),
+                logger.info(
+                    "🔄 Reprocessing requested for existing reel %s; preserving existing row until retry succeeds",
+                    existing_id,
                 )
             else:
                 return jsonify({
