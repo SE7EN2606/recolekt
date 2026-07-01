@@ -35,6 +35,7 @@ import { fetchGcsJson, HASHTAG_STYLE } from '../utils/videoDetailUtils';
 import { scaleQuantity } from '../utils/videoUtils';
 import { CustomMessageSquareMoreIcon, IOSShareIcon, PlatformIconAuthor } from '../components/CustomIcons';
 import RecipeAiSummaryCard from '../components/video-detail/RecipeAiSummaryCard';
+import MobileRecipeOverviewTab from '../components/video-detail/MobileRecipeOverviewTab';
 import {
   buildRecipeForCard,
   hasUsableRecipeContent,
@@ -1660,80 +1661,81 @@ export const VideoDetail: React.FC = () => {
     </section>
   );
   const overviewContent = (
-    <div className="space-y-5">
-      <RecipeCookStatusCard
-        status={cookStatus}
-        loading={cookStatusLoading}
-        onMarkCooked={markCooked}
-        onReset={resetCookState}
-        primaryAction={(
-          <button
-            type="button"
-            onClick={() => setCookModeOpenSignal((value) => value + 1)}
-            disabled={cookStatusLoading}
-            className="rounded-2xl bg-green-600 px-4 py-2.5 text-[13px] font-bold text-white shadow-sm transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {cookStatusLoading ? 'Loading...' : cookStatus.hasActiveSession ? 'Resume cooking' : 'Start cooking'}
-          </button>
-        )}
-      />
-
-      {overviewMetaGrid}
-
-      <section className="overflow-hidden rounded-[24px] border border-white/75 bg-white/90 shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm">
-        <div className="px-4 py-4">
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Recipe memory</p>
-              <p className="mt-1 text-[16px] font-bold text-gray-950">Rating and return history</p>
-            </div>
-            <div className="flex shrink-0 items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-slate-400">
-              {[0, 1, 2, 3, 4].map((index) => (
-                <Star key={index} size={13} className="fill-transparent" aria-hidden="true" />
-              ))}
-              <span className="ml-1 text-[12px] font-bold">—</span>
-            </div>
-          </div>
-
-          {returnStateItems.length > 0 ? (
-            <div className="space-y-3">
-              {returnStateItems.map((item, index) => (
-                <div key={`${item}-${index}`} className="flex items-center gap-3">
-                  <span className={`h-[10px] w-[10px] shrink-0 rounded-full ${index === 0 ? 'bg-primary-400' : 'bg-green-500'}`} />
-                  <span className="text-[13.5px] font-semibold text-slate-800">{item}</span>
-                </div>
-              ))}
-            </div>
-          ) : recipeMemoryLine ? (
-            <p className="text-[13.5px] leading-relaxed text-slate-600">{recipeMemoryLine}</p>
-          ) : (
-            <p className="text-[13.5px] leading-relaxed text-slate-400">
-              Cook it or add a note to build your memory here.
-            </p>
+    <MobileRecipeOverviewTab
+      cookStatusCard={(
+        <RecipeCookStatusCard
+          status={cookStatus}
+          loading={cookStatusLoading}
+          onMarkCooked={markCooked}
+          onReset={resetCookState}
+          primaryAction={(
+            <button
+              type="button"
+              onClick={() => setCookModeOpenSignal((value) => value + 1)}
+              disabled={cookStatusLoading}
+              className="rounded-2xl bg-green-600 px-4 py-2.5 text-[13px] font-bold text-white shadow-sm transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {cookStatusLoading ? 'Loading...' : cookStatus.hasActiveSession ? 'Resume cooking' : 'Start cooking'}
+            </button>
           )}
-        </div>
-      </section>
+        />
+      )}
+      metaDetailsCard={overviewMetaGrid}
+      recipeMemoryCard={(
+        <section className="overflow-hidden rounded-[24px] border border-white/75 bg-white/90 shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+          <div className="px-4 py-4">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Recipe memory</p>
+                <p className="mt-1 text-[16px] font-bold text-gray-950">Rating and return history</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-slate-400">
+                {[0, 1, 2, 3, 4].map((index) => (
+                  <Star key={index} size={13} className="fill-transparent" aria-hidden="true" />
+                ))}
+                <span className="ml-1 text-[12px] font-bold">—</span>
+              </div>
+            </div>
 
-      <RecipeNotesCard
-        note={recipeNote}
-        onChange={setRecipeNote}
-        onSave={saveRecipeNote}
-        onDelete={deleteRecipeNote}
-        focusSignal={noteFocusSignal}
-        status={recipeNoteStatus}
-      />
-
-      {overviewSourceDetails}
-
-      {viewModel.originalUrl && (
+            {returnStateItems.length > 0 ? (
+              <div className="space-y-3">
+                {returnStateItems.map((item, index) => (
+                  <div key={`${item}-${index}`} className="flex items-center gap-3">
+                    <span className={`h-[10px] w-[10px] shrink-0 rounded-full ${index === 0 ? 'bg-primary-400' : 'bg-green-500'}`} />
+                    <span className="text-[13.5px] font-semibold text-slate-800">{item}</span>
+                  </div>
+                ))}
+              </div>
+            ) : recipeMemoryLine ? (
+              <p className="text-[13.5px] leading-relaxed text-slate-600">{recipeMemoryLine}</p>
+            ) : (
+              <p className="text-[13.5px] leading-relaxed text-slate-400">
+                Cook it or add a note to build your memory here.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+      notesCard={(
+        <RecipeNotesCard
+          note={recipeNote}
+          onChange={setRecipeNote}
+          onSave={saveRecipeNote}
+          onDelete={deleteRecipeNote}
+          focusSignal={noteFocusSignal}
+          status={recipeNoteStatus}
+        />
+      )}
+      sourceDetailsCard={overviewSourceDetails}
+      originalLink={viewModel.originalUrl ? (
         <OriginalLink
           url={viewModel.originalUrl}
           platform={viewModel.platform}
           t={t}
           className="md:hidden"
         />
-      )}
-    </div>
+      ) : undefined}
+    />
   );
   return (
     <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
