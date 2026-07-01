@@ -291,7 +291,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   if (!hasIngredients && !hasSteps) return null;
 
   const sectionClass = flatSections
-    ? 'px-4 py-4 sm:px-5 sm:py-5'
+    ? 'py-4 sm:px-5 sm:py-5'
     : sectionCardClass();
   const flatSectionCardClass = 'rounded-[20px] border border-white/75 bg-white/90 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]';
 
@@ -637,7 +637,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
           {!recipeBodyLoading && showAskSection && (
             <section
-              className={`relative overflow-hidden ${flatSections ? 'mx-4 mb-4 rounded-[22px] sm:mx-5' : 'rounded-[26px]'} bg-gradient-to-br from-primary-600 to-secondary-600 p-5 shadow-[0_20px_44px_-14px_rgba(15,23,42,0.28)] sm:p-6 ${
+              className={`relative overflow-hidden ${flatSections ? 'mb-4 rounded-[22px]' : 'rounded-[26px]'} bg-gradient-to-br from-primary-600 to-secondary-600 p-5 shadow-[0_20px_44px_-14px_rgba(15,23,42,0.28)] sm:p-6 ${
                 askVisible ? '' : 'hidden'
               }`}
               aria-hidden={!askVisible}
@@ -706,7 +706,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
           )}
 
           {!recipeBodyLoading && showNutritionSection && (
-            <div className={flatSections ? 'px-4 py-4 sm:px-5 sm:py-5' : ''}>
+            <div className={flatSections ? 'py-4 sm:px-5 sm:py-5' : ''}>
               <RecipeNutritionSummary
                 ingredients={allIngredients}
                 servings={getServings(recipe)}

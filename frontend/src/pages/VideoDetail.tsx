@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, Trash2, Heart, FolderInput, AlertCircle, X,
   EllipsisVertical, AlignLeft, Pencil, Save, Globe, Folder, Archive,
-  MapPin, ShoppingBasket, RefreshCw, Loader2, Clock3, Flame, Timer, ChevronDown, Sparkles, ChefHat, Star,
+  MapPin, ShoppingBasket, RefreshCw, Loader2, Clock3, Flame, Timer, ChevronDown, ChefHat, Star,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -34,6 +34,7 @@ import { useScrollLock } from '../utils/useScrollLock';
 import { fetchGcsJson, HASHTAG_STYLE } from '../utils/videoDetailUtils';
 import { scaleQuantity } from '../utils/videoUtils';
 import { CustomMessageSquareMoreIcon, IOSShareIcon, PlatformIconAuthor } from '../components/CustomIcons';
+import RecipeAiSummaryCard from '../components/video-detail/RecipeAiSummaryCard';
 import {
   buildRecipeForCard,
   hasUsableRecipeContent,
@@ -250,116 +251,6 @@ function getEnglishSummaryContent(video: any) {
     : [];
 
   return { summaryText, headlines };
-}
-
-function RecipeAiSummaryCard({
-  summaryText,
-  headlines,
-  collapsedByDefault = false,
-}: {
-  summaryText?: string;
-  headlines: any[];
-  collapsedByDefault?: boolean;
-}) {
-  const [summaryOpen, setSummaryOpen] = useState(!collapsedByDefault);
-  const [summaryHighlightsOpen, setSummaryHighlightsOpen] = useState(false);
-
-  useEffect(() => {
-    setSummaryOpen(!collapsedByDefault);
-    setSummaryHighlightsOpen(false);
-  }, [collapsedByDefault, summaryText]);
-
-  return (
-    <section className="mb-5">
-      <div className="overflow-hidden rounded-[26px] border border-primary-100/70 bg-[linear-gradient(180deg,rgba(250,245,255,0.98),rgba(245,243,255,0.92))] shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm">
-        <div className="px-4 py-4 md:px-5 md:py-5">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/85 text-primary-600 ring-1 ring-primary-100/80 shadow-[0_2px_8px_rgba(124,58,237,0.08)]">
-              <Sparkles size={18} aria-hidden="true" />
-            </span>
-            <div>
-              <div className="text-[11px] font-black uppercase tracking-widest text-primary-700/70">
-                AI Summary
-              </div>
-              <div className="mt-1 text-[18px] font-bold tracking-tight text-gray-900">
-                Quick read before you cook
-              </div>
-            </div>
-          </div>
-
-          {summaryOpen && (
-            <div className="mt-4 max-w-[72ch]">
-              {summaryText && (
-                <p className="text-[15px] font-medium leading-7 text-gray-700">
-                  {summaryText}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {summaryOpen && headlines.length > 0 && summaryHighlightsOpen && (
-          <div className="border-t border-primary-100/70 px-4 pb-4 pt-4 md:px-5 md:pb-5">
-            <h4 className="text-xs font-bold uppercase tracking-wide text-gray-500">
-              Key Highlights
-            </h4>
-            <div className="mt-3 flex flex-col gap-2.5">
-              {headlines.map((item: any, index: number) => (
-                <div
-                  key={`${item.headline || item.text}-${index}`}
-                  className="flex min-w-0 gap-3 rounded-2xl bg-white/78 px-4 py-3 ring-1 ring-primary-100/80"
-                >
-                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-base leading-none">
-                    {item.emoji || '•'}
-                  </span>
-                  <div className="min-w-0">
-                    {item.headline && (
-                      <div className="text-sm font-bold leading-snug text-gray-900">
-                        {item.headline}
-                      </div>
-                    )}
-                    {item.text && (
-                      <div className="mt-1 text-sm font-medium leading-relaxed text-gray-600">
-                        {item.text}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {(collapsedByDefault || headlines.length > 0) && (
-          <div className="px-4 pb-4 md:px-5 md:pb-5">
-            <button
-              type="button"
-              onClick={() => {
-                if (!summaryOpen) {
-                  setSummaryOpen(true);
-                  setSummaryHighlightsOpen(true);
-                  return;
-                }
-                if (headlines.length > 0) {
-                  setSummaryHighlightsOpen((value) => !value);
-                  return;
-                }
-                setSummaryOpen(false);
-              }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary-100 bg-primary-50/70 py-3 text-sm font-bold text-primary-700 transition-colors hover:bg-primary-100"
-            >
-              {!summaryOpen ? 'See highlights' : headlines.length > 0 ? (summaryHighlightsOpen ? 'Hide highlights' : 'See highlights') : 'Hide summary'}
-              <ChevronDown
-                size={16}
-                className={`transition-transform duration-200 ${summaryOpen && summaryHighlightsOpen ? 'rotate-180' : ''}`}
-                aria-hidden="true"
-              />
-            </button>
-          </div>
-        )}
-      </div>
-    </section>
-  );
 }
 
 type MobileRecipeTab = 'overview' | 'ingredients' | 'steps' | 'nutrition';
@@ -1696,6 +1587,31 @@ export const VideoDetail: React.FC = () => {
       ))}
     </div>
   );
+  const overviewMetaGrid = mobileHeroMetaGridItems.length > 0 ? (
+    <section className="overflow-hidden rounded-[24px] border border-white/75 bg-white/90 shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+      <div className="px-4 py-4">
+        <div className="mb-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Recipe details</p>
+          <p className="mt-1 text-[16px] font-bold text-gray-950">Cuisine, topic, style, and method</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5">
+          {mobileHeroMetaGridItems.map((chip) => (
+            <div
+              key={`overview-meta-${chip.label}-${chip.value}`}
+              className="rounded-[16px] bg-slate-100 px-3.5 py-3"
+            >
+              <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                {chip.label}
+              </div>
+              <div className="mt-1 text-[13px] font-bold leading-snug text-slate-900">
+                {chip.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  ) : null;
   const overviewSourceDetails = (
     <section className="overflow-hidden rounded-[24px] border border-white/75 bg-white/90 shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm">
       <details className="group" open={false}>
@@ -1762,13 +1678,7 @@ export const VideoDetail: React.FC = () => {
         )}
       />
 
-      {hasEnglishSummaryContent && (
-        <RecipeAiSummaryCard
-          summaryText={englishSummaryContent.summaryText}
-          headlines={englishSummaryContent.headlines}
-          collapsedByDefault={false}
-        />
-      )}
+      {overviewMetaGrid}
 
       <section className="overflow-hidden rounded-[24px] border border-white/75 bg-white/90 shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm">
         <div className="px-4 py-4">
@@ -1997,24 +1907,6 @@ export const VideoDetail: React.FC = () => {
                 )}
               </div>
 
-              {mobileHeroMetaGridItems.length > 0 && (
-                <div className="mt-4 grid grid-cols-2 gap-2.5 md:hidden">
-                  {mobileHeroMetaGridItems.map((chip) => (
-                    <div
-                      key={`mobile-hero-${chip.label}-${chip.value}`}
-                      className="rounded-[16px] bg-slate-100 px-3.5 py-3"
-                    >
-                      <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
-                        {chip.label}
-                      </div>
-                      <div className="mt-1 text-[13px] font-bold leading-snug text-slate-900">
-                        {chip.value}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
               <div className="mt-4 grid grid-cols-4 overflow-hidden rounded-[18px] border border-slate-100 bg-white md:hidden">
                 {atAGlanceItems.map((item, index) => (
                   <div key={`at-a-glance-${item.label}`} className="relative px-2 py-3 text-center">
@@ -2221,8 +2113,16 @@ export const VideoDetail: React.FC = () => {
 
           {showRecipeCard && stableRecipeForCard && !isDesktopRecipeDetailLayout && (
             <>
+              {hasEnglishSummaryContent && (
+                <RecipeAiSummaryCard
+                  summaryText={englishSummaryContent.summaryText}
+                  headlines={englishSummaryContent.headlines}
+                  collapsedByDefault={false}
+                />
+              )}
+
               <section className="mb-5">
-                <div className="mb-4 px-4">
+                <div className="mb-4">
                   <div className="rounded-[22px] border border-white/75 bg-white/80 px-3 py-3 shadow-[0_4px_18px_rgba(15,23,42,0.06)] supports-[backdrop-filter]:bg-white/70">
                     <div className="relative grid grid-cols-4 rounded-2xl bg-gray-100 p-1">
                       <div
@@ -2280,6 +2180,7 @@ export const VideoDetail: React.FC = () => {
                     askInitiallyCollapsed={false}
                     askVisible={mobileRecipeTab === 'ingredients' || mobileRecipeTab === 'steps'}
                     flatSections
+                    ingredientsHeaderContent={stepsHeaderContent}
                     ingredientsActionContent={ingredientsActionContent}
                     ingredientsServingContent={ingredientsServingContent}
                     ingredientsFooterContent={ingredientsFooterContent}
