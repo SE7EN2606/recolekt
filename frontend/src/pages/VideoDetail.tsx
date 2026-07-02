@@ -35,8 +35,8 @@ import { fetchGcsJson, HASHTAG_STYLE } from '../utils/videoDetailUtils';
 import { scaleQuantity } from '../utils/videoUtils';
 import { CustomMessageSquareMoreIcon, IOSShareIcon, PlatformIconAuthor } from '../components/CustomIcons';
 import RecipeAiSummaryCard from '../components/video-detail/RecipeAiSummaryCard';
+import MobileRecipeDetailLayout from '../components/video-detail/MobileRecipeDetailLayout';
 import MobileRecipeOverviewTab from '../components/video-detail/MobileRecipeOverviewTab';
-import MobileRecipeTabBar from '../components/video-detail/MobileRecipeTabBar';
 import {
   buildRecipeForCard,
   hasUsableRecipeContent,
@@ -2118,62 +2118,48 @@ export const VideoDetail: React.FC = () => {
           )}
 
           {showRecipeCard && stableRecipeForCard && !isDesktopRecipeDetailLayout && (
-            <>
-              {hasEnglishSummaryContent && (
-                <RecipeAiSummaryCard
-                  summaryText={englishSummaryContent.summaryText}
-                  headlines={englishSummaryContent.headlines}
-                  collapsedByDefault={false}
-                />
-              )}
-
-              <section className="mb-5">
-                <MobileRecipeTabBar
-                  tabs={MOBILE_RECIPE_TABS}
-                  activeTab={mobileRecipeTab}
-                  activeIndex={MOBILE_RECIPE_TAB_INDEX[mobileRecipeTab]}
-                  onTabChange={handleMobileRecipeTabChange}
-                />
-
-                {mobileRecipeTab === 'overview' ? (
-                  overviewContent
-                ) : null}
-
-                <div className={mobileRecipeTab === 'overview' ? 'hidden' : ''}>
-                  <RecipeDetailsCard
-                    recipe={stableRecipeForCard}
-                    recipeId={currentVideoId}
-                    recipeName={viewModel.title ?? "Recipe"}
-                    servingScale={servingScale}
-                    onServingScaleChange={setServingScale}
-                    scaleQuantity={scaleQuantity}
-                    useMetric={useMetric}
-                    onToggleMetric={setUseMetric}
-                    temperatureUnit={temperatureUnit}
-                    recipeConversion={recipeConversion}
-                    volumePreference={volumePreference}
-                    rounding={rounding}
-                    onMarkCooked={markCooked}
-                    onAddCookingNote={openRecipeNotes}
-                    cookStatusLoading={cookStatusLoading}
-                    openCookModeSignal={cookModeOpenSignal}
-                    showStartCookingButton={false}
-                    showRecipeHeader={false}
-                    activeTab={mobileRecipeDetailsTab}
-                    embedded
-                    askPlacement="persistent"
-                    askInitiallyCollapsed={false}
-                    askVisible={mobileRecipeTab === 'ingredients' || mobileRecipeTab === 'steps'}
-                    flatSections
-                    ingredientsHeaderContent={stepsHeaderContent}
-                    ingredientsActionContent={ingredientsActionContent}
-                    ingredientsServingContent={ingredientsServingContent}
-                    ingredientsFooterContent={ingredientsFooterContent}
-                    stepsHeaderContent={stepsHeaderContent}
-                  />
-                </div>
-              </section>
-            </>
+            <MobileRecipeDetailLayout
+              showSummary={hasEnglishSummaryContent}
+              summaryText={englishSummaryContent.summaryText}
+              summaryHeadlines={englishSummaryContent.headlines}
+              tabs={MOBILE_RECIPE_TABS}
+              activeTab={mobileRecipeTab}
+              activeIndex={MOBILE_RECIPE_TAB_INDEX[mobileRecipeTab]}
+              overviewTabKey="overview"
+              onTabChange={handleMobileRecipeTabChange}
+              overviewContent={overviewContent}
+              recipeDetailsCardProps={{
+                recipe: stableRecipeForCard,
+                recipeId: currentVideoId,
+                recipeName: viewModel.title ?? "Recipe",
+                servingScale,
+                onServingScaleChange: setServingScale,
+                scaleQuantity,
+                useMetric,
+                onToggleMetric: setUseMetric,
+                temperatureUnit,
+                recipeConversion,
+                volumePreference,
+                rounding,
+                onMarkCooked: markCooked,
+                onAddCookingNote: openRecipeNotes,
+                cookStatusLoading,
+                openCookModeSignal: cookModeOpenSignal,
+                showStartCookingButton: false,
+                showRecipeHeader: false,
+                activeTab: mobileRecipeDetailsTab,
+                embedded: true,
+                askPlacement: "persistent",
+                askInitiallyCollapsed: false,
+                askVisible: mobileRecipeTab === 'ingredients' || mobileRecipeTab === 'steps',
+                flatSections: true,
+                ingredientsHeaderContent: stepsHeaderContent,
+                ingredientsActionContent: ingredientsActionContent,
+                ingredientsServingContent: ingredientsServingContent,
+                ingredientsFooterContent: ingredientsFooterContent,
+                stepsHeaderContent: stepsHeaderContent,
+              }}
+            />
           )}
 
           {showRecipeCard && isDesktopRecipeDetailLayout && (viewModel.tags?.length > 0) && (
