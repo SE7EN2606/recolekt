@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, ChefHat, ChevronDown, Pencil, Plus, ShoppingBasket, Trash2, X } from 'lucide-react';
 import RecipeNutritionSummary from '../features/recipe-secondary/RecipeNutritionSummary';
 import RecipeStepsPanel from '../features/recipe-core/panels/RecipeStepsPanel';
@@ -140,6 +140,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 }) => {
   const [isCookModeOpen, setIsCookModeOpen] = useState(false);
   const [askOpen, setAskOpen] = useState(!askInitiallyCollapsed);
+  const lastHandledCookModeSignalRef = useRef(openCookModeSignal);
   const cookSessionEnabled = Boolean(recipeId && recipeId !== 'recipe');
   const {
     currentStepIndex,
@@ -277,9 +278,13 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   }, []);
 
   useEffect(() => {
-    if (openCookModeSignal > 0 && hasSteps && !cookModeLoading) {
-      setIsCookModeOpen(true);
-    }
+    // Consume the open signal by version so remounts across the mobile/desktop
+    // breakpoint do not reopen Cook Mode from an old nonzero signal value.
+    if (openCookModeSignal <= lastHandledCookModeSignalRef.current) return;
+    if (!hasSteps || cookModeLoading) return;
+
+    lastHandledCookModeSignalRef.current = openCookModeSignal;
+    setIsCookModeOpen(true);
   }, [openCookModeSignal, hasSteps, cookModeLoading]);
 
   useEffect(() => {
