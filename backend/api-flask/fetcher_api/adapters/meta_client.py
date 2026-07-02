@@ -18,6 +18,7 @@ import json
 import os
 import re
 import logging
+import subprocess
 import tempfile
 import threading
 import time
@@ -43,6 +44,129 @@ _IG_SHORTCODE_RE = re.compile(
     r"/(?:reel|reels|p|tv)/([A-Za-z0-9_-]+)/?(?:\?|$)",
     re.IGNORECASE,
 )
+
+
+def _derive_process_id_from_path(path: str) -> str:
+    base = os.path.basename(path or "")
+    return os.path.splitext(base)[0] if base else ""
+
+
+def _compact_requested_formats(requested_formats: Any) -> list[dict]:
+    items = requested_formats if isinstance(requested_formats, list) else []
+    compact = []
+    for item in items[:4]:
+        if not isinstance(item, dict):
+            continue
+        compact.append(
+            {
+                "format_id": item.get("format_id"),
+                "ext": item.get("ext"),
+                "vcodec": item.get("vcodec"),
+                "acodec": item.get("acodec"),
+                "filesize": item.get("filesize"),
+                "filesize_approx": item.get("filesize_approx"),
+            }
+        )
+    return compact
+
+
+def _log_ytdlp_format_summary(info: dict, *, process_id: str, output_path: str) -> None:
+    if not isinstance(info, dict):
+        return
+
+    summary = {
+        "process_id": process_id or None,
+        "path": output_path,
+        "format_id": info.get("format_id"),
+        "ext": info.get("ext"),
+        "vcodec": info.get("vcodec"),
+        "acodec": info.get("acodec"),
+        "filesize": info.get("filesize"),
+        "filesize_approx": info.get("filesize_approx"),
+        "requested_formats": _compact_requested_formats(info.get("requested_formats")),
+    }
+    logger.info("instagram_ytdlp_format_summary %s", json.dumps(summary, ensure_ascii=True, sort_keys=True))
+
+
+def _probe_media_file(path: str) -> dict:
+    summary = {
+        "path": path,
+        "file_size": None,
+        "video_streams": 0,
+        "audio_streams": 0,
+        "video_codecs": [],
+        "audio_codecs": [],
+        "duration": None,
+        "ffprobe_error": None,
+    }
+
+    if not path or not os.path.exists(path):
+        summary["ffprobe_error"] = "file_missing"
+        return summary
+
+    try:
+        summary["file_size"] = os.path.getsize(path)
+    except OSError as exc:
+        summary["ffprobe_error"] = f"stat_failed: {exc}"
+        return summary
+
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-print_format", "json",
+                "-show_entries", "format=duration:stream=index,codec_type,codec_name",
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        summary["ffprobe_error"] = "timeout"
+        return summary
+    except Exception as exc:
+        summary["ffprobe_error"] = str(exc)
+        return summary
+
+    if result.returncode != 0:
+        summary["ffprobe_error"] = (result.stderr or result.stdout or "ffprobe_failed").strip()[:300]
+        return summary
+
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        summary["ffprobe_error"] = f"invalid_json: {exc}"
+        return summary
+
+    streams = payload.get("streams") or []
+    for stream in streams:
+        codec_type = stream.get("codec_type")
+        codec_name = stream.get("codec_name")
+        if codec_type == "video":
+            summary["video_streams"] += 1
+            if codec_name and codec_name not in summary["video_codecs"]:
+                summary["video_codecs"].append(codec_name)
+        elif codec_type == "audio":
+            summary["audio_streams"] += 1
+            if codec_name and codec_name not in summary["audio_codecs"]:
+                summary["audio_codecs"].append(codec_name)
+
+    duration_raw = ((payload.get("format") or {}).get("duration") or "").strip()
+    if duration_raw:
+        try:
+            summary["duration"] = round(float(duration_raw), 3)
+        except ValueError:
+            summary["duration"] = duration_raw
+
+    return summary
+
+
+def _log_media_probe_summary(path: str, *, process_id: str) -> None:
+    summary = _probe_media_file(path)
+    summary["process_id"] = process_id or None
+    logger.info("instagram_media_probe_summary %s", json.dumps(summary, ensure_ascii=True, sort_keys=True))
 
 
 class ProfileEnrichmentRateLimited(Exception):
@@ -546,6 +670,7 @@ class MetaClient:
         cookies_path = None
         try:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            process_id = _derive_process_id_from_path(output_path)
 
             ydl_opts = {
                 "outtmpl": output_path,
@@ -581,6 +706,8 @@ class MetaClient:
             if not os.path.exists(actual_path):
                 raise ValueError(f"yt-dlp finished but file missing at {output_path}")
 
+            _log_ytdlp_format_summary(info, process_id=process_id, output_path=actual_path)
+            _log_media_probe_summary(actual_path, process_id=process_id)
             logger.info("✅ Instagram video downloaded via yt-dlp: %s", actual_path)
 
             thumbnail_path = None

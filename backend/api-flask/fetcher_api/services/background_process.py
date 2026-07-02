@@ -105,6 +105,7 @@ def _transcription_result_to_dict(result) -> dict:
     payload["status"] = payload.get("status") or "error"
     payload.setdefault("deepgram", None)
     payload.setdefault("voxtral", None)
+    payload.setdefault("debug", None)
     return payload
 
 
@@ -112,7 +113,7 @@ def _run_parallel_transcription(media_path: str) -> tuple[str, dict, bool]:
     result = _run_async(transcribe_video(media_path))
     prompt_transcript = get_prompt_transcript(result)
     transcription_data = _transcription_result_to_dict(result)
-    is_silent = transcription_data.get("status") == "empty/music" or not prompt_transcript.strip()
+    is_silent = (transcription_data.get("status") or "").strip().lower() in {"empty/music", "empty", "music_only"}
     return prompt_transcript, transcription_data, is_silent
 
 

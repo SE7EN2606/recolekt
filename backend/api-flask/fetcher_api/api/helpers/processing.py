@@ -216,6 +216,7 @@ def _transcription_result_to_dict(t: TranscriptionResult | None) -> dict:
             "transcription_source": "empty",
             "deepgram": None,
             "voxtral": None,
+            "debug": None,
         }
 
     return {
@@ -225,6 +226,7 @@ def _transcription_result_to_dict(t: TranscriptionResult | None) -> dict:
         "transcription_source": t.transcription_source or "empty",
         "deepgram": _single_transcript_to_dict(getattr(t, "deepgram", None)),
         "voxtral": _single_transcript_to_dict(getattr(t, "voxtral", None)),
+        "debug": getattr(t, "debug", None),
     }
 
 
@@ -235,8 +237,7 @@ def _is_silent_from_transcription_data(data: dict) -> bool:
 
     return (
         status in {"empty/music", "empty", "music_only"}
-        or source == "empty"
-        or not transcript
+        or (source == "empty" and not transcript and status not in {"audio_extraction_failed", "no_audio_stream", "error"})
     )
 
 
