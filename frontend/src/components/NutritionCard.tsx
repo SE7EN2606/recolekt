@@ -385,6 +385,181 @@ export default function NutritionCard({ ingredients, servings, recipeName, embed
     mode === "per100g" ? "per 100g" :
     mode === "table" ? "full table" :
     "per serving";
+  const modeToggle = (
+    <div className="mb-5 grid w-full grid-cols-3 gap-[3px] rounded-[12px] bg-slate-100 p-1">
+      {[
+        { key: "serving", label: "Serving" },
+        { key: "per100g", label: "Per 100g" },
+        { key: "table", label: "Table" },
+      ].map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          onClick={() => setMode(item.key as ViewMode)}
+          className={`min-w-0 whitespace-nowrap rounded-[10px] px-2 py-2 text-center text-sm leading-none transition ${
+            mode === item.key
+              ? "bg-white font-bold text-primary-600 shadow-[0_1px_4px_rgba(15,23,42,0.10)]"
+              : "bg-transparent font-medium text-slate-500 hover:text-primary-600"
+          }`}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+  const nutritionMetaBlock = ((excludedNutritionItems.length > 0) || detailItems.length > 0 || healthNotes.length > 0) ? (
+    <div className="rounded-[14px] bg-slate-50 px-4 py-3 text-[12px] leading-[1.55] text-slate-400">
+      <p className="font-semibold text-slate-500">
+        {nutrition.matchedCount} of {nutritionDisplayTotal} main ingredients calculated.
+      </p>
+      {excludedNutritionItems.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {excludedNutritionItems.map((item) => (
+            <li key={`${item.name}-${item.reason}`}>
+              <span className="font-medium text-slate-600">{item.name}</span>
+              <span> — {item.reason}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {detailItems.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {detailItems.map((note, idx) => (
+            <li key={`detail-${idx}`}>• {note}</li>
+          ))}
+        </ul>
+      )}
+      {healthNotes.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {healthNotes.map((note, idx) => (
+            <li key={`health-${idx}`}>• {note}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  ) : null;
+  const trafficLightContent = (
+    <NutrientTrafficStrip
+      per100g={nutrition.per100g}
+      perServing={mode === "per100g" ? nutrition.per100g : adjustedPerServing}
+      saltMissing={saltMissing}
+      servingSizeG={mode === "per100g" ? 100 : adjustedServingSizeG}
+    />
+  );
+  const nutriScoreContent = hasNutriScore ? (
+    <NutriScoreVisual letter={nutrition.nutriScore.letter} />
+  ) : (
+    <div className="rounded-[18px] border border-[#eef2f7] bg-slate-50 px-5 py-[22px]">
+      <p className="mb-[18px] text-[11px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
+        Nutri-Score · estimated
+      </p>
+      <p className="text-sm font-bold text-slate-900">Nutri-Score unavailable</p>
+      <p className="mt-1 text-[12px] text-slate-500">
+        A grade could not be estimated from the current recipe data.
+      </p>
+    </div>
+  );
+
+  if (embedded) {
+    return (
+      <div className="space-y-4">
+        <section className="space-y-4 py-4 sm:px-5 sm:py-5">
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <h3 className="text-[20px] font-extrabold tracking-tight text-slate-950">Nutrition</h3>
+            <span className="text-[12px] font-medium text-slate-400">{cardModeLabel}</span>
+          </div>
+
+          {modeToggle}
+
+          {showTableMode ? (
+            <div className="rounded-[18px] border border-slate-200 bg-white/80 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
+              <HomeCookingEstimateTable
+                servingValues={adjustedPerServing}
+                servingsCount={nutrition.effectiveServings}
+                servingSizeG={adjustedServingSizeG}
+                totalWeightG={nutrition.totalWeightG}
+                saltMissing={saltMissing}
+              />
+            </div>
+          ) : (
+            <div className="rounded-[18px] border border-slate-200 bg-white/80 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
+              <div className="mb-4 text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
+                Macro breakdown
+              </div>
+              <div className="rounded-[16px] bg-slate-50 px-2 pt-[22px] pb-[18px]">
+                <MacroRingGrid values={activeMacroValues} />
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-[13px] border border-slate-200 bg-white/80 px-4 py-[13px]">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-bold text-slate-700">Adjust serving</p>
+                <p className="mt-1 text-[12px] text-slate-400">
+                  {nutrition.matchedCount} of {nutritionDisplayTotal} ingredients calculated
+                </p>
+              </div>
+
+              {adjustedServingSizeG && (
+                <div className="flex shrink-0 items-center overflow-hidden rounded-[11px] border border-slate-200 bg-white">
+                  <button
+                    type="button"
+                    onClick={() => handlePortionScale(portionScale - 0.25)}
+                    className="flex h-9 w-[34px] items-center justify-center bg-primary-50 text-lg font-bold text-slate-500 transition-colors hover:bg-primary-100"
+                  >
+                    −
+                  </button>
+                  <span className="flex min-w-[72px] items-center justify-center px-3 text-center text-[14px] font-bold tabular-nums text-slate-700">
+                    {Math.round(portionScale * 100)}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handlePortionScale(portionScale + 0.25)}
+                    className="flex h-9 w-[34px] items-center justify-center bg-primary-50 text-lg font-bold text-slate-500 transition-colors hover:bg-primary-100"
+                  >
+                    +
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {portionValue && (
+              <p className="mt-2 text-[12px] text-slate-400">
+                <span className="font-medium text-slate-500">{portionValue}</span>
+                <span className="ml-1">{portionHelper}</span>
+              </p>
+            )}
+          </div>
+
+          <div className="mt-[13px] flex items-center gap-2 px-0.5">
+            <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-primary-50 px-2.5 py-1 text-[11px] font-bold leading-none text-primary-600">
+              AI estimated
+            </span>
+            <span className="min-w-0 flex-1 text-[12px] leading-relaxed text-slate-400">
+              {aiEstimateText}
+            </span>
+          </div>
+
+          <section className="rounded-[18px] border border-slate-200 bg-white/80 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
+            <h4 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
+              UK traffic light
+            </h4>
+            {trafficLightContent}
+          </section>
+
+          <section className="rounded-[18px] border border-slate-200 bg-white/80 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
+            <h4 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
+              Nutri-Score
+            </h4>
+            {nutriScoreContent}
+          </section>
+
+          {nutritionMetaBlock}
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -394,26 +569,7 @@ export default function NutritionCard({ ingredients, servings, recipeName, embed
           <span className="text-[12px] font-medium text-slate-400">{cardModeLabel}</span>
         </div>
 
-        <div className="mb-5 grid w-full grid-cols-3 gap-[3px] rounded-[12px] bg-slate-100 p-1">
-          {[
-            { key: "serving", label: "Serving" },
-            { key: "per100g", label: "Per 100g" },
-            { key: "table", label: "Table" },
-          ].map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setMode(item.key as ViewMode)}
-              className={`min-w-0 whitespace-nowrap rounded-[10px] px-2 py-2 text-center text-sm leading-none transition ${
-                mode === item.key
-                  ? "bg-white font-bold text-primary-600 shadow-[0_1px_4px_rgba(15,23,42,0.10)]"
-                  : "bg-transparent font-medium text-slate-500 hover:text-primary-600"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        {modeToggle}
 
         {showTableMode ? (
           <HomeCookingEstimateTable
@@ -479,7 +635,7 @@ export default function NutritionCard({ ingredients, servings, recipeName, embed
         </div>
       </section>
 
-      <section className={embedded ? 'overflow-hidden' : 'overflow-hidden rounded-[26px] border border-white/75 bg-white/90 shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm'}>
+      <section className="overflow-hidden rounded-[26px] border border-white/75 bg-white/90 shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm">
         <button
           type="button"
           onClick={() => setDetailsOpen((value) => !value)}
@@ -504,62 +660,15 @@ export default function NutritionCard({ ingredients, servings, recipeName, embed
             <div className="space-y-5 leading-relaxed">
               <section>
                 <h4 className="mb-3 text-[15px] font-extrabold text-slate-950">Traffic light guide</h4>
-                <NutrientTrafficStrip
-                  per100g={nutrition.per100g}
-                  perServing={mode === "per100g" ? nutrition.per100g : adjustedPerServing}
-                  saltMissing={saltMissing}
-                  servingSizeG={mode === "per100g" ? 100 : adjustedServingSizeG}
-                />
+                {trafficLightContent}
               </section>
 
               <section>
                 <h4 className="mb-3 text-[15px] font-extrabold text-slate-950">Nutri-Score</h4>
-                {hasNutriScore ? (
-                  <NutriScoreVisual letter={nutrition.nutriScore.letter} />
-                ) : (
-                  <div className="rounded-[18px] border border-[#eef2f7] bg-slate-50 px-5 py-[22px]">
-                    <p className="mb-[18px] text-[11px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
-                      Nutri-Score · estimated
-                    </p>
-                    <p className="text-sm font-bold text-slate-900">Nutri-Score unavailable</p>
-                    <p className="mt-1 text-[12px] text-slate-500">
-                      A grade could not be estimated from the current recipe data.
-                    </p>
-                  </div>
-                )}
+                {nutriScoreContent}
               </section>
 
-              {((excludedNutritionItems.length > 0) || detailItems.length > 0 || healthNotes.length > 0) && (
-                <div className="rounded-[14px] bg-slate-50 px-4 py-3 text-[12px] leading-[1.55] text-slate-400">
-                  <p className="font-semibold text-slate-500">
-                    {nutrition.matchedCount} of {nutritionDisplayTotal} main ingredients calculated.
-                  </p>
-                  {excludedNutritionItems.length > 0 && (
-                    <ul className="mt-2 space-y-1">
-                      {excludedNutritionItems.map((item) => (
-                        <li key={`${item.name}-${item.reason}`}>
-                          <span className="font-medium text-slate-600">{item.name}</span>
-                          <span> — {item.reason}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {detailItems.length > 0 && (
-                    <ul className="mt-2 space-y-1">
-                      {detailItems.map((note, idx) => (
-                        <li key={`detail-${idx}`}>• {note}</li>
-                      ))}
-                    </ul>
-                  )}
-                  {healthNotes.length > 0 && (
-                    <ul className="mt-2 space-y-1">
-                      {healthNotes.map((note, idx) => (
-                        <li key={`health-${idx}`}>• {note}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
+              {nutritionMetaBlock}
             </div>
           </div>
         )}
