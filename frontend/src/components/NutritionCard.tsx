@@ -541,6 +541,8 @@ export default function NutritionCard({ ingredients, servings, recipeName, embed
             </span>
           </div>
 
+          {nutritionMetaBlock}
+
           <section className="rounded-[18px] border border-slate-200 bg-white/80 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
             <h4 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
               UK traffic light
@@ -554,8 +556,6 @@ export default function NutritionCard({ ingredients, servings, recipeName, embed
             </h4>
             {nutriScoreContent}
           </section>
-
-          {nutritionMetaBlock}
         </section>
       </div>
     );
