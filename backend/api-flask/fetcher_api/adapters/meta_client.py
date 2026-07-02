@@ -70,7 +70,14 @@ def _compact_requested_formats(requested_formats: Any) -> list[dict]:
     return compact
 
 
-def _log_ytdlp_format_summary(info: dict, *, process_id: str, output_path: str) -> None:
+def _log_ytdlp_format_summary(
+    info: dict,
+    *,
+    process_id: str,
+    output_path: str,
+    attempt: str | None = None,
+    selected: bool | None = None,
+) -> None:
     if not isinstance(info, dict):
         return
 
@@ -85,6 +92,10 @@ def _log_ytdlp_format_summary(info: dict, *, process_id: str, output_path: str) 
         "filesize_approx": info.get("filesize_approx"),
         "requested_formats": _compact_requested_formats(info.get("requested_formats")),
     }
+    if attempt is not None:
+        summary["attempt"] = attempt
+    if selected is not None:
+        summary["selected"] = selected
     logger.info("instagram_ytdlp_format_summary %s", json.dumps(summary, ensure_ascii=True, sort_keys=True))
 
 
@@ -163,10 +174,40 @@ def _probe_media_file(path: str) -> dict:
     return summary
 
 
-def _log_media_probe_summary(path: str, *, process_id: str) -> None:
+def _log_media_probe_summary(
+    path: str,
+    *,
+    process_id: str,
+    attempt: str | None = None,
+    selected: bool | None = None,
+) -> None:
     summary = _probe_media_file(path)
     summary["process_id"] = process_id or None
+    if attempt is not None:
+        summary["attempt"] = attempt
+    if selected is not None:
+        summary["selected"] = selected
     logger.info("instagram_media_probe_summary %s", json.dumps(summary, ensure_ascii=True, sort_keys=True))
+
+
+def _resolve_downloaded_media_path(base_output_path: str) -> str:
+    if os.path.exists(base_output_path):
+        return base_output_path
+
+    for ext in ["mp4", "webm", "mkv"]:
+        candidate = f"{base_output_path}.{ext}"
+        if os.path.exists(candidate):
+            return candidate
+    return base_output_path
+
+
+def _cleanup_downloaded_media_path(path: str) -> None:
+    if not path or not os.path.exists(path):
+        return
+    try:
+        os.unlink(path)
+    except OSError:
+        logger.debug("instagram_download_cleanup_failed path=%s", path)
 
 
 class ProfileEnrichmentRateLimited(Exception):
@@ -671,50 +712,151 @@ class MetaClient:
         try:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             process_id = _derive_process_id_from_path(output_path)
+            http_headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                    "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                    "Version/17.0 Mobile/15E148 Safari/604.1"
+                ),
+                "Referer": "https://www.instagram.com/",
+            }
+            attempt_specs = [
+                {
+                    "name": "primary_mp4_av",
+                    "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                },
+                {
+                    "name": "fallback_bestvideo_bestaudio",
+                    "format": "bestvideo+bestaudio/best",
+                },
+                {
+                    "name": "fallback_bvstar_ba",
+                    "format": "bv*+ba/b",
+                },
+            ]
 
-            ydl_opts = {
-                "outtmpl": output_path,
-                "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            cookies_path = self._write_cookies("IG_COOKIES_CONTENT", "ig_cookies.txt")
+            base_ydl_opts = {
                 "merge_output_format": "mp4",
                 "quiet": True,
                 "no_warnings": True,
-                "http_headers": {
-                    "User-Agent": (
-                        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-                        "AppleWebKit/605.1.15 (KHTML, like Gecko) "
-                        "Version/17.0 Mobile/15E148 Safari/604.1"
-                    ),
-                    "Referer": "https://www.instagram.com/",
-                },
+                "http_headers": http_headers,
             }
-
-            cookies_path = self._write_cookies("IG_COOKIES_CONTENT", "ig_cookies.txt")
             if cookies_path:
-                ydl_opts["cookiefile"] = cookies_path
+                base_ydl_opts["cookiefile"] = cookies_path
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
+            selected_info = None
+            actual_path = None
+            thumb_url = ""
+            for index, attempt in enumerate(attempt_specs):
+                attempt_path = output_path if index == 0 else f"{output_path}.attempt{index + 1}"
+                _cleanup_downloaded_media_path(attempt_path)
+                _cleanup_downloaded_media_path(_resolve_downloaded_media_path(attempt_path))
 
-            actual_path = output_path
-            if not os.path.exists(actual_path):
-                for ext in ["mp4", "webm", "mkv"]:
-                    candidate = f"{output_path}.{ext}"
-                    if os.path.exists(candidate):
-                        actual_path = candidate
-                        break
+                ydl_opts = dict(base_ydl_opts)
+                ydl_opts.update(
+                    {
+                        "outtmpl": attempt_path,
+                        "format": attempt["format"],
+                    }
+                )
 
-            if not os.path.exists(actual_path):
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+
+                downloaded_path = _resolve_downloaded_media_path(attempt_path)
+                if not os.path.exists(downloaded_path):
+                    raise ValueError(f"yt-dlp finished but file missing at {attempt_path}")
+
+                probe_summary = _probe_media_file(downloaded_path)
+
+                should_select = (
+                    probe_summary.get("audio_streams", 0) > 0
+                    and probe_summary.get("video_streams", 0) > 0
+                )
+                logger.info(
+                    "instagram_download_attempt %s",
+                    json.dumps(
+                        {
+                            "process_id": process_id or None,
+                            "attempt": attempt["name"],
+                            "format_selector": attempt["format"],
+                            "path": downloaded_path,
+                            "selected": should_select,
+                        },
+                        ensure_ascii=True,
+                        sort_keys=True,
+                    ),
+                )
+                _log_ytdlp_format_summary(
+                    info,
+                    process_id=process_id,
+                    output_path=downloaded_path,
+                    attempt=attempt["name"],
+                    selected=should_select,
+                )
+                _log_media_probe_summary(
+                    downloaded_path,
+                    process_id=process_id,
+                    attempt=attempt["name"],
+                    selected=should_select,
+                )
+
+                if should_select:
+                    selected_info = info
+                    actual_path = downloaded_path
+                    thumb_url = (
+                        info.get("thumbnail") or
+                        ((info.get("thumbnails") or [{}])[-1].get("url", ""))
+                    )
+                    if actual_path != output_path:
+                        if os.path.exists(output_path):
+                            _cleanup_downloaded_media_path(output_path)
+                        os.replace(actual_path, output_path)
+                        actual_path = output_path
+                    break
+
+                is_video_only = (
+                    probe_summary.get("ffprobe_error") is None
+                    and probe_summary.get("video_streams", 0) > 0
+                    and probe_summary.get("audio_streams", 0) == 0
+                )
+                has_next_attempt = index < len(attempt_specs) - 1
+                if is_video_only and has_next_attempt:
+                    selected_info = info
+                    actual_path = downloaded_path
+                    thumb_url = (
+                        info.get("thumbnail") or
+                        ((info.get("thumbnails") or [{}])[-1].get("url", ""))
+                    )
+                    _cleanup_downloaded_media_path(downloaded_path)
+                    actual_path = None
+                    continue
+
+                if probe_summary.get("ffprobe_error") is not None or probe_summary.get("video_streams", 0) <= 0:
+                    selected_info = info
+                    actual_path = downloaded_path
+                    thumb_url = (
+                        info.get("thumbnail") or
+                        ((info.get("thumbnails") or [{}])[-1].get("url", ""))
+                    )
+                    break
+
+                selected_info = info
+                actual_path = downloaded_path
+                thumb_url = (
+                    info.get("thumbnail") or
+                    ((info.get("thumbnails") or [{}])[-1].get("url", ""))
+                )
+                break
+
+            if not actual_path or not os.path.exists(actual_path):
                 raise ValueError(f"yt-dlp finished but file missing at {output_path}")
 
-            _log_ytdlp_format_summary(info, process_id=process_id, output_path=actual_path)
-            _log_media_probe_summary(actual_path, process_id=process_id)
+            info = selected_info or {}
             logger.info("✅ Instagram video downloaded via yt-dlp: %s", actual_path)
 
             thumbnail_path = None
-            thumb_url = (
-                info.get("thumbnail") or
-                ((info.get("thumbnails") or [{}])[-1].get("url", ""))
-            )
             if thumb_url:
                 thumb_out = os.path.join(os.path.dirname(output_path), "thumbnail.jpg")
                 try:
