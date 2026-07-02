@@ -162,6 +162,7 @@ export default function NutritionCard({ ingredients, servings, recipeName, embed
   const [mode, setMode] = useState<ViewMode>("serving");
   const [portionScale, setPortionScale] = useState(1);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
 
   useEffect(() => {
     markPerfStep("NutritionCard first rendered");
@@ -447,7 +448,7 @@ export default function NutritionCard({ ingredients, servings, recipeName, embed
     />
   );
   const nutriScoreContent = hasNutriScore ? (
-    <NutriScoreVisual letter={nutrition.nutriScore.letter} />
+    <NutriScoreVisual letter={nutrition.nutriScore.letter} grouped={embedded} />
   ) : (
     <div className="rounded-[18px] border border-[#eef2f7] bg-slate-50 px-5 py-[22px]">
       <p className="mb-[18px] text-[11px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
@@ -471,8 +472,8 @@ export default function NutritionCard({ ingredients, servings, recipeName, embed
 
           {modeToggle}
 
-          {showTableMode ? (
-            <div className="rounded-[18px] border border-slate-200 bg-white/80 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
+          <div className="rounded-[18px] border border-slate-200 bg-white/80 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
+            {showTableMode ? (
               <HomeCookingEstimateTable
                 servingValues={adjustedPerServing}
                 servingsCount={nutrition.effectiveServings}
@@ -480,82 +481,90 @@ export default function NutritionCard({ ingredients, servings, recipeName, embed
                 totalWeightG={nutrition.totalWeightG}
                 saltMissing={saltMissing}
               />
-            </div>
-          ) : (
-            <div className="rounded-[18px] border border-slate-200 bg-white/80 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
-              <div className="mb-4 text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
-                Macro breakdown
-              </div>
-              <div className="rounded-[16px] bg-slate-50 px-2 pt-[22px] pb-[18px]">
-                <MacroRingGrid values={activeMacroValues} />
-              </div>
-            </div>
-          )}
-
-          <div className="rounded-[13px] border border-slate-200 bg-white/80 px-4 py-[13px]">
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-[13.5px] font-bold text-slate-700">Adjust serving</p>
-                <p className="mt-1 text-[12px] text-slate-400">
-                  {nutrition.matchedCount} of {nutritionDisplayTotal} ingredients calculated
-                </p>
-              </div>
-
-              {adjustedServingSizeG && (
-                <div className="flex shrink-0 items-center overflow-hidden rounded-[11px] border border-slate-200 bg-white">
-                  <button
-                    type="button"
-                    onClick={() => handlePortionScale(portionScale - 0.25)}
-                    className="flex h-9 w-[34px] items-center justify-center bg-primary-50 text-lg font-bold text-slate-500 transition-colors hover:bg-primary-100"
-                  >
-                    −
-                  </button>
-                  <span className="flex min-w-[72px] items-center justify-center px-3 text-center text-[14px] font-bold tabular-nums text-slate-700">
-                    {Math.round(portionScale * 100)}%
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handlePortionScale(portionScale + 0.25)}
-                    className="flex h-9 w-[34px] items-center justify-center bg-primary-50 text-lg font-bold text-slate-500 transition-colors hover:bg-primary-100"
-                  >
-                    +
-                  </button>
+            ) : (
+              <>
+                <div className="mb-4 text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
+                  Macro breakdown
                 </div>
+                <MacroRingGrid values={activeMacroValues} />
+              </>
+            )}
+
+            <div className="mt-4 border-t border-slate-200/70 pt-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[13.5px] font-bold text-slate-700">Adjust serving</p>
+                  <p className="mt-1 text-[12px] text-slate-400">
+                    {nutrition.matchedCount} of {nutritionDisplayTotal} ingredients calculated
+                  </p>
+                </div>
+
+                {adjustedServingSizeG && (
+                  <div className="flex shrink-0 items-center overflow-hidden rounded-[11px] border border-slate-200 bg-white">
+                    <button
+                      type="button"
+                      onClick={() => handlePortionScale(portionScale - 0.25)}
+                      className="flex h-9 w-[34px] items-center justify-center bg-primary-50 text-lg font-bold text-slate-500 transition-colors hover:bg-primary-100"
+                    >
+                      −
+                    </button>
+                    <span className="flex min-w-[72px] items-center justify-center px-3 text-center text-[14px] font-bold tabular-nums text-slate-700">
+                      {Math.round(portionScale * 100)}%
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handlePortionScale(portionScale + 0.25)}
+                      className="flex h-9 w-[34px] items-center justify-center bg-primary-50 text-lg font-bold text-slate-500 transition-colors hover:bg-primary-100"
+                    >
+                      +
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {portionValue && (
+                <p className="mt-2 text-[12px] text-slate-400">
+                  <span className="font-medium text-slate-500">{portionValue}</span>
+                  <span className="ml-1">{portionHelper}</span>
+                </p>
               )}
             </div>
 
-            {portionValue && (
-              <p className="mt-2 text-[12px] text-slate-400">
-                <span className="font-medium text-slate-500">{portionValue}</span>
-                <span className="ml-1">{portionHelper}</span>
-              </p>
-            )}
+            <div className="mt-4 border-t border-slate-200/70 pt-4">
+              <button
+                type="button"
+                onClick={() => setMobileDetailsOpen((value) => !value)}
+                className="flex w-full items-center gap-2 py-1 text-left"
+                aria-expanded={mobileDetailsOpen}
+              >
+                <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-primary-50 px-2.5 py-1 text-[11px] font-bold leading-none text-primary-600">
+                  AI estimated
+                </span>
+                <span className="min-w-0 flex-1 text-[12px] leading-relaxed text-slate-400">
+                  {aiEstimateText}
+                </span>
+                <ChevronDown
+                  size={16}
+                  className={`shrink-0 text-slate-400 transition-transform ${mobileDetailsOpen ? "rotate-180" : ""}`}
+                  aria-hidden="true"
+                />
+              </button>
+
+              {mobileDetailsOpen && nutritionMetaBlock && (
+                <div className="pt-3">
+                  {nutritionMetaBlock}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="mt-[13px] flex items-center gap-2 px-0.5">
-            <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-primary-50 px-2.5 py-1 text-[11px] font-bold leading-none text-primary-600">
-              AI estimated
-            </span>
-            <span className="min-w-0 flex-1 text-[12px] leading-relaxed text-slate-400">
-              {aiEstimateText}
-            </span>
-          </div>
-
-          {nutritionMetaBlock}
-
-          <section className="rounded-[18px] border border-slate-200 bg-white/80 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
-            <h4 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
-              UK traffic light
-            </h4>
+          <div className="border-t border-slate-200/70 pt-4">
             {trafficLightContent}
-          </section>
+          </div>
 
-          <section className="rounded-[18px] border border-slate-200 bg-white/80 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.04)]">
-            <h4 className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
-              Nutri-Score
-            </h4>
+          <div className="border-t border-slate-200/70 pt-4">
             {nutriScoreContent}
-          </section>
+          </div>
         </section>
       </div>
     );
