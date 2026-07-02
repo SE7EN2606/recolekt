@@ -1672,16 +1672,9 @@ export const VideoDetail: React.FC = () => {
           loading={cookStatusLoading}
           onMarkCooked={markCooked}
           onReset={resetCookState}
-          primaryAction={(
-            <button
-              type="button"
-              onClick={() => setCookModeOpenSignal((value) => value + 1)}
-              disabled={cookStatusLoading}
-              className="rounded-2xl bg-green-600 px-4 py-2.5 text-[13px] font-bold text-white shadow-sm transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {cookStatusLoading ? 'Loading...' : cookStatus.hasActiveSession ? 'Resume cooking' : 'Start cooking'}
-            </button>
-          )}
+          onStartCooking={() => setCookModeOpenSignal((value) => value + 1)}
+          startCookingLabel="Cook Now"
+          variant="mobile-overview"
         />
       )}
       metaDetailsCard={overviewMetaGrid}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlignLeft, ChefHat, ChevronDown, ShoppingBasket, StickyNote } from 'lucide-react';
+import { AlignLeft, Check, ChefHat, ChevronDown, Play, ShoppingBasket, StickyNote } from 'lucide-react';
 import { OriginalLink } from '../../components/VideoDetailWidgets';
 import { markPerfStep } from '../../lib/perf';
 
@@ -124,14 +124,25 @@ export function RecipeCookStatusCard({
   onMarkCooked,
   onReset,
   primaryAction,
+  onStartCooking,
+  startCookingLabel = 'Cook Now',
+  variant = 'default',
 }: {
   status: LocalCookStatus;
   loading?: boolean;
   onMarkCooked: () => void;
   onReset: () => void;
   primaryAction?: React.ReactNode;
+  onStartCooking?: () => void;
+  startCookingLabel?: string;
+  variant?: 'default' | 'mobile-overview';
 }) {
   const hasCooked = status.cookedCount > 0;
+  const subtitle = status.hasActiveSession
+    ? 'You have a cook session ready to resume.'
+    : hasCooked
+      ? `Last cooked ${status.lastCookedLabel || 'recently'}`
+      : 'Track this when you make it.';
 
   if (loading) {
     return (
@@ -145,6 +156,58 @@ export function RecipeCookStatusCard({
         <div className="mt-3.5 flex gap-2.5">
           <div className="h-10 flex-1 animate-pulse rounded-xl bg-green-300/50" />
           <div className="h-10 w-16 animate-pulse rounded-xl bg-white/70" />
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === 'mobile-overview') {
+    return (
+      <div className="rounded-[24px] border border-[#D6EFE4] bg-gradient-to-br from-[#E9F8F0] to-[#E2F3F8] p-[18px] shadow-[0_4px_18px_rgba(15,23,42,0.06)]">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-[7px]">
+            <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-green-600" />
+            <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-green-700">Cook status</span>
+          </div>
+          <button
+            type="button"
+            onClick={onMarkCooked}
+            aria-pressed={hasCooked}
+            aria-label={hasCooked ? 'Mark cooked again' : 'Mark cooked'}
+            className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full border transition-colors ${
+              hasCooked
+                ? 'border-green-600 bg-green-600 text-white'
+                : 'border-[#B7DBC6] bg-white/80 text-green-700 hover:bg-green-50'
+            }`}
+          >
+            <Check size={15} aria-hidden="true" strokeWidth={3} />
+          </button>
+        </div>
+
+        <div className="text-[22px] font-extrabold leading-tight tracking-[-0.01em] text-gray-950">
+          {hasCooked ? `Cooked ${status.cookedCount}×` : 'Not cooked yet'}
+        </div>
+        <div className="mb-4 mt-1 text-[12.5px] leading-relaxed text-slate-500">
+          {subtitle}
+        </div>
+
+        <div className="flex gap-2.5">
+          <button
+            type="button"
+            onClick={onStartCooking}
+            className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-[11px] text-sm font-bold text-white transition-colors hover:bg-green-700"
+          >
+            <Play size={15} aria-hidden="true" className="fill-current" />
+            {startCookingLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onReset}
+            disabled={!hasCooked}
+            className="min-h-[44px] rounded-xl border border-[#CFE6DB] bg-white px-[15px] py-[11px] text-[13.5px] font-semibold text-[#5E7A6C] transition-colors hover:bg-[#f0f9f4] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Reset
+          </button>
         </div>
       </div>
     );
