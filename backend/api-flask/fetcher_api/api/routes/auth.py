@@ -66,6 +66,14 @@ def _get_frontend_base() -> str:
     return f"{scheme}://{host}"
 
 
+def _get_backend_base() -> str:
+    for env_var in ("API_BASE_URL", "BACKEND_PUBLIC_URL"):
+        env_url = os.getenv(env_var, "").strip().rstrip("/")
+        if env_url:
+            return env_url
+    return "https://api.recolekt.app"
+
+
 def _extract_first_url(text: str) -> str:
     match = re.search(r'https?://[^\s"\'<>]+', text or "", flags=re.IGNORECASE)
     return match.group(0).rstrip(".,;)") if match else ""
@@ -511,7 +519,7 @@ def whatsapp_webhook():
                             _send_wa_reply(sender_number, "✅ Link received! Analyzing and saving to your library...")
                             
                             # Wake up the scraper!
-                            base_url = request.host_url.rstrip("/")
+                            base_url = _get_backend_base()
                             threading.Thread(
                                 target=_trigger_summarize_job, 
                                 args=(base_url, url, linked_user_id)
@@ -704,7 +712,7 @@ def _handle_incoming_message(sender_id: str, text: str, message: dict):
             _send_ig_reply(sender_id, "✅ Got it! Saving this reel to your Recolekt library...")
             
             # 🔥 NEW: Wake up the scraper pipeline!
-            base_url = request.host_url.rstrip("/")
+            base_url = _get_backend_base()
             threading.Thread(
                 target=_trigger_summarize_job, 
                 args=(base_url, url, linked_user_id)
@@ -726,6 +734,7 @@ def _trigger_summarize_job(base_url: str, reel_url: str, user_id: str):
     # Adjust this path if your endpoint is different!
     target_url = f"{base_url}/api/summarize"
     
+    logger.info("🌐 Resolved summarize URL: %s", target_url)
     logger.info(f"🚀 Webhook triggering background scrape for {reel_url} to {target_url}")
     
     try:
