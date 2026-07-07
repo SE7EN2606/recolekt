@@ -853,6 +853,12 @@ class MetaClient:
             if not actual_path or not os.path.exists(actual_path):
                 raise ValueError(f"yt-dlp finished but file missing at {output_path}")
 
+            if actual_path != output_path:
+                if os.path.exists(output_path):
+                    _cleanup_downloaded_media_path(output_path)
+                os.replace(actual_path, output_path)
+                actual_path = output_path
+
             info = selected_info or {}
             logger.info("✅ Instagram video downloaded via yt-dlp: %s", actual_path)
 

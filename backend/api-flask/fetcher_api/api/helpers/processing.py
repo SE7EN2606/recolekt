@@ -567,6 +567,9 @@ def background_process(
             post_obj = dl_result.get("post")
             caption = caption or meta.get("caption", "")
             author_name = author_name or meta.get("username", "")
+            downloaded_video_path = dl_result.get("video_path")
+            if downloaded_video_path and os.path.exists(downloaded_video_path):
+                video_path = downloaded_video_path
             result["caption"] = caption
             result["author_name"] = author_name
         else:
@@ -575,7 +578,12 @@ def background_process(
             dl_result = {}
 
         duration, duration_seconds = get_video_duration(video_path)
-        is_too_long = duration_seconds > MAX_DURATION_SECONDS
+        is_too_long = (
+            duration_seconds is not None
+            and duration_seconds > MAX_DURATION_SECONDS
+        )
+        if duration_seconds is None:
+            logger.warning("⚠️ Video duration unknown; continuing without max-duration gate path=%s", video_path)
 
         if is_too_long:
             logger.info(f"⏳ Video > 5min ({duration_seconds}s). Smart Bookmark Fallback.")
