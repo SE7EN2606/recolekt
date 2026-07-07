@@ -9,6 +9,7 @@ import time
 import threading
 import re
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 
 from flask import Blueprint, request, jsonify, session, redirect, url_for, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -71,14 +72,52 @@ def _get_frontend_base() -> str:
     return f"{scheme}://{host}"
 
 
+def _get_backend_base() -> str:
+    for env_var in ("API_BASE_URL", "BACKEND_PUBLIC_URL"):
+        env_url = os.getenv(env_var, "").strip().rstrip("/")
+        if env_url:
+            return env_url
+    return "https://api.recolekt.app"
+
+
 def _extract_first_url(text: str) -> str:
     match = re.search(r'https?://[^\s"\'<>]+', text or "", flags=re.IGNORECASE)
     return match.group(0).rstrip(".,;)") if match else ""
 
 
 def get_social_url_key(url: str) -> tuple[str | None, str | None]:
-    result = canonicalize_social_url(url)
-    return result.platform, result.canonical_key
+    raw = (url or "").strip()
+    if not raw:
+        return None, None
+
+    if not re.match(r"^https?://", raw, flags=re.IGNORECASE):
+        raw = "https://" + raw
+
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return None, None
+
+    host = (parsed.netloc or "").lower()
+    host = host[4:] if host.startswith("www.") else host
+    path = parsed.path or ""
+
+    if host in {"instagram.com", "m.instagram.com"}:
+        match = re.search(r"/(reel|reels|p)/([^/?#]+)/?", path, flags=re.IGNORECASE)
+        if not match:
+            return "instagram", None
+
+        kind = match.group(1).lower()
+        shortcode = match.group(2).strip()
+        if not shortcode:
+            return "instagram", None
+        if kind == "reels":
+            kind = "reel"
+        if kind == "p":
+            kind = "post"
+        return "instagram", f"{kind}:{shortcode}"
+
+    return host or None, raw.lower()
 
 
 def find_existing_reel_for_user(user_id: str, url: str):
@@ -557,7 +596,7 @@ def whatsapp_webhook():
                             _send_wa_reply(sender_number, "✅ Link received! Analyzing and saving to your library...")
                             
                             # Wake up the scraper!
-                            base_url = request.host_url.rstrip("/")
+                            base_url = _get_backend_base()
                             threading.Thread(
                                 target=_trigger_summarize_job, 
                                 args=(base_url, url, linked_user_id)
@@ -750,7 +789,7 @@ def _handle_incoming_message(sender_id: str, text: str, message: dict):
             _send_ig_reply(sender_id, "✅ Got it! Saving this reel to your Recolekt library...")
             
             # 🔥 NEW: Wake up the scraper pipeline!
-            base_url = request.host_url.rstrip("/")
+            base_url = _get_backend_base()
             threading.Thread(
                 target=_trigger_summarize_job, 
                 args=(base_url, url, linked_user_id)
@@ -772,6 +811,7 @@ def _trigger_summarize_job(base_url: str, reel_url: str, user_id: str):
     # Adjust this path if your endpoint is different!
     target_url = f"{base_url}/api/summarize"
     
+    logger.info("🌐 Resolved summarize URL: %s", target_url)
     logger.info(f"🚀 Webhook triggering background scrape for {reel_url} to {target_url}")
     
     try:
