@@ -24,6 +24,7 @@ import threading
 import time
 from contextlib import contextmanager
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 import instaloader
 import requests
@@ -70,6 +71,37 @@ def _compact_requested_formats(requested_formats: Any) -> list[dict]:
     return compact
 
 
+def _safe_url_host(url: Any) -> str | None:
+    if not isinstance(url, str) or not url:
+        return None
+    try:
+        return urlparse(url).hostname
+    except ValueError:
+        return None
+
+
+def _compact_available_formats(formats: Any) -> list[dict]:
+    items = formats if isinstance(formats, list) else []
+    compact = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        compact.append(
+            {
+                "format_id": item.get("format_id"),
+                "ext": item.get("ext"),
+                "vcodec": item.get("vcodec"),
+                "acodec": item.get("acodec"),
+                "format_note": item.get("format_note"),
+                "protocol": item.get("protocol"),
+                "url_host": _safe_url_host(item.get("url")),
+                "filesize": item.get("filesize"),
+                "filesize_approx": item.get("filesize_approx"),
+            }
+        )
+    return compact
+
+
 def _log_ytdlp_format_summary(
     info: dict,
     *,
@@ -97,6 +129,32 @@ def _log_ytdlp_format_summary(
     if selected is not None:
         summary["selected"] = selected
     logger.info("instagram_ytdlp_format_summary %s", json.dumps(summary, ensure_ascii=True, sort_keys=True))
+
+
+def _log_ytdlp_available_formats(
+    info: dict,
+    *,
+    process_id: str,
+    diagnostic_reason: str,
+) -> None:
+    if not isinstance(info, dict):
+        return
+
+    formats = _compact_available_formats(info.get("formats"))
+    summary = {
+        "process_id": process_id or None,
+        "diagnostic_reason": diagnostic_reason,
+        "yt_dlp_version": getattr(yt_dlp.version, "__version__", None),
+        "extractor": info.get("extractor"),
+        "format_id": info.get("format_id"),
+        "format_count": len(formats),
+        "any_audio_format": any(item.get("acodec") not in (None, "none") for item in formats),
+        "formats": formats,
+    }
+    logger.info(
+        "instagram_ytdlp_available_formats %s",
+        json.dumps(summary, ensure_ascii=True, sort_keys=True),
+    )
 
 
 def _probe_media_file(path: str) -> dict:
@@ -733,6 +791,10 @@ class MetaClient:
                     "name": "fallback_bvstar_ba",
                     "format": "bv*+ba/b",
                 },
+                {
+                    "name": "fallback_muxed_with_audio",
+                    "format": "best*[vcodec!=none][acodec!=none]/best[acodec!=none][vcodec!=none]",
+                },
             ]
 
             cookies_path = self._write_cookies("IG_COOKIES_CONTENT", "ig_cookies.txt")
@@ -748,6 +810,7 @@ class MetaClient:
             selected_info = None
             actual_path = None
             thumb_url = ""
+            attempt_results = []
             for index, attempt in enumerate(attempt_specs):
                 attempt_path = output_path if index == 0 else f"{output_path}.attempt{index + 1}"
                 _cleanup_downloaded_media_path(attempt_path)
@@ -769,10 +832,23 @@ class MetaClient:
                     raise ValueError(f"yt-dlp finished but file missing at {attempt_path}")
 
                 probe_summary = _probe_media_file(downloaded_path)
+                is_video_only = (
+                    probe_summary.get("ffprobe_error") is None
+                    and probe_summary.get("video_streams", 0) > 0
+                    and probe_summary.get("audio_streams", 0) == 0
+                )
 
                 should_select = (
                     probe_summary.get("audio_streams", 0) > 0
                     and probe_summary.get("video_streams", 0) > 0
+                )
+                attempt_results.append(
+                    {
+                        "attempt": attempt["name"],
+                        "is_video_only": is_video_only,
+                        "selected": should_select,
+                        "ffprobe_error": probe_summary.get("ffprobe_error"),
+                    }
                 )
                 logger.info(
                     "instagram_download_attempt %s",
@@ -816,11 +892,6 @@ class MetaClient:
                         actual_path = output_path
                     break
 
-                is_video_only = (
-                    probe_summary.get("ffprobe_error") is None
-                    and probe_summary.get("video_streams", 0) > 0
-                    and probe_summary.get("audio_streams", 0) == 0
-                )
                 has_next_attempt = index < len(attempt_specs) - 1
                 if is_video_only and has_next_attempt:
                     selected_info = info
@@ -849,6 +920,39 @@ class MetaClient:
                     ((info.get("thumbnails") or [{}])[-1].get("url", ""))
                 )
                 break
+
+            all_attempts_video_only = bool(attempt_results) and all(
+                result.get("is_video_only") and not result.get("selected") for result in attempt_results
+            )
+            if all_attempts_video_only:
+                try:
+                    diag_ydl_opts = dict(base_ydl_opts)
+                    diag_ydl_opts.update(
+                        {
+                            "skip_download": True,
+                        }
+                    )
+                    with yt_dlp.YoutubeDL(diag_ydl_opts) as ydl:
+                        diag_info = ydl.extract_info(url, download=False)
+                    _log_ytdlp_available_formats(
+                        diag_info,
+                        process_id=process_id,
+                        diagnostic_reason="all_attempts_video_only",
+                    )
+                except Exception as diag_exc:
+                    logger.warning(
+                        "instagram_ytdlp_available_formats_probe_failed %s",
+                        json.dumps(
+                            {
+                                "process_id": process_id or None,
+                                "diagnostic_reason": "all_attempts_video_only",
+                                "yt_dlp_version": getattr(yt_dlp.version, "__version__", None),
+                                "error": str(diag_exc),
+                            },
+                            ensure_ascii=True,
+                            sort_keys=True,
+                        ),
+                    )
 
             if not actual_path or not os.path.exists(actual_path):
                 raise ValueError(f"yt-dlp finished but file missing at {output_path}")
