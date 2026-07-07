@@ -3,7 +3,7 @@ Parallel transcription service — Deepgram + Voxtral.
 
 Decision matrix:
   Deepgram=OK    + Voxtral=OK    → send dual-block to AI; store Voxtral as primary (better proper nouns)
-  Deepgram=EMPTY + Voxtral=OK    → return empty  (Deepgram = authoritative "no speech" signal)
+  Deepgram=EMPTY + Voxtral=OK    → use Voxtral
   Deepgram=ERROR + Voxtral=OK    → use Voxtral
   Deepgram=OK    + Voxtral=ERROR → use Deepgram
   Deepgram=ERROR + Voxtral=ERROR → return empty
@@ -35,11 +35,6 @@ DEEPGRAM_STATUS_ERROR = "error"
 VOXTRAL_MODEL = os.getenv("VOXTRAL_MODEL", "voxtral-mini-2507")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
-
-# Deepgram is the authoritative silence detector.
-# When Deepgram returns empty the video has no intelligible speech —
-# Voxtral hallucinated from background music/noise.
-DEEPGRAM_EMPTY_IS_AUTHORITATIVE = True
 
 DEEPGRAM_PAD_START_MS = 500
 
@@ -428,25 +423,7 @@ def _select_transcript(
     When both sources succeed, Voxtral is stored as the primary displayed transcript
     because it is often more accurate for proper nouns.
     Deepgram is still sent to the AI as part of the dual-block via get_prompt_transcript().
-    Deepgram remains the authoritative "no speech" detector — its EMPTY status wins.
     """
-
-    if dg.status == DEEPGRAM_STATUS_EMPTY and DEEPGRAM_EMPTY_IS_AUTHORITATIVE:
-        if vx.is_ok():
-            logger.info(
-                "transcription: 🔇 Deepgram confirmed no speech — suppressing Voxtral (%d chars)",
-                vx.chars,
-            )
-        else:
-            logger.info("transcription: 🔇 Deepgram confirmed no speech — returning empty")
-        return TranscriptionResult(
-            status="empty/music",
-            transcript="",
-            detected_language=None,
-            transcription_source="empty",
-            deepgram=dg,
-            voxtral=vx,
-        )
 
     if dg.status == DEEPGRAM_STATUS_ERROR:
         if vx.is_ok():
@@ -495,7 +472,13 @@ def _select_transcript(
         )
 
     if vx.is_ok():
-        logger.info("transcription: 🎯 Using Voxtral only (Deepgram empty, non-authoritative mode)")
+        if dg.status == DEEPGRAM_STATUS_EMPTY:
+            logger.info(
+                "transcription: 🎯 Deepgram empty but preserving Voxtral transcript (%d chars)",
+                vx.chars,
+            )
+        else:
+            logger.info("transcription: 🎯 Using Voxtral only (Deepgram unavailable)")
         return TranscriptionResult(
             status="ok",
             transcript=vx.transcript,
