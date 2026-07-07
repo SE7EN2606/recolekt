@@ -791,10 +791,6 @@ class MetaClient:
                     "name": "fallback_bvstar_ba",
                     "format": "bv*+ba/b",
                 },
-                {
-                    "name": "fallback_muxed_with_audio",
-                    "format": "best*[vcodec!=none][acodec!=none]/best[acodec!=none][vcodec!=none]",
-                },
             ]
 
             cookies_path = self._write_cookies("IG_COOKIES_CONTENT", "ig_cookies.txt")
