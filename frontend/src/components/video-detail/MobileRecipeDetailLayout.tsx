@@ -41,7 +41,7 @@ export function MobileRecipeDetailLayout<TTabKey extends string>({
       )}
 
       <section className="mb-5 overflow-hidden rounded-[22px] border border-white/75 bg-white/90 shadow-[0_4px_18px_rgba(15,23,42,0.06)] supports-[backdrop-filter]:bg-white/70">
-        <div className="pt-4">
+        <div className="border-b border-slate-200/80 bg-slate-50/70 px-4 py-4">
           <MobileRecipeTabBar
             tabs={tabs}
             activeTab={activeTab}
@@ -51,7 +51,7 @@ export function MobileRecipeDetailLayout<TTabKey extends string>({
         </div>
 
         {showingOverview ? (
-          <div className="py-4">
+          <div className="px-4 py-4">
             {overviewContent}
           </div>
         ) : null}

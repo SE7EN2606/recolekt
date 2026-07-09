@@ -41,3 +41,7 @@ __pycache__/
 
 # Graphify generated knowledge graph
 graphify-out/
+
+backend/recolekt-storage-admin.json
+**/*service-account*.json
+**/*storage-admin*.json

@@ -298,7 +298,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
   const sectionClass = flatSections
     ? 'py-4 sm:px-5 sm:py-5'
     : sectionCardClass();
-  const flatSectionCardClass = 'rounded-[20px] border border-white/75 bg-white/90 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]';
+  const flatSectionCardClass = 'overflow-hidden rounded-[20px] border border-white/75 bg-white/90 px-4 py-4 shadow-[0_4px_18px_rgba(15,23,42,0.06)]';
 
   return (
     <>
@@ -430,7 +430,7 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
             <section className={sectionClass}>
               <div className={flatSections ? flatSectionCardClass : ''}>
                 {ingredientsHeaderContent && (
-                  <div className={`mb-4 ${flatSections ? '' : 'border-b border-slate-100 pb-4'}`}>
+                  <div className={`mb-4 ${flatSections ? '-mx-4 -mt-4 border-b border-slate-200/80 bg-slate-50/85 px-4 py-3.5' : 'border-b border-slate-100 pb-4'}`}>
                     {ingredientsHeaderContent}
                   </div>
                 )}
@@ -570,16 +570,12 @@ export const RecipeDetailsCard: React.FC<RecipeDetailsCardProps> = ({
 
           {hasSteps && showStepsSection && (
             <section className={sectionClass}>
-              {flatSections && stepsHeaderContent ? (
-                <div className={`mb-4 ${flatSectionCardClass}`}>
-                  {stepsHeaderContent}
-                </div>
-              ) : stepsHeaderContent ? (
-                <div className="mb-4 border-b border-slate-100 pb-4">
-                  {stepsHeaderContent}
-                </div>
-              ) : null}
               <div className={flatSections ? flatSectionCardClass : ''}>
+                {stepsHeaderContent ? (
+                  <div className={`mb-4 ${flatSections ? '-mx-4 -mt-4 border-b border-slate-200/80 bg-slate-50/85 px-4 py-3.5' : 'border-b border-slate-100 pb-4'}`}>
+                    {stepsHeaderContent}
+                  </div>
+                ) : null}
                 <div className="mb-4">
                   <div className="flex items-center gap-2.5">
                     <h4 className="text-[19px] font-bold tracking-tight text-gray-950">Directions</h4>

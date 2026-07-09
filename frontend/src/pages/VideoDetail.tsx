@@ -1576,7 +1576,7 @@ export const VideoDetail: React.FC = () => {
       {shoppingSaving ? 'Updating shopping plan...' : inShoppingList ? 'In plan' : 'Add to shopping list'}
     </button>
   );
-  const stepsHeaderContent = (
+  const mobileTimingStripContent = (
     <div className="grid min-w-0 grid-cols-3">
       {primaryRecipeStatItems.map((item, index) => (
         <div key={`steps-stat-${item.label}`} className="relative flex min-w-0 flex-col items-center gap-[5px] px-2 text-center">
@@ -1587,7 +1587,7 @@ export const VideoDetail: React.FC = () => {
             {statIconByLabel[item.label]}
           </div>
           <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">{item.label}</div>
-          <div className="truncate text-[16px] font-extrabold tabular-nums text-slate-950" title={item.value}>{item.value}</div>
+          <div className="truncate text-[15px] font-bold tabular-nums text-slate-950" title={item.value}>{item.value}</div>
         </div>
       ))}
     </div>
@@ -2146,11 +2146,11 @@ export const VideoDetail: React.FC = () => {
                 askInitiallyCollapsed: false,
                 askVisible: mobileRecipeTab === 'ingredients' || mobileRecipeTab === 'steps',
                 flatSections: true,
-                ingredientsHeaderContent: stepsHeaderContent,
+                ingredientsHeaderContent: mobileTimingStripContent,
                 ingredientsActionContent: ingredientsActionContent,
                 ingredientsServingContent: ingredientsServingContent,
                 ingredientsFooterContent: ingredientsFooterContent,
-                stepsHeaderContent: stepsHeaderContent,
+                stepsHeaderContent: mobileTimingStripContent,
               }}
             />
           )}
