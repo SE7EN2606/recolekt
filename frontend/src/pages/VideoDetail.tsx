@@ -33,6 +33,9 @@ import { CustomMessageSquareMoreIcon, IOSShareIcon, PlatformIconAuthor } from '.
 import RecipeAiSummaryCard from '../components/video-detail/RecipeAiSummaryCard';
 import MobileRecipeDetailLayout from '../components/video-detail/MobileRecipeDetailLayout';
 import MobileRecipeOverviewTab from '../components/video-detail/MobileRecipeOverviewTab';
+import ReelErrorState from '../components/video-detail/ReelErrorState';
+import ReelPendingState from '../components/video-detail/ReelPendingState';
+import RecipeMetaPanel from '../components/video-detail/RecipeMetaPanel';
 import {
   buildRecipeForCard,
   hasUsableRecipeContent,
@@ -94,59 +97,6 @@ function useDesktopRecipeDetailLayout() {
   }, []);
 
   return isDesktop;
-}
-
-function ReelErrorState({
-  message,
-  onBack,
-}: {
-  message: string;
-  onBack: () => void;
-}) {
-  return (
-    <div className="animate-fade-in relative z-0 flex min-h-[55vh] items-center justify-center px-4 pb-20 md:pb-6">
-      <div className="w-full max-w-md rounded-3xl border border-gray-100 bg-white/85 p-6 text-center shadow-sm">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-700">
-          <AlertCircle size={22} aria-hidden="true" />
-        </div>
-        <p className="text-base font-bold leading-relaxed text-gray-900">
-          {message}
-        </p>
-        <button
-          type="button"
-          onClick={onBack}
-          className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-primary-600 px-5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
-        >
-          Go back to Gallery
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ReelPendingState() {
-  return (
-    <section className="animate-fade-in mb-5 mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] overflow-hidden rounded-[26px] border border-white/75 bg-white/90 shadow-[0_8px_28px_rgba(15,23,42,0.08)] backdrop-blur-sm md:mt-0">
-      <div className="px-4 py-5 md:px-6 md:py-6">
-        <div className="flex items-start gap-4">
-          <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-600">
-            <Loader2 size={20} aria-hidden="true" className="animate-spin" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] font-black uppercase tracking-[0.12em] text-primary-600/70">
-              Saved Reel
-            </p>
-            <h2 className="mt-1 text-[22px] font-bold tracking-tight text-slate-950">
-              Loading saved reel…
-            </h2>
-            <p className="mt-2 max-w-[48ch] text-sm font-medium leading-6 text-slate-500">
-              Pulling the final recipe detail before we render the page.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
 }
 
 const extractLocationPlaces = (location: any): any[] => {
@@ -263,47 +213,6 @@ const MOBILE_RECIPE_TAB_INDEX: Record<MobileRecipeTab, number> = {
   steps: 2,
   nutrition: 3,
 };
-
-function RecipeMetaPanel({ chips }: { chips: RecipeMetaChip[] }) {
-  const readChip = (...labels: string[]) =>
-    chips.find((chip) =>
-      labels.includes(String(chip.label || '').trim().toLowerCase())
-    )?.value || '';
-
-  const cuisine = readChip('cuisine');
-  const style = readChip('style');
-  const method = readChip('method');
-
-  const cuisineStyle = [cuisine, style].filter(Boolean).join(' · ');
-
-  if (!cuisineStyle && !method) return null;
-
-  return (
-    <div className="flex gap-3">
-      {cuisineStyle && (
-        <div className="flex-1 bg-orange-50 border border-orange-100 rounded-xl p-4 flex flex-col items-center justify-center gap-1">
-          <span className="text-[10px] font-semibold text-orange-700 text-center">
-            Cuisine
-          </span>
-          <div className="text-sm font-bold text-orange-950 leading-snug text-center">
-            {cuisineStyle}
-          </div>
-        </div>
-      )}
-
-      {method && (
-        <div className="flex-1 bg-rose-50 border border-rose-100 rounded-xl p-4 flex flex-col items-center justify-center gap-1">
-          <span className="text-[10px] font-semibold text-rose-700 text-center">
-            Method
-          </span>
-          <div className="text-sm font-bold text-rose-950 leading-snug text-center">
-            {method}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export const VideoDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
