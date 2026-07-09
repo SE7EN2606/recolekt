@@ -13,12 +13,8 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { ReportModal } from '../components/ReportModal';
 import { EditableTitle, EditableBullets } from '../components/VideoDetailComponents';
 import RecipeDetailsCard, { type RecipeTabKey } from "../components/RecipeDetailsCard";
-import { WorkoutCard } from '../components/WorkoutCard';
-import { ToolsListCard } from '../components/ToolsListCard';
-import { LocationCard } from '../components/LocationCard';
 import { MetadataPanel } from '../components/MetadataPanel';
 import { Skeleton, Accordion, OriginalLink } from '../components/VideoDetailWidgets';
-import { ContentTypeBadge, deriveToolsSubtype } from '../components/ContentTypeBadge';
 import { useTranslation } from 'react-i18next';
 import { apiGet } from '../lib/apiClient';
 import {
@@ -57,9 +53,6 @@ import { calculateNutrition } from '../utils/nutritionCalc';
 import {
   mergeVideoPayload,
   buildViewModel,
-  getToolsCategoriesForLanguage,
-  isBadgeToolsSubtype,
-  isToolsContentType,
   parseSummaryObject,
   selectLocalizedRecipe,
 } from './VideoDetailViewModel';
@@ -1166,19 +1159,10 @@ export const VideoDetail: React.FC = () => {
     );
   }
 
-  const toolsCategories = getToolsCategoriesForLanguage(viewModel.toolsList, showOriginal);
-  const hasToolsList =
-    Array.isArray(toolsCategories) &&
-    toolsCategories.some((cat: any) => Array.isArray(cat?.items) && cat.items.length > 0);
   const hasBullets = Array.isArray(viewModel.bullets) && viewModel.bullets.length > 0;
   const englishSummaryContent = getEnglishSummaryContent(video);
   const hasEnglishSummaryContent =
     Boolean(englishSummaryContent.summaryText) || englishSummaryContent.headlines.length > 0;
-  const structuredBadgeSubtype = isBadgeToolsSubtype(viewModel.structuredType)
-    ? viewModel.structuredType
-    : undefined;
-  const derivedSubtype = deriveToolsSubtype(viewModel.toolsList);
-  const safeDerivedSubtype = isBadgeToolsSubtype(derivedSubtype) ? derivedSubtype : 'picks';
   const recipeMetaChips = getRecipeMetaChips(stableRecipeForCard || viewModel.recipe, viewModel);
   const heroRecipeMetaChips = getHeroRecipeMetaChips(recipeMetaChips);
   const recipeCardMetaItems = getRecipeCardMetaItems(stableRecipeForCard || viewModel.recipe);
@@ -1216,11 +1200,6 @@ export const VideoDetail: React.FC = () => {
   // Topic may be empty, but the Topic block itself should still render.
   const metadataTopic = topicCandidates.map(cleanMetadataValue).find(Boolean) || '';
 
-  const toolsSubtype = isToolsContentType(viewModel.contentType)
-    ? structuredBadgeSubtype ?? safeDerivedSubtype
-    : undefined;
-  const showTypeBadge = false; // Recipe-only focus: hide content badge for now.
-
   const normalizedLocations: any[] = extractLocationPlaces(viewModel.location).map(
     (place: any, idx: number) => ({
       ...place,
@@ -1231,11 +1210,6 @@ export const VideoDetail: React.FC = () => {
 
   const hasLocations = normalizedLocations.length > 0;
   const isLocationContent = viewModel.contentType === 'location' || hasLocations;
-  const showToolsListCard =
-    !isLocationContent &&
-    hasToolsList &&
-    (viewModel.isStructuredTools || !!viewModel.structuredType || !hasBullets);
-
   const showFolderBadge = Boolean(folderName && !showRecipeCard);
   const primaryRecipeStatItems = [
     { label: 'Prep', sourceLabel: 'Prep' },
@@ -1849,9 +1823,6 @@ export const VideoDetail: React.FC = () => {
                     {viewModel.duration}
                   </div>
                 )}
-                {showTypeBadge && (
-                  <ContentTypeBadge type={viewModel.contentType as any} toolsSubtype={toolsSubtype} />
-                )}
                 {hasLocations && !isLocationContent && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-teal-50/90 text-teal-700 border-teal-200/80 backdrop-blur-sm">
                     <MapPin size={10} strokeWidth={2.5} aria-hidden="true" />
@@ -2018,11 +1989,7 @@ export const VideoDetail: React.FC = () => {
               </div>
             )}
 
-            {false && showToolsListCard ? (
-              <div className="mt-4 pt-4 border-t border-primary-100/50">
-                <ToolsListCard toolsList={viewModel.toolsList ?? undefined} showOriginal={showOriginal} />
-              </div>
-            ) : hasBullets ? (
+            {hasBullets ? (
               <div className="space-y-3 mt-4 pt-4 border-t border-primary-100/50">
                 {isEditing ? (
                   <EditableBullets
@@ -2176,16 +2143,6 @@ export const VideoDetail: React.FC = () => {
                 )}
               </div>
             </section>
-          )}
-
-          {false && viewModel.workout && (
-            <WorkoutCard workoutData={viewModel.workout} showOriginal={showOriginal} />
-          )}
-
-          {false && isLocationContent && normalizedLocations.length > 0 && (
-            <div className="relative z-0 mb-5">
-              <LocationCard location={normalizedLocations} processId={currentVideoId} />
-            </div>
           )}
 
           {showNonRecipeFallback && viewModel.caption && (
