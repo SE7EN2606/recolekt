@@ -60,9 +60,11 @@ import {
   selectLocalizedRecipe,
 } from './VideoDetailViewModel';
 import {
-  FACEBOOK_ACCESS_ERROR_MESSAGE,
   buildTerminalProcessingVideo,
-  isFacebookAccessError,
+  getApiErrorPresentation,
+  getSafeFailureMessage,
+  getTerminalFailurePresentation,
+  isTerminalProcessingStatus,
 } from './videoDetailTerminalState';
 
 const MoveCollectionModalExt = MoveCollectionModal as React.ComponentType<{
@@ -287,6 +289,7 @@ export const VideoDetail: React.FC = () => {
   const [refreshMessage, setRefreshMessage] = useState('');
   const [refreshError, setRefreshError] = useState('');
   const [detailErrorMessage, setDetailErrorMessage] = useState('');
+  const [detailErrorKind, setDetailErrorKind] = useState('');
   const [detailHydrationSettled, setDetailHydrationSettled] = useState(false);
   const detailHydratedRef = useRef(false);
   const lastStableVideoRef = useRef<any>(null);
@@ -366,6 +369,7 @@ export const VideoDetail: React.FC = () => {
     setRefreshMessage('');
     setRefreshError('');
     setDetailErrorMessage('');
+    setDetailErrorKind('');
     setDetailHydrationSettled(false);
   }, [id, perfEnabled]);
 
@@ -514,10 +518,10 @@ export const VideoDetail: React.FC = () => {
       }
     } catch (err) {
       console.error('Enrichment error', err);
-      if ((err as any)?.status === 404) {
-        setDetailErrorMessage(
-          'This saved reel no longer exists. It may have been deleted or replaced during refresh. Go back to Gallery.',
-        );
+      const presentation = getApiErrorPresentation(err);
+      if (presentation) {
+        setDetailErrorMessage(presentation.message);
+        setDetailErrorKind(presentation.kind);
         setIsRefreshingVideo(false);
         setRefreshMessage('');
         setRefreshError('');
@@ -616,12 +620,16 @@ export const VideoDetail: React.FC = () => {
     setRefreshMessage('');
     refreshAbortRef.current = null;
 
-    if (isFacebookAccessError(terminalVideo)) {
+    const presentation = getTerminalFailurePresentation(terminalVideo);
+    if (presentation) {
       setRefreshError('');
-      setDetailErrorMessage(FACEBOOK_ACCESS_ERROR_MESSAGE);
+      setDetailErrorMessage('');
+      setDetailErrorKind('');
+      setRefreshError(presentation.message);
     } else {
       setDetailErrorMessage('');
-      setRefreshError(terminalVideo.errorMessage || 'Refresh failed.');
+      setDetailErrorKind('');
+      setRefreshError(getSafeFailureMessage(terminalVideo.errorMessage));
     }
 
     return terminalVideo;
@@ -668,7 +676,7 @@ export const VideoDetail: React.FC = () => {
           return;
         }
 
-        if (['error', 'failed', 'failure'].includes(nextStatus)) {
+        if (isTerminalProcessingStatus(nextStatus)) {
           applyTerminalProcessingPayload(detail, merged, id);
           return;
         }
@@ -681,7 +689,8 @@ export const VideoDetail: React.FC = () => {
       } catch (err) {
         if (controller.signal.aborted) return;
         console.error('Processing poll failed', err);
-        setRefreshError(err instanceof Error ? err.message : 'Refresh failed.');
+        const message = getSafeFailureMessage(err);
+        if (message) setRefreshError(message);
         setRefreshMessage('');
         setIsRefreshingVideo(false);
       }
@@ -696,11 +705,9 @@ export const VideoDetail: React.FC = () => {
   }, [id, video?.status, fetchHydratedVideo, applyTerminalProcessingPayload, hydrateVideo]);
 
   useEffect(() => {
-    if (!isFacebookAccessError(video)) return;
+    if (!getTerminalFailurePresentation(video)) return;
     setIsRefreshingVideo(false);
     setRefreshMessage('');
-    setRefreshError('');
-    setDetailErrorMessage(FACEBOOK_ACCESS_ERROR_MESSAGE);
   }, [video]);
 
   useEffect(() => {
@@ -752,6 +759,7 @@ export const VideoDetail: React.FC = () => {
     setRefreshMessage('Recolekt is updating this page. Please wait a moment.');
     setRefreshError('');
     setDetailErrorMessage('');
+    setDetailErrorKind('');
     refreshAbortRef.current?.abort();
     const controller = new AbortController();
     refreshAbortRef.current = controller;
@@ -792,7 +800,7 @@ export const VideoDetail: React.FC = () => {
           return;
         }
 
-        if (['error', 'failed', 'failure'].includes(status)) {
+        if (isTerminalProcessingStatus(status)) {
           applyTerminalProcessingPayload(detail, merged, currentVideoId);
           return;
         }
@@ -803,7 +811,8 @@ export const VideoDetail: React.FC = () => {
       }
     } catch (err) {
       console.error('Refresh video failed', err);
-      setRefreshError(err instanceof Error ? err.message : 'Refresh failed.');
+      const message = getSafeFailureMessage(err);
+      if (message) setRefreshError(message);
       setIsRefreshingVideo(false);
       setRefreshMessage('');
     }
@@ -916,6 +925,7 @@ export const VideoDetail: React.FC = () => {
     recipeContentAvailable ||
     (rawContentType === 'recipe' && stableRecipeForCard)
   );
+  const terminalFailurePresentation = getTerminalFailurePresentation(video);
   const isLikelyRecipeContent = Boolean(
     recipeContentAvailable ||
     stableRecipeForCard ||
@@ -1040,8 +1050,14 @@ export const VideoDetail: React.FC = () => {
   );
 
   const pageErrorMessage =
-    detailErrorMessage ||
-    (isFacebookAccessError(video) ? FACEBOOK_ACCESS_ERROR_MESSAGE : '');
+    (detailErrorKind === 'missing' || !showRecipeCard ? detailErrorMessage : '') ||
+    (!showRecipeCard ? terminalFailurePresentation?.message || '' : '');
+  const terminalBannerMessage =
+    showRecipeCard
+      ? (detailErrorKind !== 'missing' ? detailErrorMessage : '') ||
+        terminalFailurePresentation?.message ||
+        ''
+      : '';
 
   if (pageErrorMessage) {
     return (
@@ -1623,20 +1639,20 @@ export const VideoDetail: React.FC = () => {
 
       <div className="flex w-full flex-col items-start xl:grid xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
         <div className="min-w-0 w-full flex flex-col">
-          {(refreshMessage || refreshError) && (
+          {(refreshMessage || refreshError || terminalBannerMessage) && (
             <div
               className={`mb-4 flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold ${
-                refreshError
+                refreshError || terminalBannerMessage
                   ? 'border-red-100 bg-red-50 text-red-700'
                   : 'border-primary-100 bg-primary-50 text-primary-800'
               }`}
             >
-              {refreshError ? (
+              {refreshError || terminalBannerMessage ? (
                 <AlertCircle size={18} aria-hidden="true" className="shrink-0" />
               ) : (
                 <Loader2 size={18} aria-hidden="true" className="shrink-0 animate-spin" />
               )}
-              <span>{refreshError || refreshMessage}</span>
+              <span>{refreshError || terminalBannerMessage || refreshMessage}</span>
             </div>
           )}
 

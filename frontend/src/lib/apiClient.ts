@@ -9,7 +9,47 @@ type ApiRequestOptions = {
   signal?: AbortSignal;
 };
 
+type ApiErrorOptions = {
+  status: number;
+  code?: string;
+  method: string;
+  path: string;
+  message: string;
+};
+
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  method: string;
+  path: string;
+  isApiError = true;
+
+  constructor({ status, code, method, path, message }: ApiErrorOptions) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.method = method;
+    this.path = path;
+  }
+}
+
 const inflightGetRequests = new Map<string, Promise<any>>();
+
+const sanitizeApiCode = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || !/^[a-zA-Z0-9_.:-]{1,80}$/.test(trimmed)) return undefined;
+  return trimmed;
+};
+
+const safeHttpErrorMessage = (status: number): string => {
+  if (status === 401) return 'Authentication is required.';
+  if (status === 403) return 'You do not have access to this item.';
+  if (status === 404 || status === 410) return 'This item is no longer available.';
+  if (status >= 500) return 'Recolekt could not complete the request. Please try again.';
+  return `Request failed with status ${status}.`;
+};
 
 function apiUrl(path: string) {
   const clean = String(path || '').replace(/^\/+/, '');
@@ -108,7 +148,13 @@ async function apiRequest<T>(
           failed: true,
           startedPerfMs,
         });
-        throw new Error(data?.error || `HTTP ${res.status}`);
+        throw new ApiError({
+          status: res.status,
+          code: sanitizeApiCode(data?.code || data?.error_code || data?.errorCode),
+          method,
+          path,
+          message: safeHttpErrorMessage(res.status),
+        });
       }
 
       recordPerfApiCall({
