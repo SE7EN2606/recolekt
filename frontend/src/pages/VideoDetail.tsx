@@ -82,13 +82,13 @@ const PERF_SESSION_NAME = 'VideoDetail';
 
 function useDesktopRecipeDetailLayout() {
   const [isDesktop, setIsDesktop] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : false
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 1280px)').matches : false
   );
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const mediaQuery = window.matchMedia('(min-width: 768px)');
+    const mediaQuery = window.matchMedia('(min-width: 1280px)');
     const handleChange = () => setIsDesktop(mediaQuery.matches);
 
     handleChange();
@@ -1056,12 +1056,12 @@ export const VideoDetail: React.FC = () => {
   if (!isDetailPresentationReady) {
     return (
       <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
-        <div className="flex w-full flex-col items-start md:grid md:grid-cols-[minmax(0,1fr)_20rem] md:gap-5 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
+        <div className="flex w-full flex-col items-start xl:grid xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
           <div className="min-w-0 w-full flex flex-col">
             <ReelPendingState />
           </div>
           {isDesktopRecipeDetailLayout ? (
-            <aside className="hidden w-full md:block" aria-hidden="true" />
+            <aside className="hidden w-full xl:block" aria-hidden="true" />
           ) : null}
         </div>
       </div>
@@ -1621,7 +1621,7 @@ export const VideoDetail: React.FC = () => {
     <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
       <style>{HASHTAG_STYLE}</style>
 
-      <div className="flex w-full flex-col items-start md:grid md:grid-cols-[minmax(0,1fr)_20rem] md:gap-5 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
+      <div className="flex w-full flex-col items-start xl:grid xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
         <div className="min-w-0 w-full flex flex-col">
           {(refreshMessage || refreshError) && (
             <div
