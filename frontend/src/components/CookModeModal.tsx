@@ -67,6 +67,8 @@ interface CookModeModalProps {
   onAddCookingNote?: () => void;
 }
 
+const COOK_MODE_MODAL_TITLE_ID = 'cook-mode-modal-title';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CULINARY GLOSSARY  (EN + FR)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -402,6 +404,22 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
 
   const [idx, setIdx] = React.useState(initialStepIndex);
   const [phase, setPhase] = React.useState<'prep' | 'cook' | 'done'>('prep');
+  const dialogRef = React.useRef<HTMLDivElement | null>(null);
+  const restoreFocusRef = React.useRef<HTMLElement | null>(null);
+  const originalHtmlOverflowRef = React.useRef('');
+  const originalBodyOverflowRef = React.useRef('');
+  const originalBodyPositionRef = React.useRef('');
+  const originalBodyTopRef = React.useRef('');
+  const originalBodyWidthRef = React.useRef('');
+  const originalBodyPaddingRightRef = React.useRef('');
+  const appRootRef = React.useRef<HTMLElement | null>(null);
+  const originalRootInertRef = React.useRef(false);
+  const originalRootAriaHiddenRef = React.useRef<string | null>(null);
+  const scrollYRef = React.useRef(0);
+  const didLockScrollRef = React.useRef(false);
+  const didHideAppRootRef = React.useRef(false);
+  const didFocusDialogRef = React.useRef(false);
+  const lastProgressSyncRef = React.useRef<number | null>(null);
   const wakeLock = React.useRef<any>(null);
   const started = React.useRef(Date.now());
   const opened = React.useRef(false);
@@ -432,6 +450,174 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   const allIngredientsChecked = ingredients.length > 0 && checkedCount === ingredients.length;
   const stepProgress = steps.length > 0 ? Math.round(((idx + 1) / steps.length) * 100) : 0;
 
+  const restoreFocus = React.useCallback(() => {
+    const target = restoreFocusRef.current;
+    restoreFocusRef.current = null;
+    if (target && document.contains(target)) {
+      target.focus({ preventScroll: true });
+    }
+  }, []);
+
+  const unlockScroll = React.useCallback(() => {
+    if (!didLockScrollRef.current) return;
+    document.documentElement.style.overflow = originalHtmlOverflowRef.current;
+    document.body.style.paddingRight = originalBodyPaddingRightRef.current;
+    document.body.style.overflow = originalBodyOverflowRef.current;
+    document.body.style.position = originalBodyPositionRef.current;
+    document.body.style.top = originalBodyTopRef.current;
+    document.body.style.width = originalBodyWidthRef.current;
+    window.scrollTo(0, scrollYRef.current);
+    didLockScrollRef.current = false;
+  }, []);
+
+  const lockScroll = React.useCallback(() => {
+    if (didLockScrollRef.current) return;
+
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    scrollYRef.current = window.scrollY;
+    originalHtmlOverflowRef.current = document.documentElement.style.overflow;
+    originalBodyPaddingRightRef.current = document.body.style.paddingRight;
+    originalBodyOverflowRef.current = document.body.style.overflow;
+    originalBodyPositionRef.current = document.body.style.position;
+    originalBodyTopRef.current = document.body.style.top;
+    originalBodyWidthRef.current = document.body.style.width;
+    document.documentElement.style.overflow = 'hidden';
+    if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollYRef.current}px`;
+    document.body.style.width = '100%';
+    didLockScrollRef.current = true;
+  }, []);
+
+  const getAppRoot = React.useCallback(() => {
+    const root = document.getElementById('root');
+    if (!root || root === document.body) return null;
+    return root;
+  }, []);
+
+  const hideAppRoot = React.useCallback(() => {
+    if (didHideAppRootRef.current) return;
+
+    const root = getAppRoot();
+    if (!root) return;
+
+    appRootRef.current = root;
+    originalRootInertRef.current = root.inert;
+    originalRootAriaHiddenRef.current = root.getAttribute('aria-hidden');
+    root.inert = true;
+    root.setAttribute('aria-hidden', 'true');
+    didHideAppRootRef.current = true;
+  }, [getAppRoot]);
+
+  const restoreAppRoot = React.useCallback(() => {
+    if (!didHideAppRootRef.current) return;
+
+    const root = appRootRef.current;
+    if (root && document.contains(root)) {
+      root.inert = originalRootInertRef.current;
+      if (originalRootAriaHiddenRef.current === null) {
+        root.removeAttribute('aria-hidden');
+      } else {
+        root.setAttribute('aria-hidden', originalRootAriaHiddenRef.current);
+      }
+    }
+
+    appRootRef.current = null;
+    originalRootInertRef.current = false;
+    originalRootAriaHiddenRef.current = null;
+    didHideAppRootRef.current = false;
+  }, []);
+
+  const restoreModalState = React.useCallback(() => {
+    restoreAppRoot();
+    unlockScroll();
+    restoreFocus();
+    didFocusDialogRef.current = false;
+  }, [restoreAppRoot, restoreFocus, unlockScroll]);
+
+  const close = React.useCallback(() => {
+    try { wakeLock.current?.release?.(); } catch {}
+    wakeLock.current = null;
+    onClose();
+  }, [onClose]);
+
+  React.useLayoutEffect(() => {
+    if (!isOpen) {
+      restoreModalState();
+      return;
+    }
+
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    didFocusDialogRef.current = false;
+    lockScroll();
+    hideAppRoot();
+  }, [hideAppRoot, isOpen, lockScroll, restoreModalState]);
+
+  React.useLayoutEffect(() => () => restoreModalState(), [restoreModalState]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    const getFocusableElements = () =>
+      Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          [
+            'a[href]',
+            'button:not([disabled])',
+            'textarea:not([disabled])',
+            'input:not([disabled])',
+            'select:not([disabled])',
+            '[tabindex]:not([tabindex="-1"])',
+          ].join(','),
+        ),
+      ).filter((element) => !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true');
+
+    if (!didFocusDialogRef.current) {
+      const focusableElements = getFocusableElements();
+      (focusableElements[0] || dialog).focus({ preventScroll: true });
+      didFocusDialogRef.current = true;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+
+      const elements = getFocusableElements();
+      if (elements.length === 0) {
+        event.preventDefault();
+        dialog.focus({ preventScroll: true });
+        return;
+      }
+
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus({ preventScroll: true });
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus({ preventScroll: true });
+      } else if (!dialog.contains(active)) {
+        event.preventDefault();
+        first.focus({ preventScroll: true });
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [close, isOpen]);
+
   React.useEffect(() => {
     if (!isOpen) { opened.current = false; return; }
     if (opened.current) return;
@@ -445,7 +631,14 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   }, [isOpen, initialStepIndex, steps.length]);
 
   React.useEffect(() => {
-    if (isOpen && phase === 'cook') onProgressChange?.(idx);
+    if (!isOpen || phase !== 'cook') {
+      lastProgressSyncRef.current = null;
+      return;
+    }
+
+    if (lastProgressSyncRef.current === idx) return;
+    lastProgressSyncRef.current = idx;
+    onProgressChange?.(idx);
   }, [isOpen, phase, idx, onProgressChange]);
 
   React.useEffect(() => {
@@ -457,16 +650,9 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   const root = typeof document === 'undefined' ? null : document.body;
   if (!root) return null;
 
-  const close = () => {
-    try { wakeLock.current?.release?.(); } catch {}
-    wakeLock.current = null;
-    onClose();
-  };
-
   const startCooking = () => {
     started.current = Date.now();
     setPhase('cook');
-    onProgressChange?.(idx);
   };
 
   const completeCurrentStep = () => {
@@ -491,15 +677,34 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   const elapsed = Math.max(1, Math.round((Date.now() - started.current) / 60000));
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] bg-slate-900 text-white">
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={COOK_MODE_MODAL_TITLE_ID}
+      tabIndex={-1}
+      className="cook-mode-modal fixed inset-0 z-[9999] bg-slate-900 text-white"
+    >
+      <style>
+        {`
+          .cook-mode-modal [role="timer"] button {
+            min-width: 44px;
+            width: 44px;
+            height: 44px;
+          }
+        `}
+      </style>
       <div className="fixed inset-0 flex flex-col overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.18),transparent_34%),#0f172a]">
-        <header className="flex-shrink-0 border-b border-white/10 bg-slate-950/35 px-4 py-3 backdrop-blur md:px-7">
+        <header
+          className="flex-shrink-0 border-b border-white/10 bg-slate-950/35 px-4 pb-3 pt-3 backdrop-blur md:px-7"
+          style={{ paddingTop: 'max(env(safe-area-inset-top), 12px)' }}
+        >
           <div className="mx-auto grid max-w-5xl grid-cols-[1fr_minmax(0,1.4fr)_1fr] items-center gap-3">
             <div className="flex justify-start">
               <button
                 type="button"
                 onClick={close}
-                className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white/10 text-white/80 transition-colors hover:bg-white/15 hover:text-white"
+                className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-white/10 text-white/80 transition-colors hover:bg-white/15 hover:text-white"
                 aria-label="Close Cook Mode"
               >
                 <X size={18} />
@@ -508,7 +713,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
 
             <div className="min-w-0 text-center">
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-300">Cook Mode</p>
-              <h2 className="truncate text-base font-black tracking-tight text-white sm:text-lg">{recipeName}</h2>
+              <h2 id={COOK_MODE_MODAL_TITLE_ID} className="truncate text-base font-black tracking-tight text-white sm:text-lg">{recipeName}</h2>
             </div>
 
             <div className="flex justify-end">
@@ -516,7 +721,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setPhase('prep')}
-                  className="rounded-full border border-white/15 bg-white/10 px-3 py-2 text-xs font-black text-white/85 transition-colors hover:bg-white/15"
+                  className="min-h-11 rounded-full border border-white/15 bg-white/10 px-3 py-2 text-xs font-black text-white/85 transition-colors hover:bg-white/15"
                 >
                   Ingredients
                 </button>
@@ -545,7 +750,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
                     <button
                       type="button"
                       onClick={toggleAllIngredients}
-                      className="inline-flex h-10 shrink-0 items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-3 text-xs font-black text-white/85 transition-colors hover:bg-white/15"
+                      className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-3 text-xs font-black text-white/85 transition-colors hover:bg-white/15"
                     >
                       <CheckCheck size={15} aria-hidden="true" />
                       {allIngredientsChecked ? 'Clear all' : 'Select all'}
@@ -569,7 +774,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
                         type="button"
                         onClick={() => changeServingScale(servingScale - 0.5)}
                         disabled={!onServingScaleChange || servingScale <= 0.5}
-                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label="Decrease servings"
                       >
                         <Minus size={16} />
@@ -581,7 +786,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
                         type="button"
                         onClick={() => changeServingScale(servingScale + 0.5)}
                         disabled={!onServingScaleChange || servingScale >= 6}
-                        className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label="Increase servings"
                       >
                         <Plus size={16} />
@@ -594,14 +799,14 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
                       <button
                         type="button"
                         onClick={() => onToggleMetric(true)}
-                        className={`rounded-xl px-3 py-2 transition-colors ${useMetric ? 'bg-emerald-400 text-emerald-950' : 'text-white/60 hover:text-white'}`}
+                        className={`min-h-11 rounded-xl px-3 py-2 transition-colors ${useMetric ? 'bg-emerald-400 text-emerald-950' : 'text-white/60 hover:text-white'}`}
                       >
                         Metric
                       </button>
                       <button
                         type="button"
                         onClick={() => onToggleMetric(false)}
-                        className={`rounded-xl px-3 py-2 transition-colors ${!useMetric ? 'bg-emerald-400 text-emerald-950' : 'text-white/60 hover:text-white'}`}
+                        className={`min-h-11 rounded-xl px-3 py-2 transition-colors ${!useMetric ? 'bg-emerald-400 text-emerald-950' : 'text-white/60 hover:text-white'}`}
                       >
                         Imperial
                       </button>
@@ -793,7 +998,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
               <button
                 type="button"
                 onClick={close}
-                className="mt-3 text-sm font-bold text-white/60 transition-colors hover:text-white"
+                className="mt-3 min-h-11 px-4 text-sm font-bold text-white/60 transition-colors hover:text-white"
               >
                 Back to recipe
               </button>
@@ -804,7 +1009,10 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
         {phase !== 'done' && <FloatingTimer variant="cookMode" />}
 
         {phase === 'prep' && (
-          <footer className="flex-shrink-0 border-t border-white/10 bg-slate-950/55 px-4 py-4 backdrop-blur md:px-7">
+          <footer
+            className="flex-shrink-0 border-t border-white/10 bg-slate-950/55 px-4 pb-4 pt-4 backdrop-blur md:px-7"
+            style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }}
+          >
             <div className="mx-auto flex w-full max-w-3xl items-center gap-3">
               <button
                 type="button"
@@ -820,7 +1028,10 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
         )}
 
         {phase === 'cook' && (
-          <footer className="flex-shrink-0 border-t border-white/10 bg-slate-950/35 px-4 py-4 backdrop-blur md:px-7">
+          <footer
+            className="flex-shrink-0 border-t border-white/10 bg-slate-950/35 px-4 pb-4 pt-4 backdrop-blur md:px-7"
+            style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }}
+          >
             <div className="mx-auto flex w-full max-w-3xl items-center gap-3">
               <button
                 type="button"

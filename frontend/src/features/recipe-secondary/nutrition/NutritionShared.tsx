@@ -44,8 +44,10 @@ export const traffic = (kind: string, value: number) => {
 
 export function NutriScoreVisual({
   letter,
+  grouped = false,
 }: {
   letter: "A" | "B" | "C" | "D" | "E";
+  grouped?: boolean;
 }) {
   const slots = [
     { l: "A", fill: "rgb(27,138,63)" },
@@ -66,8 +68,8 @@ export function NutriScoreVisual({
   };
 
   return (
-    <div>
-      <div className="mb-[18px] flex items-center justify-between gap-3 rounded-[18px] border border-[#eef2f7] bg-slate-50 px-5 py-[22px]">
+    <div className={grouped ? "rounded-[18px] border border-[#eef2f7] bg-slate-50 p-[18px]" : ""}>
+      <div className={grouped ? "mb-[18px] flex items-center justify-between gap-3" : "mb-[18px] flex items-center justify-between gap-3 rounded-[18px] border border-[#eef2f7] bg-slate-50 px-5 py-[22px]"}>
         <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
           Nutri-Score · estimated
         </p>

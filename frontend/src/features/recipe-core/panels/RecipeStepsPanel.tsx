@@ -15,6 +15,7 @@ type Props = {
   markerColumnWidth: string;
   markerSize: number;
   bodyClass: string;
+  lineFree?: boolean;
 };
 
 function getInstructionText(raw: RawInstruction): string {
@@ -40,11 +41,12 @@ const RecipeStepsPanel: React.FC<Props> = ({
   markerColumnWidth,
   markerSize,
   bodyClass,
+  lineFree = false,
 }) => {
   let globalIndex = 0;
 
   return (
-    <div className={`space-y-5 ${bodyClass}`}>
+    <div className={`${lineFree ? 'space-y-6' : 'space-y-5'} ${bodyClass}`}>
       {instructionSections.map((section, sectionIndex) => {
         const visibleInstructions = (section.instructions || [])
           .map((instruction) => ({
@@ -63,7 +65,7 @@ const RecipeStepsPanel: React.FC<Props> = ({
               </h4>
             )}
 
-            <div className="space-y-0">
+            <div className={lineFree ? 'space-y-4' : 'space-y-0'}>
               {visibleInstructions.map(({ text }) => {
                 const stepIndex = globalIndex++;
                 const checked = checkedSteps.has(stepIndex);
@@ -74,7 +76,11 @@ const RecipeStepsPanel: React.FC<Props> = ({
                     type="button"
                     onClick={() => toggleStep(stepIndex)}
                     style={{ gridTemplateColumns: `${markerColumnWidth} minmax(0, 1fr)` }}
-                    className={`grid w-full items-center gap-x-3 border-b border-gray-100 px-0 py-3.5 text-left transition-all last:border-b-0 ${
+                    className={`grid w-full items-start gap-x-3 text-left transition-all ${
+                      lineFree
+                        ? 'rounded-2xl px-0 py-0'
+                        : 'border-b border-gray-100 px-0 py-3.5 last:border-b-0'
+                    } ${
                       checked
                         ? 'opacity-80'
                         : 'hover:bg-transparent'
@@ -95,7 +101,7 @@ const RecipeStepsPanel: React.FC<Props> = ({
 
                     <div className="min-w-0 self-center">
                       <p
-                        className={`text-[14.5px] leading-[1.6] font-medium ${
+                        className={`text-[14.5px] ${lineFree ? 'leading-relaxed' : 'leading-[1.6]'} font-medium ${
                           checked ? 'text-gray-400 line-through' : 'text-gray-700'
                         }`}
                       >

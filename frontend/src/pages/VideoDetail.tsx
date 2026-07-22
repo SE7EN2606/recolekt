@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, Trash2, Heart, FolderInput, AlertCircle, X,
   EllipsisVertical, AlignLeft, Pencil, Save, Globe, Folder, Archive,
-  MapPin, ShoppingBasket, RefreshCw, Loader2, Clock3, Flame, Timer, ChevronDown, Sparkles,
+  MapPin, ShoppingBasket, RefreshCw, Loader2, Clock3, Flame, Timer, ChevronDown, ChefHat, Star,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -12,13 +12,9 @@ import { MoveCollectionModal } from '../components/MoveCollectionModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ReportModal } from '../components/ReportModal';
 import { EditableTitle, EditableBullets } from '../components/VideoDetailComponents';
-import RecipeDetailsCard from "../components/RecipeDetailsCard";
-import { WorkoutCard } from '../components/WorkoutCard';
-import { ToolsListCard } from '../components/ToolsListCard';
-import { LocationCard } from '../components/LocationCard';
+import RecipeDetailsCard, { type RecipeTabKey } from "../components/RecipeDetailsCard";
 import { MetadataPanel } from '../components/MetadataPanel';
 import { Skeleton, Accordion, OriginalLink } from '../components/VideoDetailWidgets';
-import { ContentTypeBadge, deriveToolsSubtype } from '../components/ContentTypeBadge';
 import { useTranslation } from 'react-i18next';
 import { apiGet } from '../lib/apiClient';
 import {
@@ -34,34 +30,41 @@ import { useScrollLock } from '../utils/useScrollLock';
 import { fetchGcsJson, HASHTAG_STYLE } from '../utils/videoDetailUtils';
 import { scaleQuantity } from '../utils/videoUtils';
 import { CustomMessageSquareMoreIcon, IOSShareIcon, PlatformIconAuthor } from '../components/CustomIcons';
+import RecipeAiSummaryCard from '../components/video-detail/RecipeAiSummaryCard';
+import MobileRecipeDetailLayout from '../components/video-detail/MobileRecipeDetailLayout';
+import MobileRecipeOverviewTab from '../components/video-detail/MobileRecipeOverviewTab';
+import ReelErrorState from '../components/video-detail/ReelErrorState';
+import ReelPendingState from '../components/video-detail/ReelPendingState';
+import RecipeMetaPanel from '../components/video-detail/RecipeMetaPanel';
 import {
   buildRecipeForCard,
   hasUsableRecipeContent,
+  normalizeIngredientSections,
   recipeIngredientCount,
   recipeInstructionCount,
 } from '../features/recipe-core/recipePayload';
 import RecipeCookbookRail, {
-  RecipeMobileStateSection,
+  RecipeCookStatusCard,
+  RecipeNotesCard,
   RecipeMetaChip,
-  SourceDetailsContent,
 } from '../features/recipe-detail/RecipeCookbookRail';
 import useRecipeCookState from '../features/recipe-cook-state/useRecipeCookState';
 import useRecipeNotes from '../features/recipe-notes/useRecipeNotes';
 import useShoppingRecipeStatus from '../features/shopping/useShoppingRecipeStatus';
 import { readShoppingPreferences } from '../features/shopping/shoppingPreferences';
+import { calculateNutrition } from '../utils/nutritionCalc';
 import {
   mergeVideoPayload,
   buildViewModel,
-  getToolsCategoriesForLanguage,
-  isBadgeToolsSubtype,
-  isToolsContentType,
   parseSummaryObject,
   selectLocalizedRecipe,
 } from './VideoDetailViewModel';
 import {
-  FACEBOOK_ACCESS_ERROR_MESSAGE,
   buildTerminalProcessingVideo,
-  isFacebookAccessError,
+  getApiErrorPresentation,
+  getSafeFailureMessage,
+  getTerminalFailurePresentation,
+  isTerminalProcessingStatus,
 } from './videoDetailTerminalState';
 
 const MoveCollectionModalExt = MoveCollectionModal as React.ComponentType<{
@@ -81,13 +84,13 @@ const PERF_SESSION_NAME = 'VideoDetail';
 
 function useDesktopRecipeDetailLayout() {
   const [isDesktop, setIsDesktop] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : false
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 1280px)').matches : false
   );
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const mediaQuery = window.matchMedia('(min-width: 768px)');
+    const mediaQuery = window.matchMedia('(min-width: 1280px)');
     const handleChange = () => setIsDesktop(mediaQuery.matches);
 
     handleChange();
@@ -96,59 +99,6 @@ function useDesktopRecipeDetailLayout() {
   }, []);
 
   return isDesktop;
-}
-
-function ReelErrorState({
-  message,
-  onBack,
-}: {
-  message: string;
-  onBack: () => void;
-}) {
-  return (
-    <div className="animate-fade-in relative z-0 flex min-h-[55vh] items-center justify-center px-4 pb-20 md:pb-6">
-      <div className="w-full max-w-md rounded-3xl border border-gray-100 bg-white/85 p-6 text-center shadow-sm">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-700">
-          <AlertCircle size={22} aria-hidden="true" />
-        </div>
-        <p className="text-base font-bold leading-relaxed text-gray-900">
-          {message}
-        </p>
-        <button
-          type="button"
-          onClick={onBack}
-          className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-primary-600 px-5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
-        >
-          Go back to Gallery
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ReelPendingState() {
-  return (
-    <section className="animate-fade-in mb-5 mt-[calc(env(safe-area-inset-top,0px)+0.75rem)] overflow-hidden rounded-[26px] border border-white/75 bg-white/90 shadow-[0_8px_28px_rgba(15,23,42,0.08)] backdrop-blur-sm md:mt-0">
-      <div className="px-4 py-5 md:px-6 md:py-6">
-        <div className="flex items-start gap-4">
-          <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-50 text-primary-600">
-            <Loader2 size={20} aria-hidden="true" className="animate-spin" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] font-black uppercase tracking-[0.12em] text-primary-600/70">
-              Saved Reel
-            </p>
-            <h2 className="mt-1 text-[22px] font-bold tracking-tight text-slate-950">
-              Loading saved reel…
-            </h2>
-            <p className="mt-2 max-w-[48ch] text-sm font-medium leading-6 text-slate-500">
-              Pulling the final recipe detail before we render the page.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
 }
 
 const extractLocationPlaces = (location: any): any[] => {
@@ -250,135 +200,21 @@ function getEnglishSummaryContent(video: any) {
   return { summaryText, headlines };
 }
 
-function RecipeAiSummaryCard({
-  summaryText,
-  headlines,
-}: {
-  summaryText?: string;
-  headlines: any[];
-}) {
-  const [summaryHighlightsOpen, setSummaryHighlightsOpen] = useState(false);
+type MobileRecipeTab = 'overview' | 'ingredients' | 'steps' | 'nutrition';
 
-  return (
-    <section className="mb-5">
-      <div className="overflow-hidden rounded-[26px] border border-primary-100/70 bg-[linear-gradient(180deg,rgba(250,245,255,0.98),rgba(245,243,255,0.92))] shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm">
-        <div className="px-4 py-4 md:px-5 md:py-5">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/85 text-primary-600 ring-1 ring-primary-100/80 shadow-[0_2px_8px_rgba(124,58,237,0.08)]">
-              <Sparkles size={18} aria-hidden="true" />
-            </span>
-            <div>
-              <div className="text-[11px] font-black uppercase tracking-widest text-primary-700/70">
-                AI Summary
-              </div>
-              <div className="mt-1 text-[18px] font-bold tracking-tight text-gray-900">
-                Quick read before you cook
-              </div>
-            </div>
-          </div>
+const MOBILE_RECIPE_TABS: Array<{ key: MobileRecipeTab; label: string }> = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'ingredients', label: 'Ingredients' },
+  { key: 'steps', label: 'Steps' },
+  { key: 'nutrition', label: 'Nutrition' },
+];
 
-          <div className="mt-4 max-w-[72ch]">
-            {summaryText && (
-              <p className="text-[15px] font-medium leading-7 text-gray-700">
-                {summaryText}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {headlines.length > 0 && summaryHighlightsOpen && (
-          <div className="border-t border-primary-100/70 px-4 pb-4 pt-4 md:px-5 md:pb-5">
-            <h4 className="text-xs font-bold uppercase tracking-wide text-gray-500">
-              Key Highlights
-            </h4>
-            <div className="mt-3 flex flex-col gap-2.5">
-              {headlines.map((item: any, index: number) => (
-                <div
-                  key={`${item.headline || item.text}-${index}`}
-                  className="flex min-w-0 gap-3 rounded-2xl bg-white/78 px-4 py-3 ring-1 ring-primary-100/80"
-                >
-                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-base leading-none">
-                    {item.emoji || '•'}
-                  </span>
-                  <div className="min-w-0">
-                    {item.headline && (
-                      <div className="text-sm font-bold leading-snug text-gray-900">
-                        {item.headline}
-                      </div>
-                    )}
-                    {item.text && (
-                      <div className="mt-1 text-sm font-medium leading-relaxed text-gray-600">
-                        {item.text}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {headlines.length > 0 && (
-          <div className="px-4 pb-4 md:px-5 md:pb-5">
-            <button
-              type="button"
-              onClick={() => setSummaryHighlightsOpen((value) => !value)}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary-100 bg-primary-50/70 py-3 text-sm font-bold text-primary-700 transition-colors hover:bg-primary-100"
-            >
-              {summaryHighlightsOpen ? 'Hide highlights' : 'See highlights'}
-              <ChevronDown
-                size={16}
-                className={`transition-transform duration-200 ${summaryHighlightsOpen ? 'rotate-180' : ''}`}
-                aria-hidden="true"
-              />
-            </button>
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function RecipeMetaPanel({ chips }: { chips: RecipeMetaChip[] }) {
-  const readChip = (...labels: string[]) =>
-    chips.find((chip) =>
-      labels.includes(String(chip.label || '').trim().toLowerCase())
-    )?.value || '';
-
-  const cuisine = readChip('cuisine');
-  const style = readChip('style');
-  const method = readChip('method');
-
-  const cuisineStyle = [cuisine, style].filter(Boolean).join(' · ');
-
-  if (!cuisineStyle && !method) return null;
-
-  return (
-    <div className="flex gap-3">
-      {cuisineStyle && (
-        <div className="flex-1 bg-orange-50 border border-orange-100 rounded-xl p-4 flex flex-col items-center justify-center gap-1">
-          <span className="text-[10px] font-semibold text-orange-700 text-center">
-            Cuisine
-          </span>
-          <div className="text-sm font-bold text-orange-950 leading-snug text-center">
-            {cuisineStyle}
-          </div>
-        </div>
-      )}
-
-      {method && (
-        <div className="flex-1 bg-rose-50 border border-rose-100 rounded-xl p-4 flex flex-col items-center justify-center gap-1">
-          <span className="text-[10px] font-semibold text-rose-700 text-center">
-            Method
-          </span>
-          <div className="text-sm font-bold text-rose-950 leading-snug text-center">
-            {method}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+const MOBILE_RECIPE_TAB_INDEX: Record<MobileRecipeTab, number> = {
+  overview: 0,
+  ingredients: 1,
+  steps: 2,
+  nutrition: 3,
+};
 
 export const VideoDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -407,6 +243,7 @@ export const VideoDetail: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedVideo, setEditedVideo] = useState<any>(null);
   const [servingScale, setServingScale] = useState(1);
+  const [mobileRecipeTab, setMobileRecipeTab] = useState<MobileRecipeTab>('overview');
   const [noteFocusSignal, setNoteFocusSignal] = useState(0);
   const richRecipeRef = useRef<any>(null);
   const [useMetric, setUseMetric] = useState(() => {
@@ -452,6 +289,7 @@ export const VideoDetail: React.FC = () => {
   const [refreshMessage, setRefreshMessage] = useState('');
   const [refreshError, setRefreshError] = useState('');
   const [detailErrorMessage, setDetailErrorMessage] = useState('');
+  const [detailErrorKind, setDetailErrorKind] = useState('');
   const [detailHydrationSettled, setDetailHydrationSettled] = useState(false);
   const detailHydratedRef = useRef(false);
   const lastStableVideoRef = useRef<any>(null);
@@ -506,7 +344,7 @@ export const VideoDetail: React.FC = () => {
   }, [perfEnabled]);
 
   useScrollLock(
-    isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen,
+    isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen,
   );
 
   // Reset state whenever the user navigates to a different video
@@ -519,6 +357,7 @@ export const VideoDetail: React.FC = () => {
       startPerfSession(PERF_SESSION_NAME);
       markPerfStep('VideoDetail component mounted');
     }
+    setMobileRecipeTab('overview');
     setServingScale(1);
     setIsEditing(false);
     detailHydratedRef.current = false;
@@ -530,6 +369,7 @@ export const VideoDetail: React.FC = () => {
     setRefreshMessage('');
     setRefreshError('');
     setDetailErrorMessage('');
+    setDetailErrorKind('');
     setDetailHydrationSettled(false);
   }, [id, perfEnabled]);
 
@@ -678,10 +518,10 @@ export const VideoDetail: React.FC = () => {
       }
     } catch (err) {
       console.error('Enrichment error', err);
-      if ((err as any)?.status === 404) {
-        setDetailErrorMessage(
-          'This saved reel no longer exists. It may have been deleted or replaced during refresh. Go back to Gallery.',
-        );
+      const presentation = getApiErrorPresentation(err);
+      if (presentation) {
+        setDetailErrorMessage(presentation.message);
+        setDetailErrorKind(presentation.kind);
         setIsRefreshingVideo(false);
         setRefreshMessage('');
         setRefreshError('');
@@ -780,12 +620,16 @@ export const VideoDetail: React.FC = () => {
     setRefreshMessage('');
     refreshAbortRef.current = null;
 
-    if (isFacebookAccessError(terminalVideo)) {
+    const presentation = getTerminalFailurePresentation(terminalVideo);
+    if (presentation) {
       setRefreshError('');
-      setDetailErrorMessage(FACEBOOK_ACCESS_ERROR_MESSAGE);
+      setDetailErrorMessage('');
+      setDetailErrorKind('');
+      setRefreshError(presentation.message);
     } else {
       setDetailErrorMessage('');
-      setRefreshError(terminalVideo.errorMessage || 'Refresh failed.');
+      setDetailErrorKind('');
+      setRefreshError(getSafeFailureMessage(terminalVideo.errorMessage));
     }
 
     return terminalVideo;
@@ -832,7 +676,7 @@ export const VideoDetail: React.FC = () => {
           return;
         }
 
-        if (['error', 'failed', 'failure'].includes(nextStatus)) {
+        if (isTerminalProcessingStatus(nextStatus)) {
           applyTerminalProcessingPayload(detail, merged, id);
           return;
         }
@@ -845,7 +689,8 @@ export const VideoDetail: React.FC = () => {
       } catch (err) {
         if (controller.signal.aborted) return;
         console.error('Processing poll failed', err);
-        setRefreshError(err instanceof Error ? err.message : 'Refresh failed.');
+        const message = getSafeFailureMessage(err);
+        if (message) setRefreshError(message);
         setRefreshMessage('');
         setIsRefreshingVideo(false);
       }
@@ -860,11 +705,9 @@ export const VideoDetail: React.FC = () => {
   }, [id, video?.status, fetchHydratedVideo, applyTerminalProcessingPayload, hydrateVideo]);
 
   useEffect(() => {
-    if (!isFacebookAccessError(video)) return;
+    if (!getTerminalFailurePresentation(video)) return;
     setIsRefreshingVideo(false);
     setRefreshMessage('');
-    setRefreshError('');
-    setDetailErrorMessage(FACEBOOK_ACCESS_ERROR_MESSAGE);
   }, [video]);
 
   useEffect(() => {
@@ -916,6 +759,7 @@ export const VideoDetail: React.FC = () => {
     setRefreshMessage('Recolekt is updating this page. Please wait a moment.');
     setRefreshError('');
     setDetailErrorMessage('');
+    setDetailErrorKind('');
     refreshAbortRef.current?.abort();
     const controller = new AbortController();
     refreshAbortRef.current = controller;
@@ -956,7 +800,7 @@ export const VideoDetail: React.FC = () => {
           return;
         }
 
-        if (['error', 'failed', 'failure'].includes(status)) {
+        if (isTerminalProcessingStatus(status)) {
           applyTerminalProcessingPayload(detail, merged, currentVideoId);
           return;
         }
@@ -967,7 +811,8 @@ export const VideoDetail: React.FC = () => {
       }
     } catch (err) {
       console.error('Refresh video failed', err);
-      setRefreshError(err instanceof Error ? err.message : 'Refresh failed.');
+      const message = getSafeFailureMessage(err);
+      if (message) setRefreshError(message);
       setIsRefreshingVideo(false);
       setRefreshMessage('');
     }
@@ -1080,6 +925,7 @@ export const VideoDetail: React.FC = () => {
     recipeContentAvailable ||
     (rawContentType === 'recipe' && stableRecipeForCard)
   );
+  const terminalFailurePresentation = getTerminalFailurePresentation(video);
   const isLikelyRecipeContent = Boolean(
     recipeContentAvailable ||
     stableRecipeForCard ||
@@ -1190,10 +1036,28 @@ export const VideoDetail: React.FC = () => {
     addRecipe: addRecipeToShoppingList,
     removeRecipe: removeRecipeFromShoppingList,
   } = useShoppingRecipeStatus(currentVideoId, showRecipeCard);
+  const mobileNutritionIngredients = useMemo(
+    () => (stableRecipeForCard ? normalizeIngredientSections(stableRecipeForCard).flatMap((section) => section.items) : []),
+    [stableRecipeForCard]
+  );
+  const mobileNutritionSnapshot = useMemo(
+    () => calculateNutrition(
+      mobileNutritionIngredients,
+      Number(stableRecipeForCard?.servings) || undefined,
+      { recipeName: viewModel?.title ?? 'Recipe' }
+    ),
+    [mobileNutritionIngredients, stableRecipeForCard, viewModel?.title]
+  );
 
   const pageErrorMessage =
-    detailErrorMessage ||
-    (isFacebookAccessError(video) ? FACEBOOK_ACCESS_ERROR_MESSAGE : '');
+    (detailErrorKind === 'missing' || !showRecipeCard ? detailErrorMessage : '') ||
+    (!showRecipeCard ? terminalFailurePresentation?.message || '' : '');
+  const terminalBannerMessage =
+    showRecipeCard
+      ? (detailErrorKind !== 'missing' ? detailErrorMessage : '') ||
+        terminalFailurePresentation?.message ||
+        ''
+      : '';
 
   if (pageErrorMessage) {
     return (
@@ -1208,31 +1072,22 @@ export const VideoDetail: React.FC = () => {
   if (!isDetailPresentationReady) {
     return (
       <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
-        <div className="flex w-full flex-col items-start md:grid md:grid-cols-[minmax(0,1fr)_20rem] md:gap-5 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
+        <div className="flex w-full flex-col items-start xl:grid xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
           <div className="min-w-0 w-full flex flex-col">
             <ReelPendingState />
           </div>
           {isDesktopRecipeDetailLayout ? (
-            <aside className="hidden w-full md:block" aria-hidden="true" />
+            <aside className="hidden w-full xl:block" aria-hidden="true" />
           ) : null}
         </div>
       </div>
     );
   }
 
-  const toolsCategories = getToolsCategoriesForLanguage(viewModel.toolsList, showOriginal);
-  const hasToolsList =
-    Array.isArray(toolsCategories) &&
-    toolsCategories.some((cat: any) => Array.isArray(cat?.items) && cat.items.length > 0);
   const hasBullets = Array.isArray(viewModel.bullets) && viewModel.bullets.length > 0;
   const englishSummaryContent = getEnglishSummaryContent(video);
   const hasEnglishSummaryContent =
     Boolean(englishSummaryContent.summaryText) || englishSummaryContent.headlines.length > 0;
-  const structuredBadgeSubtype = isBadgeToolsSubtype(viewModel.structuredType)
-    ? viewModel.structuredType
-    : undefined;
-  const derivedSubtype = deriveToolsSubtype(viewModel.toolsList);
-  const safeDerivedSubtype = isBadgeToolsSubtype(derivedSubtype) ? derivedSubtype : 'picks';
   const recipeMetaChips = getRecipeMetaChips(stableRecipeForCard || viewModel.recipe, viewModel);
   const heroRecipeMetaChips = getHeroRecipeMetaChips(recipeMetaChips);
   const recipeCardMetaItems = getRecipeCardMetaItems(stableRecipeForCard || viewModel.recipe);
@@ -1270,11 +1125,6 @@ export const VideoDetail: React.FC = () => {
   // Topic may be empty, but the Topic block itself should still render.
   const metadataTopic = topicCandidates.map(cleanMetadataValue).find(Boolean) || '';
 
-  const toolsSubtype = isToolsContentType(viewModel.contentType)
-    ? structuredBadgeSubtype ?? safeDerivedSubtype
-    : undefined;
-  const showTypeBadge = false; // Recipe-only focus: hide content badge for now.
-
   const normalizedLocations: any[] = extractLocationPlaces(viewModel.location).map(
     (place: any, idx: number) => ({
       ...place,
@@ -1285,18 +1135,7 @@ export const VideoDetail: React.FC = () => {
 
   const hasLocations = normalizedLocations.length > 0;
   const isLocationContent = viewModel.contentType === 'location' || hasLocations;
-  const showToolsListCard =
-    !isLocationContent &&
-    hasToolsList &&
-    (viewModel.isStructuredTools || !!viewModel.structuredType || !hasBullets);
-
   const showFolderBadge = Boolean(folderName && !showRecipeCard);
-  const hasRecipeSourceDetails =
-    showRecipeCard && Boolean(viewModel.caption || viewModel.transcript || viewModel.originalUrl || viewModel.tags?.length);
-  const recipeDetailMetaItems = ['Cuisine', 'Style', 'Method'].map((label) => ({
-    label,
-    value: recipeCardMetaItems.find((item) => item.label === label)?.value || '—',
-  }));
   const primaryRecipeStatItems = [
     { label: 'Prep', sourceLabel: 'Prep' },
     { label: 'Cook', sourceLabel: 'Cook' },
@@ -1356,7 +1195,6 @@ export const VideoDetail: React.FC = () => {
       : '',
     hasRecipeNote ? 'Note saved' : '',
   ].filter(Boolean);
-  const showReturnState = showRecipeCard && !cookStatusLoading && returnStateItems.length > 0;
   const recipeMemoryLine = cookStatus.hasActiveSession
     ? 'Your place is saved for this recipe.'
     : cookStatus.cookedCount > 0 && hasRecipeNote
@@ -1366,36 +1204,35 @@ export const VideoDetail: React.FC = () => {
         : hasRecipeNote
           ? 'Your note is ready for next time.'
           : '';
-  const mobileShoppingAction = showRecipeCard ? (
-    <div className="md:hidden">
-      <button
-        type="button"
-        onClick={() => inShoppingList
-          ? removeRecipeFromShoppingList()
-          : addRecipeToShoppingList(null)}
-        disabled={shoppingLoading || shoppingSaving}
-        className="flex w-full items-center gap-3 rounded-xl border border-emerald-100 bg-white p-3.5 text-left text-emerald-950 shadow-sm transition-[background-color,box-shadow,transform] hover:bg-emerald-50/60 hover:shadow-md active:translate-y-px active:bg-emerald-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
-          <ShoppingBasket size={19} aria-hidden="true" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-emerald-950">
-            {shoppingSaving
-              ? 'Updating shopping list...'
-              : inShoppingList
-                ? 'In your shopping plan'
-                : 'Add ingredients to shopping list'}
-          </span>
-          <span className="mt-0.5 block text-xs font-medium text-emerald-800/75">
-            {inShoppingList
-              ? 'Tap to remove it from groceries.'
-              : 'Plan groceries for this recipe.'}
-          </span>
-        </span>
-      </button>
-    </div>
-  ) : null;
+  const mobileRecipeDetailsTab: RecipeTabKey =
+    mobileRecipeTab === 'steps'
+      ? 'steps'
+      : mobileRecipeTab === 'nutrition'
+        ? 'nutrition'
+        : 'ingredients';
+  const handleMobileRecipeTabChange = (tab: MobileRecipeTab) => {
+    setMobileRecipeTab(tab);
+  };
+  const mobileHeroMetaGridItems = heroRecipeMetaChips.filter((chip) => chip.value && chip.value !== '—').slice(0, 4);
+  const mobileSourceHasContent = Boolean(
+    viewModel.caption ||
+    viewModel.transcript ||
+    viewModel.tags?.length
+  );
+  const recipeYieldValue =
+    recipeCardMetaItems.find((item) => item.label === 'Yield')?.value ||
+    (stableRecipeForCard?.servings ? String(stableRecipeForCard.servings) : '—');
+  const atAGlanceItems = [
+    { label: 'Total time', value: primaryRecipeStatItems.find((item) => item.label === 'Total')?.value || '—' },
+    { label: 'Yields', value: recipeYieldValue || '—' },
+    {
+      label: 'kcal',
+      value: mobileNutritionSnapshot?.perServing?.calories
+        ? `${Math.round(mobileNutritionSnapshot.perServing.calories)}`
+        : '—',
+    },
+    { label: 'Rating', value: '—' },
+  ];
   const desktopQuickActions = showRecipeCard ? (
     <div className="flex flex-col gap-1">
       <button
@@ -1439,26 +1276,383 @@ export const VideoDetail: React.FC = () => {
       </button>
     </div>
   ) : null;
+  const mobileRecipeOverflowContent = showRecipeCard ? (
+    <div className="space-y-4 pb-1">
+      <section className="rounded-3xl border border-gray-100/70 bg-gray-50/80 p-3">
+        <div className="px-2 pb-2 pt-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">
+          Quick actions
+        </div>
+        <div className="overflow-hidden rounded-[22px] border border-gray-100/70 bg-white/90">
+          <button
+            type="button"
+            onClick={() => {
+              if (inShoppingList) {
+                removeRecipeFromShoppingList();
+              } else {
+                addRecipeToShoppingList(null);
+              }
+              setIsActionSheetOpen(false);
+            }}
+            disabled={shoppingLoading || shoppingSaving}
+            className="flex w-full items-center gap-4 border-b border-gray-100/70 px-4 py-4 text-left transition-colors hover:bg-emerald-50/45 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
+              <ShoppingBasket size={18} aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-slate-800">
+                {shoppingSaving ? 'Updating shopping plan...' : inShoppingList ? 'In shopping plan' : 'Add to shopping plan'}
+              </span>
+              <span className="mt-0.5 block text-[12px] text-slate-400">
+                {inShoppingList ? 'Remove it from groceries.' : 'Plan groceries for this recipe.'}
+              </span>
+            </span>
+            {inShoppingList && !shoppingSaving && (
+              <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                In plan
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsActionSheetOpen(false);
+              setIsMoveModalOpen(true);
+            }}
+            className="flex w-full items-center gap-4 border-b border-gray-100/70 px-4 py-4 text-left transition-colors hover:bg-amber-50/45"
+          >
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-amber-100 text-amber-700 ring-1 ring-amber-200/70">
+              <FolderInput size={18} aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-slate-800">Add to a collection</span>
+              <span className="mt-0.5 block text-[12px] text-slate-400">Move or organize this recipe.</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsActionSheetOpen(false);
+              handleShare();
+            }}
+            className="flex w-full items-center gap-4 border-b border-gray-100/70 px-4 py-4 text-left transition-colors hover:bg-primary-50/45"
+          >
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-primary-50 text-primary-600 ring-1 ring-primary-100">
+              <IOSShareIcon size={18} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-slate-800">Share</span>
+              <span className="mt-0.5 block text-[12px] text-slate-400">Send the recipe out.</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsActionSheetOpen(false);
+              setIsEditing(true);
+            }}
+            className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-rose-50/45"
+          >
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-rose-100 text-rose-600 ring-1 ring-rose-200/70">
+              <Pencil size={18} aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-slate-800">Edit details</span>
+              <span className="mt-0.5 block text-[12px] text-slate-400">Adjust the saved recipe.</span>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-gray-100/70 bg-gray-50/80 p-3">
+        <div className="px-2 pb-2 pt-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">
+          Recipe memory
+        </div>
+        <div className="rounded-[22px] border border-gray-100/70 bg-white/90 px-4 py-4">
+          {returnStateItems.length > 0 ? (
+            <div className="space-y-3">
+              {returnStateItems.map((item, index) => (
+                <div key={`${item}-${index}`} className="flex items-center gap-3">
+                  <span className={`h-[10px] w-[10px] shrink-0 rounded-full ${index === 0 ? 'bg-primary-400' : 'bg-green-500'}`} />
+                  <span className="text-[13.5px] font-semibold text-slate-800">{item}</span>
+                </div>
+              ))}
+            </div>
+          ) : recipeMemoryLine ? (
+            <p className="text-[13.5px] leading-relaxed text-slate-600">{recipeMemoryLine}</p>
+          ) : (
+            <p className="text-[13.5px] leading-relaxed text-slate-400">
+              Cook it or add a note to build your memory here.
+            </p>
+          )}
+        </div>
+      </section>
+    </div>
+  ) : null;
+  const ingredientsActionContent = (
+    <div className="inline-flex items-center rounded-full border border-rose-100 bg-white p-1 shadow-sm">
+      <button
+        type="button"
+        onClick={() => setUseMetric(true)}
+        className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+          useMetric
+            ? 'bg-primary-600 text-white'
+            : 'text-gray-500 hover:bg-primary-50 hover:text-primary-700'
+        }`}
+        aria-pressed={useMetric}
+      >
+        Metric
+      </button>
+      <button
+        type="button"
+        onClick={() => setUseMetric(false)}
+        className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+          !useMetric
+            ? 'bg-primary-600 text-white'
+            : 'text-gray-500 hover:bg-primary-50 hover:text-primary-700'
+        }`}
+        aria-pressed={!useMetric}
+      >
+        Imperial
+      </button>
+    </div>
+  );
+  const ingredientsServingContent = (
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-[13px] font-bold text-slate-900">Servings</p>
+        <p className="text-[11.5px] leading-relaxed text-slate-400">Scales every quantity</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2 rounded-full border border-gray-200 bg-white px-2.5 py-1.5 shadow-sm">
+        <button
+          type="button"
+          onClick={() => {
+            const base = Math.max(1, Number(stableRecipeForCard?.servings) || 1);
+            const next = Math.max(1, Math.round(base * servingScale) - 1);
+            setServingScale(next / base);
+          }}
+          className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-[16px] font-black text-gray-700 transition hover:bg-gray-100"
+          aria-label="Decrease servings"
+        >
+          −
+        </button>
+        <span className="min-w-[2ch] text-center text-[16px] font-black tabular-nums text-gray-950">
+          {Math.max(1, Math.round((Number(stableRecipeForCard?.servings) || 1) * servingScale))}
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            const base = Math.max(1, Number(stableRecipeForCard?.servings) || 1);
+            const next = Math.round(base * servingScale) + 1;
+            setServingScale(next / base);
+          }}
+          className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-[16px] font-black text-gray-700 transition hover:bg-gray-100"
+          aria-label="Increase servings"
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+  const ingredientsFooterContent = (
+    <button
+      type="button"
+      onClick={() => {
+        if (inShoppingList) {
+          removeRecipeFromShoppingList();
+          return;
+        }
+        addRecipeToShoppingList(null);
+      }}
+      disabled={shoppingLoading || shoppingSaving}
+      className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+        inShoppingList
+          ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+          : 'bg-emerald-600 text-white hover:bg-emerald-700'
+      }`}
+    >
+      <ShoppingBasket size={16} aria-hidden="true" />
+      {shoppingSaving ? 'Updating shopping plan...' : inShoppingList ? 'In plan' : 'Add to shopping list'}
+    </button>
+  );
+  const mobileTimingStripContent = (
+    <div className="grid min-w-0 grid-cols-3">
+      {primaryRecipeStatItems.map((item, index) => (
+        <div key={`steps-stat-${item.label}`} className="relative flex min-w-0 flex-col items-center gap-[5px] px-2 text-center">
+          {index < primaryRecipeStatItems.length - 1 && (
+            <span className="pointer-events-none absolute right-0 top-1/2 h-10 w-px -translate-y-1/2 bg-slate-100" />
+          )}
+          <div className="text-secondary-600 [&_svg]:h-5 [&_svg]:w-5 [&_svg]:stroke-[1.9]">
+            {statIconByLabel[item.label]}
+          </div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">{item.label}</div>
+          <div className="truncate text-[15px] font-bold tabular-nums text-slate-950" title={item.value}>{item.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+  const overviewMetaGrid = mobileHeroMetaGridItems.length > 0 ? (
+    <section className="overflow-hidden rounded-[24px] border border-white/75 bg-white/90 shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+      <div className="px-4 py-4">
+        <div className="mb-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Recipe details</p>
+          <p className="mt-1 text-[16px] font-bold text-gray-950">Cuisine, topic, style, and method</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5">
+          {mobileHeroMetaGridItems.map((chip) => (
+            <div
+              key={`overview-meta-${chip.label}-${chip.value}`}
+              className="rounded-[16px] bg-slate-100 px-3.5 py-3"
+            >
+              <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                {chip.label}
+              </div>
+              <div className="mt-1 text-[13px] font-bold leading-snug text-slate-900">
+                {chip.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  ) : null;
+  const overviewSourceDetails = (
+    <section className="overflow-hidden rounded-[24px] border border-white/75 bg-white/90 shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+      <details className="group" open={false}>
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Source details</p>
+            <p className="mt-1 text-[16px] font-bold text-gray-950">Caption, transcript, and tags</p>
+          </div>
+          <ChevronDown size={16} className="shrink-0 text-slate-300 transition-transform duration-200 group-open:rotate-180" />
+        </summary>
+        <div className="border-t border-slate-100 px-4 py-4">
+          {mobileSourceHasContent ? (
+            <div className="space-y-4">
+              {viewModel.caption && (
+                <div>
+                  <h4 className="mb-2 text-[11px] font-black uppercase tracking-widest text-gray-400">{t('videoDetail:caption', 'Caption')}</h4>
+                  <div className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">{viewModel.caption}</div>
+                </div>
+              )}
+              {viewModel.transcript && (
+                <div>
+                  <h4 className="mb-2 text-[11px] font-black uppercase tracking-widest text-gray-400">{t('videoDetail:transcript', 'Transcript')}</h4>
+                  <div className="border-l-2 border-gray-100 pl-4 text-sm font-medium italic leading-relaxed text-gray-500 whitespace-pre-wrap">
+                    {viewModel.transcript}
+                  </div>
+                </div>
+              )}
+              {viewModel.tags?.length ? (
+                <div>
+                  <h4 className="mb-2 text-[11px] font-black uppercase tracking-widest text-gray-400">Tags</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {(viewModel.tags as string[]).map((tag: string) => (
+                      <span key={tag} className="rounded-full bg-gray-50 px-3 py-1.5 text-[12px] font-bold text-gray-600 ring-1 ring-gray-100">
+                        {tag.startsWith('#') ? tag : `#${tag}`}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">No source details were saved for this recipe.</p>
+          )}
+        </div>
+      </details>
+    </section>
+  );
+  const overviewContent = (
+    <MobileRecipeOverviewTab
+      cookStatusCard={(
+        <RecipeCookStatusCard
+          status={cookStatus}
+          loading={cookStatusLoading}
+          onMarkCooked={markCooked}
+          onReset={resetCookState}
+          onStartCooking={() => setCookModeOpenSignal((value) => value + 1)}
+          startCookingLabel="Cook Now"
+          variant="mobile-overview"
+        />
+      )}
+      metaDetailsCard={overviewMetaGrid}
+      recipeMemoryCard={(
+        <section className="overflow-hidden rounded-[24px] border border-white/75 bg-white/90 shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+          <div className="px-4 py-4">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Recipe memory</p>
+                <p className="mt-1 text-[16px] font-bold text-gray-950">Rating and return history</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-slate-400">
+                {[0, 1, 2, 3, 4].map((index) => (
+                  <Star key={index} size={13} className="fill-transparent" aria-hidden="true" />
+                ))}
+                <span className="ml-1 text-[12px] font-bold">—</span>
+              </div>
+            </div>
+
+            {returnStateItems.length > 0 ? (
+              <div className="space-y-3">
+                {returnStateItems.map((item, index) => (
+                  <div key={`${item}-${index}`} className="flex items-center gap-3">
+                    <span className={`h-[10px] w-[10px] shrink-0 rounded-full ${index === 0 ? 'bg-primary-400' : 'bg-green-500'}`} />
+                    <span className="text-[13.5px] font-semibold text-slate-800">{item}</span>
+                  </div>
+                ))}
+              </div>
+            ) : recipeMemoryLine ? (
+              <p className="text-[13.5px] leading-relaxed text-slate-600">{recipeMemoryLine}</p>
+            ) : (
+              <p className="text-[13.5px] leading-relaxed text-slate-400">
+                Cook it or add a note to build your memory here.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+      notesCard={(
+        <RecipeNotesCard
+          note={recipeNote}
+          onChange={setRecipeNote}
+          onSave={saveRecipeNote}
+          onDelete={deleteRecipeNote}
+          focusSignal={noteFocusSignal}
+          status={recipeNoteStatus}
+        />
+      )}
+      sourceDetailsCard={overviewSourceDetails}
+      originalLink={viewModel.originalUrl ? (
+        <OriginalLink
+          url={viewModel.originalUrl}
+          platform={viewModel.platform}
+          t={t}
+          className="md:hidden"
+        />
+      ) : undefined}
+    />
+  );
   return (
     <div className="animate-fade-in relative z-0 px-0 pb-20 md:pb-6">
       <style>{HASHTAG_STYLE}</style>
 
-      <div className="flex w-full flex-col items-start md:grid md:grid-cols-[minmax(0,1fr)_20rem] md:gap-5 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
+      <div className="flex w-full flex-col items-start xl:grid xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-5">
         <div className="min-w-0 w-full flex flex-col">
-          {(refreshMessage || refreshError) && (
+          {(refreshMessage || refreshError || terminalBannerMessage) && (
             <div
               className={`mb-4 flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold ${
-                refreshError
+                refreshError || terminalBannerMessage
                   ? 'border-red-100 bg-red-50 text-red-700'
                   : 'border-primary-100 bg-primary-50 text-primary-800'
               }`}
             >
-              {refreshError ? (
+              {refreshError || terminalBannerMessage ? (
                 <AlertCircle size={18} aria-hidden="true" className="shrink-0" />
               ) : (
                 <Loader2 size={18} aria-hidden="true" className="shrink-0 animate-spin" />
               )}
-              <span>{refreshError || refreshMessage}</span>
+              <span>{refreshError || terminalBannerMessage || refreshMessage}</span>
             </div>
           )}
 
@@ -1529,6 +1723,7 @@ export const VideoDetail: React.FC = () => {
                 ) : (
                   <button
                     onClick={() => setIsActionSheetOpen(true)}
+                    aria-label="Open recipe actions"
                     className="w-11 h-11 rounded-full bg-white/25 backdrop-blur-md border border-white/40 text-white flex items-center justify-center hover:bg-white/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 md:w-9 md:h-9"
                   >
                     <EllipsisVertical size={18} />
@@ -1553,9 +1748,6 @@ export const VideoDetail: React.FC = () => {
                   <div className="bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-medium text-white">
                     {viewModel.duration}
                   </div>
-                )}
-                {showTypeBadge && (
-                  <ContentTypeBadge type={viewModel.contentType as any} toolsSubtype={toolsSubtype} />
                 )}
                 {hasLocations && !isLocationContent && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold tracking-wide uppercase bg-teal-50/90 text-teal-700 border-teal-200/80 backdrop-blur-sm">
@@ -1591,7 +1783,7 @@ export const VideoDetail: React.FC = () => {
                 )}
               </div>
 
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="mt-3 flex items-center justify-between gap-3 sm:mt-4">
                 <a
                   href={viewModel.originalUrl}
                   target="_blank"
@@ -1604,15 +1796,27 @@ export const VideoDetail: React.FC = () => {
                   </span>
                 </a>
                 {viewModel.savedAt && (
-                  <div className="flex items-center gap-1.5 text-sm text-gray-500 sm:justify-end">
+                  <div className="ml-auto flex shrink-0 items-center gap-1.5 text-sm text-gray-500">
                     <Save size={13} aria-hidden="true" className="shrink-0 text-gray-400" />
                     <span>{viewModel.savedAt}</span>
                   </div>
                 )}
               </div>
 
+              <div className="mt-4 grid grid-cols-4 overflow-hidden rounded-[18px] border border-slate-100 bg-white md:hidden">
+                {atAGlanceItems.map((item, index) => (
+                  <div key={`at-a-glance-${item.label}`} className="relative px-2 py-3 text-center">
+                    {index < atAGlanceItems.length - 1 && (
+                      <span className="pointer-events-none absolute right-0 top-1/2 h-9 w-px -translate-y-1/2 bg-slate-100" />
+                    )}
+                    <div className="text-[10px] font-bold uppercase tracking-[0.06em] text-slate-400">{item.label}</div>
+                    <div className="mt-1 text-[13px] font-extrabold tabular-nums text-slate-950">{item.value}</div>
+                  </div>
+                ))}
+              </div>
+
               {heroRecipeMetaChips.length > 0 && (
-                <div className="mt-[18px] grid grid-cols-1 gap-[10px] border-t border-slate-100 pt-[18px] sm:grid-cols-2 lg:grid-cols-4">
+                <div className="mt-[18px] hidden gap-[10px] border-t border-slate-100 pt-[18px] md:grid md:grid-cols-2 lg:grid-cols-4">
                   {heroRecipeMetaChips.map((chip) => (
                     <div
                       key={`${chip.label}-${chip.value}`}
@@ -1711,11 +1915,7 @@ export const VideoDetail: React.FC = () => {
               </div>
             )}
 
-            {false && showToolsListCard ? (
-              <div className="mt-4 pt-4 border-t border-primary-100/50">
-                <ToolsListCard toolsList={viewModel.toolsList ?? undefined} showOriginal={showOriginal} />
-              </div>
-            ) : hasBullets ? (
+            {hasBullets ? (
               <div className="space-y-3 mt-4 pt-4 border-t border-primary-100/50">
                 {isEditing ? (
                   <EditableBullets
@@ -1746,15 +1946,16 @@ export const VideoDetail: React.FC = () => {
 
           </div>
 
-          {showRecipeCard && hasEnglishSummaryContent && (
+          {showRecipeCard && hasEnglishSummaryContent && isDesktopRecipeDetailLayout && (
             <RecipeAiSummaryCard
               summaryText={englishSummaryContent.summaryText}
               headlines={englishSummaryContent.headlines}
+              collapsedByDefault={false}
             />
           )}
 
           {/* Recipe card */}
-          {showRecipeCard && stableRecipeForCard && (
+          {showRecipeCard && stableRecipeForCard && isDesktopRecipeDetailLayout && (
             <section className="mb-5">
               <RecipeDetailsCard
                 recipe={stableRecipeForCard}
@@ -1771,9 +1972,8 @@ export const VideoDetail: React.FC = () => {
                 rounding={rounding}
                 onMarkCooked={markCooked}
                 onAddCookingNote={openRecipeNotes}
-                    cookStatusLoading={cookStatusLoading}
+                cookStatusLoading={cookStatusLoading}
                 openCookModeSignal={cookModeOpenSignal}
-                secondaryAction={mobileShoppingAction}
                 showStartCookingButton={!isDesktopRecipeDetailLayout}
                 embedded={false}
                 headerContent={(
@@ -1803,7 +2003,52 @@ export const VideoDetail: React.FC = () => {
             </section>
           )}
 
-          {showRecipeCard && (recipeMetaChips.length > 0 || (viewModel.tags?.length > 0)) && (
+          {showRecipeCard && stableRecipeForCard && !isDesktopRecipeDetailLayout && (
+            <MobileRecipeDetailLayout
+              showSummary={hasEnglishSummaryContent}
+              summaryText={englishSummaryContent.summaryText}
+              summaryHeadlines={englishSummaryContent.headlines}
+              tabs={MOBILE_RECIPE_TABS}
+              activeTab={mobileRecipeTab}
+              activeIndex={MOBILE_RECIPE_TAB_INDEX[mobileRecipeTab]}
+              overviewTabKey="overview"
+              onTabChange={handleMobileRecipeTabChange}
+              overviewContent={overviewContent}
+              recipeDetailsCardProps={{
+                recipe: stableRecipeForCard,
+                recipeId: currentVideoId,
+                recipeName: viewModel.title ?? "Recipe",
+                servingScale,
+                onServingScaleChange: setServingScale,
+                scaleQuantity,
+                useMetric,
+                onToggleMetric: setUseMetric,
+                temperatureUnit,
+                recipeConversion,
+                volumePreference,
+                rounding,
+                onMarkCooked: markCooked,
+                onAddCookingNote: openRecipeNotes,
+                cookStatusLoading,
+                openCookModeSignal: cookModeOpenSignal,
+                showStartCookingButton: false,
+                showRecipeHeader: false,
+                activeTab: mobileRecipeDetailsTab,
+                embedded: true,
+                askPlacement: "persistent",
+                askInitiallyCollapsed: false,
+                askVisible: mobileRecipeTab === 'ingredients' || mobileRecipeTab === 'steps',
+                flatSections: true,
+                ingredientsHeaderContent: mobileTimingStripContent,
+                ingredientsActionContent: ingredientsActionContent,
+                ingredientsServingContent: ingredientsServingContent,
+                ingredientsFooterContent: ingredientsFooterContent,
+                stepsHeaderContent: mobileTimingStripContent,
+              }}
+            />
+          )}
+
+          {showRecipeCard && isDesktopRecipeDetailLayout && (viewModel.tags?.length > 0) && (
             <section className="mb-5">
               <p className="mb-2.5 ml-0.5 text-[11px] font-bold uppercase tracking-[0.1em] text-gray-400">More details</p>
               <div className="overflow-hidden rounded-[24px] border border-white/75 bg-white/90 shadow-[0_4px_18px_rgba(15,23,42,0.06)] backdrop-blur-sm">
@@ -1822,84 +2067,8 @@ export const VideoDetail: React.FC = () => {
                     </div>
                   </details>
                 )}
-                {recipeMetaChips.length > 0 && (
-                  <details className="group border-b border-slate-100 last:border-b-0">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 [&::-webkit-details-marker]:hidden">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-[14.5px] font-bold text-slate-700">AI extraction details</span>
-                        <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-bold text-primary-600">AI extracted</span>
-                      </div>
-                      <ChevronDown size={16} className="shrink-0 text-slate-300 transition-transform duration-200 group-open:rotate-180" />
-                    </summary>
-                    <div className="flex flex-wrap gap-1.5 border-t border-slate-100 bg-white px-4 pb-4 pt-3">
-                      {recipeMetaChips.map((chip) => (
-                        <span key={`details-${chip.label}-${chip.value}`} className="rounded-full bg-slate-100 px-3 py-1.5 text-[12.5px] font-semibold text-slate-600">
-                          {chip.label}: {chip.value}
-                        </span>
-                      ))}
-                    </div>
-                  </details>
-                )}
               </div>
             </section>
-          )}
-
-          {showRecipeCard && viewModel.originalUrl && (
-            <div className="md:hidden mb-4">
-              <OriginalLink
-                url={viewModel.originalUrl}
-                platform={viewModel.platform}
-                t={t}
-              />
-            </div>
-          )}
-
-          {showRecipeCard && !isDesktopRecipeDetailLayout && (
-            <RecipeMobileStateSection
-              note={recipeNote}
-              onNoteChange={setRecipeNote}
-              onNoteSave={saveRecipeNote}
-              onNoteDelete={deleteRecipeNote}
-              noteFocusSignal={noteFocusSignal}
-              noteStatus={recipeNoteStatus}
-              cookStatus={cookStatus}
-              cookStatusLoading={cookStatusLoading}
-              onMarkCooked={markCooked}
-              onResetCookStatus={resetCookState}
-              originalUrl={viewModel.originalUrl}
-              platform={viewModel.platform}
-              t={t}
-            />
-          )}
-
-          {hasRecipeSourceDetails && (
-            <div className="md:hidden">
-              <Accordion
-                key={currentVideoId}
-                icon={<AlignLeft size={16} />}
-                label={t('videoDetail:sourceDetails', 'Source details')}
-              >
-                <SourceDetailsContent
-                  caption={viewModel.caption}
-                  transcript={viewModel.transcript}
-                  originalUrl={viewModel.originalUrl}
-                  platform={viewModel.platform}
-                  t={t}
-                  showOriginalLink={false}
-                  tags={viewModel.tags}
-                />
-              </Accordion>
-            </div>
-          )}
-
-          {false && viewModel.workout && (
-            <WorkoutCard workoutData={viewModel.workout} showOriginal={showOriginal} />
-          )}
-
-          {false && isLocationContent && normalizedLocations.length > 0 && (
-            <div className="relative z-0 mb-5">
-              <LocationCard location={normalizedLocations} processId={currentVideoId} />
-            </div>
           )}
 
           {showNonRecipeFallback && viewModel.caption && (
@@ -2016,7 +2185,9 @@ export const VideoDetail: React.FC = () => {
       <ActionSheet
         isOpen={isActionSheetOpen}
         onClose={() => setIsActionSheetOpen(false)}
-        actions={actionItems}
+        title={!isDesktopRecipeDetailLayout && showRecipeCard ? 'Recipe actions' : undefined}
+        actions={!isDesktopRecipeDetailLayout && showRecipeCard ? [] : actionItems}
+        content={!isDesktopRecipeDetailLayout && showRecipeCard ? mobileRecipeOverflowContent : undefined}
       />
 
       <MoveCollectionModalExt
