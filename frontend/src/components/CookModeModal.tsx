@@ -419,6 +419,7 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   const didLockScrollRef = React.useRef(false);
   const didHideAppRootRef = React.useRef(false);
   const didFocusDialogRef = React.useRef(false);
+  const lastProgressSyncRef = React.useRef<number | null>(null);
   const wakeLock = React.useRef<any>(null);
   const started = React.useRef(Date.now());
   const opened = React.useRef(false);
@@ -630,7 +631,14 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   }, [isOpen, initialStepIndex, steps.length]);
 
   React.useEffect(() => {
-    if (isOpen && phase === 'cook') onProgressChange?.(idx);
+    if (!isOpen || phase !== 'cook') {
+      lastProgressSyncRef.current = null;
+      return;
+    }
+
+    if (lastProgressSyncRef.current === idx) return;
+    lastProgressSyncRef.current = idx;
+    onProgressChange?.(idx);
   }, [isOpen, phase, idx, onProgressChange]);
 
   React.useEffect(() => {
@@ -645,7 +653,6 @@ export const CookModeModal: React.FC<CookModeModalProps> = ({
   const startCooking = () => {
     started.current = Date.now();
     setPhase('cook');
-    onProgressChange?.(idx);
   };
 
   const completeCurrentStep = () => {

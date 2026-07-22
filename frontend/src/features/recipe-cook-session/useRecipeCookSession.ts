@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createEmptyCookSession,
   getRecipeCookSession,
@@ -135,21 +135,28 @@ export function useRecipeCookSession(
     };
   }, [reelId, enabled, loaded, session]);
 
-  const updateSession = (
+  const updateSession = useCallback((
     updater: (current: RecipeCookSessionPayload) => RecipeCookSessionPayload
   ) => {
     setSession((current) => updater(current));
-  };
+  }, []);
 
-  const setCurrentStepIndex = (stepIndex: number) => {
-    updateSession((current) => ({
-      ...current,
-      currentStepIndex: Math.max(0, stepIndex),
-      status: 'active',
-    }));
-  };
+  const setCurrentStepIndex = useCallback((stepIndex: number) => {
+    updateSession((current) => {
+      const nextStepIndex = Math.max(0, stepIndex);
+      if (current.currentStepIndex === nextStepIndex && current.status === 'active') {
+        return current;
+      }
 
-  const toggleCheckedIngredientId = (id: string) => {
+      return {
+        ...current,
+        currentStepIndex: nextStepIndex,
+        status: 'active',
+      };
+    });
+  }, [updateSession]);
+
+  const toggleCheckedIngredientId = useCallback((id: string) => {
     updateSession((current) => {
       const ids = toSet(current.checkedIngredientIds);
       ids.has(id) ? ids.delete(id) : ids.add(id);
@@ -160,17 +167,17 @@ export function useRecipeCookSession(
         status: 'active',
       };
     });
-  };
+  }, [updateSession]);
 
-  const setCheckedIngredientIds = (ids: string[]) => {
+  const setCheckedIngredientIds = useCallback((ids: string[]) => {
     updateSession((current) => ({
       ...current,
       checkedIngredientIds: [...new Set(ids.map((id) => String(id)))],
       status: 'active',
     }));
-  };
+  }, [updateSession]);
 
-  const toggleCompletedStepId = (stepIndex: number) => {
+  const toggleCompletedStepId = useCallback((stepIndex: number) => {
     updateSession((current) => {
       const ids = toSet(current.completedStepIds);
       const id = String(stepIndex);
@@ -182,9 +189,9 @@ export function useRecipeCookSession(
         status: 'active',
       };
     });
-  };
+  }, [updateSession]);
 
-  const markCompletedStepId = (stepIndex: number) => {
+  const markCompletedStepId = useCallback((stepIndex: number) => {
     updateSession((current) => {
       const ids = toSet(current.completedStepIds);
       ids.add(String(stepIndex));
@@ -195,14 +202,14 @@ export function useRecipeCookSession(
         status: 'active',
       };
     });
-  };
+  }, [updateSession]);
 
-  const completeSession = () => {
+  const completeSession = useCallback(() => {
     updateSession((current) => ({
       ...current,
       status: 'completed' as RecipeCookSessionStatus,
     }));
-  };
+  }, [updateSession]);
 
   const checkedIngredientIds = useMemo(
     () => toSet(session.checkedIngredientIds),
