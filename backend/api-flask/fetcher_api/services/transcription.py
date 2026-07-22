@@ -3,7 +3,7 @@ Parallel transcription service — Deepgram + Voxtral.
 
 Decision matrix:
   Deepgram=OK    + Voxtral=OK    → send dual-block to AI; store Voxtral as primary (better proper nouns)
-  Deepgram=EMPTY + Voxtral=OK    → return empty  (Deepgram = authoritative "no speech" signal)
+  Deepgram=EMPTY + Voxtral=OK    → use Voxtral
   Deepgram=ERROR + Voxtral=OK    → use Voxtral
   Deepgram=OK    + Voxtral=ERROR → use Deepgram
   Deepgram=ERROR + Voxtral=ERROR → return empty
@@ -13,11 +13,12 @@ Decision matrix:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
 import tempfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 import httpx
@@ -34,11 +35,6 @@ DEEPGRAM_STATUS_ERROR = "error"
 VOXTRAL_MODEL = os.getenv("VOXTRAL_MODEL", "voxtral-mini-2507")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
-
-# Deepgram is the authoritative silence detector.
-# When Deepgram returns empty the video has no intelligible speech —
-# Voxtral hallucinated from background music/noise.
-DEEPGRAM_EMPTY_IS_AUTHORITATIVE = True
 
 DEEPGRAM_PAD_START_MS = 500
 
@@ -65,6 +61,14 @@ class TranscriptionResult:
     transcription_source: str = ""      # "deepgram" | "voxtral" | "merged" | "empty"
     deepgram: Optional[SingleTranscriptResult] = None
     voxtral: Optional[SingleTranscriptResult] = None
+    debug: Optional[dict] = None
+
+
+@dataclass
+class AudioPreparationResult:
+    status: str
+    audio_path: Optional[str] = None
+    debug: dict = field(default_factory=dict)
 
 
 # ── Sync wrapper helpers ──────────────────────────────────────────────────────
@@ -95,17 +99,132 @@ def transcribe_video_deepgram(video_path: str) -> dict:
 
 # ── Audio compression ─────────────────────────────────────────────────────────
 
+def _extract_useful_ffmpeg_stderr(stderr: bytes | str) -> str:
+    text = stderr.decode(errors="ignore") if isinstance(stderr, bytes) else str(stderr or "")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return "ffmpeg_failed_without_stderr"
+
+    noise_prefixes = (
+        "ffmpeg version",
+        "built with",
+        "configuration:",
+        "libavutil",
+        "libavcodec",
+        "libavformat",
+        "libavdevice",
+        "libavfilter",
+        "libswscale",
+        "libswresample",
+        "libpostproc",
+    )
+    useful_lines = [line for line in lines if not line.startswith(noise_prefixes)]
+    if not useful_lines:
+        useful_lines = lines[-6:]
+    return " | ".join(useful_lines[:8])[:800]
+
+
 def _run_ffmpeg(cmd: list[str], timeout: int = 60) -> None:
     result = subprocess.run(cmd, capture_output=True, timeout=timeout)
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.decode(errors="ignore")[:400])
+        raise RuntimeError(_extract_useful_ffmpeg_stderr(result.stderr))
 
 
-def _compress_audio(video_path: str, pad_start_ms: int = DEEPGRAM_PAD_START_MS) -> str:
+def _probe_media_file(path: str) -> dict:
+    summary = {
+        "path": path,
+        "file_size": None,
+        "video_streams": 0,
+        "audio_streams": 0,
+        "video_codecs": [],
+        "audio_codecs": [],
+        "duration": None,
+        "ffprobe_error": None,
+    }
+
+    if not path or not os.path.exists(path):
+        summary["ffprobe_error"] = "file_missing"
+        return summary
+
+    try:
+        summary["file_size"] = os.path.getsize(path)
+    except OSError as exc:
+        summary["ffprobe_error"] = f"stat_failed: {exc}"
+        return summary
+
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-print_format", "json",
+                "-show_entries", "format=duration:stream=index,codec_type,codec_name",
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        summary["ffprobe_error"] = "timeout"
+        return summary
+    except Exception as exc:
+        summary["ffprobe_error"] = str(exc)
+        return summary
+
+    if result.returncode != 0:
+        summary["ffprobe_error"] = _extract_useful_ffmpeg_stderr(result.stderr or result.stdout)
+        return summary
+
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        summary["ffprobe_error"] = f"invalid_json: {exc}"
+        return summary
+
+    streams = payload.get("streams") or []
+    for stream in streams:
+        codec_type = stream.get("codec_type")
+        codec_name = stream.get("codec_name")
+        if codec_type == "video":
+            summary["video_streams"] += 1
+            if codec_name and codec_name not in summary["video_codecs"]:
+                summary["video_codecs"].append(codec_name)
+        elif codec_type == "audio":
+            summary["audio_streams"] += 1
+            if codec_name and codec_name not in summary["audio_codecs"]:
+                summary["audio_codecs"].append(codec_name)
+
+    duration_raw = ((payload.get("format") or {}).get("duration") or "").strip()
+    if duration_raw:
+        try:
+            summary["duration"] = round(float(duration_raw), 3)
+        except ValueError:
+            summary["duration"] = duration_raw
+
+    return summary
+
+
+def _compress_audio(video_path: str, pad_start_ms: int = DEEPGRAM_PAD_START_MS) -> AudioPreparationResult:
     tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
     tmp.close()
+    media_probe = _probe_media_file(video_path)
+    debug = {"media_probe": media_probe}
 
     silence_sec = max(pad_start_ms / 1000.0, 0.0)
+
+    if media_probe.get("ffprobe_error") is None and media_probe.get("audio_streams", 0) == 0:
+        logger.warning(
+            "transcription: source has no audio stream; skipping ASR path audio_streams=%s video_streams=%s path=%s",
+            media_probe.get("audio_streams"),
+            media_probe.get("video_streams"),
+            video_path,
+        )
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        return AudioPreparationResult(status="no_audio_stream", debug=debug)
 
     # 1) Best path: prepend a short silence pad to real audio
     try:
@@ -124,9 +243,10 @@ def _compress_audio(video_path: str, pad_start_ms: int = DEEPGRAM_PAD_START_MS) 
             "🎵 Audio compressed+padded (%dms silence): %dKB → %s",
             pad_start_ms, size_kb, tmp.name,
         )
-        return tmp.name
+        return AudioPreparationResult(status="ok", audio_path=tmp.name, debug=debug)
     except Exception as exc:
-        logger.warning("transcription: padded audio extraction failed, retrying plain extract: %s", exc)
+        debug["padded_extract_error"] = str(exc)
+        logger.warning("transcription: padded audio extraction failed: %s", exc)
 
     # 2) Fallback: plain audio extract
     try:
@@ -139,21 +259,17 @@ def _compress_audio(video_path: str, pad_start_ms: int = DEEPGRAM_PAD_START_MS) 
         _run_ffmpeg(plain_cmd)
         size_kb = os.path.getsize(tmp.name) // 1024
         logger.info("🎵 Audio compressed (plain extract): %dKB → %s", size_kb, tmp.name)
-        return tmp.name
+        return AudioPreparationResult(status="ok", audio_path=tmp.name, debug=debug)
     except Exception as exc:
-        logger.warning("transcription: plain audio extraction failed, generating silence-only audio: %s", exc)
+        debug["plain_extract_error"] = str(exc)
+        logger.warning("transcription: plain audio extraction failed: %s", exc)
 
-    # 3) Final fallback: silence-only clip
-    silence_cmd = [
-        "ffmpeg", "-y",
-        "-f", "lavfi", "-t", "2", "-i", "anullsrc=r=16000:cl=mono",
-        "-ar", "16000", "-ac", "1", "-b:a", "32k",
-        tmp.name,
-    ]
-    _run_ffmpeg(silence_cmd)
-    size_kb = os.path.getsize(tmp.name) // 1024
-    logger.info("🎵 Silence-only audio generated: %dKB → %s", size_kb, tmp.name)
-    return tmp.name
+    try:
+        os.unlink(tmp.name)
+    except OSError:
+        pass
+
+    return AudioPreparationResult(status="audio_extraction_failed", debug=debug)
 
 
 # ── Deepgram ──────────────────────────────────────────────────────────────────
@@ -307,25 +423,7 @@ def _select_transcript(
     When both sources succeed, Voxtral is stored as the primary displayed transcript
     because it is often more accurate for proper nouns.
     Deepgram is still sent to the AI as part of the dual-block via get_prompt_transcript().
-    Deepgram remains the authoritative "no speech" detector — its EMPTY status wins.
     """
-
-    if dg.status == DEEPGRAM_STATUS_EMPTY and DEEPGRAM_EMPTY_IS_AUTHORITATIVE:
-        if vx.is_ok():
-            logger.info(
-                "transcription: 🔇 Deepgram confirmed no speech — suppressing Voxtral (%d chars)",
-                vx.chars,
-            )
-        else:
-            logger.info("transcription: 🔇 Deepgram confirmed no speech — returning empty")
-        return TranscriptionResult(
-            status="empty/music",
-            transcript="",
-            detected_language=None,
-            transcription_source="empty",
-            deepgram=dg,
-            voxtral=vx,
-        )
 
     if dg.status == DEEPGRAM_STATUS_ERROR:
         if vx.is_ok():
@@ -374,7 +472,13 @@ def _select_transcript(
         )
 
     if vx.is_ok():
-        logger.info("transcription: 🎯 Using Voxtral only (Deepgram empty, non-authoritative mode)")
+        if dg.status == DEEPGRAM_STATUS_EMPTY:
+            logger.info(
+                "transcription: 🎯 Deepgram empty but preserving Voxtral transcript (%d chars)",
+                vx.chars,
+            )
+        else:
+            logger.info("transcription: 🎯 Using Voxtral only (Deepgram unavailable)")
         return TranscriptionResult(
             status="ok",
             transcript=vx.transcript,
@@ -415,7 +519,22 @@ async def transcribe_video(video_path: str) -> TranscriptionResult:
 
     audio_path = None
     try:
-        audio_path = _compress_audio(video_path)
+        prep = _compress_audio(video_path)
+        if prep.status != "ok" or not prep.audio_path:
+            logger.warning(
+                "transcription: aborting ASR before providers status=%s debug=%s",
+                prep.status,
+                prep.debug,
+            )
+            return TranscriptionResult(
+                status=prep.status,
+                transcript="",
+                detected_language="unknown",
+                transcription_source="empty",
+                debug=prep.debug,
+            )
+
+        audio_path = prep.audio_path
         audio_filename = os.path.basename(audio_path)
 
         dg_task = asyncio.create_task(_transcribe_deepgram(audio_path))
@@ -423,6 +542,7 @@ async def transcribe_video(video_path: str) -> TranscriptionResult:
 
         dg_result, vx_result = await asyncio.gather(dg_task, vx_task)
         result = _select_transcript(dg_result, vx_result)
+        result.debug = prep.debug
 
         logger.info(
             "transcription: 📊 Final — status=%s source=%s chars=%d",

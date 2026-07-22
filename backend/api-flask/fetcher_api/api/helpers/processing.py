@@ -57,6 +57,11 @@ _PUBLIC_CONTENT_TYPES = {
     "general",
 }
 
+_INSTAGRAM_BLOCKED_CODES = {
+    "instagram_empty_media_response",
+    "instagram_server_access_blocked",
+}
+
 
 def _normalize_content_type(raw: str | None) -> str:
     ct = (raw or "").strip().lower()
@@ -287,6 +292,7 @@ def _transcription_result_to_dict(t: TranscriptionResult | None) -> dict:
             "transcription_source": "empty",
             "deepgram": None,
             "voxtral": None,
+            "debug": None,
         }
 
     return {
@@ -296,6 +302,7 @@ def _transcription_result_to_dict(t: TranscriptionResult | None) -> dict:
         "transcription_source": t.transcription_source or "empty",
         "deepgram": _single_transcript_to_dict(getattr(t, "deepgram", None)),
         "voxtral": _single_transcript_to_dict(getattr(t, "voxtral", None)),
+        "debug": getattr(t, "debug", None),
     }
 
 
@@ -306,8 +313,7 @@ def _is_silent_from_transcription_data(data: dict) -> bool:
 
     return (
         status in {"empty/music", "empty", "music_only"}
-        or source == "empty"
-        or not transcript
+        or (source == "empty" and not transcript and status not in {"audio_extraction_failed", "no_audio_stream", "error"})
     )
 
 
@@ -403,7 +409,28 @@ def _mark_forced_reprocess_failed(result: dict, message: str) -> None:
         insert_reel_into_db(result)
         return
 
+    previous_status = str(result.get("previous_status") or "").strip().lower()
+    previous_error_message = result.get("previous_error_message")
+
     try:
+        if previous_status in {"done", "completed"}:
+            execute(
+                """
+                UPDATE reels
+                SET status = %s,
+                    error_message = %s,
+                    updated_at = NOW()
+                WHERE id = %s AND user_id = %s
+                """,
+                (previous_status, previous_error_message, process_id, user_id),
+            )
+            logger.warning(
+                "⚠️ Forced reprocess failed for %s; restored prior successful state status=%s",
+                process_id,
+                previous_status,
+            )
+            return
+
         execute(
             """
             UPDATE reels
@@ -417,6 +444,22 @@ def _mark_forced_reprocess_failed(result: dict, message: str) -> None:
     except Exception:
         logger.exception("❌ Failed to mark forced reprocess error for %s", process_id)
         raise
+
+
+def _user_safe_download_failure_message(platform_code: str, dl_result: dict) -> str:
+    error_code = str(dl_result.get("error_code") or "").strip().lower()
+    raw_error = str(dl_result.get("error") or "").strip()
+
+    if platform_code == "IG" and error_code in _INSTAGRAM_BLOCKED_CODES:
+        return "Save accepted. Extraction failed because Instagram blocked server access. Retry possible."
+
+    if raw_error:
+        return raw_error
+
+    if error_code:
+        return error_code
+
+    return "processing_failed"
 
 
 def _fail_processing(result: dict, message: str, force: bool) -> None:
@@ -948,7 +991,7 @@ def background_process(
                 download_error_message = (
                     dl_result.get("error")
                     if dl_result.get("error_code") == "facebook_download_failed_after_3_attempts"
-                    else dl_result.get("error_code") or dl_result.get("error")
+                    else _user_safe_download_failure_message(platform_code, dl_result)
                 )
                 _fail_processing(
                     result,
@@ -961,6 +1004,9 @@ def background_process(
             post_obj = dl_result.get("post")
             caption = caption or meta.get("caption", "")
             author_name = author_name or meta.get("username", "")
+            downloaded_video_path = dl_result.get("video_path")
+            if downloaded_video_path and os.path.exists(downloaded_video_path):
+                video_path = downloaded_video_path
             result["caption"] = caption
             result["author_name"] = author_name
         else:
@@ -972,7 +1018,12 @@ def background_process(
         _collect_after_stage("after_download", result, job_started_at)
 
         duration, duration_seconds = get_video_duration(video_path)
-        is_too_long = duration_seconds > MAX_DURATION_SECONDS
+        is_too_long = (
+            duration_seconds is not None
+            and duration_seconds > MAX_DURATION_SECONDS
+        )
+        if duration_seconds is None:
+            logger.warning("⚠️ Video duration unknown; continuing without max-duration gate path=%s", video_path)
         _log_processing_stage("after_duration_probe", result, job_started_at)
 
         if is_too_long:

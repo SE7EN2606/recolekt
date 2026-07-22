@@ -300,6 +300,18 @@ def _queue_existing_reel_refresh(
         "gcs_urls": {},
     }
 
+    existing_row = fetch_one(
+        """
+        SELECT status, error_message
+        FROM reels
+        WHERE id = %s AND user_id = %s
+        LIMIT 1
+        """,
+        (reel_id, user_id),
+    ) or {}
+    result["previous_status"] = existing_row.get("status")
+    result["previous_error_message"] = existing_row.get("error_message")
+
     try:
         execute(
             """
@@ -360,6 +372,7 @@ def _queue_existing_reel_refresh(
             "reprocessing": True,
             "reel_id": reel_id,
             "process_id": reel_id,
+            "message": "Save accepted. Retry extraction started.",
         },
         "status_code": 202,
     }
@@ -790,6 +803,7 @@ def summarize():
         "reel_id": result["process_id"],
         "process_id": result["process_id"],
         "preview_url": None,
+        "message": "Save accepted. Extraction in progress.",
     })
 
 
