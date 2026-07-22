@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 export interface ActionItem {
@@ -20,39 +21,244 @@ interface ActionSheetProps {
 export const ActionSheet: React.FC<ActionSheetProps> = ({ isOpen, onClose, title, actions = [], content }) => {
   const [shouldRender, setShouldRender] = useState(false);
   const [animateOpen, setAnimateOpen] = useState(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const originalHtmlOverflowRef = useRef('');
+  const originalBodyOverflowRef = useRef('');
+  const originalBodyPositionRef = useRef('');
+  const originalBodyTopRef = useRef('');
+  const originalBodyWidthRef = useRef('');
+  const originalBodyPaddingRightRef = useRef('');
+  const appRootRef = useRef<HTMLElement | null>(null);
+  const originalRootInertRef = useRef(false);
+  const originalRootAriaHiddenRef = useRef<string | null>(null);
+  const scrollYRef = useRef(0);
+  const didLockScrollRef = useRef(false);
+  const didHideAppRootRef = useRef(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openAnimationFrameRef = useRef<number[]>([]);
+  const didFocusDialogRef = useRef(false);
+  const titleId = useId();
   const { t } = useTranslation(['common']);
+  const dialogLabel = title || t('common:actions', 'Actions');
+
+  const clearOpenAnimationFrame = () => {
+    openAnimationFrameRef.current.forEach((frameId) => cancelAnimationFrame(frameId));
+    openAnimationFrameRef.current = [];
+  };
+
+  const clearCloseTimer = () => {
+    if (closeTimerRef.current === null) return;
+    clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  };
+
+  const restoreFocus = () => {
+    const target = restoreFocusRef.current;
+    restoreFocusRef.current = null;
+    if (target && document.contains(target)) {
+      target.focus({ preventScroll: true });
+    }
+  };
+
+  const unlockScroll = () => {
+    if (!didLockScrollRef.current) return;
+    document.documentElement.style.overflow = originalHtmlOverflowRef.current;
+    document.body.style.paddingRight = originalBodyPaddingRightRef.current;
+    document.body.style.overflow = originalBodyOverflowRef.current;
+    document.body.style.position = originalBodyPositionRef.current;
+    document.body.style.top = originalBodyTopRef.current;
+    document.body.style.width = originalBodyWidthRef.current;
+    window.scrollTo(0, scrollYRef.current);
+    didLockScrollRef.current = false;
+  };
+
+  const lockScroll = () => {
+    if (didLockScrollRef.current) return;
+
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    scrollYRef.current = window.scrollY;
+    originalHtmlOverflowRef.current = document.documentElement.style.overflow;
+    originalBodyPaddingRightRef.current = document.body.style.paddingRight;
+    originalBodyOverflowRef.current = document.body.style.overflow;
+    originalBodyPositionRef.current = document.body.style.position;
+    originalBodyTopRef.current = document.body.style.top;
+    originalBodyWidthRef.current = document.body.style.width;
+    document.documentElement.style.overflow = 'hidden';
+    if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollYRef.current}px`;
+    document.body.style.width = '100%';
+    didLockScrollRef.current = true;
+  };
+
+  const getAppRoot = () => {
+    const root = document.getElementById('root');
+    if (!root || root === document.body) return null;
+    return root;
+  };
+
+  const hideAppRoot = () => {
+    if (didHideAppRootRef.current) return;
+
+    const root = getAppRoot();
+    if (!root) return;
+
+    appRootRef.current = root;
+    originalRootInertRef.current = root.inert;
+    originalRootAriaHiddenRef.current = root.getAttribute('aria-hidden');
+    root.inert = true;
+    root.setAttribute('aria-hidden', 'true');
+    didHideAppRootRef.current = true;
+  };
+
+  const restoreAppRoot = () => {
+    if (!didHideAppRootRef.current) return;
+
+    const root = appRootRef.current;
+    if (root && document.contains(root)) {
+      root.inert = originalRootInertRef.current;
+      if (originalRootAriaHiddenRef.current === null) {
+        root.removeAttribute('aria-hidden');
+      } else {
+        root.setAttribute('aria-hidden', originalRootAriaHiddenRef.current);
+      }
+    }
+
+    appRootRef.current = null;
+    originalRootInertRef.current = false;
+    originalRootAriaHiddenRef.current = null;
+    didHideAppRootRef.current = false;
+  };
+
+  const restoreModalState = () => {
+    restoreAppRoot();
+    unlockScroll();
+    restoreFocus();
+  };
 
   useEffect(() => {
     if (isOpen) {
+      clearCloseTimer();
+      clearOpenAnimationFrame();
+      didFocusDialogRef.current = false;
       setShouldRender(true);
-      requestAnimationFrame(() => requestAnimationFrame(() => setAnimateOpen(true)));
-      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-      if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
-      document.body.style.overflow = 'hidden';
+      const firstFrame = requestAnimationFrame(() => {
+        const secondFrame = requestAnimationFrame(() => setAnimateOpen(true));
+        openAnimationFrameRef.current = [secondFrame];
+      });
+      openAnimationFrameRef.current = [firstFrame];
+      restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      lockScroll();
+      hideAppRoot();
     } else {
       setAnimateOpen(false);
-      const timer = setTimeout(() => {
+      clearOpenAnimationFrame();
+      clearCloseTimer();
+      if (!didLockScrollRef.current && !didHideAppRootRef.current) {
         setShouldRender(false);
-        document.body.style.paddingRight = '';
-        document.body.style.overflow = '';
+        return;
+      }
+      closeTimerRef.current = setTimeout(() => {
+        flushSync(() => setShouldRender(false));
+        restoreModalState();
+        didFocusDialogRef.current = false;
+        closeTimerRef.current = null;
       }, 300);
-      return () => clearTimeout(timer);
     }
+
     return () => {
-      document.body.style.paddingRight = '';
-      document.body.style.overflow = '';
+      clearCloseTimer();
+      clearOpenAnimationFrame();
     };
   }, [isOpen]);
 
-  if (!shouldRender) return null;
+  useEffect(() => {
+    return () => {
+      clearCloseTimer();
+      clearOpenAnimationFrame();
+      restoreModalState();
+    };
+  }, []);
 
-  return (
+  useEffect(() => {
+    if (!shouldRender) return;
+
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    const getFocusableElements = () =>
+      Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          [
+            'a[href]',
+            'button:not([disabled])',
+            'textarea:not([disabled])',
+            'input:not([disabled])',
+            'select:not([disabled])',
+            '[tabindex]:not([tabindex="-1"])',
+          ].join(','),
+        ),
+      ).filter((element) => !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true');
+
+    if (isOpen && !didFocusDialogRef.current) {
+      const focusableElements = getFocusableElements();
+      (focusableElements[0] || dialog).focus({ preventScroll: true });
+      didFocusDialogRef.current = true;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+
+      const elements = getFocusableElements();
+      if (elements.length === 0) {
+        event.preventDefault();
+        dialog.focus({ preventScroll: true });
+        return;
+      }
+
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (!dialog.contains(active)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose, shouldRender]);
+
+  if (!shouldRender || typeof document === 'undefined') return null;
+
+  return createPortal(
     <div className="fixed inset-0 z-[200] flex flex-col justify-end items-center">
       <div
         className={`absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${animateOpen ? 'opacity-100' : 'opacity-0'}`}
         onClick={onClose}
       />
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
+        aria-label={title ? undefined : dialogLabel}
+        tabIndex={-1}
         className={`relative w-full md:max-w-md bg-white/95 backdrop-blur-xl rounded-t-[32px] md:rounded-b-none shadow-2xl transition-all duration-300 ease-out transform-gpu flex flex-col ${animateOpen ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'}`}
         style={{ maxHeight: '85vh' }}
       >
@@ -63,7 +269,7 @@ export const ActionSheet: React.FC<ActionSheetProps> = ({ isOpen, onClose, title
 
         {title && (
           <div className="flex-shrink-0 px-6 pb-3 text-center">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">{title}</h3>
+            <h3 id={titleId} className="text-xs font-bold text-gray-400 uppercase tracking-widest">{title}</h3>
           </div>
         )}
 
@@ -109,6 +315,7 @@ export const ActionSheet: React.FC<ActionSheetProps> = ({ isOpen, onClose, title
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };

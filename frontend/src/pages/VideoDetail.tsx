@@ -344,7 +344,7 @@ export const VideoDetail: React.FC = () => {
   }, [perfEnabled]);
 
   useScrollLock(
-    isActionSheetOpen || isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen,
+    isMoveModalOpen || isReportModalOpen || isDeleteConfirmOpen,
   );
 
   // Reset state whenever the user navigates to a different video
@@ -1723,6 +1723,7 @@ export const VideoDetail: React.FC = () => {
                 ) : (
                   <button
                     onClick={() => setIsActionSheetOpen(true)}
+                    aria-label="Open recipe actions"
                     className="w-11 h-11 rounded-full bg-white/25 backdrop-blur-md border border-white/40 text-white flex items-center justify-center hover:bg-white/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 md:w-9 md:h-9"
                   >
                     <EllipsisVertical size={18} />
