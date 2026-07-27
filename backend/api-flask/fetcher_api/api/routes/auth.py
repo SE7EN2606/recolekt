@@ -3,6 +3,8 @@ import logging
 import jwt
 import requests
 import random
+import hmac
+import secrets
 import resend
 import urllib.parse
 import time
@@ -30,6 +32,7 @@ auth_bp = Blueprint("auth", __name__)
 resend.api_key = os.getenv("RESEND_API_KEY")
 FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@recolekt.app")
 APP_URL = os.getenv("APP_URL", "https://recolekt.app")
+DEFAULT_OAUTH_NEXT_PATH = "/gallery"
 
 # 🔥 MEMORY CACHE to prevent duplicate webhook processing
 PROCESSED_WEBHOOKS = {}
@@ -78,6 +81,35 @@ def _get_backend_base() -> str:
         if env_url:
             return env_url
     return "https://api.recolekt.app"
+
+
+def _safe_oauth_next_path(value: str | None) -> str:
+    candidate = (value or "").strip()
+    if not candidate:
+        return DEFAULT_OAUTH_NEXT_PATH
+
+    decoded = urllib.parse.unquote(candidate)
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in candidate + decoded):
+        return DEFAULT_OAUTH_NEXT_PATH
+    if "\\" in candidate or "\\" in decoded:
+        return DEFAULT_OAUTH_NEXT_PATH
+    if not candidate.startswith("/") or candidate.startswith("//"):
+        return DEFAULT_OAUTH_NEXT_PATH
+    if decoded.startswith("//"):
+        return DEFAULT_OAUTH_NEXT_PATH
+
+    parsed = urllib.parse.urlsplit(candidate)
+    decoded_parsed = urllib.parse.urlsplit(decoded)
+    if parsed.scheme or parsed.netloc or decoded_parsed.scheme or decoded_parsed.netloc:
+        return DEFAULT_OAUTH_NEXT_PATH
+    if parsed.fragment:
+        return DEFAULT_OAUTH_NEXT_PATH
+
+    return urllib.parse.urlunsplit(("", "", parsed.path or DEFAULT_OAUTH_NEXT_PATH, parsed.query, ""))
+
+
+def _frontend_redirect(frontend_base: str, path: str) -> str:
+    return f"{frontend_base.rstrip('/')}{_safe_oauth_next_path(path)}"
 
 
 def _extract_first_url(text: str) -> str:
@@ -1136,17 +1168,19 @@ def instagram_send_test_dm():
 @auth_bp.route("/google/login", methods=["GET"])
 def google_login():
     frontend_base = _get_frontend_base()
-    next_url = request.args.get("next", f"{frontend_base}/gallery")
+    next_path = _safe_oauth_next_path(request.args.get("next"))
+    oauth_state = secrets.token_urlsafe(32)
     redirect_uri = url_for("auth.google_callback", _external=True)
 
     oauth = current_app.extensions["oauth"]
     try:
-        session["oauth_next_url"] = next_url
+        session["oauth_state"] = oauth_state
+        session["oauth_next_path"] = next_path
         session["oauth_frontend_base"] = frontend_base
     except Exception:
         pass
 
-    return oauth.google.authorize_redirect(redirect_uri, state=next_url)
+    return oauth.google.authorize_redirect(redirect_uri, state=oauth_state)
 
 
 @auth_bp.route("/google/callback", methods=["GET"])
@@ -1154,9 +1188,17 @@ def google_callback():
     frontend_base = _get_frontend_base()
     try:
         frontend_base = session.pop("oauth_frontend_base", frontend_base)
-        frontend_next = request.args.get("state") or session.pop("oauth_next_url", f"{frontend_base}/gallery")
+        expected_state = session.pop("oauth_state", "")
+        frontend_next_path = session.pop("oauth_next_path", DEFAULT_OAUTH_NEXT_PATH)
     except Exception:
-        frontend_next = f"{frontend_base}/gallery"
+        expected_state = ""
+        frontend_next_path = DEFAULT_OAUTH_NEXT_PATH
+
+    received_state = request.args.get("state", "")
+    if not expected_state or not received_state or not hmac.compare_digest(received_state, expected_state):
+        return redirect(f"{frontend_base}/auth?error=invalid_state")
+
+    frontend_next = _frontend_redirect(frontend_base, frontend_next_path)
 
     try:
         oauth = current_app.extensions["oauth"]
@@ -1188,8 +1230,8 @@ def google_callback():
         sep = "&" if "?" in frontend_next else "?"
         return redirect(f"{frontend_next}{sep}token={jwt_token}")
 
-    except Exception as e:
-        logger.error(f"❌ Google callback failed: {e}")
+    except Exception:
+        logger.error("❌ Google callback failed")
         return redirect(f"{frontend_base}/auth?error=google_failed")
 
 
