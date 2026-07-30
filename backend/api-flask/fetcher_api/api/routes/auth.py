@@ -15,6 +15,7 @@ from flask import Blueprint, request, jsonify, session, redirect, url_for, curre
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from fetcher_api.api.helpers.auth import get_user_id_from_request
+from fetcher_api.api.helpers.webhook_signature import verify_meta_signature
 from fetcher_api.adapters.db import execute, fetch_one, fetch_all
 from fetcher_api.services.social_urls import (
     canonicalize_social_url,
@@ -627,8 +628,14 @@ def instagram_webhook():
         return "Forbidden", 403
 
     if request.method == "POST":
+        raw_body = request.get_data(cache=True)
+        signature_valid, signature_reason = verify_meta_signature(request, raw_body)
+        if not signature_valid:
+            logger.warning("Meta webhook signature rejected: %s", signature_reason)
+            return "Forbidden", 403
+
         data = request.get_json(silent=True) or {}
-        logger.info(f"📩 Webhook received: {data}")
+        logger.info("Meta webhook accepted")
 
         try:
             for entry in data.get("entry", []):

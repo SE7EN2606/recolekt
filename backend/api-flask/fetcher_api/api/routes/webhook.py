@@ -12,6 +12,7 @@ import requests
 
 from fetcher_api.adapters.db import execute, fetch_one, fetch_all
 from fetcher_api.api.helpers.auth import get_user_id_from_request
+from fetcher_api.api.helpers.webhook_signature import verify_meta_signature
 
 logger = logging.getLogger("webhook")
 
@@ -228,8 +229,14 @@ def instagram_webhook():
             return request.args.get("hub.challenge"), 200
         return "Forbidden", 403
 
+    raw_body = request.get_data(cache=True)
+    signature_valid, signature_reason = verify_meta_signature(request, raw_body)
+    if not signature_valid:
+        logger.warning("Meta webhook signature rejected: %s", signature_reason)
+        return "Forbidden", 403
+
     data = request.get_json(silent=True) or {}
-    logger.info(f"📨 FULL PAYLOAD: {json.dumps(data)[:800]}")
+    logger.info("Meta webhook accepted with %d entr%s", len(data.get("entry", [])), "y" if len(data.get("entry", [])) == 1 else "ies")
 
     for entry in data.get("entry", []):
         for change in entry.get("changes", []):
