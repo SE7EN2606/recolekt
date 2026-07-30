@@ -16,7 +16,6 @@ from flask import Blueprint, jsonify, request
 from fetcher_api.adapters.db import fetch_one, fetch_all, execute, get_user_tier, count_user_reels
 from fetcher_api.api.helpers.auth import get_user_id_from_request
 from fetcher_api.services.social_urls import canonicalize_social_url, is_facebook_share_url
-from fetcher_api.services.processing_recovery import recover_stale_processing_reels
 
 logger = logging.getLogger("api")
 
@@ -276,64 +275,6 @@ def count_saves_route():
 
     count = count_user_reels(user_id)
     return jsonify({"count": count})
-
-
-@api_bp.route("/saved_reels", methods=["GET", "OPTIONS"])
-def saved_reels():
-    if request.method == "OPTIONS":
-        return "", 200
-
-    try:
-        user_id = get_user_id_from_request()
-    except ValueError:
-        return jsonify({"error": "Authentication required"}), 401
-    try:
-        recover_stale_processing_reels(user_id=user_id, timeout_seconds=180)
-    except Exception as exc:
-        logger.warning("⚠️ Stale processing recovery skipped user=%s error=%s", user_id, exc)
-
-    page = max(int(request.args.get("page", 1) or 1), 1)
-    per_page = min(max(int(request.args.get("per_page", 100) or 100), 1), 200)
-    offset = (page - 1) * per_page
-
-    rows = fetch_all(
-        """
-        SELECT
-            id,
-            user_id,
-            source_url,
-            folder_id,
-            is_favorite,
-            status,
-            content_type,
-            created_at,
-            caption,
-            author_name,
-            duration,
-            transcription,
-            recipe,
-            workout,
-            tools_list,
-            location,
-            gcs_urls,
-            summary_title,
-            summary_text,
-            error_message
-        FROM reels
-        WHERE user_id = %s
-        ORDER BY created_at DESC NULLS LAST
-        LIMIT %s OFFSET %s
-        """,
-        (user_id, per_page, offset),
-    )
-
-    reels = [_serialize_reel_row(r) for r in rows]
-    return jsonify({
-        "reels": reels,
-        "page": page,
-        "per_page": per_page,
-        "count": len(reels),
-    })
 
 
 @api_bp.route("/search", methods=["GET"])
