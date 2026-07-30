@@ -15,6 +15,17 @@ logger = logging.getLogger("saved_reels")
 
 saved_reels_bp = Blueprint("saved_reels", __name__)
 LIST_PAYLOAD_WARNING_KB = 500
+SAVED_REELS_DEFAULT_PAGE = 1
+SAVED_REELS_DEFAULT_PER_PAGE = 100
+SAVED_REELS_MAX_PER_PAGE = 1000
+
+
+def _positive_int_arg(name: str, default: int) -> int:
+    try:
+        value = int(request.args.get(name, default) or default)
+    except (TypeError, ValueError):
+        return default
+    return max(value, 1)
 
 
 def _json_loads_maybe(value, default=None):
@@ -291,8 +302,11 @@ def saved_reels():
     except Exception as exc:
         logger.warning("⚠️ Stale processing recovery skipped user=%s error=%s", user_id, exc)
 
-    page = max(int(request.args.get("page", 1) or 1), 1)
-    per_page = min(max(int(request.args.get("per_page", 100) or 100), 1), 1000)
+    page = _positive_int_arg("page", SAVED_REELS_DEFAULT_PAGE)
+    per_page = min(
+        _positive_int_arg("per_page", SAVED_REELS_DEFAULT_PER_PAGE),
+        SAVED_REELS_MAX_PER_PAGE,
+    )
     offset = (page - 1) * per_page
 
     rows = fetch_all(
@@ -319,18 +333,21 @@ def saved_reels():
             rcs.last_cooked_at AS recipe_last_cooked_at,
             rcs.has_active_session AS recipe_has_active_session,
             rcs.active_session_id AS recipe_active_session_id,
-            (
-                rpn.id IS NOT NULL
-                AND LENGTH(TRIM(COALESCE(rpn.note_text, ''))) > 0
-            ) AS recipe_has_note,
+            (rpn.id IS NOT NULL) AS recipe_has_note,
             rpn.updated_at AS recipe_note_updated_at
         FROM reels r
         LEFT JOIN recipe_cook_summaries rcs
           ON rcs.user_id = r.user_id
          AND rcs.reel_id = r.id
-        LEFT JOIN recipe_personal_notes rpn
-          ON rpn.user_id = r.user_id
-         AND rpn.reel_id = r.id
+        LEFT JOIN LATERAL (
+            SELECT id, updated_at
+            FROM recipe_personal_notes
+            WHERE user_id = r.user_id
+              AND reel_id = r.id
+              AND LENGTH(TRIM(COALESCE(note_text, ''))) > 0
+            ORDER BY updated_at DESC NULLS LAST
+            LIMIT 1
+        ) rpn ON TRUE
         WHERE r.user_id = %s
         ORDER BY r.created_at DESC NULLS LAST
         LIMIT %s OFFSET %s
