@@ -7,28 +7,22 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, render_template
 
 from fetcher_api.adapters.db import execute, fetch_all, fetch_one
+from fetcher_api.api.helpers.admin_auth import get_supplied_admin_key, is_admin_key_valid
 from fetcher_api.api.helpers.auth import get_user_id_from_request
 
 logger = logging.getLogger("admin")
 
 admin_bp = Blueprint("admin", __name__)
 
-ADMIN_KEY = (
-    os.getenv("ADMIN_KEY")
-    or os.getenv("ADMIN_SECRET")
-    or "recolekt-admin-2026"
-)
-
 
 def _check_admin_key():
-    key = request.args.get("key") or request.headers.get("X-Admin-Key", "")
-    return key == ADMIN_KEY
+    return is_admin_key_valid(get_supplied_admin_key(request))
 
 
 @admin_bp.route("/admin/page", methods=["GET"])
 def admin_page():
-    key = request.args.get("key", "")
-    if key != ADMIN_KEY:
+    key = get_supplied_admin_key(request)
+    if not is_admin_key_valid(key):
         return render_template("admin_login.html"), 401
     return render_template("admin.html", admin_key=key)
 

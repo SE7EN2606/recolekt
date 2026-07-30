@@ -123,6 +123,7 @@ app.extensions["oauth"] = oauth
 logger.info("✅ OAuth initialized with Google provider")
 
 from fetcher_api.services.rate_monitor import get_mistral_limits
+from fetcher_api.api.helpers.admin_auth import get_supplied_admin_key, is_admin_key_valid
 
 
 @app.before_request
@@ -155,19 +156,10 @@ def rate_limits():
 
 @app.route("/admin", methods=["GET"])
 def admin_page():
-    admin_key = (
-        os.getenv("ADMIN_KEY")
-        or os.getenv("ADMIN_SECRET")
-        or "recolekt-admin-2026"
-    ).strip()
-    key = request.args.get("key", "").strip()
-    logger.info(
-        "🔑 /admin: received=%r expected=%r match=%s",
-        key,
-        admin_key,
-        key == admin_key,
-    )
-    if key != admin_key:
+    key = get_supplied_admin_key(request)
+    authorized = is_admin_key_valid(key)
+    logger.info("🔑 /admin authentication %s", "succeeded" if authorized else "failed")
+    if not authorized:
         return render_template("admin_login.html"), 401
     return render_template("admin.html", admin_key=key)
 
